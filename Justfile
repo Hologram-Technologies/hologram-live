@@ -42,4 +42,4 @@ docs:
 
 # Serve the Astro docs with hot reload.
 docs-dev:
-    cd apps/docs && npm install && npm run dev -- --host 127.0.0.1
+    cd apps/docs && npm install && npm run dev -- --host 127.0.0.1 --port 5432

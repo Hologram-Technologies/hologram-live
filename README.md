@@ -1,5 +1,7 @@
 # Hologram Live
 
+![Hologram Desktop chat interface](docs/images/hologram-desktop.jpg)
+
 Hologram Live is a local-first module host for the Hologram ecosystem. This repository produces two independent products:
 
 - **Hologram Server** — the standalone `hologram` binary, containing the CLI and background service.

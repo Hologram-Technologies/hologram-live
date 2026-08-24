@@ -71,7 +71,6 @@ const serviceDescription = document.querySelector<HTMLElement>("#service-descrip
 const themeToggle = document.querySelector<HTMLButtonElement>("#theme-toggle")!;
 const themeIcon = document.querySelector<HTMLElement>("#theme-icon")!;
 const themeLabel = document.querySelector<HTMLElement>("#theme-label")!;
-const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 let currentState: ServiceState = "unknown";
 let isBusy = false;
 let noticeTimer: number | undefined;
@@ -98,7 +97,7 @@ function applyTheme(theme: Theme, remember = false) {
   themeLabel.textContent = nextLabel;
   themeToggle.setAttribute("aria-label", `Use ${nextLabel.toLowerCase()}`);
   themeToggle.title = `Use ${nextLabel.toLowerCase()}`;
-  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content = theme === "light" ? "#f7f7f5" : "#161615";
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content = theme === "light" ? "#f6f7f9" : "#0b0d0f";
   if (remember) {
     themePreference = theme;
     try {
@@ -109,7 +108,8 @@ function applyTheme(theme: Theme, remember = false) {
   }
 }
 
-applyTheme(themePreference ?? (systemTheme.matches ? "dark" : "light"));
+// Dark is the default look; the system preference only applies once the user opts into light.
+applyTheme(themePreference ?? "dark");
 
 function syncControls() {
   document.querySelectorAll<HTMLButtonElement>(".command-button").forEach((button) => {
@@ -663,9 +663,6 @@ chatInput.addEventListener("keydown", (event) => {
 themeToggle.addEventListener("click", () => {
   const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
   applyTheme(current === "light" ? "dark" : "light", true);
-});
-systemTheme.addEventListener("change", (event) => {
-  if (themePreference === null) applyTheme(event.matches ? "dark" : "light");
 });
 
 void listen<ServiceState>("service-state-changed", (event) => {

@@ -228,11 +228,51 @@ impl AppState {
                 Ok(()) => RpcResponse::TracingFilter(filter),
                 Err(error) => RpcResponse::Error(ApiError::from(&error)),
             },
-            RpcRequest::RegistryList | RpcRequest::FilesList => {
+            RpcRequest::RegistryList => {
                 let registry = self.inner.registry.clone();
                 RpcResponse::from_result(
-                    blocking(move || registry.list_objects()).await,
+                    blocking(move || registry.list_objects(None)).await,
                     RpcResponse::Objects,
+                )
+            }
+            RpcRequest::FilesList => {
+                let registry = self.inner.registry.clone();
+                RpcResponse::from_result(
+                    blocking(move || registry.list_objects(Some("file"))).await,
+                    RpcResponse::Objects,
+                )
+            }
+            RpcRequest::RegistryPut {
+                kind,
+                media_type,
+                filename,
+                bytes,
+            } => {
+                let registry = self.inner.registry.clone();
+                RpcResponse::from_result(
+                    blocking(move || registry.put_object(kind, media_type, filename, &bytes)).await,
+                    RpcResponse::Object,
+                )
+            }
+            RpcRequest::FilesPut {
+                media_type,
+                filename,
+                bytes,
+            } => {
+                let registry = self.inner.registry.clone();
+                RpcResponse::from_result(
+                    blocking(move || {
+                        registry.put_object("file".to_owned(), media_type, filename, &bytes)
+                    })
+                    .await,
+                    RpcResponse::Object,
+                )
+            }
+            RpcRequest::RegistryGet { id } | RpcRequest::FilesGet { id } => {
+                let registry = self.inner.registry.clone();
+                RpcResponse::from_result(
+                    blocking(move || registry.get_object(&id)).await,
+                    RpcResponse::ObjectContent,
                 )
             }
             RpcRequest::HoloImport { name, bytes } => {
@@ -357,9 +397,14 @@ fn resource_for(request: &RpcRequest) -> Option<String> {
         | RpcRequest::HoloLoad { kappa }
         | RpcRequest::HoloUnload { kappa }
         | RpcRequest::HoloRun { kappa, .. } => Some(kappa.clone()),
-        RpcRequest::HistoryGet { id }
+        RpcRequest::RegistryGet { id }
+        | RpcRequest::FilesGet { id }
+        | RpcRequest::HistoryGet { id }
         | RpcRequest::HistoryAppend { id, .. }
         | RpcRequest::HistoryDelete { id } => Some(id.clone()),
+        RpcRequest::RegistryPut { filename, .. } | RpcRequest::FilesPut { filename, .. } => {
+            filename.clone()
+        }
         RpcRequest::NodeHeartbeat { node } => Some(node.node_id.clone()),
         _ => None,
     }

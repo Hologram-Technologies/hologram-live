@@ -13,6 +13,12 @@ message HoloImportRequest { string name = 1; bytes content = 2; }
 message HoloRunRequest { string kappa = 1; repeated bytes inputs = 2; }
 message HistoryCreateRequest { string title = 1; }
 message HistoryAppendRequest { string id = 1; string role = 2; string content = 3; }
+message ObjectPutRequest {
+  string kind = 1;
+  string media_type = 2;
+  optional string filename = 3;
+  bytes content = 4;
+}
 
 message RpcRequest {
   oneof request {
@@ -40,6 +46,10 @@ message RpcRequest {
     IdRequest history_delete = 22;
     Empty nodes_list = 23;
     NodeRecord node_heartbeat = 24;
+    ObjectPutRequest registry_put = 25;
+    IdRequest registry_get = 26;
+    ObjectPutRequest files_put = 27;
+    IdRequest files_get = 28;
   }
 }
 
@@ -90,6 +100,7 @@ message ObjectMetadata {
   uint64 size = 5;
   uint64 created_at_millis = 6;
 }
+message ObjectContent { ObjectMetadata metadata = 1; bytes content = 2; }
 
 message HoloSection { string kind = 1; uint64 offset = 2; uint64 length = 3; }
 message HoloInspection {
@@ -157,5 +168,7 @@ message RpcResponse {
     TracingFilter tracing_filter = 12;
     Empty accepted = 13;
     ApiError error = 14;
+    ObjectMetadata object = 15;
+    ObjectContent object_content = 16;
   }
 }

@@ -33,9 +33,14 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <p>Use <code>modules</code>, <code>registry</code>, <code>files</code>, <code>holo</code>, <code>history</code>, and <code>nodes</code> to address module operations. <code>route</code> explains which configured authority would receive an operation before dispatch.</p>
   <pre><code>hologram modules list
 hologram route system.health
-hologram --json files
+hologram files put ./notes.txt --media-type text/plain
+hologram files list
+hologram files get blake3:… --output ./notes.txt
+hologram registry put ./asset.bin --kind model --media-type application/octet-stream
+hologram registry list
 hologram history list
 hologram nodes list</code></pre>
+  <p><code>files</code> is the friendly file-oriented view of the registry. <code>registry</code> lists every object kind, including imported <code>.holo</code> archives. Writes return a BLAKE3 content ID; use that stable ID to fetch the exact bytes again.</p>
 
   <h2>Compile an application</h2>
   <p><code>hologram compile</code> packages a JSON application manifest, its capability declaration, and its layer files into a self-contained Hologram v3 archive. Layer paths are relative to the source manifest.</p>

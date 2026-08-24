@@ -73,8 +73,8 @@ enum Command {
     Route(route::RouteArgs),
     /// Access the first content-addressed registry module.
     Registry(registry::RegistryArgs),
-    /// List artifacts through the files module.
-    Files,
+    /// Store, list, and download file objects.
+    Files(files::FilesArgs),
     /// Import, verify, load, and run .holo archives.
     Holo(holo::HoloArgs),
     /// Run a .holo reference.
@@ -120,7 +120,7 @@ impl Cli {
             Command::Config(args) => config::run(self, args).await,
             Command::Route(args) => route::run(self, args).await,
             Command::Registry(args) => registry::run(self, args).await,
-            Command::Files => files::run(self).await,
+            Command::Files(args) => files::run(self, args).await,
             Command::Holo(args) => holo::run(self, args).await,
             Command::Run(args) => run::run(self, args).await,
             Command::History(args) => history::run(self, args).await,

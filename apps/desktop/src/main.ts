@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import "./styles.css";
 
 type Action = "daemon_start" | "daemon_stop" | "daemon_restart" | "daemon_status";
@@ -12,13 +13,22 @@ type ModuleInfo = {
   operations: string[];
 };
 
+type ObjectMetadata = {
+  id: string;
+  kind: string;
+  media_type: string;
+  filename: string | null;
+  size: number;
+  created_at_millis: number;
+};
+
 const output = document.querySelector<HTMLPreElement>("#output")!;
 const state = document.querySelector<HTMLSpanElement>("#state")!;
-const buttons = [...document.querySelectorAll<HTMLButtonElement>("button")];
 const modules = document.querySelector<HTMLDivElement>("#modules")!;
+const objects = document.querySelector<HTMLDivElement>("#objects")!;
 
 function setBusy(busy: boolean) {
-  buttons.forEach((button) => {
+  document.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
     button.disabled = busy;
   });
 }
@@ -52,11 +62,54 @@ async function refresh() {
     const result = await invoke<string>("daemon_status");
     output.textContent = result.trim();
     setState("ready");
-    await refreshModules();
+    await Promise.all([refreshModules(), refreshObjects()]);
   } catch (error) {
     output.textContent = String(error);
     setState("stopped");
     renderModules([]);
+    renderObjects([]);
+  }
+}
+
+async function refreshObjects() {
+  try {
+    const result = await invoke<string>("objects_list");
+    renderObjects(JSON.parse(result) as ObjectMetadata[]);
+  } catch (error) {
+    objects.innerHTML = `<p class="empty">${escapeHtml(String(error))}</p>`;
+  }
+}
+
+async function uploadFile() {
+  const path = await open({ multiple: false, directory: false, title: "Store a file in Hologram" });
+  if (path === null) return;
+  setBusy(true);
+  output.textContent = `Uploading ${path}…`;
+  try {
+    const result = await invoke<string>("file_put", { path });
+    output.textContent = result.trim();
+    await refreshObjects();
+  } catch (error) {
+    output.textContent = String(error);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function downloadObject(item: ObjectMetadata) {
+  const path = await save({
+    defaultPath: safeFilename(item),
+    title: "Save Hologram object",
+  });
+  if (path === null) return;
+  setBusy(true);
+  output.textContent = `Downloading ${item.id}…`;
+  try {
+    output.textContent = (await invoke<string>("object_get", { id: item.id, output: path })).trim();
+  } catch (error) {
+    output.textContent = String(error);
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -85,6 +138,39 @@ function renderModules(items: ModuleInfo[]) {
     .join("");
 }
 
+function renderObjects(items: ObjectMetadata[]) {
+  if (items.length === 0) {
+    objects.innerHTML = '<p class="empty">No objects are stored yet.</p>';
+    return;
+  }
+  objects.innerHTML = items
+    .map(
+      (item, index) => `<article class="object-row">
+        <div class="object-description">
+          <div><strong>${escapeHtml(item.filename ?? "Unnamed object")}</strong><span class="kind">${escapeHtml(item.kind)}</span></div>
+          <code title="${escapeHtml(item.id)}">${escapeHtml(item.id)}</code>
+          <p>${escapeHtml(item.media_type)} · ${formatBytes(item.size)}</p>
+        </div>
+        <button class="secondary download-object" data-index="${index}">Download</button>
+      </article>`,
+    )
+    .join("");
+  objects.querySelectorAll<HTMLButtonElement>(".download-object").forEach((button) => {
+    button.addEventListener("click", () => void downloadObject(items[Number(button.dataset.index)]));
+  });
+}
+
+function safeFilename(item: ObjectMetadata) {
+  const name = item.filename?.split(/[\\/]/).pop();
+  return name || item.id.replace(":", "_");
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
 function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, (character) => {
     const entities: Record<string, string> = {
@@ -102,5 +188,7 @@ document.querySelector("#start")!.addEventListener("click", () => execute("daemo
 document.querySelector("#restart")!.addEventListener("click", () => execute("daemon_restart"));
 document.querySelector("#stop")!.addEventListener("click", () => execute("daemon_stop"));
 document.querySelector("#refresh-modules")!.addEventListener("click", () => void refreshModules());
+document.querySelector("#refresh-objects")!.addEventListener("click", () => void refreshObjects());
+document.querySelector("#upload-file")!.addEventListener("click", () => void uploadFile());
 
 void refresh();

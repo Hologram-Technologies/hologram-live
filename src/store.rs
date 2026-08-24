@@ -153,4 +153,22 @@ mod tests {
         assert!(store.verify(&metadata.id).expect("verify"));
         let _ = std::fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn list_can_filter_files_without_hiding_other_objects() {
+        let root = std::env::temp_dir().join(format!("hologram-store-list-{}", now_millis()));
+        let store = ObjectStore::open(&root).expect("open");
+        let file = store
+            .put("file", "text/plain", Some("hello.txt".to_owned()), b"hello")
+            .expect("put file");
+        store
+            .put("holo", "application/vnd.hologram.holo", None, b"archive")
+            .expect("put holo");
+
+        let files = store.list(Some("file")).expect("list files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, file.id);
+        assert_eq!(store.list(None).expect("list objects").len(), 2);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

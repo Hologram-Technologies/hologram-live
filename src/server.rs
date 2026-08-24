@@ -49,7 +49,9 @@ pub async fn serve(state: AppState) -> Result<()> {
         .merge(protected)
         .with_state(state.clone())
         .merge(grpc)
-        .layer(DefaultBodyLimit::max(state.config().server.max_rpc_bytes));
+        .layer(DefaultBodyLimit::max(
+            state.config().server.max_http_body_bytes,
+        ));
 
     let listener = tokio::net::TcpListener::bind(&state.config().server.listen)
         .await
@@ -73,7 +75,8 @@ async fn index() -> Html<&'static str> {
 <body><h1>Hologram Live</h1><p>The local module host is running.</p>
 <ul><li><a href="/healthz">Health</a></li><li><a href="/docs">API reference</a></li>
 <li><a href="/openapi.json">Raw OpenAPI</a></li>
-<li><a href="/api/v1/modules">Modules</a></li><li><a href="/api/v1/holo">.holo catalog</a></li></ul>
+<li><a href="/api/v1/modules">Modules</a></li><li><a href="/api/v1/objects">Objects</a></li>
+<li><a href="/api/v1/files">Files</a></li><li><a href="/api/v1/holo">.holo catalog</a></li></ul>
 <p>Native clients use the <code>hologram.live.v1.HologramLive</code> gRPC service.</p></body></html>"#,
     )
 }

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::ffi::OsStr;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
@@ -28,14 +29,37 @@ async fn modules_list(app: AppHandle) -> Result<String, String> {
     run_hologram(&app, &["--json", "modules", "list"]).await
 }
 
-async fn run_hologram(app: &AppHandle, arguments: &[&str]) -> Result<String, String> {
+#[tauri::command]
+async fn objects_list(app: AppHandle) -> Result<String, String> {
+    run_hologram(&app, &["--json", "registry", "list"]).await
+}
+
+#[tauri::command]
+async fn file_put(app: AppHandle, path: String) -> Result<String, String> {
+    run_hologram(&app, ["--json", "files", "put", path.as_str()]).await
+}
+
+#[tauri::command]
+async fn object_get(app: AppHandle, id: String, output: String) -> Result<String, String> {
+    run_hologram(
+        &app,
+        ["registry", "get", id.as_str(), "--output", output.as_str()],
+    )
+    .await
+}
+
+async fn run_hologram<I, S>(app: &AppHandle, arguments: I) -> Result<String, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
     let command = app
         .shell()
         .sidecar("hologram")
         .map_err(|error| error.to_string())?;
     let output = arguments
-        .iter()
-        .fold(command, |command, argument| command.arg(*argument))
+        .into_iter()
+        .fold(command, |command, argument| command.arg(argument.as_ref()))
         .output()
         .await
         .map_err(|error| error.to_string())?;
@@ -50,13 +74,17 @@ async fn run_hologram(app: &AppHandle, arguments: &[&str]) -> Result<String, Str
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             daemon_start,
             daemon_stop,
             daemon_restart,
             daemon_status,
-            modules_list
+            modules_list,
+            objects_list,
+            file_put,
+            object_get
         ])
         .run(tauri::generate_context!())
         .expect("run Hologram desktop application");

@@ -3,8 +3,8 @@ use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
 use crate::protocol::{
     CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloInspection,
-    HoloRunResult, HoloSection, ModuleInfo, NodeRecord, ObjectMetadata, OperationInfo,
-    OperationKind, ResidentHolo, RpcRequest, RpcResponse,
+    HoloRunResult, HoloSection, ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata,
+    OperationInfo, OperationKind, ResidentHolo, RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -132,7 +132,30 @@ impl From<RpcRequest> for pb::RpcRequest {
             RpcRequest::TracingGet => Wire::TracingGet(empty()),
             RpcRequest::TracingSet { filter } => Wire::TracingSet(pb::TracingSetRequest { filter }),
             RpcRequest::RegistryList => Wire::RegistryList(empty()),
+            RpcRequest::RegistryPut {
+                kind,
+                media_type,
+                filename,
+                bytes,
+            } => Wire::RegistryPut(pb::ObjectPutRequest {
+                kind,
+                media_type,
+                filename,
+                content: bytes,
+            }),
+            RpcRequest::RegistryGet { id } => Wire::RegistryGet(pb::IdRequest { id }),
             RpcRequest::FilesList => Wire::FilesList(empty()),
+            RpcRequest::FilesPut {
+                media_type,
+                filename,
+                bytes,
+            } => Wire::FilesPut(pb::ObjectPutRequest {
+                kind: "file".to_owned(),
+                media_type,
+                filename,
+                content: bytes,
+            }),
+            RpcRequest::FilesGet { id } => Wire::FilesGet(pb::IdRequest { id }),
             RpcRequest::HoloImport { name, bytes } => Wire::HoloImport(pb::HoloImportRequest {
                 name,
                 content: bytes,
@@ -183,7 +206,20 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
                 filter: value.filter,
             }),
             Wire::RegistryList(_) => Ok(Self::RegistryList),
+            Wire::RegistryPut(value) => Ok(Self::RegistryPut {
+                kind: value.kind,
+                media_type: value.media_type,
+                filename: value.filename,
+                bytes: value.content,
+            }),
+            Wire::RegistryGet(value) => Ok(Self::RegistryGet { id: value.id }),
             Wire::FilesList(_) => Ok(Self::FilesList),
+            Wire::FilesPut(value) => Ok(Self::FilesPut {
+                media_type: value.media_type,
+                filename: value.filename,
+                bytes: value.content,
+            }),
+            Wire::FilesGet(value) => Ok(Self::FilesGet { id: value.id }),
             Wire::HoloImport(value) => Ok(Self::HoloImport {
                 name: value.name,
                 bytes: value.content,
@@ -226,6 +262,8 @@ impl From<RpcResponse> for pb::RpcResponse {
             RpcResponse::Objects(items) => Wire::Objects(pb::ObjectList {
                 items: items.into_iter().map(Into::into).collect(),
             }),
+            RpcResponse::Object(value) => Wire::Object(value.into()),
+            RpcResponse::ObjectContent(value) => Wire::ObjectContent(value.into()),
             RpcResponse::HoloInspection(value) => Wire::HoloInspection(value.into()),
             RpcResponse::HoloList(items) => Wire::HoloList(pb::HoloInspectionList {
                 items: items.into_iter().map(Into::into).collect(),
@@ -268,6 +306,8 @@ impl TryFrom<pb::RpcResponse> for RpcResponse {
             Wire::Objects(value) => Ok(Self::Objects(
                 value.items.into_iter().map(Into::into).collect(),
             )),
+            Wire::Object(value) => Ok(Self::Object(value.into())),
+            Wire::ObjectContent(value) => Ok(Self::ObjectContent(value.try_into()?)),
             Wire::HoloInspection(value) => Ok(Self::HoloInspection(value.try_into()?)),
             Wire::HoloList(value) => Ok(Self::HoloList(
                 value
@@ -455,6 +495,31 @@ impl From<pb::ObjectMetadata> for ObjectMetadata {
             size: value.size,
             created_at_millis: value.created_at_millis,
         }
+    }
+}
+
+impl From<ObjectContent> for pb::ObjectContent {
+    fn from(value: ObjectContent) -> Self {
+        Self {
+            metadata: Some(value.metadata.into()),
+            content: value.bytes,
+        }
+    }
+}
+
+impl TryFrom<pb::ObjectContent> for ObjectContent {
+    type Error = LiveError;
+
+    fn try_from(value: pb::ObjectContent) -> Result<Self> {
+        Ok(Self {
+            metadata: value
+                .metadata
+                .ok_or_else(|| {
+                    LiveError::Protocol("object content response has no metadata".to_owned())
+                })?
+                .into(),
+            bytes: value.content,
+        })
     }
 }
 
@@ -669,6 +734,40 @@ mod tests {
         assert!(matches!(
             decoded,
             RpcRequest::HistoryAppend { content, .. } if content == "hello"
+        ));
+    }
+
+    #[test]
+    fn object_round_trips_preserve_bytes_and_metadata() {
+        let request = RpcRequest::FilesPut {
+            media_type: "text/plain".to_owned(),
+            filename: Some("hello.txt".to_owned()),
+            bytes: b"hello".to_vec(),
+        };
+        let decoded = RpcRequest::try_from(pb::RpcRequest::from(request)).expect("decode request");
+        assert!(matches!(
+            decoded,
+            RpcRequest::FilesPut { media_type, filename: Some(filename), bytes }
+                if media_type == "text/plain" && filename == "hello.txt" && bytes == b"hello"
+        ));
+
+        let response = RpcResponse::ObjectContent(ObjectContent {
+            metadata: ObjectMetadata {
+                id: "blake3:abc".to_owned(),
+                kind: "file".to_owned(),
+                media_type: "text/plain".to_owned(),
+                filename: Some("hello.txt".to_owned()),
+                size: 5,
+                created_at_millis: 1,
+            },
+            bytes: b"hello".to_vec(),
+        });
+        let decoded =
+            RpcResponse::try_from(pb::RpcResponse::from(response)).expect("decode response");
+        assert!(matches!(
+            decoded,
+            RpcResponse::ObjectContent(ObjectContent { metadata, bytes })
+                if metadata.filename.as_deref() == Some("hello.txt") && bytes == b"hello"
         ));
     }
 }

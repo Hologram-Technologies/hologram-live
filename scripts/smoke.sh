@@ -33,6 +33,34 @@ HOME="$HOME_DIR" "$BIN" status >/dev/null
 curl -fsS "http://127.0.0.1:$PORT/docs" | grep -q 'Scalar.createApiReference'
 curl -fsS "http://127.0.0.1:$PORT/docs/scalar.js" >/dev/null
 HOME="$HOME_DIR" "$BIN" modules list >/dev/null
+printf 'stored by hologram\n' >"$TMP/upload.txt"
+FILE=$(HOME="$HOME_DIR" "$BIN" --json files put "$TMP/upload.txt" --media-type text/plain)
+FILE_ID=$(printf '%s\n' "$FILE" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\(blake3:[0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)
+if [ -z "$FILE_ID" ]; then
+  echo "error: failed to parse stored file ID" >&2
+  echo "$FILE" >&2
+  exit 1
+fi
+FILES=$(HOME="$HOME_DIR" "$BIN" files list)
+case "$FILES" in
+  *upload.txt*) ;;
+  *)
+    echo "error: stored file missing from file listing" >&2
+    echo "$FILES" >&2
+    exit 1
+    ;;
+esac
+HOME="$HOME_DIR" "$BIN" files get "$FILE_ID" --output "$TMP/download.txt" >/dev/null
+cmp "$TMP/upload.txt" "$TMP/download.txt"
+HTTP_OBJECT=$(curl -fsS -X POST -H 'content-type: text/plain' -H 'x-hologram-kind: smoke' -H 'x-hologram-filename: http.txt' --data-binary @"$TMP/upload.txt" "http://127.0.0.1:$PORT/api/v1/objects")
+HTTP_ID=$(printf '%s\n' "$HTTP_OBJECT" | sed -n 's/.*"id":"\(blake3:[0-9a-f][0-9a-f]*\)".*/\1/p')
+if [ -z "$HTTP_ID" ]; then
+  echo "error: failed to parse HTTP object ID" >&2
+  echo "$HTTP_OBJECT" >&2
+  exit 1
+fi
+curl -fsS "http://127.0.0.1:$PORT/api/v1/objects/$HTTP_ID" >"$TMP/http-download.txt"
+cmp "$TMP/upload.txt" "$TMP/http-download.txt"
 HOME="$HOME_DIR" "$BIN" holo fixture "$TMP/fixture.holo"
 IMPORT=$(HOME="$HOME_DIR" "$BIN" --json holo import "$TMP/fixture.holo")
 KAPPA=$(printf '%s\n' "$IMPORT" | sed -n 's/.*"kappa"[[:space:]]*:[[:space:]]*"\(blake3:[0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)

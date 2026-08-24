@@ -12,7 +12,11 @@ pub mod operation {
     pub const TRACING_GET: &str = "tracing.get";
     pub const TRACING_SET: &str = "tracing.set";
     pub const REGISTRY_LIST: &str = "registry.list";
+    pub const REGISTRY_PUT: &str = "registry.put";
+    pub const REGISTRY_GET: &str = "registry.get";
     pub const FILES_LIST: &str = "files.list";
+    pub const FILES_PUT: &str = "files.put";
+    pub const FILES_GET: &str = "files.get";
     pub const HOLO_IMPORT: &str = "holo.import";
     pub const HOLO_LIST: &str = "holo.list";
     pub const HOLO_INSPECT: &str = "holo.inspect";
@@ -83,6 +87,12 @@ pub struct ObjectMetadata {
     pub filename: Option<String>,
     pub size: u64,
     pub created_at_millis: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectContent {
+    pub metadata: ObjectMetadata,
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -156,7 +166,24 @@ pub enum RpcRequest {
         filter: String,
     },
     RegistryList,
+    RegistryPut {
+        kind: String,
+        media_type: String,
+        filename: Option<String>,
+        bytes: Vec<u8>,
+    },
+    RegistryGet {
+        id: String,
+    },
     FilesList,
+    FilesPut {
+        media_type: String,
+        filename: Option<String>,
+        bytes: Vec<u8>,
+    },
+    FilesGet {
+        id: String,
+    },
     HoloImport {
         name: String,
         bytes: Vec<u8>,
@@ -213,7 +240,11 @@ impl RpcRequest {
             Self::TracingGet => operation::TRACING_GET,
             Self::TracingSet { .. } => operation::TRACING_SET,
             Self::RegistryList => operation::REGISTRY_LIST,
+            Self::RegistryPut { .. } => operation::REGISTRY_PUT,
+            Self::RegistryGet { .. } => operation::REGISTRY_GET,
             Self::FilesList => operation::FILES_LIST,
+            Self::FilesPut { .. } => operation::FILES_PUT,
+            Self::FilesGet { .. } => operation::FILES_GET,
             Self::HoloImport { .. } => operation::HOLO_IMPORT,
             Self::HoloList => operation::HOLO_LIST,
             Self::HoloInspect { .. } => operation::HOLO_INSPECT,
@@ -240,7 +271,9 @@ impl RpcRequest {
             | Self::ModulesList
             | Self::TracingGet
             | Self::RegistryList
+            | Self::RegistryGet { .. }
             | Self::FilesList
+            | Self::FilesGet { .. }
             | Self::HoloList
             | Self::HoloInspect { .. }
             | Self::HoloVerify { .. }
@@ -260,6 +293,8 @@ pub enum RpcResponse {
     Health(HealthResponse),
     Modules(Vec<ModuleInfo>),
     Objects(Vec<ObjectMetadata>),
+    Object(ObjectMetadata),
+    ObjectContent(ObjectContent),
     HoloInspection(HoloInspection),
     HoloList(Vec<HoloInspection>),
     HoloResident(Vec<ResidentHolo>),

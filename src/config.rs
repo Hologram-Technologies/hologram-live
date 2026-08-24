@@ -146,7 +146,7 @@ impl Default for ServerConfig {
         Self {
             listen: "127.0.0.1:11435".to_owned(),
             max_rpc_bytes: 32 * 1024 * 1024,
-            max_http_body_bytes: 1024 * 1024,
+            max_http_body_bytes: 32 * 1024 * 1024,
             graceful_shutdown_secs: 30,
             actor_mailbox_capacity: 128,
         }

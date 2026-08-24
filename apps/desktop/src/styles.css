@@ -39,4 +39,12 @@ pre { min-height: 180px; max-height: 360px; margin: 0; padding: 16px; overflow: 
 .module-card p { margin-top: 8px; font-size: 12px; }
 .module-state { order: 2; color: #99edbd; font-size: 10px; text-transform: uppercase; }
 .empty { grid-column: 1 / -1; padding: 18px 0; text-align: center; }
+.object-list { display: grid; gap: 8px; }
+.object-row { display: flex; align-items: center; gap: 16px; min-width: 0; padding: 14px 16px; border: 1px solid #2d3035; border-radius: 12px; background: #111214; }
+.object-description { min-width: 0; flex: 1; }
+.object-description > div { display: flex; align-items: center; gap: 8px; }
+.object-description strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.object-description code { display: block; margin-top: 7px; overflow: hidden; color: #8d929b; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.object-description p { margin-top: 6px; font-size: 12px; }
+.kind { padding: 3px 6px; border-radius: 999px; color: #a9d8ff; background: #172d3d; font: 600 10px/1 ui-monospace, monospace; }
 @media (max-width: 680px) { .module-grid { grid-template-columns: 1fr; } }

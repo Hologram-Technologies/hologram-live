@@ -231,6 +231,9 @@ mod tests {
         let document = registry.openapi();
         assert!(document.paths.paths.contains_key("/api/v1/modules"));
         assert!(document.paths.paths.contains_key("/api/v1/files"));
+        assert!(document.paths.paths.contains_key("/api/v1/files/{id}"));
+        assert!(document.paths.paths.contains_key("/api/v1/objects"));
+        assert!(document.paths.paths.contains_key("/api/v1/objects/{id}"));
         assert!(document.paths.paths.contains_key("/api/v1/holo/{kappa}"));
     }
 }

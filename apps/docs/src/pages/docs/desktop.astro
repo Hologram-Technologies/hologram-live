@@ -3,7 +3,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 ---
 <DocsLayout title="Desktop application" description="Develop and package the Tauri desktop shell for Hologram Live.">
   <h1>Desktop application</h1>
-  <p>The Tauri application in <code>apps/desktop</code> packages the Rust daemon as a managed sidecar and provides a focused lifecycle dashboard.</p>
+  <p>The Tauri application in <code>apps/desktop</code> packages the Rust daemon as a managed sidecar and provides a focused lifecycle and object dashboard.</p>
 
   <h2>Run in development</h2>
   <pre><code>just tauri
@@ -15,14 +15,17 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <p>Tauri builds the web frontend, compiles the native shell, and includes the release sidecar in the platform bundle.</p>
 
   <h2>Command boundary</h2>
-  <p>The webview can invoke five application commands:</p>
+  <p>The webview can invoke these narrow application commands:</p>
   <ul>
     <li><code>daemon_start</code></li>
     <li><code>daemon_stop</code></li>
     <li><code>daemon_restart</code></li>
     <li><code>daemon_status</code></li>
     <li><code>modules_list</code></li>
+    <li><code>objects_list</code></li>
+    <li><code>file_put</code></li>
+    <li><code>object_get</code></li>
   </ul>
   <div class="note"><strong>No arbitrary shell bridge</strong>Each command maps to one fixed sidecar argument, keeping the browser-facing authority narrow.</div>
-  <p><code>modules_list</code> reads the daemon's negotiated module manifest and renders available capabilities in the desktop. Because the sidecar uses the normal Hologram configuration, the same surface can target a local service or a future authenticated cloud endpoint.</p>
+  <p><code>modules_list</code> reads the daemon's negotiated module manifest. The files and objects panel uses native open/save dialogs, uploads files, lists content-addressed metadata, and downloads any registry object. Because the sidecar uses the normal Hologram configuration, the same surface can target a local service or a future authenticated cloud endpoint.</p>
 </DocsLayout>

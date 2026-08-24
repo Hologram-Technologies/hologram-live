@@ -1,0 +1,14 @@
+/target/
+/node_modules/
+/apps/docs/node_modules/
+/apps/docs/dist/
+/apps/docs/.astro/
+/apps/desktop/node_modules/
+/apps/desktop/dist/
+/apps/desktop/src-tauri/target/
+/apps/desktop/src-tauri/binaries/hologram-*
+.DS_Store
+*.log
+*.pid
+*.lock.tmp
+.env

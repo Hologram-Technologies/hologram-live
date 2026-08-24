@@ -1,0 +1,29 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="API reference" description="OpenAPI, Scalar, and native gRPC reference surfaces for Hologram Live.">
+  <h1>API reference</h1>
+  <p>The running daemon exposes an interactive Scalar reference and the raw Utoipa-generated OpenAPI document on the same listener as the API.</p>
+
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Scalar</h3><p><a href="http://127.0.0.1:11435/docs">Open the interactive reference ↗</a></p></article>
+    <article class="doc-card"><h3>OpenAPI JSON</h3><p><a href="http://127.0.0.1:11435/openapi.json">Read the raw document ↗</a></p></article>
+  </div>
+
+  <h2>Start the reference</h2>
+  <pre><code>just dev
+# then open http://127.0.0.1:11435/docs</code></pre>
+  <p>The Scalar JavaScript bundle is embedded in the Rust executable and served at <code>/docs/scalar.js</code>. The reference loads <code>/openapi.json</code> from the same origin, so it does not depend on a documentation CDN.</p>
+
+  <h2>REST surface</h2>
+  <p>The OpenAPI document covers health, capabilities, modules, registry objects, <code>.holo</code> catalog reads, conversation history, and control-plane node inventory. Protected routes use the configured bearer token.</p>
+
+  <h2>Native gRPC surface</h2>
+  <p>The CLI and desktop client use the versioned schema at <code>proto/hologram/live/v1/live.proto</code>. Generated tonic clients call:</p>
+  <pre><code>package hologram.live.v1;
+
+service HologramLive &#123;
+  rpc Call(RpcRequest) returns (RpcResponse);
+&#125;</code></pre>
+  <div class="note"><strong>Different contracts, one application</strong>OpenAPI documents the browser-facing JSON routes. Protobuf is the source of truth for the native client/server wire format.</div>
+</DocsLayout>

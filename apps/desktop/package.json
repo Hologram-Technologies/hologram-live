@@ -1,0 +1,22 @@
+{
+  "name": "hologram-desktop",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run prepare:sidecar && tauri dev",
+    "build": "npm run prepare:sidecar:release && tauri build",
+    "web:dev": "vite --port 1420",
+    "web:build": "vite build",
+    "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
+    "prepare:sidecar:release": "node scripts/prepare-sidecar.mjs --release"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0"
+  }
+}

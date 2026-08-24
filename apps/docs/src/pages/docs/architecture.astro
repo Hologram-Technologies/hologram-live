@@ -1,0 +1,29 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Architecture" description="Understand the Hologram Live kernel, transport, actor, module, and desktop boundaries.">
+  <h1>Architecture</h1>
+  <p>Hologram Live is a small product kernel with statically registered modules. It coordinates product concerns without absorbing module-owned business capabilities.</p>
+
+  <h2>Kernel and modules</h2>
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Kernel owns</h3><p>Configuration, lifecycle, routing, authentication, API serving, actors, telemetry, audit, and updates.</p></article>
+    <article class="doc-card"><h3>Modules own</h3><p>Registry, files, <code>.holo</code> catalog behavior, conversation history, and node inventory.</p></article>
+  </div>
+  <p>Modules expose stable operation identifiers and declare dependencies. Startup resolves those dependencies before a module becomes available.</p>
+
+  <h2>Two protocol surfaces</h2>
+  <p>Native clients use the versioned <code>hologram.live.v1.HologramLive</code> Protobuf/gRPC service. Browsers use JSON/HTTP routes described by Utoipa OpenAPI and rendered by Scalar.</p>
+  <pre><code>CLI / desktop ── Protobuf + gRPC ──┐
+                                   ├── hologram daemon ── modules
+browser ─────── JSON + HTTP ───────┘</code></pre>
+
+  <h2>Actors</h2>
+  <p>Kameo provides process-local actors, bounded mailboxes, links, and supervision. Actor remoting is intentionally not the network API; cross-process work always crosses the authenticated gRPC boundary.</p>
+
+  <h2>Routing and authority</h2>
+  <p>The native client negotiates operation capabilities before choosing a local or remote target. Resources remain attached to the authority that created them, and mutations do not silently retry after an ambiguous transport failure.</p>
+
+  <h2>Desktop</h2>
+  <p>The Tauri application bundles <code>hologram</code> as a sidecar. The webview receives only narrow lifecycle and status commands—not a general-purpose shell.</p>
+</DocsLayout>

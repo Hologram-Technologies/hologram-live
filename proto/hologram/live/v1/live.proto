@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package hologram.live.v1;
+
+service HologramLive {
+  rpc Call(RpcRequest) returns (RpcResponse);
+}
+
+message Empty {}
+message IdRequest { string id = 1; }
+message TracingSetRequest { string filter = 1; }
+message HoloImportRequest { string name = 1; bytes content = 2; }
+message HoloRunRequest { string kappa = 1; repeated bytes inputs = 2; }
+message HistoryCreateRequest { string title = 1; }
+message HistoryAppendRequest { string id = 1; string role = 2; string content = 3; }
+
+message RpcRequest {
+  oneof request {
+    Empty handshake = 1;
+    Empty health = 2;
+    Empty shutdown = 3;
+    Empty modules_list = 4;
+    Empty tracing_get = 5;
+    TracingSetRequest tracing_set = 6;
+    Empty registry_list = 7;
+    Empty files_list = 8;
+    HoloImportRequest holo_import = 9;
+    Empty holo_list = 10;
+    IdRequest holo_inspect = 11;
+    IdRequest holo_verify = 12;
+    IdRequest holo_remove = 13;
+    IdRequest holo_load = 14;
+    IdRequest holo_unload = 15;
+    HoloRunRequest holo_run = 16;
+    Empty holo_resident = 17;
+    HistoryCreateRequest history_create = 18;
+    Empty history_list = 19;
+    IdRequest history_get = 20;
+    HistoryAppendRequest history_append = 21;
+    IdRequest history_delete = 22;
+    Empty nodes_list = 23;
+    NodeRecord node_heartbeat = 24;
+  }
+}
+
+enum OperationKind {
+  OPERATION_KIND_UNSPECIFIED = 0;
+  OPERATION_KIND_READ = 1;
+  OPERATION_KIND_MUTATION = 2;
+  OPERATION_KIND_STREAM = 3;
+}
+
+message OperationInfo {
+  string id = 1;
+  OperationKind kind = 2;
+  bool fallback_safe_before_dispatch = 3;
+}
+
+message ModuleInfo {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string state = 4;
+  repeated string dependencies = 5;
+  repeated string operations = 6;
+}
+
+message CapabilityManifest {
+  uint32 protocol_version = 1;
+  string server_version = 2;
+  string server_id = 3;
+  string role = 4;
+  repeated OperationInfo operations = 5;
+  repeated ModuleInfo modules = 6;
+  uint32 maximum_message_bytes = 7;
+}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  string role = 3;
+  uint64 modules_ready = 4;
+}
+
+message ObjectMetadata {
+  string id = 1;
+  string kind = 2;
+  string media_type = 3;
+  optional string filename = 4;
+  uint64 size = 5;
+  uint64 created_at_millis = 6;
+}
+
+message HoloSection { string kind = 1; uint64 offset = 2; uint64 length = 3; }
+message HoloInspection {
+  string kappa = 1;
+  string name = 2;
+  uint32 format_version = 3;
+  uint64 byte_length = 4;
+  string archive_fingerprint = 5;
+  bool footer_verified = 6;
+  repeated HoloSection sections = 7;
+}
+message ResidentHolo {
+  string kappa = 1;
+  uint64 input_count = 2;
+  uint64 output_count = 3;
+  uint64 resident_bytes = 4;
+  uint64 queued = 5;
+  uint64 processed = 6;
+}
+message HoloRunResult {
+  string kappa = 1;
+  repeated bytes outputs = 2;
+  uint64 elapsed_micros = 3;
+  uint64 resident_bytes = 4;
+}
+
+message ConversationMessage { string role = 1; string content = 2; uint64 created_at_millis = 3; }
+message Conversation {
+  string id = 1;
+  string title = 2;
+  uint64 created_at_millis = 3;
+  uint64 updated_at_millis = 4;
+  repeated ConversationMessage messages = 5;
+}
+
+message NodeRecord {
+  string node_id = 1;
+  string version = 2;
+  repeated string operations = 3;
+  uint64 last_seen_millis = 4;
+}
+
+message ApiError { string code = 1; string message = 2; }
+message ModuleList { repeated ModuleInfo items = 1; }
+message ObjectList { repeated ObjectMetadata items = 1; }
+message HoloInspectionList { repeated HoloInspection items = 1; }
+message ResidentHoloList { repeated ResidentHolo items = 1; }
+message ConversationList { repeated Conversation items = 1; }
+message NodeList { repeated NodeRecord items = 1; }
+message TracingFilter { string filter = 1; }
+
+message RpcResponse {
+  oneof response {
+    CapabilityManifest capability_manifest = 1;
+    HealthResponse health = 2;
+    ModuleList modules = 3;
+    ObjectList objects = 4;
+    HoloInspection holo_inspection = 5;
+    HoloInspectionList holo_list = 6;
+    ResidentHoloList holo_resident = 7;
+    HoloRunResult holo_run = 8;
+    Conversation conversation = 9;
+    ConversationList conversations = 10;
+    NodeList nodes = 11;
+    TracingFilter tracing_filter = 12;
+    Empty accepted = 13;
+    ApiError error = 14;
+  }
+}

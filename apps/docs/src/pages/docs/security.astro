@@ -1,0 +1,27 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Security" description="Security defaults and trust boundaries in Hologram Live.">
+  <h1>Security</h1>
+  <p>Loopback-only defaults, bounded inputs, explicit authorities, digest verification, typed configuration, and narrow process boundaries form the baseline.</p>
+
+  <h2>Network defaults</h2>
+  <ul>
+    <li>The daemon binds to loopback by default.</li>
+    <li>Non-loopback listeners require bearer-token authentication.</li>
+    <li>Non-loopback remote clients require HTTPS.</li>
+    <li>gRPC messages and HTTP bodies have independent size limits.</li>
+  </ul>
+
+  <h2>Fallback safety</h2>
+  <p>Authorization denial, authentication failure, TLS validation failure, and integrity failure never fall through to another target. A mutation transport failure is reported as an unknown commit state instead of being retried elsewhere.</p>
+
+  <h2>Content integrity</h2>
+  <p>Objects are addressed with BLAKE3. Imported <code>.holo</code> archives are parsed by the pinned archive implementation and their footer fingerprint is verified before catalog admission.</p>
+
+  <h2>Tracing privacy</h2>
+  <p>Tokens, authorization headers, raw prompts, response bodies, private keys, and uploaded bytes must not enter trace fields. OTLP export remains disabled until a collector endpoint is explicitly supplied.</p>
+
+  <h2>Interactive API reference</h2>
+  <p>Scalar's JavaScript is served from the daemon binary. Its optional agent is disabled, and the reference reads the OpenAPI document from the same origin.</p>
+</DocsLayout>

@@ -1,0 +1,28 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Telemetry" description="Configure local tracing and optional OpenTelemetry OTLP export for Hologram Live.">
+  <h1>Telemetry</h1>
+  <p>Hologram Live uses <code>tracing</code> for structured local diagnostics and OpenTelemetry for optional OTLP/gRPC trace and metric export.</p>
+
+  <h2>Enable OTLP export</h2>
+  <pre><code>[telemetry]
+enabled = true
+endpoint = "http://127.0.0.1:4317"
+service_name = "hologram-live"
+export_timeout_secs = 5</code></pre>
+  <p>The collector endpoint can also be set with <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>. Loopback HTTP is accepted for local collectors; remote collectors must use HTTPS.</p>
+
+  <h2>What is recorded</h2>
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Traces</h3><p>gRPC call spans include service, method, operation, and principal identity fields.</p></article>
+    <article class="doc-card"><h3>Metrics</h3><p>RPC request counts and duration histograms are labeled by operation and outcome.</p></article>
+  </div>
+
+  <h2>Change local verbosity</h2>
+  <pre><code>hologram tracing get
+hologram tracing set 'info,hologram_live=trace'</code></pre>
+  <p>Changing the tracing filter does not change audit behavior. Audit events use a separate bounded actor and durable file boundary.</p>
+
+  <div class="note"><strong>Privacy boundary</strong>Do not add authorization headers, tokens, raw prompts, response bodies, private keys, or uploaded bytes to span fields.</div>
+</DocsLayout>

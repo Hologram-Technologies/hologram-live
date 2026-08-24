@@ -1,0 +1,349 @@
+use crate::actor::ActorSystem;
+use crate::audit::{AuditEvent, AuditLog};
+use crate::auth::{Authorizer, LocalAuthorizer, Principal};
+use crate::config::AppConfig;
+use crate::error::{ApiError, LiveError, Result};
+use crate::history::HistoryService;
+use crate::holo::{HoloCatalog, HoloRuntime};
+use crate::module::ModuleRegistry;
+use crate::nodes::NodeDirectory;
+use crate::observability::TracingHandle;
+use crate::protocol::{
+    CapabilityManifest, HealthResponse, ModuleInfo, RpcRequest, RpcResponse, PROTOCOL_VERSION,
+};
+use crate::store::ObjectStore;
+use axum::Router;
+use std::sync::Arc;
+use tokio::sync::Notify;
+
+struct AppInner {
+    config: AppConfig,
+    modules: ModuleRegistry,
+    store: Arc<ObjectStore>,
+    holo_catalog: Arc<HoloCatalog>,
+    holo_runtime: Arc<HoloRuntime>,
+    history: Arc<HistoryService>,
+    nodes: Arc<NodeDirectory>,
+    _actor_system: ActorSystem,
+    audit: AuditLog,
+    tracing: TracingHandle,
+    authorizer: Arc<dyn Authorizer>,
+    shutdown: Notify,
+    server_id: String,
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    inner: Arc<AppInner>,
+}
+
+impl AppState {
+    pub async fn build(config: AppConfig, tracing: TracingHandle) -> Result<Self> {
+        config.create_directories()?;
+        let modules = ModuleRegistry::build(&config.modules.enabled)?;
+        let store = Arc::new(ObjectStore::open(config.paths.data_dir.join("registry"))?);
+        let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
+        let holo_runtime = Arc::new(HoloRuntime::new(
+            holo_catalog.clone(),
+            config.server.actor_mailbox_capacity,
+        ));
+        let history = Arc::new(HistoryService::open(config.paths.data_dir.join("history"))?);
+        let nodes = Arc::new(NodeDirectory::open(
+            config.paths.data_dir.join("control-plane/nodes.json"),
+        )?);
+        let actor_system = ActorSystem::start();
+        let audit = AuditLog::open(
+            config.paths.state_dir.join("audit.jsonl"),
+            config.server.actor_mailbox_capacity,
+            actor_system.root(),
+        )
+        .await?;
+        let server_seed = format!(
+            "{}\0{}\0{}",
+            config.server.listen,
+            config.paths.data_dir.display(),
+            config.role.as_str()
+        );
+        let server_id = format!("blake3:{}", blake3::hash(server_seed.as_bytes()).to_hex());
+        Ok(Self {
+            inner: Arc::new(AppInner {
+                config,
+                modules,
+                store,
+                holo_catalog,
+                holo_runtime,
+                history,
+                nodes,
+                _actor_system: actor_system,
+                audit,
+                tracing,
+                authorizer: Arc::new(LocalAuthorizer),
+                shutdown: Notify::new(),
+                server_id,
+            }),
+        })
+    }
+
+    pub fn config(&self) -> &AppConfig {
+        &self.inner.config
+    }
+
+    pub fn store(&self) -> &Arc<ObjectStore> {
+        &self.inner.store
+    }
+
+    pub fn holo_catalog(&self) -> &Arc<HoloCatalog> {
+        &self.inner.holo_catalog
+    }
+
+    pub fn holo_runtime(&self) -> &Arc<HoloRuntime> {
+        &self.inner.holo_runtime
+    }
+
+    pub fn history(&self) -> &Arc<HistoryService> {
+        &self.inner.history
+    }
+
+    pub fn nodes(&self) -> &Arc<NodeDirectory> {
+        &self.inner.nodes
+    }
+
+    pub fn audit(&self) -> &AuditLog {
+        &self.inner.audit
+    }
+
+    pub fn tracing(&self) -> &TracingHandle {
+        &self.inner.tracing
+    }
+
+    pub fn module_router(&self) -> Router<AppState> {
+        self.inner.modules.router()
+    }
+
+    pub fn module_info(&self) -> Vec<ModuleInfo> {
+        self.inner.modules.info()
+    }
+
+    pub fn health(&self) -> HealthResponse {
+        HealthResponse {
+            status: "ready".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            role: self.inner.config.role.as_str().to_owned(),
+            modules_ready: self.inner.modules.info().len(),
+        }
+    }
+
+    pub fn capability_manifest(&self) -> CapabilityManifest {
+        CapabilityManifest {
+            protocol_version: PROTOCOL_VERSION,
+            server_version: env!("CARGO_PKG_VERSION").to_owned(),
+            server_id: self.inner.server_id.clone(),
+            role: self.inner.config.role.as_str().to_owned(),
+            operations: self.inner.modules.operations(),
+            modules: self.inner.modules.info(),
+            maximum_message_bytes: self
+                .inner
+                .config
+                .server
+                .max_rpc_bytes
+                .try_into()
+                .unwrap_or(u32::MAX),
+        }
+    }
+
+    pub fn request_shutdown(&self) {
+        self.inner.shutdown.notify_waiters();
+    }
+
+    pub async fn wait_shutdown(&self) {
+        self.inner.shutdown.notified().await;
+    }
+
+    pub async fn dispatch(&self, principal: &Principal, request: RpcRequest) -> RpcResponse {
+        let operation = request.operation();
+        let kind = request.kind();
+        if !self.inner.modules.supports(operation) {
+            return RpcResponse::Error(ApiError::from(&LiveError::Capability(format!(
+                "operation {operation} is not provided by this server"
+            ))));
+        }
+        if let Err(error) = self.inner.authorizer.authorize(principal, operation, kind) {
+            return RpcResponse::Error(ApiError::from(&error));
+        }
+        let resource = resource_for(&request);
+        let response = self.dispatch_authorized(request).await;
+        if kind != crate::protocol::OperationKind::Read {
+            let outcome = match &response {
+                RpcResponse::Error(error) => format!("error:{}", error.code),
+                _ => "accepted".to_owned(),
+            };
+            if let Err(error) = self
+                .inner
+                .audit
+                .record(AuditEvent::new(
+                    principal.id.clone(),
+                    operation,
+                    resource,
+                    outcome,
+                ))
+                .await
+            {
+                tracing::error!(error = %error, "failed to record audit event");
+            }
+        }
+        response
+    }
+
+    async fn dispatch_authorized(&self, request: RpcRequest) -> RpcResponse {
+        match request {
+            RpcRequest::Handshake => RpcResponse::CapabilityManifest(self.capability_manifest()),
+            RpcRequest::Health => RpcResponse::Health(self.health()),
+            RpcRequest::Shutdown => {
+                self.request_shutdown();
+                RpcResponse::Accepted
+            }
+            RpcRequest::ModulesList => RpcResponse::Modules(self.module_info()),
+            RpcRequest::TracingGet => match self.inner.tracing.current_filter() {
+                Ok(filter) => RpcResponse::TracingFilter(filter),
+                Err(error) => RpcResponse::Error(ApiError::from(&error)),
+            },
+            RpcRequest::TracingSet { filter } => match self.inner.tracing.set_filter(&filter) {
+                Ok(()) => RpcResponse::TracingFilter(filter),
+                Err(error) => RpcResponse::Error(ApiError::from(&error)),
+            },
+            RpcRequest::RegistryList | RpcRequest::FilesList => {
+                let store = self.inner.store.clone();
+                RpcResponse::from_result(
+                    blocking(move || store.list(None)).await,
+                    RpcResponse::Objects,
+                )
+            }
+            RpcRequest::HoloImport { name, bytes } => {
+                let catalog = self.inner.holo_catalog.clone();
+                RpcResponse::from_result(
+                    blocking(move || catalog.import(name, bytes)).await,
+                    RpcResponse::HoloInspection,
+                )
+            }
+            RpcRequest::HoloList => {
+                let catalog = self.inner.holo_catalog.clone();
+                RpcResponse::from_result(
+                    blocking(move || catalog.list()).await,
+                    RpcResponse::HoloList,
+                )
+            }
+            RpcRequest::HoloInspect { kappa } => {
+                let catalog = self.inner.holo_catalog.clone();
+                RpcResponse::from_result(
+                    blocking(move || catalog.inspect(&kappa)).await,
+                    RpcResponse::HoloInspection,
+                )
+            }
+            RpcRequest::HoloVerify { kappa } => {
+                let catalog = self.inner.holo_catalog.clone();
+                RpcResponse::from_result(
+                    blocking(move || catalog.verify(&kappa)).await,
+                    RpcResponse::HoloInspection,
+                )
+            }
+            RpcRequest::HoloRemove { kappa } => {
+                let catalog = self.inner.holo_catalog.clone();
+                match blocking(move || catalog.remove(&kappa)).await {
+                    Ok(()) => RpcResponse::Accepted,
+                    Err(error) => RpcResponse::Error(ApiError::from(&error)),
+                }
+            }
+            RpcRequest::HoloLoad { kappa } => {
+                RpcResponse::from_result(self.inner.holo_runtime.load(&kappa).await, |record| {
+                    RpcResponse::HoloResident(vec![record])
+                })
+            }
+            RpcRequest::HoloUnload { kappa } => {
+                match self.inner.holo_runtime.unload(&kappa).await {
+                    Ok(()) => RpcResponse::Accepted,
+                    Err(error) => RpcResponse::Error(ApiError::from(&error)),
+                }
+            }
+            RpcRequest::HoloRun { kappa, inputs } => RpcResponse::from_result(
+                self.inner.holo_runtime.run(&kappa, inputs).await,
+                RpcResponse::HoloRun,
+            ),
+            RpcRequest::HoloResident => RpcResponse::from_result(
+                self.inner.holo_runtime.list().await,
+                RpcResponse::HoloResident,
+            ),
+            RpcRequest::HistoryCreate { title } => {
+                let history = self.inner.history.clone();
+                RpcResponse::from_result(
+                    blocking(move || history.create(title)).await,
+                    RpcResponse::Conversation,
+                )
+            }
+            RpcRequest::HistoryList => {
+                let history = self.inner.history.clone();
+                RpcResponse::from_result(
+                    blocking(move || history.list()).await,
+                    RpcResponse::Conversations,
+                )
+            }
+            RpcRequest::HistoryGet { id } => {
+                let history = self.inner.history.clone();
+                RpcResponse::from_result(
+                    blocking(move || history.get(&id)).await,
+                    RpcResponse::Conversation,
+                )
+            }
+            RpcRequest::HistoryAppend { id, role, content } => {
+                let history = self.inner.history.clone();
+                RpcResponse::from_result(
+                    blocking(move || history.append(&id, role, content)).await,
+                    RpcResponse::Conversation,
+                )
+            }
+            RpcRequest::HistoryDelete { id } => {
+                let history = self.inner.history.clone();
+                match blocking(move || history.delete(&id)).await {
+                    Ok(()) => RpcResponse::Accepted,
+                    Err(error) => RpcResponse::Error(ApiError::from(&error)),
+                }
+            }
+            RpcRequest::NodesList => {
+                let nodes = self.inner.nodes.clone();
+                RpcResponse::from_result(blocking(move || nodes.list()).await, RpcResponse::Nodes)
+            }
+            RpcRequest::NodeHeartbeat { node } => {
+                let nodes = self.inner.nodes.clone();
+                match blocking(move || nodes.heartbeat(node)).await {
+                    Ok(()) => RpcResponse::Accepted,
+                    Err(error) => RpcResponse::Error(ApiError::from(&error)),
+                }
+            }
+        }
+    }
+}
+
+async fn blocking<T, F>(function: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    tokio::task::spawn_blocking(function)
+        .await
+        .map_err(|error| LiveError::Conflict(format!("blocking task failed: {error}")))?
+}
+
+fn resource_for(request: &RpcRequest) -> Option<String> {
+    match request {
+        RpcRequest::HoloInspect { kappa }
+        | RpcRequest::HoloVerify { kappa }
+        | RpcRequest::HoloRemove { kappa }
+        | RpcRequest::HoloLoad { kappa }
+        | RpcRequest::HoloUnload { kappa }
+        | RpcRequest::HoloRun { kappa, .. } => Some(kappa.clone()),
+        RpcRequest::HistoryGet { id }
+        | RpcRequest::HistoryAppend { id, .. }
+        | RpcRequest::HistoryDelete { id } => Some(id.clone()),
+        RpcRequest::NodeHeartbeat { node } => Some(node.node_id.clone()),
+        _ => None,
+    }
+}

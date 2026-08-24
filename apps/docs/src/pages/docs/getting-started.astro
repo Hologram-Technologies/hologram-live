@@ -1,0 +1,37 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Getting started" description="Build Hologram Live, initialize its configuration, and start the local daemon.">
+  <h1>Getting started</h1>
+  <p>Build the single <code>hologram</code> executable, initialize a typed configuration, and start a local module host in a few commands.</p>
+
+  <h2>Prerequisites</h2>
+  <ul>
+    <li>Rust 1.88 or newer with Cargo.</li>
+    <li><code>just</code> for the repository development recipes.</li>
+    <li>Node.js only when building the Astro docs or Tauri desktop frontend.</li>
+  </ul>
+
+  <h2>Build and initialize</h2>
+  <pre><code>cargo build --release --locked
+./target/release/hologram init</code></pre>
+  <p>The generated configuration lives at <code>~/.config/hologram/live.toml</code> on every supported platform. Unknown fields are rejected instead of silently ignored.</p>
+
+  <h2>Start the daemon</h2>
+  <pre><code>./target/release/hologram start
+./target/release/hologram status
+./target/release/hologram modules list</code></pre>
+  <div class="note"><strong>Development loop</strong>Install <code>cargo-watch</code> once, then run <code>just dev</code> to rebuild and restart the foreground server whenever Rust or Protobuf inputs change.</div>
+
+  <h2>Open the interfaces</h2>
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Status page</h3><p><a href="http://127.0.0.1:11435">127.0.0.1:11435</a> confirms the daemon is reachable.</p></article>
+    <article class="doc-card"><h3>API reference</h3><p><a href="http://127.0.0.1:11435/docs">/docs</a> renders the self-hosted Scalar reference.</p></article>
+  </div>
+
+  <h2>Exercise <code>.holo</code> support</h2>
+  <pre><code>hologram holo fixture fixture.holo
+hologram holo import fixture.holo
+hologram holo list</code></pre>
+  <p>Import returns a content address that can be inspected and verified with <code>hologram holo inspect</code> and <code>hologram holo verify</code>.</p>
+</DocsLayout>

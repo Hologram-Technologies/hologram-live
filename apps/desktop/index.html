@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111214" />
+    <title>Hologram</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark" aria-hidden="true">H</div>
+        <div>
+          <p class="eyebrow">LOCAL MODULE HOST</p>
+          <h1>Hologram</h1>
+        </div>
+        <span id="state" class="state unknown">Checking</span>
+      </header>
+
+      <section class="panel">
+        <div>
+          <h2>Daemon</h2>
+          <p>Run and inspect the bundled Hologram service without leaving the desktop.</p>
+        </div>
+        <div class="actions">
+          <button id="start">Start</button>
+          <button id="restart" class="secondary">Restart</button>
+          <button id="stop" class="secondary danger">Stop</button>
+        </div>
+      </section>
+
+      <section class="terminal" aria-live="polite">
+        <div class="terminal-title">Service output</div>
+        <pre id="output">Connecting to the local daemon…</pre>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

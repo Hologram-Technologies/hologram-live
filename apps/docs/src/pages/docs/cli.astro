@@ -1,0 +1,42 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Command line" description="Command reference for the modular Hologram Live CLI.">
+  <h1>Command line</h1>
+  <p>The CLI is a thin native client. Each top-level command has an independent module under <code>src/cli</code>, while <code>main.rs</code> only initializes observability and delegates.</p>
+
+  <h2>Global options</h2>
+  <pre><code>hologram [--config PATH] [--json] [-v|-vv] &lt;COMMAND&gt;</code></pre>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Option</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>--config PATH</code></td><td>Use an explicit configuration file.</td></tr>
+      <tr><td><code>--json</code></td><td>Emit machine-readable output where supported.</td></tr>
+      <tr><td><code>-v</code> / <code>-vv</code></td><td>Increase tracing verbosity for the current process.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Lifecycle</h2>
+  <div class="table-wrap"><table>
+    <tbody>
+      <tr><td><code>init</code></td><td>Create the default typed configuration.</td></tr>
+      <tr><td><code>serve</code></td><td>Run the daemon in the foreground.</td></tr>
+      <tr><td><code>start</code></td><td>Start the local daemon in the background.</td></tr>
+      <tr><td><code>stop</code></td><td>Request graceful shutdown.</td></tr>
+      <tr><td><code>restart</code></td><td>Stop and start the configured local daemon.</td></tr>
+      <tr><td><code>status</code></td><td>Read health through the configured client route.</td></tr>
+      <tr><td><code>doctor</code></td><td>Validate configuration, module resolution, and local health.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Capabilities</h2>
+  <p>Use <code>modules</code>, <code>registry</code>, <code>files</code>, <code>holo</code>, <code>history</code>, and <code>nodes</code> to address module operations. <code>route</code> explains which configured authority would receive an operation before dispatch.</p>
+  <pre><code>hologram modules list
+hologram route system.health
+hologram --json files
+hologram history list
+hologram nodes list</code></pre>
+
+  <h2>Operations</h2>
+  <p><code>tracing</code> reads or updates the live filter, <code>openapi</code> writes the generated OpenAPI document, and <code>update</code> checks, installs, or rolls back verified releases.</p>
+</DocsLayout>

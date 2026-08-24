@@ -1,0 +1,56 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Configuration" description="Configure Hologram Live server, client, tracing, telemetry, modules, and update behavior.">
+  <h1>Configuration</h1>
+  <p>All platforms use <code>~/.config/hologram/live.toml</code>. The schema is typed, versioned, and rejects unknown fields.</p>
+
+  <h2>Representative configuration</h2>
+  <pre><code>schema_version = 1
+role = "node"
+
+[server]
+listen = "127.0.0.1:11435"
+max_rpc_bytes = 33554432
+max_http_body_bytes = 1048576
+graceful_shutdown_secs = 30
+actor_mailbox_capacity = 128
+
+[client]
+preference = "local"
+local_endpoint = "http://127.0.0.1:11435"
+allow_read_fallback = true
+request_timeout_secs = 30
+
+[auth]
+required = false
+token_env = "HOLOGRAM_AUTH_TOKEN"
+
+[tracing]
+filter = "info,hologram_live=debug"
+format = "pretty"
+include_target = true
+include_thread_ids = false
+
+[telemetry]
+enabled = true
+service_name = "hologram-live"
+export_timeout_secs = 5</code></pre>
+  <div class="note"><strong>Telemetry remains local by default</strong>Leave <code>telemetry.endpoint</code> unset to prevent any telemetry network connection.</div>
+
+  <h2>Environment overrides</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Variable</th><th>Configuration</th></tr></thead>
+    <tbody>
+      <tr><td><code>HOLOGRAM_CONFIG</code></td><td>Explicit configuration file used by the CLI.</td></tr>
+      <tr><td><code>HOLOGRAM_LISTEN</code></td><td>Server listen address.</td></tr>
+      <tr><td><code>HOLOGRAM_REMOTE_ENDPOINT</code></td><td>Remote client authority.</td></tr>
+      <tr><td><code>HOLOGRAM_LOG</code> / <code>RUST_LOG</code></td><td>Tracing filter.</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>OTLP/gRPC collector endpoint.</td></tr>
+      <tr><td><code>OTEL_SERVICE_NAME</code></td><td>Telemetry service identity.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Remote safety</h2>
+  <p>A non-loopback server listener requires authentication. Non-loopback client endpoints require HTTPS. Authentication, authorization, TLS, and integrity failures never trigger fallback to a different authority.</p>
+</DocsLayout>

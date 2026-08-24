@@ -1,0 +1,66 @@
+---
+import '../styles/global.css';
+
+const {
+  title,
+  description = 'Documentation for the local-first, remote-capable Hologram module host.',
+} = Astro.props;
+const pathname = Astro.url.pathname;
+const pageTitle = title === 'Hologram Live' ? title : `${title} · Hologram Live`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#090b11" />
+    <title>{pageTitle}</title>
+    <script is:inline>
+      const savedTheme = localStorage.getItem('hologram-theme');
+      const preferredTheme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = savedTheme ?? preferredTheme;
+    </script>
+  </head>
+  <body>
+    <div class="site-glow" aria-hidden="true"></div>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/" aria-label="Hologram Live home">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span>Hologram <strong>Live</strong></span>
+        </a>
+        <nav class="top-nav" aria-label="Primary navigation">
+          <a class:list={[{ active: pathname.startsWith('/docs') }]} href="/docs/getting-started">Docs</a>
+          <a href="/docs/api-reference">API</a>
+          <a href="/docs/architecture">Architecture</a>
+        </nav>
+        <div class="header-actions">
+          <a class="api-pill" href="http://127.0.0.1:11435/docs">Open local API <span>↗</span></a>
+          <button class="theme-toggle" type="button" aria-label="Toggle color theme">
+            <span class="theme-sun">☼</span><span class="theme-moon">◐</span>
+          </button>
+        </div>
+      </div>
+    </header>
+    <main><slot /></main>
+    <footer class="site-footer">
+      <div>
+        <a class="brand footer-brand" href="/"><span class="brand-mark"><span></span></span> Hologram Live</a>
+        <p>A local-first module host with explicit boundaries.</p>
+      </div>
+      <div class="footer-links">
+        <a href="/docs/getting-started">Documentation</a>
+        <a href="/docs/api-reference">API reference</a>
+        <a href="/docs/security">Security</a>
+      </div>
+    </footer>
+    <script is:inline>
+      document.querySelector('.theme-toggle')?.addEventListener('click', () => {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem('hologram-theme', next);
+      });
+    </script>
+  </body>
+</html>

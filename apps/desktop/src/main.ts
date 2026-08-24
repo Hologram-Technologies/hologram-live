@@ -6,7 +6,23 @@ import "./styles.css";
 type Action = "service_start" | "service_stop" | "service_restart";
 type ServiceState = "ready" | "stopped" | "unknown";
 type Theme = "light" | "dark";
-type View = "overview" | "chat" | "files" | "modules";
+type View = "console" | "chat" | "files" | "modules";
+
+type HealthInfo = {
+  status: string;
+  version: string;
+  role: string;
+  modules_ready: number;
+};
+
+type SystemInfo = {
+  host: string;
+  cores: number;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  disk_used_bytes: number;
+  disk_total_bytes: number;
+};
 
 type ModuleInfo = {
   id: string;
@@ -38,21 +54,12 @@ type Conversation = {
   created_at_millis: number;
   updated_at_millis: number;
   messages: ConversationMessage[];
-};
-
-const pageCopy: Record<View, { title: string; description: string }> = {
-  overview: { title: "Overview", description: "Your local Hologram workspace" },
-  chat: { title: "Chat", description: "Conversation threads saved to local history" },
-  files: { title: "Files", description: "Add, browse, and download stored content" },
-  modules: { title: "Modules", description: "Capabilities available to Hologram" },
+  archived?: boolean;
 };
 
 const notice = document.querySelector<HTMLDivElement>("#notice")!;
 const modules = document.querySelector<HTMLDivElement>("#modules")!;
 const objects = document.querySelector<HTMLDivElement>("#objects")!;
-const moduleCount = document.querySelector<HTMLElement>("#module-count")!;
-const objectCount = document.querySelector<HTMLElement>("#object-count")!;
-const threadCount = document.querySelector<HTMLElement>("#thread-count")!;
 const navModuleCount = document.querySelector<HTMLElement>("#nav-module-count")!;
 const navObjectCount = document.querySelector<HTMLElement>("#nav-object-count")!;
 const navThreadCount = document.querySelector<HTMLElement>("#nav-thread-count")!;
@@ -66,18 +73,36 @@ const chatScroll = document.querySelector<HTMLDivElement>("#chat-scroll")!;
 const messages = document.querySelector<HTMLDivElement>("#messages")!;
 const chatForm = document.querySelector<HTMLFormElement>("#chat-form")!;
 const chatInput = document.querySelector<HTMLTextAreaElement>("#chat-input")!;
-const serviceTitle = document.querySelector<HTMLElement>("#service-title")!;
-const serviceDescription = document.querySelector<HTMLElement>("#service-description")!;
+const serviceMeta = document.querySelector<HTMLElement>("#service-meta")!;
+const pageDescription = document.querySelector<HTMLElement>("#page-description")!;
+const roleText = document.querySelector<HTMLElement>("#role-text")!;
+const apiPill = document.querySelector<HTMLElement>("#api-pill")!;
+const appVersion = document.querySelector<HTMLElement>("#app-version")!;
+const systemDevice = document.querySelector<HTMLElement>("#system-device")!;
+const storeBytes = document.querySelector<HTMLElement>("#store-bytes")!;
+const storeCaption = document.querySelector<HTMLElement>("#store-caption")!;
+const modulesReady = document.querySelector<HTMLElement>("#modules-ready")!;
+const operationsCount = document.querySelector<HTMLElement>("#operations-count")!;
+const tileThreads = document.querySelector<HTMLElement>("#tile-threads")!;
+const tileMessages = document.querySelector<HTMLElement>("#tile-messages")!;
+const metricObjects = document.querySelector<HTMLElement>("#metric-objects")!;
+const metricModules = document.querySelector<HTMLElement>("#metric-modules")!;
+const metricThreads = document.querySelector<HTMLElement>("#metric-threads")!;
+const consoleModules = document.querySelector<HTMLElement>("#console-modules")!;
+const sidebarCollapse = document.querySelector<HTMLButtonElement>("#sidebar-collapse")!;
 const themeToggle = document.querySelector<HTMLButtonElement>("#theme-toggle")!;
 const themeIcon = document.querySelector<HTMLElement>("#theme-icon")!;
 const themeLabel = document.querySelector<HTMLElement>("#theme-label")!;
 let currentState: ServiceState = "unknown";
+let health: HealthInfo | null = null;
+let apiAddress: string | null = null;
 let isBusy = false;
 let noticeTimer: number | undefined;
 let themePreference = storedTheme();
 let conversations: Conversation[] = [];
 let activeThreadId: string | null = null;
 let chatBusy = false;
+let archiveExpanded = false;
 
 function storedTheme(): Theme | null {
   try {
@@ -133,21 +158,23 @@ function setState(value: ServiceState) {
   document.querySelectorAll<HTMLElement>(".state-label").forEach((label) => {
     label.textContent = value === "ready" ? "Ready" : value === "stopped" ? "Stopped" : "Checking";
   });
-  serviceTitle.textContent = value === "ready" ? "Hologram is ready" : value === "stopped" ? "Hologram is stopped" : "Connecting to Hologram";
-  serviceDescription.textContent = value === "ready"
-    ? "Your modules and local files are available."
-    : value === "stopped"
-      ? "Start Hologram to use your local workspace."
-      : "Checking that your modules and files are available.";
+  roleText.textContent = value === "ready" ? (health?.role ?? "node") : value === "stopped" ? "stopped" : "checking";
+  renderIdentity();
   syncControls();
 }
 
 function showNotice(message: string, tone: "neutral" | "success" | "error" = "neutral", persistent = false) {
   window.clearTimeout(noticeTimer);
+  // Only failures interrupt. Routine progress is already visible in the status pills,
+  // and a toast over the composer was covering the send button.
+  if (tone !== "error") {
+    notice.classList.add("is-hidden");
+    return;
+  }
   notice.textContent = message;
   notice.className = `notice ${tone}`;
   if (!persistent) {
-    noticeTimer = window.setTimeout(() => notice.classList.add("is-hidden"), 3200);
+    noticeTimer = window.setTimeout(() => notice.classList.add("is-hidden"), 5000);
   }
 }
 
@@ -160,8 +187,6 @@ function showView(view: View) {
     item.classList.toggle("active", active);
     active ? item.setAttribute("aria-current", "page") : item.removeAttribute("aria-current");
   });
-  document.querySelector("#page-title")!.textContent = pageCopy[view].title;
-  document.querySelector("#page-description")!.textContent = pageCopy[view].description;
   content.classList.toggle("chat-content", view === "chat");
   if (view === "chat" && currentState === "ready") {
     window.setTimeout(() => chatInput.focus(), 0);
@@ -194,11 +219,17 @@ async function execute(action: Action) {
 
 async function refresh() {
   try {
-    await invoke<string>("service_status");
+    const status = await invoke<string>("service_status");
+    try {
+      health = JSON.parse(status) as HealthInfo;
+    } catch {
+      health = null;
+    }
     setState("ready");
     const results = await Promise.all([refreshModules(), refreshObjects(), refreshChatThreads(true)]);
     showNotice(results.every(Boolean) ? "Everything is up to date." : "Some items couldn’t be loaded.", results.every(Boolean) ? "success" : "error");
   } catch {
+    health = null;
     setState("stopped");
     showNotice("Start Hologram to use your local workspace.", "neutral");
     renderModules([], true);
@@ -272,12 +303,14 @@ async function refreshChatThreads(selectFirst = false) {
   try {
     const result = await invoke<string>("history_list");
     conversations = JSON.parse(result) as Conversation[];
-    setThreadCount(String(conversations.length));
+    const unarchived = conversations.filter((item) => item.archived !== true);
+    setThreadCount(String(unarchived.length));
+    tileMessages.textContent = String(unarchived.reduce((total, item) => total + item.messages.length, 0));
     if (activeThreadId !== null && !conversations.some((item) => item.id === activeThreadId)) {
       activeThreadId = null;
     }
-    if (activeThreadId === null && selectFirst && conversations.length > 0) {
-      activeThreadId = conversations[0].id;
+    if (activeThreadId === null && selectFirst && unarchived.length > 0) {
+      activeThreadId = unarchived[0].id;
     }
     renderThreadList();
     const active = conversations.find((item) => item.id === activeThreadId);
@@ -286,6 +319,7 @@ async function refreshChatThreads(selectFirst = false) {
     return true;
   } catch (error) {
     setThreadCount("—");
+    tileMessages.textContent = "—";
     threads.innerHTML = '<div class="thread-empty">Chats couldn’t be loaded.</div>';
     renderChatUnavailable("Chat history couldn’t be loaded.");
     showNotice(friendlyError(error), "error", true);
@@ -293,24 +327,76 @@ async function refreshChatThreads(selectFirst = false) {
   }
 }
 
-function renderThreadList() {
-  const query = threadSearch.value.trim().toLocaleLowerCase();
-  const filtered = conversations.filter((item) => item.title.toLocaleLowerCase().includes(query));
-  if (filtered.length === 0) {
-    threads.innerHTML = `<div class="thread-empty">${query === "" ? "No chats yet." : "No matching chats."}</div>`;
-    return;
-  }
-  threads.innerHTML = filtered.map((conversation) => {
-    const lastMessage = conversation.messages.at(-1)?.content.replace(/\s+/g, " ").trim() || "No messages yet";
-    return `<button class="thread-item${conversation.id === activeThreadId ? " active" : ""}" data-thread-id="${escapeHtml(conversation.id)}" type="button">
+function threadRow(conversation: Conversation) {
+  const lastMessage = conversation.messages.at(-1)?.content.replace(/\s+/g, " ").trim() || "No messages yet";
+  const archived = conversation.archived === true;
+  return `<div class="thread-row${conversation.id === activeThreadId ? " active" : ""}">
+    <button class="thread-item" data-thread-id="${escapeHtml(conversation.id)}" type="button">
       <span class="thread-glyph" aria-hidden="true">◌</span>
       <span><strong>${escapeHtml(conversation.title)}</strong><small>${escapeHtml(lastMessage)}</small></span>
       <time>${escapeHtml(formatThreadTime(conversation.updated_at_millis))}</time>
-    </button>`;
-  }).join("");
+    </button>
+    <button class="thread-archive command-button" data-when="ready" data-archive-id="${escapeHtml(conversation.id)}" data-archived="${archived}" type="button"
+      title="${archived ? "Restore chat" : "Archive chat"}" aria-label="${archived ? "Restore chat" : "Archive chat"}">${archived ? "↩" : "▤"}</button>
+  </div>`;
+}
+
+function renderThreadList() {
+  const query = threadSearch.value.trim().toLocaleLowerCase();
+  const matches = conversations.filter((item) => item.title.toLocaleLowerCase().includes(query));
+  const active = matches.filter((item) => item.archived !== true);
+  const archived = matches.filter((item) => item.archived === true);
+
+  if (matches.length === 0) {
+    threads.innerHTML = `<div class="thread-empty">${query === "" ? "No chats yet." : "No matching chats."}</div>`;
+    return;
+  }
+
+  const activeMarkup = active.length > 0
+    ? active.map(threadRow).join("")
+    : `<div class="thread-empty">${query === "" ? "No active chats." : "No matching active chats."}</div>`;
+  const archivedMarkup = archived.length === 0
+    ? ""
+    : `<div class="thread-group">
+        <button id="archive-toggle" class="thread-group-head" type="button" aria-expanded="${archiveExpanded}">
+          <span class="thread-group-caret" aria-hidden="true">${archiveExpanded ? "⌄" : "›"}</span>
+          <span>ARCHIVED</span>
+          <span class="thread-group-count">${archived.length}</span>
+        </button>
+        ${archiveExpanded ? archived.map(threadRow).join("") : ""}
+      </div>`;
+  threads.innerHTML = activeMarkup + archivedMarkup;
+
   threads.querySelectorAll<HTMLButtonElement>(".thread-item").forEach((button) => {
     button.addEventListener("click", () => void selectThread(button.dataset.threadId!));
   });
+  threads.querySelectorAll<HTMLButtonElement>(".thread-archive").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void setThreadArchived(button.dataset.archiveId!, button.dataset.archived !== "true");
+    });
+  });
+  threads.querySelector<HTMLButtonElement>("#archive-toggle")?.addEventListener("click", () => {
+    archiveExpanded = !archiveExpanded;
+    renderThreadList();
+  });
+  syncControls();
+}
+
+async function setThreadArchived(id: string, archived: boolean) {
+  setBusy(true);
+  try {
+    await invoke<string>("history_archive", { id, archived });
+    if (archived && activeThreadId === id) {
+      activeThreadId = null;
+    }
+    await refreshChatThreads(archived);
+    showNotice(archived ? "Chat archived." : "Chat restored.", "success");
+  } catch (error) {
+    showNotice(friendlyError(error), "error", true);
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function selectThread(id: string) {
@@ -493,11 +579,17 @@ function formatMessageTime(value: number) {
 
 function renderModules(items: ModuleInfo[], unavailable = false) {
   setModuleCount(unavailable ? "—" : String(items.length));
+  const ready = items.filter((module) => module.state === "ready").length;
+  modulesReady.textContent = unavailable ? "—" : `${ready} / ${items.length}`;
+  operationsCount.textContent = unavailable
+    ? "—"
+    : String(items.reduce((total, module) => total + module.operations.length, 0));
+  renderConsoleModules(items, unavailable);
   if (items.length === 0) {
     modules.innerHTML = unavailable
-      ? emptyState("◇", "Hologram is stopped", "Start Hologram to see its available modules.", "Go to Overview", "open-overview")
+      ? emptyState("◇", "Hologram is stopped", "Start Hologram to see its available modules.", "Go to Console", "open-console")
       : emptyState("◇", "No modules are enabled", "Enabled modules will appear here when they are available.");
-    modules.querySelector(".open-overview")?.addEventListener("click", () => showView("overview"));
+    modules.querySelector(".open-console")?.addEventListener("click", () => showView("console"));
     syncControls();
     return;
   }
@@ -512,11 +604,16 @@ function renderModules(items: ModuleInfo[], unavailable = false) {
 
 function renderObjects(items: ObjectMetadata[], unavailable = false) {
   setObjectCount(unavailable ? "—" : String(items.length));
+  const bytes = items.reduce((total, item) => total + item.size, 0);
+  storeBytes.textContent = unavailable ? "—" : formatBytes(bytes);
+  storeCaption.textContent = unavailable
+    ? "content-addressed objects"
+    : `across ${items.length} object${items.length === 1 ? "" : "s"}`;
   if (items.length === 0) {
     objects.innerHTML = unavailable
-      ? emptyState("□", "Hologram is stopped", "Start Hologram to browse your local files.", "Go to Overview", "open-overview")
+      ? emptyState("□", "Hologram is stopped", "Start Hologram to browse your local files.", "Go to Console", "open-console")
       : emptyState("+", "Add your first file", "Files you add to Hologram will appear here.", "Add file", "empty-upload");
-    objects.querySelector(".open-overview")?.addEventListener("click", () => showView("overview"));
+    objects.querySelector(".open-console")?.addEventListener("click", () => showView("console"));
     objects.querySelector(".empty-upload")?.addEventListener("click", () => void uploadFile());
     syncControls();
     return;
@@ -590,18 +687,82 @@ async function renameObject(item: ObjectMetadata, filename: string) {
 }
 
 function setModuleCount(value: string) {
-  moduleCount.textContent = value;
   navModuleCount.textContent = value;
+  metricModules.textContent = value;
 }
 
 function setObjectCount(value: string) {
-  objectCount.textContent = value;
   navObjectCount.textContent = value;
+  metricObjects.textContent = value;
 }
 
 function setThreadCount(value: string) {
-  threadCount.textContent = value;
   navThreadCount.textContent = value;
+  metricThreads.textContent = value;
+  tileThreads.textContent = value;
+}
+
+function renderIdentity() {
+  const parts = currentState === "ready" && health !== null
+    ? [health.role, `v${health.version}`, apiAddress].filter((part): part is string => Boolean(part))
+    : [];
+  serviceMeta.textContent = parts.length > 0 ? parts.join(" · ") : "local module host";
+  appVersion.textContent = health !== null ? `v${health.version}` : "—";
+  pageDescription.textContent = currentState === "ready" && health !== null
+    ? `${health.role} · ${health.modules_ready} module${health.modules_ready === 1 ? "" : "s"} ready${apiAddress === null ? "" : ` · ${apiAddress}`}`
+    : currentState === "stopped"
+      ? "Start Hologram to use your local workspace"
+      : "Checking your local workspace…";
+}
+
+// The address is parsed out of `config show`, which emits TOML rather than JSON.
+async function refreshApiAddress() {
+  try {
+    const config = await invoke<string>("config_show");
+    apiAddress = /^\s*listen\s*=\s*"([^"]+)"/m.exec(config)?.[1] ?? null;
+  } catch {
+    apiAddress = null;
+  }
+  apiPill.textContent = apiAddress === null ? "API —" : `API ${apiAddress}`;
+  renderIdentity();
+}
+
+async function refreshSystemInfo() {
+  try {
+    const info = await invoke<SystemInfo>("system_info");
+    setMeter("disk", info.disk_used_bytes, info.disk_total_bytes);
+    setMeter("memory", info.memory_used_bytes, info.memory_total_bytes);
+    systemDevice.textContent = info.cores > 0 ? `${info.host} · ${info.cores} cores` : info.host;
+  } catch {
+    systemDevice.textContent = "This device";
+  }
+}
+
+function setMeter(name: string, used: number, total: number) {
+  const meter = document.querySelector<HTMLElement>(`.meter[data-meter="${name}"]`);
+  if (meter === null) return;
+  const value = meter.querySelector<HTMLElement>(".meter-value")!;
+  const fill = meter.querySelector<HTMLElement>(".meter-fill")!;
+  if (total <= 0) {
+    value.textContent = "—";
+    // Width is set through CSSOM: the content security policy forbids style attributes.
+    fill.style.width = "0%";
+    return;
+  }
+  value.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
+  fill.style.width = `${Math.min(100, Math.round((used / total) * 100))}%`;
+}
+
+function renderConsoleModules(items: ModuleInfo[], unavailable = false) {
+  if (unavailable || items.length === 0) {
+    consoleModules.innerHTML = `<p class="preset-empty">${unavailable ? "Start Hologram to see its modules." : "No modules are enabled."}</p>`;
+    return;
+  }
+  consoleModules.innerHTML = items.slice(0, 3).map((module) => `<article class="preset-card">
+    <div><strong>${escapeHtml(module.name)}</strong><span class="module-state">${escapeHtml(module.state)}</span></div>
+    <p>${module.operations.length} operation${module.operations.length === 1 ? "" : "s"} · v${escapeHtml(module.version)}</p>
+    <code>${escapeHtml(module.id)}</code>
+  </article>`).join("");
 }
 
 function emptyState(symbol: string, title: string, copy: string, action?: string, actionClass?: string) {
@@ -620,8 +781,14 @@ function safeFilename(item: ObjectMetadata) {
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  const units = ["KiB", "MiB", "GiB", "TiB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
 }
 
 function friendlyError(error: unknown) {
@@ -679,5 +846,233 @@ void listen<ServiceState>("service-state-changed", (event) => {
   }
 });
 
+// --- Text size -------------------------------------------------------------
+// One custom property scales every font size; layout stays in pixels.
+const TEXT_SCALES = [0.9, 1, 1.1, 1.25, 1.4, 1.6];
+const textSmaller = document.querySelector<HTMLButtonElement>("#text-smaller")!;
+const textLarger = document.querySelector<HTMLButtonElement>("#text-larger")!;
+let textScaleIndex = storedTextScaleIndex();
+
+function storedTextScaleIndex() {
+  try {
+    const value = Number(window.localStorage.getItem("hologram-text-scale"));
+    const index = TEXT_SCALES.indexOf(value);
+    return index === -1 ? TEXT_SCALES.indexOf(1.1) : index;
+  } catch {
+    return TEXT_SCALES.indexOf(1.1);
+  }
+}
+
+function applyTextScale(index: number, announce = false) {
+  textScaleIndex = Math.min(TEXT_SCALES.length - 1, Math.max(0, index));
+  const scale = TEXT_SCALES[textScaleIndex];
+  document.documentElement.style.setProperty("--text-scale", String(scale));
+  textSmaller.disabled = textScaleIndex === 0;
+  textLarger.disabled = textScaleIndex === TEXT_SCALES.length - 1;
+  try {
+    window.localStorage.setItem("hologram-text-scale", String(scale));
+  } catch {
+    // The size still applies for this session.
+  }
+  if (announce) showNotice(`Text size ${Math.round(scale * 100)}%.`, "neutral");
+}
+
+textSmaller.addEventListener("click", () => applyTextScale(textScaleIndex - 1, true));
+textLarger.addEventListener("click", () => applyTextScale(textScaleIndex + 1, true));
+
+// --- Command palette -------------------------------------------------------
+type Command = {
+  id: string;
+  label: string;
+  hint: string;
+  run: () => void;
+  enabled?: () => boolean;
+};
+
+const palette = document.querySelector<HTMLDivElement>("#palette")!;
+const paletteScrim = document.querySelector<HTMLDivElement>("#palette-scrim")!;
+const paletteInput = document.querySelector<HTMLInputElement>("#palette-input")!;
+const paletteList = document.querySelector<HTMLDivElement>("#palette-list")!;
+let paletteIndex = 0;
+let paletteMatches: Command[] = [];
+
+const commands: Command[] = [
+  { id: "console", label: "Go to Console", hint: "View", run: () => showView("console") },
+  { id: "chat", label: "Go to Chat", hint: "View", run: () => showView("chat") },
+  { id: "files", label: "Go to Files", hint: "View", run: () => showView("files") },
+  { id: "modules", label: "Go to Modules", hint: "View", run: () => showView("modules") },
+  {
+    id: "new-chat",
+    label: "New chat",
+    hint: "Chat",
+    enabled: () => currentState === "ready",
+    run: () => {
+      showView("chat");
+      renderNewChat();
+    },
+  },
+  {
+    id: "archive-active",
+    label: "Archive current chat",
+    hint: "Chat",
+    enabled: () => currentState === "ready" && activeThreadId !== null,
+    run: () => void setThreadArchived(activeThreadId!, true),
+  },
+  {
+    id: "add-file",
+    label: "Add file",
+    hint: "Files",
+    enabled: () => currentState === "ready",
+    run: () => void uploadFile(),
+  },
+  { id: "refresh", label: "Refresh everything", hint: "Service", run: () => void refresh() },
+  {
+    id: "start",
+    label: "Start Hologram",
+    hint: "Service",
+    enabled: () => currentState === "stopped",
+    run: () => void execute("service_start"),
+  },
+  {
+    id: "restart",
+    label: "Restart Hologram",
+    hint: "Service",
+    enabled: () => currentState === "ready",
+    run: () => void execute("service_restart"),
+  },
+  {
+    id: "stop",
+    label: "Stop Hologram",
+    hint: "Service",
+    enabled: () => currentState === "ready",
+    run: () => void execute("service_stop"),
+  },
+  {
+    id: "theme",
+    label: "Toggle light / dark",
+    hint: "Appearance",
+    run: () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark", true),
+  },
+  { id: "text-larger", label: "Larger text", hint: "Appearance", run: () => applyTextScale(textScaleIndex + 1, true) },
+  { id: "text-smaller", label: "Smaller text", hint: "Appearance", run: () => applyTextScale(textScaleIndex - 1, true) },
+  {
+    id: "sidebar",
+    label: "Toggle sidebar",
+    hint: "Appearance",
+    run: () => sidebarCollapse.click(),
+  },
+];
+
+function renderPalette() {
+  const query = paletteInput.value.trim().toLocaleLowerCase();
+  paletteMatches = commands.filter(
+    (command) =>
+      (command.enabled === undefined || command.enabled()) &&
+      (query === "" || command.label.toLocaleLowerCase().includes(query) || command.hint.toLocaleLowerCase().includes(query)),
+  );
+  paletteIndex = Math.min(paletteIndex, Math.max(0, paletteMatches.length - 1));
+  if (paletteMatches.length === 0) {
+    paletteList.innerHTML = '<p class="palette-empty">No matching commands.</p>';
+    return;
+  }
+  paletteList.innerHTML = paletteMatches
+    .map(
+      (command, index) => `<button class="palette-item${index === paletteIndex ? " active" : ""}" role="option"
+        aria-selected="${index === paletteIndex}" data-index="${index}" type="button">
+        <span>${escapeHtml(command.label)}</span><small>${escapeHtml(command.hint)}</small>
+      </button>`,
+    )
+    .join("");
+  paletteList.querySelectorAll<HTMLButtonElement>(".palette-item").forEach((button) => {
+    button.addEventListener("click", () => runPalette(Number(button.dataset.index)));
+  });
+}
+
+function openPalette() {
+  paletteInput.value = "";
+  paletteIndex = 0;
+  palette.hidden = false;
+  renderPalette();
+  paletteInput.focus();
+}
+
+function closePalette() {
+  palette.hidden = true;
+}
+
+function runPalette(index: number) {
+  const command = paletteMatches[index];
+  closePalette();
+  command?.run();
+}
+
+paletteInput.addEventListener("input", () => {
+  paletteIndex = 0;
+  renderPalette();
+});
+paletteScrim.addEventListener("click", closePalette);
+paletteInput.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    paletteIndex = Math.min(paletteMatches.length - 1, paletteIndex + 1);
+    renderPalette();
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    paletteIndex = Math.max(0, paletteIndex - 1);
+    renderPalette();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    runPalette(paletteIndex);
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  const accel = event.metaKey || event.ctrlKey;
+  if (accel && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    palette.hidden ? openPalette() : closePalette();
+    return;
+  }
+  if (event.key === "Escape" && !palette.hidden) {
+    event.preventDefault();
+    closePalette();
+    return;
+  }
+  if (!accel) return;
+  if (event.key === "=" || event.key === "+") {
+    event.preventDefault();
+    applyTextScale(textScaleIndex + 1, true);
+  } else if (event.key === "-" || event.key === "_") {
+    event.preventDefault();
+    applyTextScale(textScaleIndex - 1, true);
+  } else if (event.key === "0") {
+    event.preventDefault();
+    applyTextScale(TEXT_SCALES.indexOf(1.1), true);
+  }
+});
+
+sidebarCollapse.addEventListener("click", () => {
+  const collapsed = document.body.classList.toggle("sidebar-collapsed");
+  sidebarCollapse.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  sidebarCollapse.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  try {
+    window.localStorage.setItem("hologram-sidebar", collapsed ? "collapsed" : "expanded");
+  } catch {
+    // The choice still applies for this session.
+  }
+});
+
+try {
+  if (window.localStorage.getItem("hologram-sidebar") === "collapsed") {
+    document.body.classList.add("sidebar-collapsed");
+  }
+} catch {
+  // Default to the expanded sidebar.
+}
+
+applyTextScale(textScaleIndex);
 setState("unknown");
+void refreshApiAddress();
+void refreshSystemInfo();
+window.setInterval(() => void refreshSystemInfo(), 5000);
 void refresh();

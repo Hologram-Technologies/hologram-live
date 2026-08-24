@@ -13,6 +13,8 @@ message HoloImportRequest { string name = 1; bytes content = 2; }
 message HoloRunRequest { string kappa = 1; repeated bytes inputs = 2; }
 message HistoryCreateRequest { string title = 1; }
 message HistoryAppendRequest { string id = 1; string role = 2; string content = 3; }
+message HistoryListRequest { bool include_archived = 1; }
+message HistoryArchiveRequest { string id = 1; bool archived = 2; }
 message ChatSendRequest { string id = 1; string content = 2; }
 message FileRenameRequest { string id = 1; string filename = 2; }
 message ObjectPutRequest {
@@ -42,7 +44,7 @@ message RpcRequest {
     HoloRunRequest holo_run = 16;
     Empty holo_resident = 17;
     HistoryCreateRequest history_create = 18;
-    Empty history_list = 19;
+    HistoryListRequest history_list = 19;
     IdRequest history_get = 20;
     HistoryAppendRequest history_append = 21;
     IdRequest history_delete = 22;
@@ -54,6 +56,7 @@ message RpcRequest {
     IdRequest files_get = 28;
     ChatSendRequest chat_send = 29;
     FileRenameRequest files_rename = 30;
+    HistoryArchiveRequest history_archive = 31;
   }
 }
 
@@ -138,6 +141,7 @@ message Conversation {
   uint64 created_at_millis = 3;
   uint64 updated_at_millis = 4;
   repeated ConversationMessage messages = 5;
+  bool archived = 6;
 }
 
 message NodeRecord {

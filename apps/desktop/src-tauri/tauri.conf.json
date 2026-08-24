@@ -13,10 +13,12 @@
     "windows": [
       {
         "title": "Hologram",
-        "width": 960,
-        "height": 680,
-        "minWidth": 560,
-        "minHeight": 480
+        "width": 1180,
+        "height": 780,
+        "minWidth": 720,
+        "minHeight": 560,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

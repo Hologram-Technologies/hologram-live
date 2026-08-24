@@ -32,6 +32,7 @@ pub mod operation {
     pub const HISTORY_GET: &str = "history.get";
     pub const HISTORY_APPEND: &str = "history.append";
     pub const HISTORY_DELETE: &str = "history.delete";
+    pub const HISTORY_ARCHIVE: &str = "history.archive";
     pub const CHAT_SEND: &str = "chat.send";
     pub const NODES_LIST: &str = "nodes.list";
     pub const NODES_HEARTBEAT: &str = "nodes.heartbeat";
@@ -147,6 +148,9 @@ pub struct Conversation {
     pub created_at_millis: u64,
     pub updated_at_millis: u64,
     pub messages: Vec<ConversationMessage>,
+    /// Defaulted so conversations written before archiving existed still load.
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -218,7 +222,10 @@ pub enum RpcRequest {
     HistoryCreate {
         title: String,
     },
-    HistoryList,
+    HistoryList {
+        #[serde(default)]
+        include_archived: bool,
+    },
     HistoryGet {
         id: String,
     },
@@ -229,6 +236,10 @@ pub enum RpcRequest {
     },
     HistoryDelete {
         id: String,
+    },
+    HistoryArchive {
+        id: String,
+        archived: bool,
     },
     ChatSend {
         id: String,
@@ -266,10 +277,11 @@ impl RpcRequest {
             Self::HoloRun { .. } => operation::HOLO_RUN,
             Self::HoloResident => operation::HOLO_RESIDENT,
             Self::HistoryCreate { .. } => operation::HISTORY_CREATE,
-            Self::HistoryList => operation::HISTORY_LIST,
+            Self::HistoryList { .. } => operation::HISTORY_LIST,
             Self::HistoryGet { .. } => operation::HISTORY_GET,
             Self::HistoryAppend { .. } => operation::HISTORY_APPEND,
             Self::HistoryDelete { .. } => operation::HISTORY_DELETE,
+            Self::HistoryArchive { .. } => operation::HISTORY_ARCHIVE,
             Self::ChatSend { .. } => operation::CHAT_SEND,
             Self::NodesList => operation::NODES_LIST,
             Self::NodeHeartbeat { .. } => operation::NODES_HEARTBEAT,
@@ -290,7 +302,7 @@ impl RpcRequest {
             | Self::HoloInspect { .. }
             | Self::HoloVerify { .. }
             | Self::HoloResident
-            | Self::HistoryList
+            | Self::HistoryList { .. }
             | Self::HistoryGet { .. }
             | Self::NodesList => OperationKind::Read,
             Self::HoloRun { .. } => OperationKind::Stream,

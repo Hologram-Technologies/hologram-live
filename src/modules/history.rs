@@ -2,7 +2,7 @@ use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
 use crate::protocol::{operation, Conversation, OperationKind};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -35,6 +35,11 @@ const OPERATIONS: &[OperationDescriptor] = &[
         kind: OperationKind::Mutation,
         fallback_safe_before_dispatch: false,
     },
+    OperationDescriptor {
+        id: operation::HISTORY_ARCHIVE,
+        kind: OperationKind::Mutation,
+        fallback_safe_before_dispatch: false,
+    },
 ];
 
 static DESCRIPTOR: ModuleDescriptor = ModuleDescriptor {
@@ -60,6 +65,7 @@ impl LiveModule for HistoryModule {
                 get(get_history).delete(delete_history),
             )
             .route("/api/v1/history/{id}/messages", post(append_history))
+            .route("/api/v1/history/{id}/archive", post(archive_history))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {
@@ -69,7 +75,14 @@ impl LiveModule for HistoryModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_history, create_history, get_history, append_history, delete_history),
+    paths(
+        list_history,
+        create_history,
+        get_history,
+        append_history,
+        delete_history,
+        archive_history
+    ),
     components(schemas(Conversation, CreateConversationRequest, AppendMessageRequest)),
     tags((name = "history", description = "Conversation history"))
 )]
@@ -86,16 +99,30 @@ pub struct AppendMessageRequest {
     pub content: String,
 }
 
+#[derive(Debug, Default, Deserialize, ToSchema)]
+pub struct ListConversationsQuery {
+    /// Archived conversations are omitted unless this is set.
+    #[serde(default)]
+    pub include_archived: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ArchiveConversationRequest {
+    pub archived: bool,
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/history",
+    params(("include_archived" = Option<bool>, Query, description = "Include archived conversations")),
     responses((status = 200, body = [Conversation]))
 )]
 pub async fn list_history(
     State(state): State<AppState>,
+    Query(query): Query<ListConversationsQuery>,
 ) -> Result<Json<Vec<Conversation>>, HttpError> {
     let history = state.history().clone();
-    let conversations = tokio::task::spawn_blocking(move || history.list())
+    let conversations = tokio::task::spawn_blocking(move || history.list(query.include_archived))
         .await
         .map_err(|error| {
             crate::error::LiveError::Conflict(format!("join history listing: {error}"))
@@ -181,4 +208,27 @@ pub async fn delete_history(
             crate::error::LiveError::Conflict(format!("join history deletion: {error}"))
         })??;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/history/{id}/archive",
+    params(("id" = String, Path, description = "Conversation id")),
+    request_body = ArchiveConversationRequest,
+    responses((status = 200, body = Conversation))
+)]
+pub async fn archive_history(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<ArchiveConversationRequest>,
+) -> Result<Json<Conversation>, HttpError> {
+    let history = state.history().clone();
+    let conversation = tokio::task::spawn_blocking(move || {
+        history.set_archived(&id, request.archived)
+    })
+    .await
+    .map_err(|error| {
+        crate::error::LiveError::Conflict(format!("join history archive: {error}"))
+    })??;
+    Ok(Json(conversation))
 }

@@ -343,10 +343,10 @@ impl AppState {
                     RpcResponse::Conversation,
                 )
             }
-            RpcRequest::HistoryList => {
+            RpcRequest::HistoryList { include_archived } => {
                 let history = self.inner.history.clone();
                 RpcResponse::from_result(
-                    blocking(move || history.list()).await,
+                    blocking(move || history.list(include_archived)).await,
                     RpcResponse::Conversations,
                 )
             }
@@ -361,6 +361,13 @@ impl AppState {
                 let history = self.inner.history.clone();
                 RpcResponse::from_result(
                     blocking(move || history.append(&id, role, content)).await,
+                    RpcResponse::Conversation,
+                )
+            }
+            RpcRequest::HistoryArchive { id, archived } => {
+                let history = self.inner.history.clone();
+                RpcResponse::from_result(
+                    blocking(move || history.set_archived(&id, archived)).await,
                     RpcResponse::Conversation,
                 )
             }

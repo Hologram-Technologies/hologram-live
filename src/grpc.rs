@@ -176,12 +176,17 @@ impl From<RpcRequest> for pb::RpcRequest {
             RpcRequest::HistoryCreate { title } => {
                 Wire::HistoryCreate(pb::HistoryCreateRequest { title })
             }
-            RpcRequest::HistoryList => Wire::HistoryList(empty()),
+            RpcRequest::HistoryList { include_archived } => {
+                Wire::HistoryList(pb::HistoryListRequest { include_archived })
+            }
             RpcRequest::HistoryGet { id } => Wire::HistoryGet(pb::IdRequest { id }),
             RpcRequest::HistoryAppend { id, role, content } => {
                 Wire::HistoryAppend(pb::HistoryAppendRequest { id, role, content })
             }
             RpcRequest::HistoryDelete { id } => Wire::HistoryDelete(pb::IdRequest { id }),
+            RpcRequest::HistoryArchive { id, archived } => {
+                Wire::HistoryArchive(pb::HistoryArchiveRequest { id, archived })
+            }
             RpcRequest::ChatSend { id, content } => {
                 Wire::ChatSend(pb::ChatSendRequest { id, content })
             }
@@ -246,7 +251,9 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
             }),
             Wire::HoloResident(_) => Ok(Self::HoloResident),
             Wire::HistoryCreate(value) => Ok(Self::HistoryCreate { title: value.title }),
-            Wire::HistoryList(_) => Ok(Self::HistoryList),
+            Wire::HistoryList(value) => Ok(Self::HistoryList {
+                include_archived: value.include_archived,
+            }),
             Wire::HistoryGet(value) => Ok(Self::HistoryGet { id: value.id }),
             Wire::HistoryAppend(value) => Ok(Self::HistoryAppend {
                 id: value.id,
@@ -254,6 +261,10 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
                 content: value.content,
             }),
             Wire::HistoryDelete(value) => Ok(Self::HistoryDelete { id: value.id }),
+            Wire::HistoryArchive(value) => Ok(Self::HistoryArchive {
+                id: value.id,
+                archived: value.archived,
+            }),
             Wire::ChatSend(value) => Ok(Self::ChatSend {
                 id: value.id,
                 content: value.content,
@@ -667,6 +678,7 @@ impl From<Conversation> for pb::Conversation {
             created_at_millis: value.created_at_millis,
             updated_at_millis: value.updated_at_millis,
             messages: value.messages.into_iter().map(Into::into).collect(),
+            archived: value.archived,
         }
     }
 }
@@ -679,6 +691,7 @@ impl From<pb::Conversation> for Conversation {
             created_at_millis: value.created_at_millis,
             updated_at_millis: value.updated_at_millis,
             messages: value.messages.into_iter().map(Into::into).collect(),
+            archived: value.archived,
         }
     }
 }

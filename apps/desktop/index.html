@@ -33,6 +33,19 @@
         <div class="terminal-title">Service output</div>
         <pre id="output">Connecting to the local daemon…</pre>
       </section>
+
+      <section class="modules-panel" aria-labelledby="modules-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CAPABILITY MANIFEST</p>
+            <h2 id="modules-heading">Modules</h2>
+          </div>
+          <button id="refresh-modules" class="secondary">Refresh</button>
+        </div>
+        <div id="modules" class="module-grid">
+          <p class="empty">Start the daemon to discover its modules.</p>
+        </div>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

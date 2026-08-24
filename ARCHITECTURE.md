@@ -29,10 +29,13 @@ Modules are trusted Rust implementations compiled into the binary for v1. Each m
 - module dependencies;
 - supported operation IDs;
 - request dispatch behavior.
+- an optional startup hook for module-owned actor trees.
 
 The registry is deterministic and starts dependencies before dependents.
 
 Rust dynamic libraries are intentionally not supported because Rust has no stable plugin ABI and native plugins would inherit all daemon authority. Future untrusted extensions should be WASM components or separate processes with explicit capabilities.
+
+Modules are not actors by default. A module uses its startup context to create Kameo actors only for long-lived state, reconciliation, subscriptions, streams, or bounded background queues. Plain request/response behavior remains ordinary Rust code.
 
 ## Native protocol
 
@@ -54,7 +57,7 @@ Kameo provides process-local actors with bounded mailboxes, actor links, and sup
 
 ## Desktop
 
-The Tauri application in `apps/desktop` bundles and controls the `hologram` executable as a sidecar. Its commands expose a narrow lifecycle/status interface rather than arbitrary shell execution. The desktop build is isolated from the daemon crate.
+The Tauri application in `apps/desktop` bundles and controls the `hologram` executable as a sidecar. Its commands expose a narrow lifecycle/status/module-discovery interface rather than arbitrary shell execution. Module discovery follows `LiveClient` routing, so the configured authority may be the local daemon or a future cloud endpoint. The desktop build is isolated from the daemon crate.
 
 ## Storage
 
@@ -62,4 +65,4 @@ The current content store is a simple content-addressed file store suitable for 
 
 ## `.holo`
 
-The pinned upstream Hologram archive reader/writer is used to create and validate real `.holo` archives. The stable build deliberately limits the dependency feature to `archive`; a future engine module will supply persistent execution.
+The pinned upstream Hologram archive reader/writer and space manifest types create and validate real v3 `.holo` archives. `hologram compile` builds fat archives containing a canonical application manifest and κ-addressed layer blobs. The stable build still excludes compute backends; a future engine module will supply persistent execution.

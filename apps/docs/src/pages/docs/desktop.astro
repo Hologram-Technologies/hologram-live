@@ -6,23 +6,23 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <p>The Tauri application in <code>apps/desktop</code> packages the Rust daemon as a managed sidecar and provides a focused lifecycle dashboard.</p>
 
   <h2>Run in development</h2>
-  <pre><code>cd apps/desktop
-npm install
-npm run dev</code></pre>
+  <pre><code>just tauri
+# equivalent to: cd apps/desktop &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
   <p>The preparation script builds the repository's <code>hologram</code> binary and copies it to Tauri's target-specific sidecar location before the desktop shell starts.</p>
 
   <h2>Build a release bundle</h2>
-  <pre><code>cd apps/desktop
-npm run build</code></pre>
+  <pre><code>just tauri build</code></pre>
   <p>Tauri builds the web frontend, compiles the native shell, and includes the release sidecar in the platform bundle.</p>
 
   <h2>Command boundary</h2>
-  <p>The webview can invoke four application commands:</p>
+  <p>The webview can invoke five application commands:</p>
   <ul>
     <li><code>daemon_start</code></li>
     <li><code>daemon_stop</code></li>
     <li><code>daemon_restart</code></li>
     <li><code>daemon_status</code></li>
+    <li><code>modules_list</code></li>
   </ul>
   <div class="note"><strong>No arbitrary shell bridge</strong>Each command maps to one fixed sidecar argument, keeping the browser-facing authority narrow.</div>
+  <p><code>modules_list</code> reads the daemon's negotiated module manifest and renders available capabilities in the desktop. Because the sidecar uses the normal Hologram configuration, the same surface can target a local service or a future authenticated cloud endpoint.</p>
 </DocsLayout>

@@ -5,30 +5,37 @@ use tauri_plugin_shell::ShellExt;
 
 #[tauri::command]
 async fn daemon_start(app: AppHandle) -> Result<String, String> {
-    run_hologram(&app, "start").await
+    run_hologram(&app, &["start"]).await
 }
 
 #[tauri::command]
 async fn daemon_stop(app: AppHandle) -> Result<String, String> {
-    run_hologram(&app, "stop").await
+    run_hologram(&app, &["stop"]).await
 }
 
 #[tauri::command]
 async fn daemon_restart(app: AppHandle) -> Result<String, String> {
-    run_hologram(&app, "restart").await
+    run_hologram(&app, &["restart"]).await
 }
 
 #[tauri::command]
 async fn daemon_status(app: AppHandle) -> Result<String, String> {
-    run_hologram(&app, "status").await
+    run_hologram(&app, &["status"]).await
 }
 
-async fn run_hologram(app: &AppHandle, command: &'static str) -> Result<String, String> {
-    let output = app
+#[tauri::command]
+async fn modules_list(app: AppHandle) -> Result<String, String> {
+    run_hologram(&app, &["--json", "modules", "list"]).await
+}
+
+async fn run_hologram(app: &AppHandle, arguments: &[&str]) -> Result<String, String> {
+    let command = app
         .shell()
         .sidecar("hologram")
-        .map_err(|error| error.to_string())?
-        .arg(command)
+        .map_err(|error| error.to_string())?;
+    let output = arguments
+        .iter()
+        .fold(command, |command, argument| command.arg(*argument))
         .output()
         .await
         .map_err(|error| error.to_string())?;
@@ -48,7 +55,8 @@ fn main() {
             daemon_start,
             daemon_stop,
             daemon_restart,
-            daemon_status
+            daemon_status,
+            modules_list
         ])
         .run(tauri::generate_context!())
         .expect("run Hologram desktop application");

@@ -1,0 +1,37 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Modules" description="Build modules that work through the local daemon, desktop app, and future cloud service.">
+  <h1>Modules</h1>
+  <p>A Hologram Live module is a trusted, statically linked capability provider. It declares a stable ID, dependencies, and operation IDs; contributes HTTP routes to the shared OpenAPI document; and receives the same authenticated dispatch path whether the caller selected a local daemon or a cloud endpoint.</p>
+
+  <h2>Client path</h2>
+  <pre><code>desktop / CLI
+      │
+      ▼
+LiveClient ── capability handshake ── local daemon or cloud service
+                                           │
+                                           ▼
+                                  authorized module operation</code></pre>
+  <p>The desktop currently invokes the bundled CLI sidecar through narrow Tauri commands. Module discovery uses <code>hologram --json modules list</code>, so it already follows the CLI's local/remote routing configuration. A later shared client crate can replace the subprocess adapter without changing the server protocol.</p>
+
+  <h2>Actor policy</h2>
+  <p>Do not make every module an actor. Stateless request handlers stay ordinary Rust code. A module that owns long-lived mutable state, background reconciliation, streams, or bounded work queues can use its lifecycle hook to spawn and link Kameo actors through <code>ModuleContext</code>. Durable state still belongs in storage, and remote communication still crosses gRPC.</p>
+
+  <h2>First external integration: Kappa Registry</h2>
+  <p><code>dev.hologram.live.kappa-registry</code> is the first provider boundary. The current implementation is a local content-addressed starter store. The upstream Kappa Registry should be integrated through a narrow client/provider adapter, not absorbed into this workspace as a source dependency: it is a separate server, currently targets a newer Rust toolchain, and exposes several registry protocols of its own.</p>
+  <p>The adapter should first cover health, object lookup, publish, and verification. OCI, Git, Nix, S3, identity, federation, and reconciliation can then be advertised as separate operation capabilities only when the configured registry provides them.</p>
+
+  <h2>Future modules</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Module</th><th>Boundary</th><th>Likely actor use</th></tr></thead>
+    <tbody>
+      <tr><td>Kappa Registry</td><td>Content publish, resolve, verify, and protocol adapters</td><td>Optional reconciliation and subscription actors</td></tr>
+      <tr><td>Chat</td><td>Conversations, messages, model sessions, and streaming</td><td>Per-session stream actors</td></tr>
+      <tr><td>Identity</td><td>Signup, login, token refresh, principals, grants, and revocation</td><td>Optional refresh/revocation watchers</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Documentation contract</h2>
+  <p>Every browser-facing operation needs a Utoipa path so it appears in <code>/openapi.json</code> and Scalar at <code>/docs</code>. Every module also needs at least one enforced public-boundary scenario under <code>features/suites</code>. Native-only operations remain represented in the Protobuf capability manifest.</p>
+</DocsLayout>

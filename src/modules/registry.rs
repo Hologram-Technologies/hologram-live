@@ -30,7 +30,19 @@ impl LiveModule for KappaRegistryModule {
     fn router(&self) -> Router<AppState> {
         Router::new().route("/api/v1/objects", get(list_objects))
     }
+
+    fn openapi(&self) -> utoipa::openapi::OpenApi {
+        <RegistryApiDoc as utoipa::OpenApi>::openapi()
+    }
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(list_objects),
+    components(schemas(ObjectMetadata)),
+    tags((name = "kappa-registry", description = "Content-addressed registry provider"))
+)]
+struct RegistryApiDoc;
 
 #[utoipa::path(
     get,
@@ -40,8 +52,8 @@ impl LiveModule for KappaRegistryModule {
 pub async fn list_objects(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ObjectMetadata>>, HttpError> {
-    let store = state.store().clone();
-    let objects = tokio::task::spawn_blocking(move || store.list(None))
+    let registry = state.registry().clone();
+    let objects = tokio::task::spawn_blocking(move || registry.list_objects())
         .await
         .map_err(|error| {
             crate::error::LiveError::Conflict(format!("join object listing: {error}"))

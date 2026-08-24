@@ -17,9 +17,12 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `utoipa`                                     | OpenAPI generation for the JSON API                               |
 | `scalar_api_reference`                       | self-hosted interactive OpenAPI reference                         |
 | `blake3`                                     | content addressing and update integrity                           |
-| `uor-hologram` (`archive` only)              | canonical `.holo` archive parsing/writing                         |
+| `uor-hologram` (`archive`, `space`)          | canonical `.holo` archives and application manifests              |
 | Tauri (`apps/desktop`)                       | desktop shell and managed `hologram` sidecar                      |
+| Cucumber (development only)                  | executable Gherkin public-boundary scenarios                      |
 
 The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary.
 
 Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the daemon's Cargo dependency graph.
+
+Kappa Registry remains an external service/project. Hologram Live integrates it through the registry provider boundary rather than adding its workspace crates to this dependency graph.

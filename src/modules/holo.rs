@@ -54,7 +54,19 @@ impl LiveModule for HoloModule {
             .route("/api/v1/holo", get(list_holo))
             .route("/api/v1/holo/{kappa}", get(inspect_holo))
     }
+
+    fn openapi(&self) -> utoipa::openapi::OpenApi {
+        <HoloApiDoc as utoipa::OpenApi>::openapi()
+    }
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(list_holo, inspect_holo),
+    components(schemas(HoloInspection)),
+    tags((name = "holo", description = "Hologram application archives"))
+)]
+struct HoloApiDoc;
 
 #[utoipa::path(
     get,

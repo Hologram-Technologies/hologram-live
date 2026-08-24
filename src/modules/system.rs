@@ -58,7 +58,19 @@ impl LiveModule for SystemModule {
             .route("/api/v1/modules", get(list_modules))
             .route("/api/v1/capabilities", get(capabilities))
     }
+
+    fn openapi(&self) -> utoipa::openapi::OpenApi {
+        <SystemApiDoc as utoipa::OpenApi>::openapi()
+    }
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(list_modules, capabilities),
+    components(schemas(ModuleInfo, CapabilityManifest)),
+    tags((name = "system", description = "Host capabilities and module discovery"))
+)]
+struct SystemApiDoc;
 
 #[utoipa::path(
     get,

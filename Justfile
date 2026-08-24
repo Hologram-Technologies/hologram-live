@@ -15,6 +15,14 @@ check:
 test:
     cargo test --all-targets --locked
 
+# Run public-boundary Gherkin scenarios.
+bdd:
+    cargo test --features bdd --test bdd --locked
+
+# Keep production source files small enough to review and refactor.
+file-size:
+    ./scripts/check-file-size.sh
+
 # Run clippy
 clippy:
     cargo clippy --all-targets --locked -- -D warnings
@@ -24,7 +32,7 @@ build:
     cargo build --release --locked
 
 # Verify code
-verify: fmt check test clippy build
+verify: fmt file-size check test clippy bdd build
     ./scripts/smoke.sh ./target/release/hologram
 
 # Run project
@@ -43,3 +51,7 @@ docs:
 # Serve the Astro docs with hot reload.
 docs-dev:
     cd apps/docs && npm install && npm run dev -- --host 127.0.0.1 --port 5432
+
+# Work with the Tauri desktop app. Defaults to `dev`; `just tauri build` creates a bundle.
+tauri action="dev":
+    cd apps/desktop && npm install && npm run "{{action}}"

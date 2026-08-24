@@ -4,6 +4,7 @@ use hologram_live::error::Result;
 use hologram_live::observability::TracingHandle;
 use std::path::PathBuf;
 
+mod compile;
 mod config;
 mod doctor;
 mod files;
@@ -52,6 +53,8 @@ pub struct Cli {
 enum Command {
     /// Create ~/.config/hologram/live.toml.
     Init(init::InitArgs),
+    /// Compile a JSON application manifest into a self-contained .holo archive.
+    Compile(compile::CompileArgs),
     /// Run the module host in the foreground.
     Serve(serve::ServeArgs),
     /// Start the local module host in the background.
@@ -107,6 +110,7 @@ impl Cli {
     pub async fn run(self, tracing_handle: TracingHandle) -> Result<()> {
         match self.command.clone() {
             Command::Init(args) => init::run(self, args).await,
+            Command::Compile(args) => compile::run(self, args).await,
             Command::Serve(args) => serve::run(self, args, tracing_handle).await,
             Command::Start => start::run(self).await,
             Command::Stop => stop::run(self).await,

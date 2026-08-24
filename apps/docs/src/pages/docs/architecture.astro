@@ -19,11 +19,14 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 browser ─────── JSON + HTTP ───────┘</code></pre>
 
   <h2>Actors</h2>
-  <p>Kameo provides process-local actors, bounded mailboxes, links, and supervision. Actor remoting is intentionally not the network API; cross-process work always crosses the authenticated gRPC boundary.</p>
+  <p>Kameo provides process-local actors, bounded mailboxes, links, and supervision. A module lifecycle hook receives a narrow <code>ModuleContext</code> and may create an actor subtree when it owns long-lived mutable work. Request-driven modules remain stateless. Actor remoting is intentionally not the network API; cross-process work always crosses the authenticated gRPC boundary.</p>
 
   <h2>Routing and authority</h2>
   <p>The native client negotiates operation capabilities before choosing a local or remote target. Resources remain attached to the authority that created them, and mutations do not silently retry after an ambiguous transport failure.</p>
 
   <h2>Desktop</h2>
   <p>The Tauri application bundles <code>hologram</code> as a sidecar. The webview receives only narrow lifecycle and status commands—not a general-purpose shell.</p>
+
+  <h2>Identity and permissions</h2>
+  <p>The protocol already authenticates bearer credentials and authorizes stable operation IDs. The identity module will add signup, login, refresh, logout, principal, grant, and revocation operations. Fine-grained policy belongs in the shared authorizer at dispatch—not in individual HTTP handlers—so local and cloud enforcement cannot diverge.</p>
 </DocsLayout>

@@ -37,7 +37,19 @@ impl LiveModule for ControlPlaneModule {
     fn router(&self) -> Router<AppState> {
         Router::new().route("/api/v1/nodes", get(list_nodes))
     }
+
+    fn openapi(&self) -> utoipa::openapi::OpenApi {
+        <ControlPlaneApiDoc as utoipa::OpenApi>::openapi()
+    }
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(list_nodes),
+    components(schemas(NodeRecord)),
+    tags((name = "control-plane", description = "Node inventory"))
+)]
+struct ControlPlaneApiDoc;
 
 #[utoipa::path(
     get,

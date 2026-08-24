@@ -2,11 +2,8 @@ use crate::app::AppState;
 use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
 use crate::grpc;
-use crate::modules;
-use crate::protocol::{
-    CapabilityManifest, Conversation, HealthResponse, HoloInspection, ModuleInfo, NodeRecord,
-    ObjectMetadata,
-};
+use crate::module::ModuleRegistry;
+use crate::protocol::HealthResponse;
 use crate::util::constant_time_eq;
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -18,39 +15,24 @@ use scalar_api_reference::{get_asset_with_mime, scalar_html};
 use serde_json::json;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::Instrument;
-use utoipa::OpenApi;
+use utoipa::openapi::OpenApi as OpenApiDocument;
 
 static REQUEST_IDS: AtomicU64 = AtomicU64::new(1);
 
-#[derive(OpenApi)]
+#[derive(utoipa::OpenApi)]
 #[openapi(
     info(title = "Hologram Live API", version = "1.0.0"),
-    paths(
-        healthz,
-        modules::system::list_modules,
-        modules::system::capabilities,
-        modules::registry::list_objects,
-        modules::holo::list_holo,
-        modules::holo::inspect_holo,
-        modules::history::list_history,
-        modules::control_plane::list_nodes
-    ),
-    components(schemas(
-        ApiError,
-        HealthResponse,
-        ModuleInfo,
-        CapabilityManifest,
-        ObjectMetadata,
-        HoloInspection,
-        Conversation,
-        NodeRecord
-    )),
-    tags(
-        (name = "system", description = "Hologram Live system endpoints"),
-        (name = "modules", description = "Module-contributed endpoints")
-    )
+    paths(healthz),
+    components(schemas(ApiError, HealthResponse)),
+    tags((name = "system", description = "Hologram Live system endpoints"))
 )]
 pub struct ApiDoc;
+
+pub fn openapi_document(modules: &ModuleRegistry) -> OpenApiDocument {
+    let mut document = <ApiDoc as utoipa::OpenApi>::openapi();
+    document.merge(modules.openapi());
+    document
+}
 
 pub async fn serve(state: AppState) -> Result<()> {
     let protected = state
@@ -105,8 +87,8 @@ pub async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(state.health())
 }
 
-async fn openapi() -> Json<utoipa::openapi::OpenApi> {
-    Json(ApiDoc::openapi())
+async fn openapi(State(state): State<AppState>) -> Json<OpenApiDocument> {
+    Json(openapi_document(state.module_registry()))
 }
 
 async fn scalar_reference() -> Html<String> {

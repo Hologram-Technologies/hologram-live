@@ -44,7 +44,19 @@ utoipa = { version = "5", features = ["axum_extras"] }
 # archive reader/writer only. The pinned upstream x86 CPU backend currently
 # depends on unstable AVX-512 intrinsics, so execution is represented by a
 # typed provider seam rather than hidden behind RUSTC_BOOTSTRAP.
-hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "94ecb886811115491a77c8229e494965bea03fc2", default-features = false, features = ["archive"] }
+hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "94ecb886811115491a77c8229e494965bea03fc2", default-features = false, features = ["archive", "space"] }
+
+[dev-dependencies]
+cucumber = "0.23"
+tempfile = "3"
+
+[features]
+bdd = []
+
+[[test]]
+name = "bdd"
+harness = false
+required-features = ["bdd"]
 
 [build-dependencies]
 protoc-bin-vendored = "3"

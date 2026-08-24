@@ -37,6 +37,21 @@ hologram --json files
 hologram history list
 hologram nodes list</code></pre>
 
+  <h2>Compile an application</h2>
+  <p><code>hologram compile</code> packages a JSON application manifest, its capability declaration, and its layer files into a self-contained Hologram v3 archive. Layer paths are relative to the source manifest.</p>
+  <pre><code>&#123;
+  "schema_version": 1,
+  "primary": 0,
+  "requires": "capabilities.json",
+  "layers": [
+    &#123; "kind": "wasm", "path": "app.wasm", "entry": "_start" &#125;,
+    &#123; "kind": "view", "path": "ui/index.html", "surface": "portable" &#125;
+  ]
+&#125;
+
+hologram compile hologram.json --output application.holo</code></pre>
+  <p>Supported layer kinds are <code>wasm</code>, <code>tensor</code>, <code>rootfs</code>, and <code>view</code>. This command assembles canonical application archives; source-language and model compilation remain upstream Hologram compiler responsibilities.</p>
+
   <h2>Operations</h2>
   <p><code>tracing</code> reads or updates the live filter, <code>openapi</code> writes the generated OpenAPI document, and <code>update</code> checks, installs, or rolls back verified releases.</p>
 </DocsLayout>

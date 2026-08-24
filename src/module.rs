@@ -1,9 +1,40 @@
+use crate::actor::ActorSystem;
 use crate::app::AppState;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ModuleInfo, OperationInfo, OperationKind};
 use axum::Router;
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
+use utoipa::openapi::{OpenApi, OpenApiBuilder};
+
+pub type ModuleStartFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+
+/// Narrow process-local services available while a module starts.
+///
+/// A stateful module may spawn and link Kameo actors here. Request-driven
+/// modules should keep the default no-op lifecycle and avoid actor overhead.
+#[derive(Clone)]
+pub struct ModuleContext {
+    actors: ActorSystem,
+    data_dir: PathBuf,
+}
+
+impl ModuleContext {
+    pub(crate) fn new(actors: ActorSystem, data_dir: PathBuf) -> Self {
+        Self { actors, data_dir }
+    }
+
+    pub fn actors(&self) -> &ActorSystem {
+        &self.actors
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct OperationDescriptor {
@@ -24,6 +55,14 @@ pub struct ModuleDescriptor {
 pub trait LiveModule: Send + Sync {
     fn descriptor(&self) -> &'static ModuleDescriptor;
     fn router(&self) -> Router<AppState>;
+
+    fn openapi(&self) -> OpenApi {
+        OpenApiBuilder::new().build()
+    }
+
+    fn start<'a>(&'a self, _context: &'a ModuleContext) -> ModuleStartFuture<'a> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 pub struct ModuleRegistry {
@@ -120,6 +159,23 @@ impl ModuleRegistry {
             router.merge(module.router())
         })
     }
+
+    pub async fn start(&self, context: &ModuleContext) -> Result<()> {
+        for module in &self.modules {
+            module.start(context).await.map_err(|error| {
+                LiveError::Conflict(format!("start module {}: {error}", module.descriptor().id))
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn openapi(&self) -> OpenApi {
+        let mut document = OpenApiBuilder::new().build();
+        for module in &self.modules {
+            document.merge(module.openapi());
+        }
+        document
+    }
 }
 
 fn visit(
@@ -166,5 +222,15 @@ mod tests {
         let registry = ModuleRegistry::build(&config.enabled).expect("resolve");
         assert!(registry.supports(crate::protocol::operation::HOLO_INSPECT));
         assert!(!registry.supports(crate::protocol::operation::HOLO_RUN));
+    }
+
+    #[test]
+    fn enabled_modules_contribute_their_openapi_paths() {
+        let config = crate::config::ModulesConfig::default();
+        let registry = ModuleRegistry::build(&config.enabled).expect("resolve");
+        let document = registry.openapi();
+        assert!(document.paths.paths.contains_key("/api/v1/modules"));
+        assert!(document.paths.paths.contains_key("/api/v1/files"));
+        assert!(document.paths.paths.contains_key("/api/v1/holo/{kappa}"));
     }
 }

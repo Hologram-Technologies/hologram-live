@@ -1,9 +1,10 @@
 use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
-use crate::modules::registry;
-use crate::protocol::{operation, OperationKind};
+use crate::modules::{registry, HttpError};
+use crate::protocol::{operation, ObjectMetadata, OperationKind};
+use axum::extract::State;
 use axum::routing::get;
-use axum::Router;
+use axum::{Json, Router};
 
 const OPERATIONS: &[OperationDescriptor] = &[OperationDescriptor {
     id: operation::FILES_LIST,
@@ -27,6 +28,29 @@ impl LiveModule for FilesModule {
     }
 
     fn router(&self) -> Router<AppState> {
-        Router::new().route("/api/v1/files", get(registry::list_objects))
+        Router::new().route("/api/v1/files", get(list_files))
     }
+
+    fn openapi(&self) -> utoipa::openapi::OpenApi {
+        <FilesApiDoc as utoipa::OpenApi>::openapi()
+    }
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(list_files),
+    components(schemas(ObjectMetadata)),
+    tags((name = "files", description = "Artifact file discovery"))
+)]
+struct FilesApiDoc;
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/files",
+    responses((status = 200, body = [ObjectMetadata]))
+)]
+pub async fn list_files(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ObjectMetadata>>, HttpError> {
+    registry::list_objects(State(state)).await
 }

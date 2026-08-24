@@ -5,12 +5,13 @@ use crate::config::AppConfig;
 use crate::error::{ApiError, LiveError, Result};
 use crate::history::HistoryService;
 use crate::holo::{HoloCatalog, HoloRuntime};
-use crate::module::ModuleRegistry;
+use crate::module::{ModuleContext, ModuleRegistry};
 use crate::nodes::NodeDirectory;
 use crate::observability::TracingHandle;
 use crate::protocol::{
     CapabilityManifest, HealthResponse, ModuleInfo, RpcRequest, RpcResponse, PROTOCOL_VERSION,
 };
+use crate::registry::{LocalRegistryProvider, RegistryProvider};
 use crate::store::ObjectStore;
 use axum::Router;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ struct AppInner {
     config: AppConfig,
     modules: ModuleRegistry,
     store: Arc<ObjectStore>,
+    registry: Arc<dyn RegistryProvider>,
     holo_catalog: Arc<HoloCatalog>,
     holo_runtime: Arc<HoloRuntime>,
     history: Arc<HistoryService>,
@@ -42,6 +44,8 @@ impl AppState {
         config.create_directories()?;
         let modules = ModuleRegistry::build(&config.modules.enabled)?;
         let store = Arc::new(ObjectStore::open(config.paths.data_dir.join("registry"))?);
+        let registry: Arc<dyn RegistryProvider> =
+            Arc::new(LocalRegistryProvider::new(store.clone()));
         let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
         let holo_runtime = Arc::new(HoloRuntime::new(
             holo_catalog.clone(),
@@ -65,11 +69,14 @@ impl AppState {
             config.role.as_str()
         );
         let server_id = format!("blake3:{}", blake3::hash(server_seed.as_bytes()).to_hex());
-        Ok(Self {
+        let module_context =
+            ModuleContext::new(actor_system.clone(), config.paths.data_dir.clone());
+        let state = Self {
             inner: Arc::new(AppInner {
                 config,
                 modules,
                 store,
+                registry,
                 holo_catalog,
                 holo_runtime,
                 history,
@@ -81,7 +88,9 @@ impl AppState {
                 shutdown: Notify::new(),
                 server_id,
             }),
-        })
+        };
+        state.inner.modules.start(&module_context).await?;
+        Ok(state)
     }
 
     pub fn config(&self) -> &AppConfig {
@@ -90,6 +99,10 @@ impl AppState {
 
     pub fn store(&self) -> &Arc<ObjectStore> {
         &self.inner.store
+    }
+
+    pub fn registry(&self) -> &Arc<dyn RegistryProvider> {
+        &self.inner.registry
     }
 
     pub fn holo_catalog(&self) -> &Arc<HoloCatalog> {
@@ -118,6 +131,10 @@ impl AppState {
 
     pub fn module_router(&self) -> Router<AppState> {
         self.inner.modules.router()
+    }
+
+    pub(crate) fn module_registry(&self) -> &ModuleRegistry {
+        &self.inner.modules
     }
 
     pub fn module_info(&self) -> Vec<ModuleInfo> {
@@ -212,9 +229,9 @@ impl AppState {
                 Err(error) => RpcResponse::Error(ApiError::from(&error)),
             },
             RpcRequest::RegistryList | RpcRequest::FilesList => {
-                let store = self.inner.store.clone();
+                let registry = self.inner.registry.clone();
                 RpcResponse::from_result(
-                    blocking(move || store.list(None)).await,
+                    blocking(move || registry.list_objects()).await,
                     RpcResponse::Objects,
                 )
             }

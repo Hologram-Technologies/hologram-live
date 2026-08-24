@@ -52,7 +52,19 @@ impl LiveModule for HistoryModule {
     fn router(&self) -> Router<AppState> {
         Router::new().route("/api/v1/history", get(list_history))
     }
+
+    fn openapi(&self) -> utoipa::openapi::OpenApi {
+        <HistoryApiDoc as utoipa::OpenApi>::openapi()
+    }
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(list_history),
+    components(schemas(Conversation)),
+    tags((name = "history", description = "Conversation history"))
+)]
+struct HistoryApiDoc;
 
 #[utoipa::path(
     get,

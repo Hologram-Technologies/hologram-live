@@ -96,7 +96,10 @@ async fn fixture(output: PathBuf) -> Result<()> {
     tokio::fs::write(&output, bytes)
         .await
         .map_err(|error| LiveError::io(&output, error))?;
-    println!("wrote executable .holo fixture to {}", output.display());
+    println!(
+        "wrote structurally valid .holo fixture to {}",
+        output.display()
+    );
     Ok(())
 }
 

@@ -10,6 +10,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `reqwest`                                    | verified update downloads using Rustls                            |
 | `serde`, `serde_json`, `toml`                | typed configuration and public JSON                               |
 | `clap`                                       | CLI parsing                                                       |
+| `fs4`                                        | cross-platform daemon ownership lock                              |
 | `kameo`                                      | bounded actors, links, and supervision                            |
 | `tracing`, `tracing-subscriber`              | structured local diagnostics and runtime filtering                |
 | `opentelemetry*`, `tracing-opentelemetry`    | OTLP/gRPC trace and metric export                                 |

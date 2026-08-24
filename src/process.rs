@@ -1,8 +1,9 @@
 use crate::config::AppConfig;
 use crate::error::{LiveError, Result};
+use fs4::{FileExt, TryLockError};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::Duration;
 
 pub struct DaemonGuard {
@@ -18,19 +19,24 @@ impl DaemonGuard {
         let lock_path = config.paths.state_dir.join("hologram.lock");
         let pid_path = config.paths.state_dir.join("hologram.pid");
         let lock = OpenOptions::new()
+            .read(true)
             .write(true)
-            .create_new(true)
+            .create(true)
+            .truncate(false)
             .open(&lock_path)
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    LiveError::Conflict(format!(
-                        "another hologram daemon owns {}; remove it only after confirming no daemon is running",
-                        lock_path.display()
-                    ))
-                } else {
-                    LiveError::io(&lock_path, error)
-                }
-            })?;
+            .map_err(|error| LiveError::io(&lock_path, error))?;
+        FileExt::try_lock(&lock).map_err(|error| match error {
+            TryLockError::WouldBlock => {
+                let owner = read_pid(config)
+                    .map(|pid| format!(" (pid {pid})"))
+                    .unwrap_or_default();
+                LiveError::Conflict(format!(
+                    "another hologram daemon{owner} owns {}",
+                    lock_path.display()
+                ))
+            }
+            TryLockError::Error(error) => LiveError::io(&lock_path, error),
+        })?;
         std::fs::write(&pid_path, std::process::id().to_string())
             .map_err(|error| LiveError::io(&pid_path, error))?;
         Ok(Self {
@@ -44,6 +50,8 @@ impl DaemonGuard {
 impl Drop for DaemonGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.pid_path);
+        // Remove the name while ownership is still held. Closing `_lock` then
+        // releases the OS lock, including after an abnormal process exit.
         let _ = std::fs::remove_file(&self.lock_path);
     }
 }
@@ -60,9 +68,13 @@ pub async fn start_daemon(config: &AppConfig, config_path: &Path) -> Result<u32>
         .append(true)
         .open(&log_path)
         .map_err(|error| LiveError::io(&log_path, error))?;
+    let log_start = log
+        .metadata()
+        .map_err(|error| LiveError::io(&log_path, error))?
+        .len();
     let executable = std::env::current_exe()
         .map_err(|error| LiveError::Io(format!("resolve current executable: {error}")))?;
-    let child = Command::new(executable)
+    let mut child = Command::new(executable)
         .arg("--config")
         .arg(config_path)
         .arg("serve")
@@ -74,7 +86,7 @@ pub async fn start_daemon(config: &AppConfig, config_path: &Path) -> Result<u32>
         .stderr(Stdio::from(log))
         .spawn()
         .map_err(|error| LiveError::Io(format!("start hologram daemon: {error}")))?;
-    wait_ready(config).await?;
+    wait_ready(config, &mut child, &log_path, log_start).await?;
     Ok(child.id())
 }
 
@@ -98,17 +110,62 @@ pub fn read_pid(config: &AppConfig) -> Result<u32> {
         .map_err(|error| LiveError::Protocol(format!("parse daemon pid: {error}")))
 }
 
-async fn wait_ready(config: &AppConfig) -> Result<()> {
+async fn wait_ready(
+    config: &AppConfig,
+    child: &mut Child,
+    log_path: &Path,
+    log_start: u64,
+) -> Result<()> {
     for _ in 0..100 {
         if is_ready(config).await {
             return Ok(());
         }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| LiveError::Io(format!("inspect daemon process: {error}")))?
+        {
+            return Err(startup_error(config, status, log_path, log_start));
+        }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+    let _ = child.kill();
+    let _ = child.wait();
     Err(LiveError::Transport(format!(
-        "daemon did not become ready at {}",
-        config.server.listen
+        "daemon did not become ready at {} within 5 seconds; {}",
+        config.server.listen,
+        log_diagnostics(log_path, log_start)
     )))
+}
+
+fn startup_error(
+    config: &AppConfig,
+    status: ExitStatus,
+    log_path: &Path,
+    log_start: u64,
+) -> LiveError {
+    LiveError::Transport(format!(
+        "daemon exited with {status} before becoming ready at {}; {}",
+        config.server.listen,
+        log_diagnostics(log_path, log_start)
+    ))
+}
+
+fn log_diagnostics(path: &Path, offset: u64) -> String {
+    let Ok(bytes) = std::fs::read(path) else {
+        return format!("daemon log: {}", path.display());
+    };
+    let start = usize::try_from(offset)
+        .unwrap_or(usize::MAX)
+        .min(bytes.len());
+    let output = &bytes[start..];
+    let tail = &output[output.len().saturating_sub(4_096)..];
+    let message = String::from_utf8_lossy(tail);
+    let message = message.trim();
+    if message.is_empty() {
+        format!("daemon log: {}", path.display())
+    } else {
+        format!("daemon log {}:\n{message}", path.display())
+    }
 }
 
 async fn is_ready(config: &AppConfig) -> bool {
@@ -118,4 +175,50 @@ async fn is_ready(config: &AppConfig) -> bool {
     )
     .await
     .is_ok_and(|result| result.is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::now_millis;
+
+    #[test]
+    fn daemon_guard_reclaims_stale_files_and_rejects_live_owners() {
+        let root = std::env::temp_dir().join(format!(
+            "hologram-daemon-guard-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::create_dir_all(&root).expect("create test state directory");
+        std::fs::write(root.join("hologram.lock"), b"stale").expect("write stale lock file");
+        std::fs::write(root.join("hologram.pid"), b"999999").expect("write stale pid file");
+
+        let mut config = AppConfig::default();
+        config.paths.state_dir.clone_from(&root);
+
+        let owner = DaemonGuard::acquire(&config).expect("reclaim stale ownership files");
+        let error = DaemonGuard::acquire(&config)
+            .err()
+            .expect("reject a concurrently held daemon lock");
+        assert!(matches!(error, LiveError::Conflict(_)));
+        drop(owner);
+
+        let replacement = DaemonGuard::acquire(&config).expect("acquire after owner exits");
+        drop(replacement);
+        std::fs::remove_dir_all(root).expect("remove test state directory");
+    }
+
+    #[test]
+    fn startup_diagnostics_only_include_the_current_attempt() {
+        let path = std::env::temp_dir().join(format!(
+            "hologram-startup-log-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::write(&path, b"old failure\ncurrent failure\n").expect("write test log");
+        let diagnostics = log_diagnostics(&path, "old failure\n".len() as u64);
+        assert!(!diagnostics.contains("old failure"));
+        assert!(diagnostics.contains("current failure"));
+        std::fs::remove_file(path).expect("remove test log");
+    }
 }

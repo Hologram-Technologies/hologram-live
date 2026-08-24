@@ -21,6 +21,7 @@ path = "src/main.rs"
 axum = { version = "0.8", features = ["json", "tokio", "http1", "http2"] }
 blake3 = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
+fs4 = "1.1"
 kameo = "0.22"
 opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["grpc-tonic", "metrics", "trace", "tls-ring", "tls-roots"] }

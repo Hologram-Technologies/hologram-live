@@ -1,6 +1,6 @@
 # Hologram Live
 
-![Hologram Desktop console showing local store size, module readiness, and system meters](docs/images/hologram-desktop.jpg)
+![Hologram Desktop console showing local store size, module readiness, and system meters](docs/images/hologram-desktop-console.jpg)
 
 Hologram Live is a local-first module host for the Hologram ecosystem. This repository produces two independent products:
 

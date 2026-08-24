@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use serde::Serialize;
 use std::ffi::OsStr;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -30,7 +31,7 @@ async fn service_restart(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn service_status(app: AppHandle) -> Result<String, String> {
-    let result = run_hologram(&app, &["status"]).await;
+    let result = run_hologram(&app, &["--json", "status"]).await;
     update_menu_bar(&app, result.is_ok());
     result
 }
@@ -42,7 +43,14 @@ async fn modules_list(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn history_list(app: AppHandle) -> Result<String, String> {
-    run_hologram(&app, &["--json", "history", "list"]).await
+    // The desktop groups archived threads itself, so it asks for the full set.
+    run_hologram(&app, &["--json", "history", "list", "--all"]).await
+}
+
+#[tauri::command]
+async fn history_archive(app: AppHandle, id: String, archived: bool) -> Result<String, String> {
+    let action = if archived { "archive" } else { "unarchive" };
+    run_hologram(&app, ["--json", "history", action, id.as_str()]).await
 }
 
 #[tauri::command]
@@ -96,6 +104,52 @@ async fn object_get(app: AppHandle, id: String, output: String) -> Result<String
         ["registry", "get", id.as_str(), "--output", output.as_str()],
     )
     .await
+}
+
+#[tauri::command]
+async fn config_show(app: AppHandle) -> Result<String, String> {
+    run_hologram(&app, &["config", "show"]).await
+}
+
+#[derive(Serialize)]
+struct SystemInfo {
+    host: String,
+    cores: usize,
+    memory_used_bytes: u64,
+    memory_total_bytes: u64,
+    disk_used_bytes: u64,
+    disk_total_bytes: u64,
+}
+
+#[tauri::command]
+fn system_info() -> SystemInfo {
+    let mut system = sysinfo::System::new();
+    system.refresh_memory();
+
+    // Report the disk backing the home directory, falling back to the largest volume.
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let disk = home
+        .and_then(|home| {
+            disks
+                .list()
+                .iter()
+                .filter(|disk| home.starts_with(disk.mount_point()))
+                .max_by_key(|disk| disk.mount_point().as_os_str().len())
+        })
+        .or_else(|| disks.list().iter().max_by_key(|disk| disk.total_space()));
+    let (disk_total_bytes, disk_available_bytes) = disk
+        .map(|disk| (disk.total_space(), disk.available_space()))
+        .unwrap_or((0, 0));
+
+    SystemInfo {
+        host: sysinfo::System::host_name().unwrap_or_else(|| "this device".to_owned()),
+        cores: system.physical_core_count().unwrap_or(0),
+        memory_used_bytes: system.used_memory(),
+        memory_total_bytes: system.total_memory(),
+        disk_used_bytes: disk_total_bytes.saturating_sub(disk_available_bytes),
+        disk_total_bytes,
+    }
 }
 
 async fn run_hologram<I, S>(app: &AppHandle, arguments: I) -> Result<String, String>
@@ -257,7 +311,10 @@ fn main() {
             objects_list,
             file_put,
             file_rename,
-            object_get
+            object_get,
+            history_archive,
+            config_show,
+            system_info
         ])
         .run(tauri::generate_context!())
         .expect("run Hologram desktop application");

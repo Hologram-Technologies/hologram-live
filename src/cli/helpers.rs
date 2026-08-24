@@ -68,7 +68,9 @@ pub fn request_for_operation(value: &str) -> Result<RpcRequest> {
         operation::FILES_LIST => Ok(RpcRequest::FilesList),
         operation::HOLO_LIST => Ok(RpcRequest::HoloList),
         operation::HOLO_RESIDENT => Ok(RpcRequest::HoloResident),
-        operation::HISTORY_LIST => Ok(RpcRequest::HistoryList),
+        operation::HISTORY_LIST => Ok(RpcRequest::HistoryList {
+            include_archived: false,
+        }),
         operation::NODES_LIST => Ok(RpcRequest::NodesList),
         _ => Err(LiveError::Protocol(format!(
             "route explanation requires a parameter-free known operation; got {value}"

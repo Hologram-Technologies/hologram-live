@@ -14,7 +14,11 @@ enum HistoryCommand {
     New {
         title: String,
     },
-    List,
+    List {
+        /// Include archived conversations in the listing.
+        #[arg(long)]
+        all: bool,
+    },
     Show {
         id: String,
     },
@@ -25,6 +29,14 @@ enum HistoryCommand {
         content: String,
     },
     Delete {
+        id: String,
+    },
+    /// Hide a conversation from the default listing without deleting it.
+    Archive {
+        id: String,
+    },
+    /// Restore an archived conversation to the default listing.
+    Unarchive {
         id: String,
     },
 }
@@ -51,7 +63,9 @@ impl MessageRole {
 pub async fn run(cli: Cli, args: HistoryArgs) -> Result<()> {
     let request = match args.command {
         HistoryCommand::New { title } => RpcRequest::HistoryCreate { title },
-        HistoryCommand::List => RpcRequest::HistoryList,
+        HistoryCommand::List { all } => RpcRequest::HistoryList {
+            include_archived: all,
+        },
         HistoryCommand::Show { id } => RpcRequest::HistoryGet { id },
         HistoryCommand::Append { id, role, content } => RpcRequest::HistoryAppend {
             id,
@@ -59,6 +73,11 @@ pub async fn run(cli: Cli, args: HistoryArgs) -> Result<()> {
             content,
         },
         HistoryCommand::Delete { id } => RpcRequest::HistoryDelete { id },
+        HistoryCommand::Archive { id } => RpcRequest::HistoryArchive { id, archived: true },
+        HistoryCommand::Unarchive { id } => RpcRequest::HistoryArchive {
+            id,
+            archived: false,
+        },
     };
     match helpers::call(&cli, request).await? {
         RpcResponse::Conversation(value) => helpers::print(&cli, &value),

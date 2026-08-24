@@ -33,12 +33,13 @@ impl HistoryService {
             created_at_millis,
             updated_at_millis: created_at_millis,
             messages: Vec::new(),
+            archived: false,
         };
         self.persist(&conversation)?;
         Ok(conversation)
     }
 
-    pub fn list(&self) -> Result<Vec<Conversation>> {
+    pub fn list(&self, include_archived: bool) -> Result<Vec<Conversation>> {
         let mut output = Vec::new();
         for entry in
             std::fs::read_dir(&self.root).map_err(|error| LiveError::io(&self.root, error))?
@@ -49,7 +50,11 @@ impl HistoryService {
             }
             let bytes =
                 std::fs::read(entry.path()).map_err(|error| LiveError::io(&entry.path(), error))?;
-            output.push(serde_json::from_slice::<Conversation>(&bytes)?);
+            let conversation = serde_json::from_slice::<Conversation>(&bytes)?;
+            if conversation.archived && !include_archived {
+                continue;
+            }
+            output.push(conversation);
         }
         output.sort_by_key(|item| std::cmp::Reverse(item.updated_at_millis));
         Ok(output)
@@ -123,6 +128,19 @@ impl HistoryService {
         Ok(conversation)
     }
 
+    /// Archiving hides a conversation from the default listing without deleting it.
+    /// The timestamp is left alone so archiving does not reorder the list.
+    pub fn set_archived(&self, id: &str, archived: bool) -> Result<Conversation> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .map_err(|_| LiveError::Conflict("history lock poisoned".to_owned()))?;
+        let mut conversation = self.get(id)?;
+        conversation.archived = archived;
+        self.persist_unlocked(&conversation)?;
+        Ok(conversation)
+    }
+
     pub fn delete(&self, id: &str) -> Result<()> {
         let path = self.path_for(id)?;
         if path.exists() {
@@ -181,6 +199,58 @@ mod tests {
             history.get(&conversation.id).expect("get").messages.len(),
             1
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn archiving_hides_a_conversation_from_the_default_listing() {
+        let root = std::env::temp_dir().join(format!("hologram-archive-{}", now_millis()));
+        let history = HistoryService::open(&root).expect("open");
+        let kept = history.create("kept".to_owned()).expect("create kept");
+        let hidden = history.create("hidden".to_owned()).expect("create hidden");
+
+        let archived = history.set_archived(&hidden.id, true).expect("archive");
+        assert!(archived.archived);
+        assert_eq!(
+            archived.updated_at_millis, hidden.updated_at_millis,
+            "archiving must not reorder the listing"
+        );
+
+        let visible = history.list(false).expect("list visible");
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, kept.id);
+
+        let all = history.list(true).expect("list all");
+        assert_eq!(all.len(), 2);
+
+        history.set_archived(&hidden.id, false).expect("unarchive");
+        assert_eq!(history.list(false).expect("list restored").len(), 2);
+        assert!(!history.get(&hidden.id).expect("get").archived);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn conversations_written_before_archiving_still_load() {
+        let root = std::env::temp_dir().join(format!("hologram-legacy-{}", now_millis()));
+        let history = HistoryService::open(&root).expect("open");
+        let conversation = history.create("legacy".to_owned()).expect("create");
+
+        // Rewrite the record without the `archived` field, as older builds stored it.
+        let path = history.path_for(&conversation.id).expect("path");
+        let legacy = serde_json::json!({
+            "id": conversation.id,
+            "title": conversation.title,
+            "created_at_millis": conversation.created_at_millis,
+            "updated_at_millis": conversation.updated_at_millis,
+            "messages": [],
+        });
+        std::fs::write(&path, serde_json::to_vec(&legacy).expect("encode")).expect("write");
+
+        let loaded = history.get(&conversation.id).expect("get legacy");
+        assert!(!loaded.archived);
+        assert_eq!(history.list(false).expect("list").len(), 1);
+
         let _ = std::fs::remove_dir_all(root);
     }
 

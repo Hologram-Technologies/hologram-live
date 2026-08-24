@@ -1,13 +1,13 @@
 # Hologram Live
 
-![Hologram Desktop chat interface](docs/images/hologram-desktop.jpg)
+![Hologram Desktop console showing local store size, module readiness, and system meters](docs/images/hologram-desktop.jpg)
 
 Hologram Live is a local-first module host for the Hologram ecosystem. This repository produces two independent products:
 
 - **Hologram Server** — the standalone `hologram` binary, containing the CLI and background service.
 - **Hologram Desktop** — a Tauri application that bundles `hologram` as a managed sidecar.
 
-The current desktop experience provides an Overview, multi-thread Echo Chat, content-addressed Files, and module discovery in a responsive light/dark interface. Echo Chat is deliberately a demo module: it saves each user message and repeats it as the assistant response. Model inference is not implemented yet.
+The current desktop experience provides a Console dashboard, multi-thread Echo Chat with archiving, content-addressed Files, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Echo Chat is deliberately a demo module: it saves each user message and repeats it as the assistant response. Model inference is not implemented yet.
 
 ## Quick start
 
@@ -79,6 +79,17 @@ hologram --json history show <conversation-id>
 ```
 
 `chat send` records the user message and echoed assistant response as one persisted exchange. Threads retain separate histories and can be resumed from the desktop app.
+
+Threads can be archived instead of deleted. Archived threads keep their messages and their `updated_at_millis`, but drop out of the default listing:
+
+```bash
+hologram --json history archive <conversation-id>
+hologram --json history list          # archived threads are omitted
+hologram --json history list --all    # archived threads included
+hologram --json history unarchive <conversation-id>
+```
+
+In the desktop app, hovering a thread reveals an archive button, and archived threads collapse into an `ARCHIVED` group at the bottom of the thread list.
 
 Existing schema-v1 configurations that used the original default modules are migrated automatically to enable Echo Chat. Custom module selections remain unchanged. The desktop also recovers safely when an older background service is still running by restarting onto its bundled sidecar before retrying a `chat.send` capability miss.
 

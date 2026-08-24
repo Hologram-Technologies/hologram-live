@@ -9,158 +9,254 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <svg class="brand-icon" viewBox="0 0 512 512" aria-hidden="true">
-            <rect width="512" height="512" rx="112" fill="#25245f" />
-            <path d="M256 94 402 178v168L256 430 110 346V178Z" fill="none" stroke="#7dd3fc" stroke-width="28" stroke-linejoin="round" />
-            <path d="m110 178 146 84 146-84M256 262v168" fill="none" stroke="#a5a1ff" stroke-width="24" stroke-linejoin="round" />
-            <circle cx="256" cy="262" r="30" fill="#f8fafc" />
-          </svg>
-          <span>Hologram</span>
-        </div>
-
-        <nav aria-label="Hologram">
-          <button class="nav-item active" data-view="overview" aria-current="page">
-            <span class="nav-icon" aria-hidden="true">⌂</span><span class="nav-label">Overview</span>
-          </button>
-          <button class="nav-item" data-view="chat">
-            <span class="nav-icon" aria-hidden="true">◌</span><span class="nav-label">Chat</span><span id="nav-thread-count" class="nav-count">—</span>
-          </button>
-          <button class="nav-item" data-view="files">
-            <span class="nav-icon" aria-hidden="true">□</span><span class="nav-label">Files</span><span id="nav-object-count" class="nav-count">—</span>
-          </button>
-          <button class="nav-item" data-view="modules">
-            <span class="nav-icon" aria-hidden="true">◇</span><span class="nav-label">Modules</span><span id="nav-module-count" class="nav-count">—</span>
-          </button>
-        </nav>
-
-        <button id="theme-toggle" class="theme-toggle" type="button">
-          <span id="theme-icon" class="nav-icon" aria-hidden="true">◐</span>
-          <span id="theme-label" class="nav-label">Appearance</span>
-        </button>
-
-        <div class="sidebar-footer">
+      <div class="titlebar" data-tauri-drag-region>
+        <div class="titlebar-lead" aria-hidden="true"></div>
+        <div class="titlebar-title" data-tauri-drag-region>
           <span class="state-dot unknown" aria-hidden="true"></span>
-          <div><strong class="state-label">Checking</strong><span>On this device</span></div>
+          <span>Hologram Live</span>
         </div>
-      </aside>
-
-      <main class="workspace">
-        <header class="topbar">
-          <div>
-            <h1 id="page-title">Overview</h1>
-            <p id="page-description">Your local Hologram workspace</p>
-          </div>
-          <div class="topbar-state">
+        <div class="titlebar-actions">
+          <span id="role-pill" class="title-pill">
             <span class="state-dot unknown" aria-hidden="true"></span>
-            <span class="state-label">Checking</span>
-          </div>
-        </header>
-
-        <div class="content">
-          <section class="view" data-page="overview" aria-labelledby="page-title">
-            <article class="welcome-card">
-              <div>
-                <p class="eyebrow">LOCAL WORKSPACE</p>
-                <h2 id="service-title">Connecting to Hologram</h2>
-                <p id="service-description">Checking that your modules and files are available.</p>
-              </div>
-              <div class="actions">
-                <button id="start" class="primary command-button" data-when="stopped">Start</button>
-                <button id="restart" class="secondary command-button" data-when="ready">Restart</button>
-                <button id="stop" class="quiet command-button" data-when="ready">Stop</button>
-              </div>
-            </article>
-
-            <div class="stats-grid">
-              <button class="stat-card open-view" data-target="files">
-                <span>Stored files</span><strong id="object-count">—</strong><small>Browse your local objects</small>
-              </button>
-              <button class="stat-card open-view" data-target="chat">
-                <span>Chat threads</span><strong id="thread-count">—</strong><small>Continue a conversation</small>
-              </button>
-              <button class="stat-card open-view" data-target="modules">
-                <span>Available modules</span><strong id="module-count">—</strong><small>View active capabilities</small>
-              </button>
-            </div>
-
-          </section>
-
-          <section class="view chat-view" data-page="chat" hidden aria-label="Chat">
-            <div class="chat-shell">
-              <aside class="thread-panel" aria-label="Chat threads">
-                <button id="new-thread" class="new-thread command-button" data-when="ready" type="button">
-                  <span aria-hidden="true">+</span> New chat
-                </button>
-                <label class="thread-search">
-                  <span class="visually-hidden">Search chats</span>
-                  <span aria-hidden="true">⌕</span>
-                  <input id="thread-search" type="search" placeholder="Search chats" autocomplete="off" />
-                </label>
-                <div id="threads" class="thread-list" aria-live="polite">
-                  <div class="thread-loading"></div>
-                  <div class="thread-loading"></div>
-                  <div class="thread-loading"></div>
-                </div>
-              </aside>
-
-              <div class="chat-main">
-                <header class="chat-header">
-                  <div><h2 id="chat-title">New chat</h2><p id="chat-detail">Messages are saved to this thread</p></div>
-                  <span class="model-pill"><span aria-hidden="true">◇</span> Echo module</span>
-                </header>
-
-                <div id="chat-scroll" class="chat-scroll">
-                  <div id="chat-empty" class="chat-welcome">
-                    <span class="chat-mark" aria-hidden="true">H</span>
-                    <h2>Chat with Hologram</h2>
-                    <p>Start a conversation. For now, Hologram will repeat your message and save both sides to this thread.</p>
-                    <div><span class="state-dot ready" aria-hidden="true"></span> Conversations stay in your local history.</div>
-                  </div>
-                  <div id="messages" class="message-list" aria-live="polite" hidden></div>
-                </div>
-
-                <form id="chat-form" class="composer">
-                  <textarea id="chat-input" rows="1" maxlength="32000" placeholder="Message Hologram" aria-label="Message Hologram"></textarea>
-                  <button id="send-message" class="send-message command-button" data-when="ready" type="submit" aria-label="Send message">↑</button>
-                  <p>Enter to send · Shift+Enter for a new line</p>
-                </form>
-              </div>
-            </div>
-          </section>
-
-          <section class="view" data-page="files" hidden aria-labelledby="files-heading">
-            <div class="section-heading">
-              <div><h2 id="files-heading">Files</h2><p>Content stored in your local Hologram workspace.</p></div>
-              <div class="actions">
-                <button id="upload-file" class="primary command-button" data-when="ready">Add file</button>
-                <button id="refresh-objects" class="secondary command-button" data-when="ready">Refresh</button>
-              </div>
-            </div>
-            <div id="objects" class="object-list">
-              <div class="loading-row" aria-label="Loading files"><span></span><span></span></div>
-              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
-              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
-            </div>
-          </section>
-
-          <section class="view" data-page="modules" hidden aria-labelledby="modules-heading">
-            <div class="section-heading">
-              <div><h2 id="modules-heading">Modules</h2><p>The capabilities currently available to Hologram.</p></div>
-              <button id="refresh-modules" class="secondary command-button" data-when="ready">Refresh</button>
-            </div>
-            <div id="modules" class="module-list">
-              <div class="loading-row" aria-label="Loading modules"><span></span><span></span></div>
-              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
-              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
-            </div>
-          </section>
-
-          <div id="notice" class="notice" role="status" aria-live="polite">Getting things ready…</div>
+            <span id="role-text">checking</span>
+          </span>
+          <span id="api-pill" class="title-pill quiet-pill">API —</span>
         </div>
-      </main>
+      </div>
+
+      <div class="app-body">
+        <aside class="sidebar">
+          <div class="sidebar-head">
+            <div class="brand">
+              <img src="./icon.svg" alt="" />
+              <span>Hologram</span>
+            </div>
+            <button id="sidebar-collapse" class="sidebar-collapse" type="button" aria-label="Collapse sidebar" title="Collapse sidebar">
+              <span aria-hidden="true">‹</span>
+            </button>
+          </div>
+
+          <nav aria-label="Hologram">
+            <button class="nav-item active" data-view="console" aria-current="page">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 12 15.5 8.5"/></svg>
+              </span>
+              <span class="nav-label">Console</span>
+            </button>
+            <button class="nav-item" data-view="chat">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg>
+              </span>
+              <span class="nav-label">Chat</span><span id="nav-thread-count" class="nav-count">—</span>
+            </button>
+            <button class="nav-item" data-view="files">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+              </span>
+              <span class="nav-label">Files</span><span id="nav-object-count" class="nav-count">—</span>
+            </button>
+            <button class="nav-item" data-view="modules">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+              </span>
+              <span class="nav-label">Modules</span><span id="nav-module-count" class="nav-count">—</span>
+            </button>
+          </nav>
+
+          <section id="system-panel" class="system-panel" aria-label="System">
+            <div class="meter" data-meter="disk">
+              <div class="meter-head"><span>Disk</span><strong class="meter-value">—</strong></div>
+              <div class="meter-track"><i class="meter-fill"></i></div>
+            </div>
+            <div class="meter" data-meter="memory">
+              <div class="meter-head"><span>Memory</span><strong class="meter-value">—</strong></div>
+              <div class="meter-track"><i class="meter-fill"></i></div>
+            </div>
+            <p id="system-device" class="system-device">This device</p>
+          </section>
+
+          <div class="sidebar-rail">
+            <button id="theme-toggle" class="theme-toggle" type="button">
+              <span id="theme-icon" aria-hidden="true">◐</span>
+              <span id="theme-label" class="visually-hidden">Appearance</span>
+            </button>
+            <div class="text-size" role="group" aria-label="Text size">
+              <button id="text-smaller" class="text-size-step" type="button" aria-label="Smaller text" title="Smaller text (⌘−)">A−</button>
+              <button id="text-larger" class="text-size-step" type="button" aria-label="Larger text" title="Larger text (⌘+)">A+</button>
+            </div>
+            <span id="app-version" class="app-version">—</span>
+          </div>
+        </aside>
+
+        <main class="workspace">
+          <div class="content">
+            <section class="view" data-page="console" aria-labelledby="page-title">
+              <header class="page-header">
+                <div>
+                  <h1 id="page-title">Console</h1>
+                  <p id="page-description" class="page-meta">Checking your local workspace…</p>
+                </div>
+                <span id="live-pill" class="live-pill">
+                  <span class="state-dot unknown" aria-hidden="true"></span>
+                  <span class="state-label">Checking</span>
+                </span>
+              </header>
+
+              <div class="metric-grid">
+                <article class="metric-tile accent">
+                  <span class="metric-label">Local store</span>
+                  <strong id="store-bytes" class="metric-value">—</strong>
+                  <small id="store-caption" class="metric-caption">content-addressed objects</small>
+                </article>
+                <article class="metric-tile">
+                  <span class="metric-label">Modules ready</span>
+                  <strong id="modules-ready" class="metric-value">—</strong>
+                  <small class="metric-caption">capabilities loaded</small>
+                </article>
+                <article class="metric-tile">
+                  <span class="metric-label">Operations</span>
+                  <strong id="operations-count" class="metric-value">—</strong>
+                  <small class="metric-caption">callable across modules</small>
+                  <div class="metric-aside">
+                    <span>Threads <b id="tile-threads">—</b></span>
+                    <span>Messages <b id="tile-messages">—</b></span>
+                  </div>
+                </article>
+              </div>
+
+              <article class="service-row">
+                <span class="service-mark" aria-hidden="true"><img src="./icon.svg" alt="" /></span>
+                <div class="service-identity">
+                  <strong id="service-title">Hologram Live</strong>
+                  <span id="service-meta" class="service-meta">local module host</span>
+                </div>
+                <span class="status-pill">
+                  <span class="state-dot unknown" aria-hidden="true"></span>
+                  <span class="state-label">Checking</span>
+                </span>
+                <div class="service-metrics">
+                  <div><span>OBJECTS</span><strong id="metric-objects">—</strong></div>
+                  <div><span>MODULES</span><strong id="metric-modules">—</strong></div>
+                  <div><span>THREADS</span><strong id="metric-threads">—</strong></div>
+                </div>
+                <div class="service-actions">
+                  <button id="start" class="primary command-button" data-when="stopped">Start</button>
+                  <button id="open-chat" class="primary command-button open-view" data-target="chat" data-when="ready">Chat</button>
+                  <button id="restart" class="secondary command-button" data-when="ready">Restart</button>
+                  <button id="stop" class="quiet command-button" data-when="ready">Stop</button>
+                </div>
+              </article>
+
+              <section class="console-section">
+                <div class="console-section-head">
+                  <div>
+                    <h2>Modules</h2>
+                    <p>Capabilities currently loaded into your local host.</p>
+                  </div>
+                  <button class="link-button open-view" data-target="modules" type="button">View all</button>
+                </div>
+                <div id="console-modules" class="preset-grid">
+                  <div class="loading-row" aria-label="Loading modules"><span></span><span></span></div>
+                  <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+                  <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+                </div>
+              </section>
+            </section>
+
+            <section class="view chat-view" data-page="chat" hidden aria-label="Chat">
+              <div class="chat-shell">
+                <aside class="thread-panel" aria-label="Chat threads">
+                  <button id="new-thread" class="new-thread command-button" data-when="ready" type="button">
+                    <span aria-hidden="true">+</span> New chat
+                  </button>
+                  <label class="thread-search">
+                    <span class="visually-hidden">Search chats</span>
+                    <span aria-hidden="true">⌕</span>
+                    <input id="thread-search" type="search" placeholder="Search chats" autocomplete="off" />
+                  </label>
+                  <div id="threads" class="thread-list" aria-live="polite">
+                    <div class="thread-loading"></div>
+                    <div class="thread-loading"></div>
+                    <div class="thread-loading"></div>
+                  </div>
+                </aside>
+
+                <div class="chat-main">
+                  <header class="chat-header">
+                    <div><h2 id="chat-title">New chat</h2><p id="chat-detail">Messages are saved to this thread</p></div>
+                    <span class="model-pill"><span aria-hidden="true">◇</span> Echo module</span>
+                  </header>
+
+                  <div id="chat-scroll" class="chat-scroll">
+                    <div id="chat-empty" class="chat-welcome">
+                      <span class="chat-mark" aria-hidden="true">H</span>
+                      <h2>Chat with Hologram</h2>
+                      <p>Start a conversation. For now, Hologram will repeat your message and save both sides to this thread.</p>
+                      <div><span class="state-dot ready" aria-hidden="true"></span> Conversations stay in your local history.</div>
+                    </div>
+                    <div id="messages" class="message-list" aria-live="polite" hidden></div>
+                  </div>
+
+                  <form id="chat-form" class="composer">
+                    <textarea id="chat-input" rows="1" maxlength="32000" placeholder="Message Hologram" aria-label="Message Hologram"></textarea>
+                    <button id="send-message" class="send-message command-button" data-when="ready" type="submit" aria-label="Send message">↑</button>
+                    <p>Enter to send · Shift+Enter for a new line</p>
+                  </form>
+                </div>
+              </div>
+            </section>
+
+            <section class="view" data-page="files" hidden aria-labelledby="files-heading">
+              <header class="page-header">
+                <div>
+                  <h1 id="files-heading">Files</h1>
+                  <p class="page-meta">Content stored in your local workspace</p>
+                </div>
+                <div class="actions">
+                  <button id="upload-file" class="primary command-button" data-when="ready">Add file</button>
+                  <button id="refresh-objects" class="secondary command-button" data-when="ready">Refresh</button>
+                </div>
+              </header>
+              <div id="objects" class="object-list">
+                <div class="loading-row" aria-label="Loading files"><span></span><span></span></div>
+                <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+                <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+              </div>
+            </section>
+
+            <section class="view" data-page="modules" hidden aria-labelledby="modules-heading">
+              <header class="page-header">
+                <div>
+                  <h1 id="modules-heading">Modules</h1>
+                  <p class="page-meta">Capabilities available to Hologram</p>
+                </div>
+                <button id="refresh-modules" class="secondary command-button" data-when="ready">Refresh</button>
+              </header>
+              <div id="modules" class="module-list">
+                <div class="loading-row" aria-label="Loading modules"><span></span><span></span></div>
+                <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+                <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+              </div>
+            </section>
+
+            <div id="notice" class="notice is-hidden" role="status" aria-live="polite"></div>
+          </div>
+        </main>
+      </div>
     </div>
+
+    <div id="palette" class="palette" hidden>
+      <div id="palette-scrim" class="palette-scrim"></div>
+      <div class="palette-panel" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div class="palette-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="palette-input" type="text" placeholder="Search commands…" autocomplete="off" spellcheck="false" aria-label="Search commands" />
+          <kbd>ESC</kbd>
+        </div>
+        <div id="palette-list" class="palette-list" role="listbox" aria-label="Commands"></div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

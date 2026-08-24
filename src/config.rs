@@ -451,8 +451,10 @@ mod tests {
     fn v1_default_config_migrates_to_enable_chat() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("live.toml");
-        let mut legacy = AppConfig::default();
-        legacy.schema_version = 1;
+        let mut legacy = AppConfig {
+            schema_version: 1,
+            ..AppConfig::default()
+        };
         legacy.modules.enabled = V1_DEFAULT_MODULES
             .iter()
             .map(|value| (*value).to_owned())
@@ -474,8 +476,10 @@ mod tests {
 
     #[test]
     fn v1_custom_module_selection_is_preserved_during_migration() {
-        let mut legacy = AppConfig::default();
-        legacy.schema_version = 1;
+        let mut legacy = AppConfig {
+            schema_version: 1,
+            ..AppConfig::default()
+        };
         legacy.modules.enabled = vec!["dev.hologram.live.system".to_owned()];
 
         assert!(legacy.migrate().expect("migrate"));

@@ -1,0 +1,49 @@
+name: release-docs
+
+on:
+  push:
+    tags:
+      - "docs-v*"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: ./scripts/check-release-tag.sh docs "$GITHUB_REF_NAME"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/docs/package-lock.json
+      - uses: actions/configure-pages@v5
+      - run: npm ci
+        working-directory: apps/docs
+      - name: Build documentation site
+        run: npm run build
+        working-directory: apps/docs
+        env:
+          GITHUB_PAGES: "true"
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

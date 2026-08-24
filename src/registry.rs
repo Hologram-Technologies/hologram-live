@@ -18,6 +18,7 @@ pub trait RegistryProvider: Send + Sync {
         bytes: &[u8],
     ) -> Result<ObjectMetadata>;
     fn get_object(&self, id: &str) -> Result<ObjectContent>;
+    fn rename_file(&self, id: &str, filename: String) -> Result<ObjectMetadata>;
 }
 
 pub struct LocalRegistryProvider {
@@ -50,5 +51,9 @@ impl RegistryProvider for LocalRegistryProvider {
             metadata: self.store.metadata(id)?,
             bytes: self.store.get(id)?,
         })
+    }
+
+    fn rename_file(&self, id: &str, filename: String) -> Result<ObjectMetadata> {
+        self.store.rename_file(id, filename)
     }
 }

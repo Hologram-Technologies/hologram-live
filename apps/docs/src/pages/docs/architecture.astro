@@ -15,7 +15,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <h2>Two protocol surfaces</h2>
   <p>Native clients use the versioned <code>hologram.live.v1.HologramLive</code> Protobuf/gRPC service. Browsers use JSON/HTTP routes described by Utoipa OpenAPI and rendered by Scalar.</p>
   <pre><code>CLI / desktop ── Protobuf + gRPC ──┐
-                                   ├── hologram daemon ── modules
+                                   ├── hologram service ── modules
 browser ─────── JSON + HTTP ───────┘</code></pre>
 
   <h2>Actors</h2>

@@ -6,7 +6,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <p>All platforms use <code>~/.config/hologram/live.toml</code>. The schema is typed, versioned, and rejects unknown fields.</p>
 
   <h2>Representative configuration</h2>
-  <pre><code>schema_version = 1
+  <pre><code>schema_version = 2
 role = "node"
 
 [server]
@@ -36,6 +36,7 @@ include_thread_ids = false
 enabled = true
 service_name = "hologram-live"
 export_timeout_secs = 5</code></pre>
+  <p>Version 1 configurations are migrated automatically. Installations that used the original default module set gain the built-in echo chat module; customized module selections remain unchanged.</p>
   <div class="note"><strong>Telemetry remains local by default</strong>Leave <code>telemetry.endpoint</code> unset to prevent any telemetry network connection.</div>
 
   <h2>Environment overrides</h2>

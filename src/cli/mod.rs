@@ -4,6 +4,7 @@ use hologram_live::error::Result;
 use hologram_live::observability::TracingHandle;
 use std::path::PathBuf;
 
+mod chat;
 mod compile;
 mod config;
 mod doctor;
@@ -81,6 +82,8 @@ enum Command {
     Run(run::RunArgs),
     /// Manage durable conversation history.
     History(history::HistoryArgs),
+    /// Chat through an enabled conversation-backed module.
+    Chat(chat::ChatArgs),
     /// Minimal control-plane node inventory.
     Nodes(nodes::NodesArgs),
     /// Inspect or change the daemon tracing filter.
@@ -124,6 +127,7 @@ impl Cli {
             Command::Holo(args) => holo::run(self, args).await,
             Command::Run(args) => run::run(self, args).await,
             Command::History(args) => history::run(self, args).await,
+            Command::Chat(args) => chat::run(self, args).await,
             Command::Nodes(args) => nodes::run(self, args).await,
             Command::Tracing(args) => tracing::run(self, args).await,
             Command::Openapi(args) => openapi::run(self, args).await,

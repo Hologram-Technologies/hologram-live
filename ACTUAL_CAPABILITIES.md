@@ -9,7 +9,7 @@ This document is deliberately strict about what the current stable build does an
 - Foreground and background daemon lifecycle.
 - Statically registered, dependency-ordered modules.
 - Kappa Registry represented as the first ordinary module.
-- Files/catalog listing over the content-addressed object store.
+- File listing, durable renaming, and retrieval over the content-addressed object store.
 - Versioned Protobuf/gRPC native API and client.
 - JSON REST endpoints and Utoipa-generated OpenAPI.
 - Self-hosted Scalar interactive API reference.
@@ -21,6 +21,7 @@ This document is deliberately strict about what the current stable build does an
 - Bearer-token authentication seam for protected routes.
 - First-class `.holo` fixture creation, import, list, inspect, verify, and remove.
 - Durable local conversation history.
+- Conversation-backed echo chat with independent, switchable threads in the desktop app.
 - Minimal control-plane node inventory and heartbeat records.
 - Digest-verified update/rollback foundation.
 - Built-in browser status page.

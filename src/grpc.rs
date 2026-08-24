@@ -156,6 +156,9 @@ impl From<RpcRequest> for pb::RpcRequest {
                 content: bytes,
             }),
             RpcRequest::FilesGet { id } => Wire::FilesGet(pb::IdRequest { id }),
+            RpcRequest::FilesRename { id, filename } => {
+                Wire::FilesRename(pb::FileRenameRequest { id, filename })
+            }
             RpcRequest::HoloImport { name, bytes } => Wire::HoloImport(pb::HoloImportRequest {
                 name,
                 content: bytes,
@@ -179,6 +182,9 @@ impl From<RpcRequest> for pb::RpcRequest {
                 Wire::HistoryAppend(pb::HistoryAppendRequest { id, role, content })
             }
             RpcRequest::HistoryDelete { id } => Wire::HistoryDelete(pb::IdRequest { id }),
+            RpcRequest::ChatSend { id, content } => {
+                Wire::ChatSend(pb::ChatSendRequest { id, content })
+            }
             RpcRequest::NodesList => Wire::NodesList(empty()),
             RpcRequest::NodeHeartbeat { node } => Wire::NodeHeartbeat(node.into()),
         };
@@ -220,6 +226,10 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
                 bytes: value.content,
             }),
             Wire::FilesGet(value) => Ok(Self::FilesGet { id: value.id }),
+            Wire::FilesRename(value) => Ok(Self::FilesRename {
+                id: value.id,
+                filename: value.filename,
+            }),
             Wire::HoloImport(value) => Ok(Self::HoloImport {
                 name: value.name,
                 bytes: value.content,
@@ -244,6 +254,10 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
                 content: value.content,
             }),
             Wire::HistoryDelete(value) => Ok(Self::HistoryDelete { id: value.id }),
+            Wire::ChatSend(value) => Ok(Self::ChatSend {
+                id: value.id,
+                content: value.content,
+            }),
             Wire::NodesList(_) => Ok(Self::NodesList),
             Wire::NodeHeartbeat(value) => Ok(Self::NodeHeartbeat { node: value.into() }),
         }
@@ -734,6 +748,28 @@ mod tests {
         assert!(matches!(
             decoded,
             RpcRequest::HistoryAppend { content, .. } if content == "hello"
+        ));
+
+        let request = RpcRequest::ChatSend {
+            id: "blake3:chat".to_owned(),
+            content: "echo me".to_owned(),
+        };
+        let decoded = RpcRequest::try_from(pb::RpcRequest::from(request)).expect("decode chat");
+        assert!(matches!(
+            decoded,
+            RpcRequest::ChatSend { id, content }
+                if id == "blake3:chat" && content == "echo me"
+        ));
+
+        let request = RpcRequest::FilesRename {
+            id: "blake3:file".to_owned(),
+            filename: "notes.txt".to_owned(),
+        };
+        let decoded = RpcRequest::try_from(pb::RpcRequest::from(request)).expect("decode rename");
+        assert!(matches!(
+            decoded,
+            RpcRequest::FilesRename { id, filename }
+                if id == "blake3:file" && filename == "notes.txt"
         ));
     }
 

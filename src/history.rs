@@ -88,6 +88,41 @@ impl HistoryService {
         Ok(conversation)
     }
 
+    /// Records one user turn and its assistant response in a single write.
+    pub fn append_exchange(
+        &self,
+        id: &str,
+        user_content: String,
+        assistant_content: String,
+    ) -> Result<Conversation> {
+        if user_content.trim().is_empty() {
+            return Err(LiveError::Config("message content is empty".to_owned()));
+        }
+        if assistant_content.trim().is_empty() {
+            return Err(LiveError::Config("assistant response is empty".to_owned()));
+        }
+        let _guard = self
+            .write_lock
+            .lock()
+            .map_err(|_| LiveError::Conflict("history lock poisoned".to_owned()))?;
+        let mut conversation = self.get(id)?;
+        let user_created_at_millis = now_millis();
+        conversation.messages.push(ConversationMessage {
+            role: "user".to_owned(),
+            content: user_content,
+            created_at_millis: user_created_at_millis,
+        });
+        let assistant_created_at_millis = now_millis().max(user_created_at_millis);
+        conversation.messages.push(ConversationMessage {
+            role: "assistant".to_owned(),
+            content: assistant_content,
+            created_at_millis: assistant_created_at_millis,
+        });
+        conversation.updated_at_millis = assistant_created_at_millis;
+        self.persist_unlocked(&conversation)?;
+        Ok(conversation)
+    }
+
     pub fn delete(&self, id: &str) -> Result<()> {
         let path = self.path_for(id)?;
         if path.exists() {
@@ -145,6 +180,35 @@ mod tests {
         assert_eq!(
             history.get(&conversation.id).expect("get").messages.len(),
             1
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn exchanges_persist_both_sides_of_a_chat_turn() {
+        let root = std::env::temp_dir().join(format!("hologram-chat-history-{}", now_millis()));
+        let history = HistoryService::open(&root).expect("open");
+        let conversation = history.create("echo".to_owned()).expect("create");
+        let conversation = history
+            .append_exchange(&conversation.id, "hello".to_owned(), "hello".to_owned())
+            .expect("append exchange");
+        assert_eq!(conversation.messages.len(), 2);
+        assert_eq!(conversation.messages[0].role, "user");
+        assert_eq!(conversation.messages[1].role, "assistant");
+        assert_eq!(conversation.messages[1].content, "hello");
+        let second = history
+            .create("another thread".to_owned())
+            .expect("create second");
+        history
+            .append_exchange(&second.id, "goodbye".to_owned(), "goodbye".to_owned())
+            .expect("append second exchange");
+        assert_eq!(
+            history.get(&conversation.id).expect("get first").messages[0].content,
+            "hello"
+        );
+        assert_eq!(
+            history.get(&second.id).expect("get second").messages[0].content,
+            "goodbye"
         );
         let _ = std::fs::remove_dir_all(root);
     }

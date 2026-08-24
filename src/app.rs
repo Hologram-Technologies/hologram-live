@@ -275,6 +275,13 @@ impl AppState {
                     RpcResponse::ObjectContent,
                 )
             }
+            RpcRequest::FilesRename { id, filename } => {
+                let registry = self.inner.registry.clone();
+                RpcResponse::from_result(
+                    blocking(move || registry.rename_file(&id, filename)).await,
+                    RpcResponse::Object,
+                )
+            }
             RpcRequest::HoloImport { name, bytes } => {
                 let catalog = self.inner.holo_catalog.clone();
                 RpcResponse::from_result(
@@ -364,6 +371,14 @@ impl AppState {
                     Err(error) => RpcResponse::Error(ApiError::from(&error)),
                 }
             }
+            RpcRequest::ChatSend { id, content } => {
+                let history = self.inner.history.clone();
+                let echoed = content.clone();
+                RpcResponse::from_result(
+                    blocking(move || history.append_exchange(&id, content, echoed)).await,
+                    RpcResponse::Conversation,
+                )
+            }
             RpcRequest::NodesList => {
                 let nodes = self.inner.nodes.clone();
                 RpcResponse::from_result(blocking(move || nodes.list()).await, RpcResponse::Nodes)
@@ -399,9 +414,11 @@ fn resource_for(request: &RpcRequest) -> Option<String> {
         | RpcRequest::HoloRun { kappa, .. } => Some(kappa.clone()),
         RpcRequest::RegistryGet { id }
         | RpcRequest::FilesGet { id }
+        | RpcRequest::FilesRename { id, .. }
         | RpcRequest::HistoryGet { id }
         | RpcRequest::HistoryAppend { id, .. }
-        | RpcRequest::HistoryDelete { id } => Some(id.clone()),
+        | RpcRequest::HistoryDelete { id }
+        | RpcRequest::ChatSend { id, .. } => Some(id.clone()),
         RpcRequest::RegistryPut { filename, .. } | RpcRequest::FilesPut { filename, .. } => {
             filename.clone()
         }

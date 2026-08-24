@@ -27,9 +27,16 @@ file-size:
 clippy:
     cargo clippy --all-targets --locked -- -D warnings
 
-# Build project
-build:
+# Build the standalone server binary.
+server-build:
     cargo build --release --locked
+
+# Build the Tauri desktop application and its bundled server sidecar.
+desktop-build:
+    cd apps/desktop && npm ci && npm run build
+
+# Backwards-compatible default release build for the server.
+build: server-build
 
 # Verify code
 verify: fmt file-size check test clippy bdd build
@@ -46,11 +53,15 @@ dev:
 
 # Build the docs
 docs:
-    cd apps/docs && npm install && npm run build
+    cd apps/docs && npm ci && npm run build
+
+# Validate, tag, and push the current documentation version to GitHub Pages.
+docs-release version="":
+    ./scripts/release-docs.sh "{{version}}"
 
 # Serve the Astro docs with hot reload.
 docs-dev:
-    cd apps/docs && npm install && npm run dev -- --host 127.0.0.1 --port 5432
+    cd apps/docs && npm install && npm run dev -- --host 127.0.0.1 --port 54321
 
 # Work with the Tauri desktop app. Defaults to `dev`; `just tauri build` creates a bundle.
 tauri action="dev":

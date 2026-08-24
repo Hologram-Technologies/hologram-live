@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Hologram",
-        "width": 820,
-        "height": 620,
+        "width": 960,
+        "height": 680,
         "minWidth": 560,
         "minHeight": 480
       }
@@ -26,6 +26,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "externalBin": ["binaries/hologram"]
   }
 }

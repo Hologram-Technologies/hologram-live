@@ -1,8 +1,9 @@
 ---
 import Base from './Base.astro';
+import { sitePath, withoutBase } from '../lib/site';
 
 const { title, description } = Astro.props;
-const pathname = Astro.url.pathname.replace(/\/$/, '');
+const pathname = withoutBase(Astro.url.pathname).replace(/\/$/, '');
 const navigation = [
   {
     label: 'Start here',
@@ -37,22 +38,22 @@ const navigation = [
           <section class="sidebar-group">
             <h2>{group.label}</h2>
             {group.links.map(([href, label]) => (
-              <a class:list={[{ active: pathname === href }]} href={href}>{label}</a>
+              <a class:list={[{ active: pathname === href }]} href={sitePath(href)}>{label}</a>
             ))}
           </section>
         ))}
       </nav>
       <div class="sidebar-callout">
         <span class="status-dot"></span>
-        <div><strong>Local daemon</strong><span>127.0.0.1:11435</span></div>
+        <div><strong>Local service</strong><span>127.0.0.1:11435</span></div>
       </div>
     </aside>
     <article class="doc-content">
-      <div class="breadcrumb"><a href="/docs/getting-started">Docs</a><span>/</span><span>{title}</span></div>
+      <div class="breadcrumb"><a href={sitePath('/docs/getting-started')}>Docs</a><span>/</span><span>{title}</span></div>
       <slot />
       <div class="doc-next">
         <span>Need the wire contract?</span>
-        <a href="/docs/api-reference">Explore the API reference <span>→</span></a>
+        <a href={sitePath('/docs/api-reference')}>Explore the API reference <span>→</span></a>
       </div>
     </article>
   </div>

@@ -25,10 +25,16 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 HOME="$HOME_DIR" "$BIN" init
+sed -i.bak 's/schema_version = 2/schema_version = 1/' "$CONFIG"
+rm -f "$CONFIG.bak"
+sed -i.bak '/dev.hologram.live.chat/d' "$CONFIG"
+rm -f "$CONFIG.bak"
 sed -i.bak "s/127\.0\.0\.1:11435/127.0.0.1:$PORT/g" "$CONFIG"
 rm -f "$CONFIG.bak"
 
 HOME="$HOME_DIR" "$BIN" start
+grep -q 'schema_version = 2' "$CONFIG"
+grep -q 'dev.hologram.live.chat' "$CONFIG"
 HOME="$HOME_DIR" "$BIN" status >/dev/null
 curl -fsS "http://127.0.0.1:$PORT/docs" | grep -q 'Scalar.createApiReference'
 curl -fsS "http://127.0.0.1:$PORT/docs/scalar.js" >/dev/null
@@ -47,6 +53,16 @@ case "$FILES" in
   *)
     echo "error: stored file missing from file listing" >&2
     echo "$FILES" >&2
+    exit 1
+    ;;
+esac
+HOME="$HOME_DIR" "$BIN" files rename "$FILE_ID" renamed.txt >/dev/null
+RENAMED_FILES=$(HOME="$HOME_DIR" "$BIN" files list)
+case "$RENAMED_FILES" in
+  *renamed.txt*) ;;
+  *)
+    echo "error: renamed file missing from file listing" >&2
+    echo "$RENAMED_FILES" >&2
     exit 1
     ;;
 esac
@@ -71,7 +87,22 @@ if [ -z "$KAPPA" ]; then
 fi
 HOME="$HOME_DIR" "$BIN" holo inspect "$KAPPA" >/dev/null
 HOME="$HOME_DIR" "$BIN" holo verify "$KAPPA" >/dev/null
-HOME="$HOME_DIR" "$BIN" history new smoke >/dev/null
+THREAD=$(HOME="$HOME_DIR" "$BIN" --json history new smoke)
+THREAD_ID=$(printf '%s\n' "$THREAD" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\(blake3:[0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)
+if [ -z "$THREAD_ID" ]; then
+  echo "error: failed to parse conversation ID" >&2
+  echo "$THREAD" >&2
+  exit 1
+fi
+CHAT=$(HOME="$HOME_DIR" "$BIN" --json chat send "$THREAD_ID" "echo smoke")
+case "$CHAT" in
+  *'"role": "user"'*'"content": "echo smoke"'*'"role": "assistant"'*'"content": "echo smoke"'*) ;;
+  *)
+    echo "error: chat exchange was not recorded" >&2
+    echo "$CHAT" >&2
+    exit 1
+    ;;
+esac
 HOME="$HOME_DIR" "$BIN" history list >/dev/null
 HOME="$HOME_DIR" "$BIN" openapi --output "$TMP/openapi.json" >/dev/null
 test -s "$TMP/openapi.json"

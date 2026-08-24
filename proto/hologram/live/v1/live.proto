@@ -13,6 +13,8 @@ message HoloImportRequest { string name = 1; bytes content = 2; }
 message HoloRunRequest { string kappa = 1; repeated bytes inputs = 2; }
 message HistoryCreateRequest { string title = 1; }
 message HistoryAppendRequest { string id = 1; string role = 2; string content = 3; }
+message ChatSendRequest { string id = 1; string content = 2; }
+message FileRenameRequest { string id = 1; string filename = 2; }
 message ObjectPutRequest {
   string kind = 1;
   string media_type = 2;
@@ -50,6 +52,8 @@ message RpcRequest {
     IdRequest registry_get = 26;
     ObjectPutRequest files_put = 27;
     IdRequest files_get = 28;
+    ChatSendRequest chat_send = 29;
+    FileRenameRequest files_rename = 30;
   }
 }
 

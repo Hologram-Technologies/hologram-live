@@ -1,0 +1,100 @@
+name: release-server
+
+on:
+  push:
+    tags:
+      - "server-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-server-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./scripts/check-release-tag.sh server "$GITHUB_REF_NAME"
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - run: cargo test --all-targets --locked
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: linux-x86_64
+            archive: tar
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: linux-aarch64
+            archive: tar
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            asset: macos-aarch64
+            archive: tar
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: macos-x86_64
+            archive: tar
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            asset: windows-x86_64
+            archive: zip
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build standalone server
+        run: cargo build --release --locked --bin hologram --target ${{ matrix.target }}
+      - name: Package Unix binary
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#server-v}"
+          mkdir -p dist staging
+          cp "target/${{ matrix.target }}/release/hologram" staging/hologram
+          tar -C staging -czf "dist/hologram-server-${version}-${{ matrix.asset }}.tar.gz" hologram
+      - name: Package Windows binary
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^server-v', ''
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "target/${{ matrix.target }}/release/hologram.exe" -DestinationPath "dist/hologram-server-$version-${{ matrix.asset }}.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: server-*
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum hologram-server-* > SHA256SUMS
+      - name: Publish server release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#server-v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Hologram Server $version" --generate-notes
+          fi

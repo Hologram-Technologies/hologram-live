@@ -3,66 +3,159 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#111214" />
+    <meta name="theme-color" content="#f7f7f5" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <title>Hologram</title>
   </head>
   <body>
-    <main>
-      <header>
-        <div class="mark" aria-hidden="true">H</div>
-        <div>
-          <p class="eyebrow">LOCAL MODULE HOST</p>
-          <h1>Hologram</h1>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="./icon.svg" alt="" />
+          <span>Hologram</span>
         </div>
-        <span id="state" class="state unknown">Checking</span>
-      </header>
 
-      <section class="panel">
-        <div>
-          <h2>Daemon</h2>
-          <p>Run and inspect the bundled Hologram service without leaving the desktop.</p>
+        <nav aria-label="Hologram">
+          <button class="nav-item active" data-view="overview" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">⌂</span><span class="nav-label">Overview</span>
+          </button>
+          <button class="nav-item" data-view="chat">
+            <span class="nav-icon" aria-hidden="true">◌</span><span class="nav-label">Chat</span><span id="nav-thread-count" class="nav-count">—</span>
+          </button>
+          <button class="nav-item" data-view="files">
+            <span class="nav-icon" aria-hidden="true">□</span><span class="nav-label">Files</span><span id="nav-object-count" class="nav-count">—</span>
+          </button>
+          <button class="nav-item" data-view="modules">
+            <span class="nav-icon" aria-hidden="true">◇</span><span class="nav-label">Modules</span><span id="nav-module-count" class="nav-count">—</span>
+          </button>
+        </nav>
+
+        <button id="theme-toggle" class="theme-toggle" type="button">
+          <span id="theme-icon" class="nav-icon" aria-hidden="true">◐</span>
+          <span id="theme-label" class="nav-label">Appearance</span>
+        </button>
+
+        <div class="sidebar-footer">
+          <span class="state-dot unknown" aria-hidden="true"></span>
+          <div><strong class="state-label">Checking</strong><span>On this device</span></div>
         </div>
-        <div class="actions">
-          <button id="start">Start</button>
-          <button id="restart" class="secondary">Restart</button>
-          <button id="stop" class="secondary danger">Stop</button>
-        </div>
-      </section>
+      </aside>
 
-      <section class="terminal" aria-live="polite">
-        <div class="terminal-title">Service output</div>
-        <pre id="output">Connecting to the local daemon…</pre>
-      </section>
-
-      <section class="modules-panel" aria-labelledby="modules-heading">
-        <div class="section-heading">
+      <main class="workspace">
+        <header class="topbar">
           <div>
-            <p class="eyebrow">CAPABILITY MANIFEST</p>
-            <h2 id="modules-heading">Modules</h2>
+            <h1 id="page-title">Overview</h1>
+            <p id="page-description">Your local Hologram workspace</p>
           </div>
-          <button id="refresh-modules" class="secondary">Refresh</button>
-        </div>
-        <div id="modules" class="module-grid">
-          <p class="empty">Start the daemon to discover its modules.</p>
-        </div>
-      </section>
+          <div class="topbar-state">
+            <span class="state-dot unknown" aria-hidden="true"></span>
+            <span class="state-label">Checking</span>
+          </div>
+        </header>
 
-      <section class="modules-panel" aria-labelledby="objects-heading">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">CONTENT-ADDRESSED STORAGE</p>
-            <h2 id="objects-heading">Files &amp; objects</h2>
-          </div>
-          <div class="actions">
-            <button id="upload-file">Upload file</button>
-            <button id="refresh-objects" class="secondary">Refresh</button>
-          </div>
+        <div class="content">
+          <section class="view" data-page="overview" aria-labelledby="page-title">
+            <article class="welcome-card">
+              <div>
+                <p class="eyebrow">LOCAL WORKSPACE</p>
+                <h2 id="service-title">Connecting to Hologram</h2>
+                <p id="service-description">Checking that your modules and files are available.</p>
+              </div>
+              <div class="actions">
+                <button id="start" class="primary command-button" data-when="stopped">Start</button>
+                <button id="restart" class="secondary command-button" data-when="ready">Restart</button>
+                <button id="stop" class="quiet command-button" data-when="ready">Stop</button>
+              </div>
+            </article>
+
+            <div class="stats-grid">
+              <button class="stat-card open-view" data-target="files">
+                <span>Stored files</span><strong id="object-count">—</strong><small>Browse your local objects</small>
+              </button>
+              <button class="stat-card open-view" data-target="chat">
+                <span>Chat threads</span><strong id="thread-count">—</strong><small>Continue a conversation</small>
+              </button>
+              <button class="stat-card open-view" data-target="modules">
+                <span>Available modules</span><strong id="module-count">—</strong><small>View active capabilities</small>
+              </button>
+            </div>
+
+          </section>
+
+          <section class="view chat-view" data-page="chat" hidden aria-label="Chat">
+            <div class="chat-shell">
+              <aside class="thread-panel" aria-label="Chat threads">
+                <button id="new-thread" class="new-thread command-button" data-when="ready" type="button">
+                  <span aria-hidden="true">+</span> New chat
+                </button>
+                <label class="thread-search">
+                  <span class="visually-hidden">Search chats</span>
+                  <span aria-hidden="true">⌕</span>
+                  <input id="thread-search" type="search" placeholder="Search chats" autocomplete="off" />
+                </label>
+                <div id="threads" class="thread-list" aria-live="polite">
+                  <div class="thread-loading"></div>
+                  <div class="thread-loading"></div>
+                  <div class="thread-loading"></div>
+                </div>
+              </aside>
+
+              <div class="chat-main">
+                <header class="chat-header">
+                  <div><h2 id="chat-title">New chat</h2><p id="chat-detail">Messages are saved to this thread</p></div>
+                  <span class="model-pill"><span aria-hidden="true">◇</span> Echo module</span>
+                </header>
+
+                <div id="chat-scroll" class="chat-scroll">
+                  <div id="chat-empty" class="chat-welcome">
+                    <span class="chat-mark" aria-hidden="true">H</span>
+                    <h2>Chat with Hologram</h2>
+                    <p>Start a conversation. For now, Hologram will repeat your message and save both sides to this thread.</p>
+                    <div><span class="state-dot ready" aria-hidden="true"></span> Conversations stay in your local history.</div>
+                  </div>
+                  <div id="messages" class="message-list" aria-live="polite" hidden></div>
+                </div>
+
+                <form id="chat-form" class="composer">
+                  <textarea id="chat-input" rows="1" maxlength="32000" placeholder="Message Hologram" aria-label="Message Hologram"></textarea>
+                  <button id="send-message" class="send-message command-button" data-when="ready" type="submit" aria-label="Send message">↑</button>
+                  <p>Enter to send · Shift+Enter for a new line</p>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" data-page="files" hidden aria-labelledby="files-heading">
+            <div class="section-heading">
+              <div><h2 id="files-heading">Files</h2><p>Content stored in your local Hologram workspace.</p></div>
+              <div class="actions">
+                <button id="upload-file" class="primary command-button" data-when="ready">Add file</button>
+                <button id="refresh-objects" class="secondary command-button" data-when="ready">Refresh</button>
+              </div>
+            </div>
+            <div id="objects" class="object-list">
+              <div class="loading-row" aria-label="Loading files"><span></span><span></span></div>
+              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+            </div>
+          </section>
+
+          <section class="view" data-page="modules" hidden aria-labelledby="modules-heading">
+            <div class="section-heading">
+              <div><h2 id="modules-heading">Modules</h2><p>The capabilities currently available to Hologram.</p></div>
+              <button id="refresh-modules" class="secondary command-button" data-when="ready">Refresh</button>
+            </div>
+            <div id="modules" class="module-list">
+              <div class="loading-row" aria-label="Loading modules"><span></span><span></span></div>
+              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+              <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
+            </div>
+          </section>
+
+          <div id="notice" class="notice" role="status" aria-live="polite">Getting things ready…</div>
         </div>
-        <div id="objects" class="object-list">
-          <p class="empty">Start the daemon to browse stored objects.</p>
-        </div>
-      </section>
-    </main>
+      </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

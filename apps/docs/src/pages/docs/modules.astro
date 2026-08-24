@@ -1,15 +1,18 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 ---
-<DocsLayout title="Modules" description="Build modules that work through the local daemon, desktop app, and future cloud service.">
+<DocsLayout title="Modules" description="Build modules that work through the local service, desktop app, and future cloud service.">
   <h1>Modules</h1>
-  <p>A Hologram Live module is a trusted, statically linked capability provider. It declares a stable ID, dependencies, and operation IDs; contributes HTTP routes to the shared OpenAPI document; and receives the same authenticated dispatch path whether the caller selected a local daemon or a cloud endpoint.</p>
+  <p>A Hologram Live module is a trusted, statically linked capability provider. It declares a stable ID, dependencies, and operation IDs; contributes HTTP routes to the shared OpenAPI document; and receives the same authenticated dispatch path whether the caller selected a local service or a cloud endpoint.</p>
+
+  <h2>Adding a built-in module</h2>
+  <p>Keep executable module behavior in Rust rather than a configuration file: routes, lifecycle hooks, and OpenAPI types benefit from compile-time checking. Create the module implementation under <code>src/modules</code>, then add its module and type to the single <code>builtin_modules!</code> catalogue in <code>src/modules/mod.rs</code>. The catalogue makes the module available to the registry and includes its descriptor ID in the default enabled set. Operators can still select a subset through <code>modules.enabled</code> in <code>live.toml</code>.</p>
 
   <h2>Client path</h2>
   <pre><code>desktop / CLI
       │
       ▼
-LiveClient ── capability handshake ── local daemon or cloud service
+LiveClient ── capability handshake ── local service or cloud service
                                            │
                                            ▼
                                   authorized module operation</code></pre>
@@ -18,9 +21,14 @@ LiveClient ── capability handshake ── local daemon or cloud service
   <h2>Actor policy</h2>
   <p>Do not make every module an actor. Stateless request handlers stay ordinary Rust code. A module that owns long-lived mutable state, background reconciliation, streams, or bounded work queues can use its lifecycle hook to spawn and link Kameo actors through <code>ModuleContext</code>. Durable state still belongs in storage, and remote communication still crosses gRPC.</p>
 
+  <h2>Echo chat starter</h2>
+  <p><code>dev.hologram.live.chat</code> provides the initial <code>chat.send</code> operation and depends on <code>dev.hologram.live.history</code>. Each send records the user message and echoed assistant response as one durable exchange in the selected conversation. The desktop can create threads, switch among their independent histories, and resume any saved thread. A future model provider can replace the echo response without changing the conversation contract.</p>
+  <pre><code>hologram --json history new "First chat"
+hologram --json chat send &lt;conversation-id&gt; "Hello"</code></pre>
+
   <h2>First external integration: Kappa Registry</h2>
   <p><code>dev.hologram.live.kappa-registry</code> is the first provider boundary. The current implementation is a local content-addressed starter store. The upstream Kappa Registry should be integrated through a narrow client/provider adapter, not absorbed into this workspace as a source dependency: it is a separate server, currently targets a newer Rust toolchain, and exposes several registry protocols of its own.</p>
-  <p>Hologram exposes a small object contract: list, put bytes with a kind/media type/optional filename, and get bytes by content ID. The local provider implements that contract now through <code>hologram files</code>, <code>hologram registry</code>, gRPC, and <code>/api/v1/files</code> or <code>/api/v1/objects</code>.</p>
+  <p>Hologram exposes a small object contract: list, put bytes with a kind/media type/optional filename, rename file metadata, and get bytes by content ID. The local provider implements that contract now through <code>hologram files</code>, <code>hologram registry</code>, gRPC, and <code>/api/v1/files</code> or <code>/api/v1/objects</code>.</p>
   <p>The upstream service does not expose one generic upload endpoint. Its adapter should map ordinary files to the S3-compatible PUT API, or publish them as an OCI artifact when registry-native discovery and metadata are required. The adapter owns that translation and returns Hologram's stable object metadata; Git, Nix, ATProto, identity, federation, and reconciliation remain explicit capabilities rather than leaking protocol details into every client.</p>
 
   <h2>Object API</h2>
@@ -40,7 +48,7 @@ curl http://127.0.0.1:11435/api/v1/objects/blake3:… --output notes.txt</code><
     <thead><tr><th>Module</th><th>Boundary</th><th>Likely actor use</th></tr></thead>
     <tbody>
       <tr><td>Kappa Registry</td><td>Content publish, resolve, verify, and protocol adapters</td><td>Optional reconciliation and subscription actors</td></tr>
-      <tr><td>Chat</td><td>Conversations, messages, model sessions, and streaming</td><td>Per-session stream actors</td></tr>
+      <tr><td>Model providers</td><td>Generation, model sessions, and streaming behind <code>chat.send</code></td><td>Per-session stream actors</td></tr>
       <tr><td>Identity</td><td>Signup, login, token refresh, principals, grants, and revocation</td><td>Optional refresh/revocation watchers</td></tr>
     </tbody>
   </table></div>

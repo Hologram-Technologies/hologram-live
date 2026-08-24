@@ -1,7 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 ---
-<DocsLayout title="Getting started" description="Build Hologram Live, initialize its configuration, and start the local daemon.">
+<DocsLayout title="Getting started" description="Build Hologram Live, initialize its configuration, and start the local service.">
   <h1>Getting started</h1>
   <p>Build the single <code>hologram</code> executable, initialize a typed configuration, and start a local module host in a few commands.</p>
 
@@ -17,7 +17,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 ./target/release/hologram init</code></pre>
   <p>The generated configuration lives at <code>~/.config/hologram/live.toml</code> on every supported platform. Unknown fields are rejected instead of silently ignored.</p>
 
-  <h2>Start the daemon</h2>
+  <h2>Start the service</h2>
   <pre><code>./target/release/hologram start
 ./target/release/hologram status
 ./target/release/hologram modules list</code></pre>
@@ -25,7 +25,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
   <h2>Open the interfaces</h2>
   <div class="doc-grid">
-    <article class="doc-card"><h3>Status page</h3><p><a href="http://127.0.0.1:11435">127.0.0.1:11435</a> confirms the daemon is reachable.</p></article>
+    <article class="doc-card"><h3>Status page</h3><p><a href="http://127.0.0.1:11435">127.0.0.1:11435</a> confirms the service is reachable.</p></article>
     <article class="doc-card"><h3>API reference</h3><p><a href="http://127.0.0.1:11435/docs">/docs</a> renders the self-hosted Scalar reference.</p></article>
   </div>
 

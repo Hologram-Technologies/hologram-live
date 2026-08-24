@@ -5,6 +5,17 @@ use std::env;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
+const CURRENT_SCHEMA_VERSION: u32 = 2;
+const CHAT_MODULE_ID: &str = "dev.hologram.live.chat";
+const V1_DEFAULT_MODULES: &[&str] = &[
+    "dev.hologram.live.system",
+    "dev.hologram.live.kappa-registry",
+    "dev.hologram.live.files",
+    "dev.hologram.live.holo",
+    "dev.hologram.live.history",
+    "dev.hologram.live.control-plane",
+];
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerRole {
@@ -115,7 +126,7 @@ pub struct UpdateConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: CURRENT_SCHEMA_VERSION,
             role: ServerRole::Node,
             paths: PathsConfig::default(),
             server: ServerConfig::default(),
@@ -199,14 +210,7 @@ impl Default for TelemetryConfig {
 impl Default for ModulesConfig {
     fn default() -> Self {
         Self {
-            enabled: vec![
-                "dev.hologram.live.system".to_owned(),
-                "dev.hologram.live.kappa-registry".to_owned(),
-                "dev.hologram.live.files".to_owned(),
-                "dev.hologram.live.holo".to_owned(),
-                "dev.hologram.live.history".to_owned(),
-                "dev.hologram.live.control-plane".to_owned(),
-            ],
+            enabled: crate::modules::default_builtin_ids(),
         }
     }
 }
@@ -244,13 +248,18 @@ impl AppConfig {
 
     pub fn load(path: Option<&Path>) -> Result<(Self, PathBuf)> {
         let path = path.map_or_else(Self::default_path, expand_home);
-        let mut config = if path.exists() {
+        let exists = path.exists();
+        let mut config = if exists {
             let source =
                 std::fs::read_to_string(&path).map_err(|error| LiveError::io(&path, error))?;
             toml::from_str::<Self>(&source)?
         } else {
             Self::default()
         };
+        if config.migrate()? && exists {
+            let bytes = toml::to_string_pretty(&config)?;
+            atomic_write(&path, bytes.as_bytes())?;
+        }
         config.apply_environment();
         config.expand_paths();
         config.validate()?;
@@ -270,7 +279,7 @@ impl AppConfig {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema_version != 1 {
+        if self.schema_version != CURRENT_SCHEMA_VERSION {
             return Err(LiveError::Config(format!(
                 "unsupported configuration schema {}",
                 self.schema_version
@@ -334,6 +343,22 @@ impl AppConfig {
         env::var(&self.auth.token_env).ok()
     }
 
+    fn migrate(&mut self) -> Result<bool> {
+        match self.schema_version {
+            CURRENT_SCHEMA_VERSION => Ok(false),
+            1 => {
+                if is_v1_default_module_set(&self.modules.enabled) {
+                    self.modules.enabled.push(CHAT_MODULE_ID.to_owned());
+                }
+                self.schema_version = CURRENT_SCHEMA_VERSION;
+                Ok(true)
+            }
+            other => Err(LiveError::Config(format!(
+                "unsupported configuration schema {other}"
+            ))),
+        }
+    }
+
     fn apply_environment(&mut self) {
         if let Ok(value) = env::var("HOLOGRAM_LISTEN") {
             self.server.listen = value;
@@ -375,6 +400,13 @@ fn is_loopback(ip: IpAddr) -> bool {
     ip.is_loopback()
 }
 
+fn is_v1_default_module_set(enabled: &[String]) -> bool {
+    enabled.len() == V1_DEFAULT_MODULES.len()
+        && V1_DEFAULT_MODULES
+            .iter()
+            .all(|expected| enabled.iter().any(|actual| actual == expected))
+}
+
 fn validate_endpoint(endpoint: &str, local: bool) -> Result<()> {
     if endpoint.starts_with("https://") {
         return Ok(());
@@ -405,5 +437,61 @@ mod tests {
         let mut config = AppConfig::default();
         config.client.remote_endpoint = Some("http://example.com".to_owned());
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn default_config_enables_the_builtin_module_catalogue() {
+        assert_eq!(
+            ModulesConfig::default().enabled,
+            crate::modules::default_builtin_ids()
+        );
+    }
+
+    #[test]
+    fn v1_default_config_migrates_to_enable_chat() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("live.toml");
+        let mut legacy = AppConfig::default();
+        legacy.schema_version = 1;
+        legacy.modules.enabled = V1_DEFAULT_MODULES
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect();
+        std::fs::write(
+            &path,
+            toml::to_string_pretty(&legacy).expect("encode legacy"),
+        )
+        .expect("write legacy");
+
+        let (loaded, _) = AppConfig::load(Some(&path)).expect("load migrated config");
+
+        assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+        assert!(loaded.modules.enabled.iter().any(|id| id == CHAT_MODULE_ID));
+        let persisted = std::fs::read_to_string(path).expect("read migrated config");
+        assert!(persisted.contains("schema_version = 2"));
+        assert!(persisted.contains(CHAT_MODULE_ID));
+    }
+
+    #[test]
+    fn v1_custom_module_selection_is_preserved_during_migration() {
+        let mut legacy = AppConfig::default();
+        legacy.schema_version = 1;
+        legacy.modules.enabled = vec!["dev.hologram.live.system".to_owned()];
+
+        assert!(legacy.migrate().expect("migrate"));
+        assert_eq!(legacy.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(
+            legacy.modules.enabled,
+            vec!["dev.hologram.live.system".to_owned()]
+        );
+    }
+
+    #[test]
+    fn v2_config_can_intentionally_disable_chat() {
+        let mut config = AppConfig::default();
+        config.modules.enabled.retain(|id| id != CHAT_MODULE_ID);
+
+        assert!(!config.migrate().expect("already current"));
+        assert!(!config.modules.enabled.iter().any(|id| id == CHAT_MODULE_ID));
     }
 }

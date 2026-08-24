@@ -1,11 +1,12 @@
 ---
 import '../styles/global.css';
+import { sitePath, withoutBase } from '../lib/site';
 
 const {
   title,
   description = 'Documentation for the local-first, remote-capable Hologram module host.',
 } = Astro.props;
-const pathname = Astro.url.pathname;
+const pathname = withoutBase(Astro.url.pathname);
 const pageTitle = title === 'Hologram Live' ? title : `${title} · Hologram Live`;
 ---
 <!doctype html>
@@ -26,14 +27,14 @@ const pageTitle = title === 'Hologram Live' ? title : `${title} · Hologram Live
     <div class="site-glow" aria-hidden="true"></div>
     <header class="site-header">
       <div class="header-inner">
-        <a class="brand" href="/" aria-label="Hologram Live home">
+        <a class="brand" href={sitePath('/')} aria-label="Hologram Live home">
           <span class="brand-mark" aria-hidden="true"><span></span></span>
           <span>Hologram <strong>Live</strong></span>
         </a>
         <nav class="top-nav" aria-label="Primary navigation">
-          <a class:list={[{ active: pathname.startsWith('/docs') }]} href="/docs/getting-started">Docs</a>
-          <a href="/docs/api-reference">API</a>
-          <a href="/docs/architecture">Architecture</a>
+          <a class:list={[{ active: pathname.startsWith('/docs') }]} href={sitePath('/docs/getting-started')}>Docs</a>
+          <a href={sitePath('/docs/api-reference')}>API</a>
+          <a href={sitePath('/docs/architecture')}>Architecture</a>
         </nav>
         <div class="header-actions">
           <a class="api-pill" href="http://127.0.0.1:11435/docs">Open local API <span>↗</span></a>
@@ -46,13 +47,13 @@ const pageTitle = title === 'Hologram Live' ? title : `${title} · Hologram Live
     <main><slot /></main>
     <footer class="site-footer">
       <div>
-        <a class="brand footer-brand" href="/"><span class="brand-mark"><span></span></span> Hologram Live</a>
+        <a class="brand footer-brand" href={sitePath('/')}><span class="brand-mark"><span></span></span> Hologram Live</a>
         <p>A local-first module host with explicit boundaries.</p>
       </div>
       <div class="footer-links">
-        <a href="/docs/getting-started">Documentation</a>
-        <a href="/docs/api-reference">API reference</a>
-        <a href="/docs/security">Security</a>
+        <a href={sitePath('/docs/getting-started')}>Documentation</a>
+        <a href={sitePath('/docs/api-reference')}>API reference</a>
+        <a href={sitePath('/docs/security')}>Security</a>
       </div>
     </footer>
     <script is:inline>

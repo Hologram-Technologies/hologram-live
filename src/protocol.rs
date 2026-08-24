@@ -17,6 +17,7 @@ pub mod operation {
     pub const FILES_LIST: &str = "files.list";
     pub const FILES_PUT: &str = "files.put";
     pub const FILES_GET: &str = "files.get";
+    pub const FILES_RENAME: &str = "files.rename";
     pub const HOLO_IMPORT: &str = "holo.import";
     pub const HOLO_LIST: &str = "holo.list";
     pub const HOLO_INSPECT: &str = "holo.inspect";
@@ -31,6 +32,7 @@ pub mod operation {
     pub const HISTORY_GET: &str = "history.get";
     pub const HISTORY_APPEND: &str = "history.append";
     pub const HISTORY_DELETE: &str = "history.delete";
+    pub const CHAT_SEND: &str = "chat.send";
     pub const NODES_LIST: &str = "nodes.list";
     pub const NODES_HEARTBEAT: &str = "nodes.heartbeat";
 }
@@ -184,6 +186,10 @@ pub enum RpcRequest {
     FilesGet {
         id: String,
     },
+    FilesRename {
+        id: String,
+        filename: String,
+    },
     HoloImport {
         name: String,
         bytes: Vec<u8>,
@@ -224,6 +230,10 @@ pub enum RpcRequest {
     HistoryDelete {
         id: String,
     },
+    ChatSend {
+        id: String,
+        content: String,
+    },
     NodesList,
     NodeHeartbeat {
         node: NodeRecord,
@@ -245,6 +255,7 @@ impl RpcRequest {
             Self::FilesList => operation::FILES_LIST,
             Self::FilesPut { .. } => operation::FILES_PUT,
             Self::FilesGet { .. } => operation::FILES_GET,
+            Self::FilesRename { .. } => operation::FILES_RENAME,
             Self::HoloImport { .. } => operation::HOLO_IMPORT,
             Self::HoloList => operation::HOLO_LIST,
             Self::HoloInspect { .. } => operation::HOLO_INSPECT,
@@ -259,6 +270,7 @@ impl RpcRequest {
             Self::HistoryGet { .. } => operation::HISTORY_GET,
             Self::HistoryAppend { .. } => operation::HISTORY_APPEND,
             Self::HistoryDelete { .. } => operation::HISTORY_DELETE,
+            Self::ChatSend { .. } => operation::CHAT_SEND,
             Self::NodesList => operation::NODES_LIST,
             Self::NodeHeartbeat { .. } => operation::NODES_HEARTBEAT,
         }

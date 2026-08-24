@@ -235,5 +235,11 @@ mod tests {
         assert!(document.paths.paths.contains_key("/api/v1/objects"));
         assert!(document.paths.paths.contains_key("/api/v1/objects/{id}"));
         assert!(document.paths.paths.contains_key("/api/v1/holo/{kappa}"));
+        assert!(document.paths.paths.contains_key("/api/v1/chat/{id}"));
+        assert!(document.paths.paths.contains_key("/api/v1/history/{id}"));
+        assert!(document
+            .paths
+            .paths
+            .contains_key("/api/v1/history/{id}/messages"));
     }
 }

@@ -26,6 +26,12 @@ enum FilesCommand {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    /// Rename a stored file without changing its content-addressed ID.
+    Rename {
+        id: String,
+        #[arg(allow_hyphen_values = true)]
+        filename: String,
+    },
 }
 
 pub async fn run(cli: Cli, args: FilesArgs) -> Result<()> {
@@ -33,6 +39,14 @@ pub async fn run(cli: Cli, args: FilesArgs) -> Result<()> {
         FilesCommand::List => list(&cli).await,
         FilesCommand::Put { path, media_type } => put(&cli, path, media_type).await,
         FilesCommand::Get { id, output } => get(&cli, id, output).await,
+        FilesCommand::Rename { id, filename } => rename(&cli, id, filename).await,
+    }
+}
+
+async fn rename(cli: &Cli, id: String, filename: String) -> Result<()> {
+    match helpers::call(cli, RpcRequest::FilesRename { id, filename }).await? {
+        RpcResponse::Object(value) => helpers::print(cli, &value),
+        other => helpers::unexpected(other),
     }
 }
 

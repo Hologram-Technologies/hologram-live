@@ -20,10 +20,10 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <div class="table-wrap"><table>
     <tbody>
       <tr><td><code>init</code></td><td>Create the default typed configuration.</td></tr>
-      <tr><td><code>serve</code></td><td>Run the daemon in the foreground.</td></tr>
-      <tr><td><code>start</code></td><td>Start the local daemon in the background.</td></tr>
+      <tr><td><code>serve</code></td><td>Run the service in the foreground.</td></tr>
+      <tr><td><code>start</code></td><td>Start the local service in the background.</td></tr>
       <tr><td><code>stop</code></td><td>Request graceful shutdown.</td></tr>
-      <tr><td><code>restart</code></td><td>Stop and start the configured local daemon.</td></tr>
+      <tr><td><code>restart</code></td><td>Stop and start the configured local service.</td></tr>
       <tr><td><code>status</code></td><td>Read health through the configured client route.</td></tr>
       <tr><td><code>doctor</code></td><td>Validate configuration, module resolution, and local health.</td></tr>
     </tbody>
@@ -35,12 +35,13 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 hologram route system.health
 hologram files put ./notes.txt --media-type text/plain
 hologram files list
+hologram files rename blake3:… meeting-notes.txt
 hologram files get blake3:… --output ./notes.txt
 hologram registry put ./asset.bin --kind model --media-type application/octet-stream
 hologram registry list
 hologram history list
 hologram nodes list</code></pre>
-  <p><code>files</code> is the friendly file-oriented view of the registry. <code>registry</code> lists every object kind, including imported <code>.holo</code> archives. Writes return a BLAKE3 content ID; use that stable ID to fetch the exact bytes again.</p>
+  <p><code>files</code> is the friendly file-oriented view of the registry. <code>registry</code> lists every object kind, including imported <code>.holo</code> archives. Writes return a BLAKE3 content ID; renaming updates only the display and download name, so that stable ID continues to fetch the exact same bytes.</p>
 
   <h2>Compile an application</h2>
   <p><code>hologram compile</code> packages a JSON application manifest, its capability declaration, and its layer files into a self-contained Hologram v3 archive. Layer paths are relative to the source manifest.</p>

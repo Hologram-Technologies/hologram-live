@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import { sitePath } from '../lib/site';
 ---
 <Base title="Hologram Live" description="Run, observe, and extend Hologram locally or across explicitly configured remote boundaries.">
   <div class="home">
@@ -7,10 +8,10 @@ import Base from '../layouts/Base.astro';
       <div>
         <p class="eyebrow">Local-first runtime infrastructure</p>
         <h1>The host for <span>living</span> Holograms.</h1>
-        <p class="hero-copy">A focused daemon, CLI, and desktop shell for running Hologram modules locally and connecting to remote authorities without hiding where work happens.</p>
+        <p class="hero-copy">A focused local service, CLI, and desktop app for running Hologram modules locally and connecting to remote authorities without hiding where work happens.</p>
         <div class="hero-actions">
-          <a class="button primary" href="/docs/getting-started">Start building <span>→</span></a>
-          <a class="button secondary" href="/docs/architecture">Explore architecture</a>
+          <a class="button primary" href={sitePath('/docs/getting-started')}>Start building <span>→</span></a>
+          <a class="button secondary" href={sitePath('/docs/architecture')}>Explore architecture</a>
         </div>
       </div>
       <div class="terminal" aria-label="Terminal showing Hologram startup">
@@ -22,7 +23,7 @@ import Base from '../layouts/Base.astro';
 initialized ~/.config/hologram/live.toml
 
 <span class="prompt">$</span> ./target/release/hologram start
-hologram daemon started (pid 18442)
+hologram service started (pid 18442)
 
 <span class="prompt">$</span> ./target/release/hologram status
 <span class="ready">ready</span> · 6 modules · node</code></pre>
@@ -33,7 +34,7 @@ hologram daemon started (pid 18442)
       <article><span class="feature-number">01</span><h2>Typed boundaries</h2><p>Protobuf/gRPC for native clients and OpenAPI/JSON for browsers.</p></article>
       <article><span class="feature-number">02</span><h2>Supervised state</h2><p>Bounded Kameo actors with explicit links and local supervision.</p></article>
       <article><span class="feature-number">03</span><h2>Observable</h2><p>Structured tracing plus opt-in OTLP traces and RPC metrics.</p></article>
-      <article><span class="feature-number">04</span><h2>Desktop ready</h2><p>A Tauri shell controls the daemon through a managed sidecar.</p></article>
+      <article><span class="feature-number">04</span><h2>Desktop ready</h2><p>A Tauri app controls the local service through a managed sidecar.</p></article>
     </section>
 
     <section class="architecture-section">
@@ -45,14 +46,14 @@ hologram daemon started (pid 18442)
       <div class="architecture-map">
         <article class="architecture-node"><span>CLIENTS</span><h3>CLI · Tauri · Browser</h3><p>Native and web clients share capabilities without sharing transport assumptions.</p></article>
         <div class="architecture-arrow">→</div>
-        <article class="architecture-node accent"><span>KERNEL</span><h3>Hologram daemon</h3><p>Configuration, routing, actors, auth, audit, telemetry, and lifecycle.</p></article>
+        <article class="architecture-node accent"><span>KERNEL</span><h3>Hologram service</h3><p>Configuration, routing, actors, auth, audit, telemetry, and lifecycle.</p></article>
         <div class="architecture-arrow">→</div>
         <article class="architecture-node"><span>MODULES</span><h3>Registry · .holo · History</h3><p>Dependency-ordered capabilities behind stable operation identifiers.</p></article>
       </div>
     </section>
 
     <section class="cta-panel">
-      <div><h2>Inspect every REST operation.</h2><p>Run the daemon and open the self-hosted Scalar reference—no separate docs server required.</p></div>
+      <div><h2>Inspect every REST operation.</h2><p>Run the service and open the self-hosted Scalar reference—no separate docs server required.</p></div>
       <a class="button primary" href="http://127.0.0.1:11435/docs">Open local API <span>↗</span></a>
     </section>
   </div>

@@ -25,6 +25,11 @@ const OPERATIONS: &[OperationDescriptor] = &[
         kind: OperationKind::Mutation,
         fallback_safe_before_dispatch: false,
     },
+    OperationDescriptor {
+        id: operation::FILES_RENAME,
+        kind: OperationKind::Mutation,
+        fallback_safe_before_dispatch: false,
+    },
 ];
 
 static DESCRIPTOR: ModuleDescriptor = ModuleDescriptor {
@@ -45,7 +50,7 @@ impl LiveModule for FilesModule {
     fn router(&self) -> Router<AppState> {
         Router::new()
             .route("/api/v1/files", get(list_files).post(put_file))
-            .route("/api/v1/files/{id}", get(get_file))
+            .route("/api/v1/files/{id}", get(get_file).patch(rename_file))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {
@@ -55,11 +60,16 @@ impl LiveModule for FilesModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_files, put_file, get_file),
-    components(schemas(ObjectMetadata)),
+    paths(list_files, put_file, get_file, rename_file),
+    components(schemas(ObjectMetadata, RenameFileRequest)),
     tags((name = "files", description = "Artifact file discovery"))
 )]
 struct FilesApiDoc;
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct RenameFileRequest {
+    pub filename: String,
+}
 
 #[utoipa::path(
     get,
@@ -121,4 +131,26 @@ pub async fn get_file(
     Path(id): Path<String>,
 ) -> Result<Response<Body>, HttpError> {
     registry::get_object(State(state), Path(id)).await
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/files/{id}",
+    params(("id" = String, Path, description = "Content-addressed file ID")),
+    request_body = RenameFileRequest,
+    responses(
+        (status = 200, body = ObjectMetadata),
+        (status = 404, description = "File not found")
+    )
+)]
+pub async fn rename_file(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<RenameFileRequest>,
+) -> Result<Json<ObjectMetadata>, HttpError> {
+    let provider = state.registry().clone();
+    let metadata = tokio::task::spawn_blocking(move || provider.rename_file(&id, request.filename))
+    .await
+    .map_err(|error| crate::error::LiveError::Conflict(format!("join file rename: {error}")))??;
+    Ok(Json(metadata))
 }

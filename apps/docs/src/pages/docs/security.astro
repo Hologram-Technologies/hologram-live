@@ -7,7 +7,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
   <h2>Network defaults</h2>
   <ul>
-    <li>The daemon binds to loopback by default.</li>
+    <li>The service binds to loopback by default.</li>
     <li>Non-loopback listeners require bearer-token authentication.</li>
     <li>Non-loopback remote clients require HTTPS.</li>
     <li>gRPC messages and HTTP bodies have independent size limits.</li>
@@ -23,5 +23,5 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <p>Tokens, authorization headers, raw prompts, response bodies, private keys, and uploaded bytes must not enter trace fields. OTLP export remains disabled until a collector endpoint is explicitly supplied.</p>
 
   <h2>Interactive API reference</h2>
-  <p>Scalar's JavaScript is served from the daemon binary. Its optional agent is disabled, and the reference reads the OpenAPI document from the same origin.</p>
+  <p>Scalar's JavaScript is served from the Hologram binary. Its optional agent is disabled, and the reference reads the OpenAPI document from the same origin.</p>
 </DocsLayout>

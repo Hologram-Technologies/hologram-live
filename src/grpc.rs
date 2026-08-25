@@ -832,6 +832,8 @@ impl From<HoloPlanLimits> for pb::HoloPlanLimits {
             max_layers: value.max_layers,
             max_objects: value.max_objects,
             max_resolved_bytes: value.max_resolved_bytes,
+            max_applications: value.max_applications,
+            max_depth: value.max_depth,
         }
     }
 }
@@ -842,6 +844,8 @@ impl From<pb::HoloPlanLimits> for HoloPlanLimits {
             max_layers: value.max_layers,
             max_objects: value.max_objects,
             max_resolved_bytes: value.max_resolved_bytes,
+            max_applications: value.max_applications,
+            max_depth: value.max_depth,
         }
     }
 }
@@ -880,6 +884,8 @@ impl From<HoloPlan> for pb::HoloPlan {
             children: value.children.into_iter().map(Into::into).collect(),
             resolved_object_count: value.resolved_object_count,
             resolved_bytes: value.resolved_bytes,
+            application_count: value.application_count,
+            max_depth: value.max_depth,
             limits: Some(value.limits.into()),
             runnable: value.runnable,
             blockers: value.blockers.into_iter().map(Into::into).collect(),
@@ -912,6 +918,8 @@ impl TryFrom<pb::HoloPlan> for HoloPlan {
             children: value.children.into_iter().map(Into::into).collect(),
             resolved_object_count: value.resolved_object_count,
             resolved_bytes: value.resolved_bytes,
+            application_count: value.application_count,
+            max_depth: value.max_depth,
             limits: value
                 .limits
                 .ok_or_else(|| LiveError::Protocol("gRPC holo plan has no limits".to_owned()))?

@@ -210,6 +210,8 @@ pub struct HoloPlanLayer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HoloPlanLimits {
     pub max_layers: u64,
+    pub max_applications: u64,
+    pub max_depth: u64,
     pub max_objects: u64,
     pub max_resolved_bytes: u64,
 }
@@ -234,6 +236,8 @@ pub struct HoloPlan {
     pub children: Vec<HoloChild>,
     pub resolved_object_count: u64,
     pub resolved_bytes: u64,
+    pub application_count: u64,
+    pub max_depth: u64,
     pub limits: HoloPlanLimits,
     pub runnable: bool,
     pub blockers: Vec<HoloPlanBlocker>,
@@ -298,8 +302,16 @@ impl HoloPlan {
             children,
             resolved_object_count: report.objects.len().try_into().unwrap_or(u64::MAX),
             resolved_bytes: report.resolved_bytes,
+            application_count: report.application_count.try_into().unwrap_or(u64::MAX),
+            max_depth: report.max_depth.try_into().unwrap_or(u64::MAX),
             limits: HoloPlanLimits {
                 max_layers: report.limits.max_layers.try_into().unwrap_or(u64::MAX),
+                max_applications: report
+                    .limits
+                    .max_applications
+                    .try_into()
+                    .unwrap_or(u64::MAX),
+                max_depth: report.limits.max_depth.try_into().unwrap_or(u64::MAX),
                 max_objects: report.limits.max_objects.try_into().unwrap_or(u64::MAX),
                 max_resolved_bytes: report.limits.max_resolved_bytes,
             },

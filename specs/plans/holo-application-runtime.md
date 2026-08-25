@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M2, recursive child closure and capability attenuation
+- Next delivery: M2, child grant attenuation and admission
 - Next runtime milestone: M2, admit and execute child application trees
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -109,9 +109,10 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Distinguish embedded, local-store, and future synchronized resolution sources.
 - [x] Resolve and validate the required capability-set object before preparing providers.
 - [x] Resolve every layer payload before any layer starts, rather than resolving only the primary Wasm layer.
-- [ ] Resolve child application and delegated-capability references recursively.
-- [ ] Detect child-application cycles.
-- [ ] Apply explicit maximum closure depth, object count, and cumulative resolved-byte limits.
+- [x] Resolve child application and delegated-capability references recursively.
+- [x] Detect child-application cycles.
+- [x] Apply explicit maximum closure depth, application count, object count,
+  aggregate layer count, and cumulative resolved-byte limits.
 - [x] Deduplicate equal κ references while retaining every logical edge and layer position.
 - [x] Reject a declared embedded κ whose bytes do not re-hash to that κ.
 - [x] Reject unresolved closure members with an error that names the missing κ and referring manifest edge.
@@ -158,7 +159,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] A multi-layer manifest is fully resolved before returning the expected unsupported-provider error.
 - [x] A missing non-primary layer prevents all layer starts.
 - [x] A synthetic provider failure proves reverse-order rollback.
-- [ ] A cyclic child graph fails deterministically without recursion overflow.
+- [x] A cyclic child graph fails deterministically without recursion overflow.
 - [x] Fat and thin variants produce equivalent logical plans when the local store contains the required content.
 - [x] Unit, BDD, API round-trip, docs, Clippy, release build, and smoke gates pass.
 - [x] ADR 004 and ADR 007 are amended if implementation details refine their accepted decisions.
@@ -187,11 +188,11 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 ### Child applications
 
 - [x] Add source-manifest syntax for child application references and delegated capability documents.
-- [ ] Resolve child applications through the same κ closure resolver as layers.
+- [x] Resolve child applications through the same κ closure resolver as layers.
 - [ ] Enforce that every delegated child grant is a subset of the parent’s effective grant.
 - [ ] Reject capability amplification before starting the child.
 - [ ] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
-- [ ] Apply closure and resource limits across the entire application tree, not independently per child.
+- [x] Apply closure and resource limits across the entire application tree, not independently per child.
 
 Compiler evidence (2026-08-25): source-manifest schema v3 accepts child entries
 that pair a verified, self-contained child `.holo` archive with a canonical
@@ -199,9 +200,11 @@ delegated-capability document. Fat parents embed the canonical child manifest,
 its verified closure blobs, and the delegated capability object. Thin parents
 omit those payloads while preserving the same canonical parent application κ.
 `hologram app init` exposes the same model through repeatable paired flags and
-interactive prompts. Runtime planning intentionally retains the typed child
-closure blocker until recursive resolution, tree limits, cycle detection, and
-grant attenuation are implemented together.
+interactive prompts. Runtime planning now iteratively resolves canonical child
+manifests, delegated and requested capability objects, and nested layers under
+one tree-wide budget. It reports application count and maximum depth through
+the plan API and retains the typed child blocker until grant attenuation and
+lifecycle ownership are implemented.
 
 ### M2 acceptance criteria
 
@@ -565,4 +568,5 @@ application/DMG builds pass.
 - [x] Add `hologram holo plan` over local paths and catalog κ values.
 - [x] Route existing direct and resident Wasm execution through the plan.
 - [x] Add synthetic-provider rollback tests.
-- [ ] Extend closure resolution to child applications after M2 grant semantics are fixed.
+- [x] Extend closure resolution to child applications with bounded, iterative κ
+  traversal while retaining the execution blocker until attenuation is fixed.

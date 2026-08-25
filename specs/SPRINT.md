@@ -10,7 +10,7 @@
   content-addressed request and admit it only under an explicit trusted grant
 - Exit signal: insufficient authority returns `LIVE_AUTHORIZATION_DENIED` before
   provider preparation, while child grants can only attenuate parent authority
-- Current focus: Slice 3 child closure and attenuation
+- Current focus: Slice 3 child grant attenuation
 
 This is the short-lived execution tracker. Durable requirements remain in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
@@ -248,11 +248,11 @@ build, and release smoke; the Astro documentation build also passes.
 
 - [x] Add source-manifest child syntax with application and delegated capability
   references, plus interactive-generator support.
-- [ ] Resolve child manifests, delegated grants, required capabilities, and
+- [x] Resolve child manifests, delegated grants, required capabilities, and
   layers through the same verified κ resolver.
-- [ ] Enforce total depth, application count, object count, and byte limits over
+- [x] Enforce total depth, application count, object count, and byte limits over
   the complete tree.
-- [ ] Detect cycles by application κ and return a deterministic path diagnostic.
+- [x] Detect cycles by application κ and return a deterministic path diagnostic.
 - [ ] Require parent effective grant to admit each delegated child grant.
 - [ ] Require the delegated grant to admit the child's requested capabilities.
 - [ ] Reject amplification before preparing the child or any later provider.
@@ -266,19 +266,33 @@ capability document. Compilation embeds each child's canonical manifest and
 verified closure in fat parents, emits the same canonical parent application κ
 for thin parents, and reports the child count through human and JSON CLI paths.
 The interactive generator and paired `--child` / `--child-capabilities` flags
-write the same source model. Runtime child resolution remains explicitly
-blocked pending the unchecked recursive admission, limit, cycle, attenuation,
-and lifecycle work below. Full verification passes formatting, source-size and
-product-boundary gates, all-target checks, 137 library tests, 21 CLI tests,
-Clippy with warnings denied, all 9 BDD scenarios / 80 steps, the optimized
-release build, and release smoke; the Astro documentation build also passes.
+write the same source model. Child execution remains explicitly blocked pending
+attenuation and lifecycle work. That compiler increment passed formatting,
+source-size and product-boundary gates, all-target checks, 137 library tests,
+21 CLI tests, Clippy with warnings denied, all 9 BDD scenarios / 80 steps, the
+optimized release build, release smoke, and the Astro documentation build.
+
+Slice 3 closure evidence (2026-08-25): the runtime now walks root and child
+applications iteratively, verifies canonical child manifests and requested and
+delegated capability objects, resolves every nested layer through the shared κ
+resolver, and deduplicates equal physical objects without collapsing logical
+application instances. One budget covers application depth/count, aggregate
+layers, unique objects, and resolved bytes. Cycle detection returns the full κ
+path before resolving a repeated ancestor. Unit coverage proves nested closure,
+compiled-parent integration, shared-object deduplication, depth/application
+limits, and deterministic cycle paths. Child execution stays blocked so grant
+attenuation remains the next task. Full verification passes formatting,
+source-size and product-boundary gates, all-target checks, 140 library tests,
+21 CLI tests, Clippy with warnings denied, all 9 BDD scenarios / 80 steps, the
+optimized release build, and release smoke; the 13-page Astro documentation
+build also passes.
 
 Slice 3 acceptance:
 
 - [ ] Narrow child delegation starts and stops with its parent.
 - [ ] Amplification and under-granted child requests fail deterministically
   before child provider preparation.
-- [ ] Cyclic and over-limit graphs fail without recursion overflow.
+- [x] Cyclic and over-limit graphs fail without recursion overflow.
 
 ### Slice 4 — Audit, interfaces, and conformance
 

@@ -138,7 +138,23 @@ hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
 
-The stable build creates and validates real v3 `.holo` archives. Archives whose primary layer is Wasm execute in-process through wasmtime, with resident load/run/unload sessions:
+The stable build creates and validates real v3 `.holo` archives. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ.
+
+```text
+.holo v3
+├─ header + section table
+├─ AppManifest       primary · requires · ordered layers · children
+├─ Extension         verified, queryable application directory
+├─ ContentBlob × N   κ71 · content bytes
+├─ other sections    plans · weights · ports · certificates · metadata
+└─ BLAKE3 footer
+```
+
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, and `view`. A layer records its content κ and entrypoint plus an architecture for rootfs or surface for views. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live currently emits fat archives and executes archives whose sole primary layer is Wasm through wasmtime.
+
+See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
+
+Archives whose primary layer is Wasm execute in-process through wasmtime, with resident load/run/unload sessions:
 
 ```bash
 hologram compile ./my-app/hologram.json -o ./my-app.holo

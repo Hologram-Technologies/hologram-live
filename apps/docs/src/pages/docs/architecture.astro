@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
 ---
 <DocsLayout title="Architecture" description="Understand the Hologram Live kernel, transport, actor, module, and desktop boundaries.">
   <h1>Architecture</h1>
@@ -11,6 +12,9 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
     <article class="doc-card"><h3>Modules own</h3><p>Registry, files, <code>.holo</code> catalog behavior, conversation history, and node inventory.</p></article>
   </div>
   <p>Modules expose stable operation identifiers and declare dependencies. Startup resolves those dependencies before a module becomes available.</p>
+
+  <h2>Application archives</h2>
+  <p><a href={sitePath('/docs/holo-files')}><code>.holo</code> v3 files</a> separate their physical section table from a canonical application manifest containing ordered, κ-addressed layers. New archives add a verified application-directory projection so tools can inspect those relationships without changing the manifest's identity role.</p>
 
   <h2>Two protocol surfaces</h2>
   <p>Native clients use the versioned <code>hologram.live.v1.HologramLive</code> Protobuf/gRPC service. Browsers use JSON/HTTP routes described by Utoipa OpenAPI and rendered by Scalar.</p>

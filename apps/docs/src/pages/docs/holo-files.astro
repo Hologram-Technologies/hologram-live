@@ -163,8 +163,8 @@ hologram --json holo plan blake3:… |
   <p>Blocker-free applications use a closed provider registry keyed by the canonical layer kind. Providers are prepared and started in manifest order, while unload and failure rollback stop them in reverse order. The original typed failure remains primary if cleanup also fails. Wasmtime and the experimental Python OCI engine stay behind async native interfaces, so their private handles do not enter the plan or transport schema. Resident records expose lifecycle <code>state</code>, aggregate resident bytes, queue depth, and processed calls; repeated load and unload are safe and idempotent.</p>
 
   <h2>Build, inspect, and run</h2>
-  <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
-  <div class="note"><strong>Two source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Both produce the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
+  <p>Layer, capability, and child paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
+  <div class="note"><strong>Three source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Schema v3 adds ordered child application archives and delegated capability documents. Every version produces the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,
@@ -190,6 +190,30 @@ hologram holo verify blake3:…
 hologram holo load blake3:…
 hologram run blake3:… --input payload.bin
 hologram holo unload blake3:…</code></pre>
+
+  <h3>Compose a child application</h3>
+  <p>Compile the child first, then reference its self-contained archive from a schema-v3 parent. The compiler verifies the child archive, extracts its canonical application manifest, compiles the delegated capability source, and embeds the child manifest and verified content blobs in a fat parent. A thin parent retains the identical canonical application identity without embedding blobs.</p>
+  <pre><code>&#123;
+  "schema_version": 3,
+  "primary": 0,
+  "layers": [
+    &#123; "kind": "wasm", "path": "parent.wasm", "entry": "holo_run" &#125;
+  ],
+  "children": [
+    &#123;
+      "application": "worker.holo",
+      "capabilities": "worker-capabilities.json"
+    &#125;
+  ]
+&#125;
+
+hologram compile worker/hologram.json --output parent/worker.holo
+hologram --json compile --check parent/hologram.json |
+  jq '&#123;valid, child_count&#125;'
+hologram --json compile parent/hologram.json --output parent.holo |
+  jq '&#123;application_kappa, child_count&#125;'
+hologram --json holo inspect parent.holo | jq '.directory.children'</code></pre>
+  <div class="note"><strong>Execution boundary</strong>Source composition and physical packaging work now, but child edges intentionally remain typed planning blockers. Recursive closure limits, attenuation checks, lifecycle ownership, and execution are the next M2 runtime slice.</div>
 
   <h3>Desktop watch-and-compile loop</h3>
   <p>Hologram Desktop's <strong>Applications</strong> view can add a local directory containing <code>hologram.json</code>. The trusted Tauri adapter authorizes the selected path and runs fixed compiler commands into a desktop cache outside the source tree. A Tauri-independent workspace crate performs recursive watching, debounce, persistence, and build-state transitions. Each successful archive goes through the normal catalog import path.</p>

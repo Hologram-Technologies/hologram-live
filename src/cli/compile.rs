@@ -25,6 +25,7 @@ pub struct CompileArgs {
 struct CompileReport {
     output: PathBuf,
     layer_count: usize,
+    child_count: usize,
     byte_length: u64,
     archive_kappa: String,
     archive_fingerprint: String,
@@ -37,6 +38,7 @@ struct CompileReport {
 struct CheckReport {
     manifest: PathBuf,
     layer_count: usize,
+    child_count: usize,
     schema_version: u16,
     capabilities_kappa: String,
     valid: bool,
@@ -58,6 +60,7 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
             &CheckReport {
                 manifest: args.manifest,
                 layer_count: checked.specification.layers.len(),
+                child_count: checked.specification.children.len(),
                 schema_version: checked.specification.schema_version,
                 capabilities_kappa: checked.capabilities_kappa,
                 valid: true,
@@ -89,6 +92,7 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
         &CompileReport {
             output,
             layer_count: compiled.layer_count,
+            child_count: compiled.child_count,
             byte_length: inspection.byte_length,
             archive_kappa: compiled.identity.archive_kappa,
             archive_fingerprint: compiled.identity.archive_fingerprint,

@@ -1,7 +1,8 @@
 use super::{helpers, Cli};
 use clap::{Args, Subcommand, ValueEnum};
 use hologram_live::compile::{
-    validate_compile_manifest, CompileLayer, CompileLayerKind, CompileManifest, CompileSource,
+    validate_compile_manifest, CompileChild, CompileLayer, CompileLayerKind, CompileManifest,
+    CompileSource,
 };
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo_python::{PythonProfile, PythonRootfsSource};
@@ -69,6 +70,12 @@ struct InitArgs {
     /// Capability document path, relative to hologram.json.
     #[arg(long)]
     capabilities: Option<PathBuf>,
+    /// Self-contained child .holo archive, relative to hologram.json. Repeat with --child-capabilities.
+    #[arg(long = "child", value_name = "ARCHIVE")]
+    children: Vec<PathBuf>,
+    /// Delegated capability document for the corresponding --child.
+    #[arg(long = "child-capabilities", value_name = "CAPABILITIES")]
+    child_capabilities: Vec<PathBuf>,
     /// Accept defaults for omitted first-layer fields without prompting.
     #[arg(long)]
     yes: bool,
@@ -100,6 +107,7 @@ enum PythonProfileArg {
 struct InitReport {
     manifest: PathBuf,
     layer_count: usize,
+    child_count: usize,
     primary: Option<u32>,
     compile_command: String,
     thin_compile_command: String,
@@ -146,6 +154,8 @@ fn has_layer_flags(args: &InitArgs) -> bool {
         || args.project.is_some()
         || args.lock.is_some()
         || args.base.is_some()
+        || !args.children.is_empty()
+        || !args.child_capabilities.is_empty()
 }
 
 fn initialize<R: BufRead, W: Write>(
@@ -175,7 +185,6 @@ fn initialize<R: BufRead, W: Write>(
             "an application manifest requires at least one layer".to_owned(),
         ));
     }
-
     let primary = if args.no_primary {
         None
     } else if let Some(primary) = args.primary {
@@ -185,19 +194,31 @@ fn initialize<R: BufRead, W: Write>(
     } else {
         default_primary(&layers)
     };
-    let requires = if let Some(path) = args.capabilities {
+    let requires = if let Some(path) = args.capabilities.clone() {
         Some(path)
     } else if interactive {
         prompt_optional_path(input, output, "Capability file (optional)")?
     } else {
         None
     };
+    let children = if interactive {
+        interactive_children(input, output)?
+    } else {
+        children_from_args(&args)?
+    };
 
     let specification = CompileManifest {
-        schema_version: if python { 2 } else { 1 },
+        schema_version: if !children.is_empty() {
+            3
+        } else if python {
+            2
+        } else {
+            1
+        },
         primary,
         requires,
         layers: std::mem::take(&mut layers),
+        children,
     };
     validate_compile_manifest(&specification)?;
     let mut encoded = serde_json::to_vec_pretty(&specification)?;
@@ -220,11 +241,50 @@ fn initialize<R: BufRead, W: Write>(
     Ok(InitReport {
         manifest: manifest_path,
         layer_count: specification.layers.len(),
+        child_count: specification.children.len(),
         primary,
         compile_command,
         thin_compile_command,
         run_command,
     })
+}
+
+fn children_from_args(args: &InitArgs) -> Result<Vec<CompileChild>> {
+    if args.children.len() != args.child_capabilities.len() {
+        return Err(LiveError::Config(format!(
+            "--child and --child-capabilities must be repeated equally; received {} child archives and {} capability documents",
+            args.children.len(),
+            args.child_capabilities.len()
+        )));
+    }
+    Ok(args
+        .children
+        .iter()
+        .cloned()
+        .zip(args.child_capabilities.iter().cloned())
+        .map(|(application, capabilities)| CompileChild {
+            application,
+            capabilities,
+        })
+        .collect())
+}
+
+fn interactive_children<R: BufRead, W: Write>(
+    input: &mut R,
+    output: &mut W,
+) -> Result<Vec<CompileChild>> {
+    let mut children = Vec::new();
+    while prompt_yes_no(input, output, "Add a child application", false)? {
+        children.push(CompileChild {
+            application: PathBuf::from(prompt_required(input, output, "Child .holo archive")?),
+            capabilities: PathBuf::from(prompt_required(
+                input,
+                output,
+                "Delegated capability file",
+            )?),
+        });
+    }
+    Ok(children)
 }
 
 fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
@@ -565,6 +625,8 @@ mod tests {
             primary: None,
             no_primary: false,
             capabilities: None,
+            children: Vec::new(),
+            child_capabilities: Vec::new(),
             yes: false,
             force: false,
         }
@@ -591,6 +653,7 @@ mod tests {
             Some(std::path::Path::new("capabilities.json"))
         );
         assert!(matches!(manifest.layers[1].kind, CompileLayerKind::View));
+        assert!(manifest.children.is_empty());
     }
 
     #[test]
@@ -704,5 +767,73 @@ mod tests {
             manifest.layers[0].source,
             Some(CompileSource::Python(_))
         ));
+    }
+
+    #[test]
+    fn child_flags_generate_a_schema_three_manifest() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let mut options = args(directory.path().to_path_buf());
+        options.kind = Some(LayerKindArg::Wasm);
+        options.path = Some("app.wasm".into());
+        options.children.push("worker.holo".into());
+        options.child_capabilities.push("worker-caps.json".into());
+
+        let report = initialize(options, false, &mut Cursor::new([]), &mut Vec::new())
+            .expect("initialize child application");
+        let manifest: CompileManifest = serde_json::from_slice(
+            &std::fs::read(directory.path().join("hologram.json")).expect("manifest"),
+        )
+        .expect("parse");
+
+        assert_eq!(report.child_count, 1);
+        assert_eq!(manifest.schema_version, 3);
+        assert_eq!(
+            manifest.children,
+            vec![CompileChild {
+                application: "worker.holo".into(),
+                capabilities: "worker-caps.json".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn interactive_flow_prompts_for_child_archives_and_delegated_capabilities() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let input = b"wasm\napp.wasm\nholo_run\nn\n0\n\nyes\nworker.holo\nworker-caps.json\nno\n";
+        initialize(
+            args(directory.path().to_path_buf()),
+            true,
+            &mut Cursor::new(input),
+            &mut Vec::new(),
+        )
+        .expect("initialize interactive child");
+        let manifest: CompileManifest = serde_json::from_slice(
+            &std::fs::read(directory.path().join("hologram.json")).expect("manifest"),
+        )
+        .expect("parse");
+
+        assert_eq!(manifest.schema_version, 3);
+        assert_eq!(manifest.children.len(), 1);
+        assert_eq!(
+            manifest.children[0].application,
+            PathBuf::from("worker.holo")
+        );
+        assert_eq!(
+            manifest.children[0].capabilities,
+            PathBuf::from("worker-caps.json")
+        );
+    }
+
+    #[test]
+    fn child_flags_must_be_paired() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let mut options = args(directory.path().to_path_buf());
+        options.kind = Some(LayerKindArg::Wasm);
+        options.path = Some("app.wasm".into());
+        options.children.push("worker.holo".into());
+
+        let error = initialize(options, false, &mut Cursor::new([]), &mut Vec::new())
+            .expect_err("unpaired child flags");
+        assert!(error.to_string().contains("repeated equally"), "{error}");
     }
 }

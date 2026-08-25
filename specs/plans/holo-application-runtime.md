@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M1, identity, planning, provider, and lifecycle foundation
-- Next runtime milestone: M1, application planning and provider boundary
+- Next delivery: M2, recursive child closure and capability attenuation
+- Next runtime milestone: M2, admit and execute child application trees
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the current v4 baseline, compatibility requirements, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -65,6 +65,8 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Refuse to prompt in non-interactive environments unless all required choices are supplied as flags.
 - [x] Add non-interactive flags for layer kind, layer path, entrypoint, architecture, surface, primary layer, and capability file.
 - [x] Support repeated layer flags or a repeatable interactive “add another layer” step.
+- [x] Support schema-v3 child application archives and delegated capability
+  files through paired flags or a repeatable interactive prompt.
 - [x] Show the resulting compile and run commands after generation.
 - [x] Return a machine-readable creation report when global `--json` is active.
 
@@ -184,12 +186,22 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Child applications
 
-- [ ] Add source-manifest syntax for child application references and delegated capability documents.
+- [x] Add source-manifest syntax for child application references and delegated capability documents.
 - [ ] Resolve child applications through the same κ closure resolver as layers.
 - [ ] Enforce that every delegated child grant is a subset of the parent’s effective grant.
 - [ ] Reject capability amplification before starting the child.
 - [ ] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
 - [ ] Apply closure and resource limits across the entire application tree, not independently per child.
+
+Compiler evidence (2026-08-25): source-manifest schema v3 accepts child entries
+that pair a verified, self-contained child `.holo` archive with a canonical
+delegated-capability document. Fat parents embed the canonical child manifest,
+its verified closure blobs, and the delegated capability object. Thin parents
+omit those payloads while preserving the same canonical parent application κ.
+`hologram app init` exposes the same model through repeatable paired flags and
+interactive prompts. Runtime planning intentionally retains the typed child
+closure blocker until recursive resolution, tree limits, cycle detection, and
+grant attenuation are implemented together.
 
 ### M2 acceptance criteria
 
@@ -371,7 +383,7 @@ application/DMG builds pass.
 
 ### Manifest features
 
-- [ ] Add child applications and delegated capabilities to `hologram.json`.
+- [x] Add child applications and delegated capabilities to `hologram.json`.
 - [ ] Validate `primary` against exit-bearing layer kinds before reading large payloads.
 - [ ] Validate duplicate, missing, unreadable, and unsupported layer paths with source locations.
 - [ ] Decide whether hybrid archives with only some embedded blobs are supported and document the decision.

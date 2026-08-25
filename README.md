@@ -152,13 +152,19 @@ cd my-app
 hologram app init
 ```
 
-The generator prompts for ordered layers, their kind-specific entrypoint or surface information, the primary layer, and an optional capability file. It writes `hologram.json` atomically and prints the commands needed to compile and run it. For scripts and CI, provide the first layer as flags:
+The generator prompts for ordered layers, their kind-specific entrypoint or surface information, the primary layer, an optional capability file, and optional child applications with delegated capability documents. It writes `hologram.json` atomically and prints the commands needed to compile and run it. For scripts and CI, provide the first layer as flags:
 
 ```bash
 hologram app init ./my-app \
   --kind wasm \
   --path app.wasm \
   --entry holo_run
+
+# Compose a previously compiled, self-contained child archive
+hologram app init ./parent \
+  --kind wasm --path parent.wasm --entry holo_run \
+  --child worker.holo \
+  --child-capabilities worker-capabilities.json
 ```
 
 Use `--yes` for a minimal `app.wasm`/`_start` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
@@ -237,7 +243,10 @@ empty request. A request describes what an application needs—it is never itsel
 a grant. In the upstream capability contract, a scalar budget of `0` means
 unbounded; use a nonzero value to request a finite ceiling. Runtime grant
 enforcement now decodes this canonical request and authorizes it before any
-provider prepares. Child attenuation remains the next M2 slice.
+provider prepares. Schema-v3 source manifests may pair a self-contained child
+`.holo` archive with a delegated capability document; compilation binds both
+canonical κ values into the parent and embeds the verified child closure in a
+fat build. Recursive admission and child execution remain the next M2 slice.
 
 Ordinary local execution uses the built-in baseline grant: no storage roots,
 publish/subscribe channels, or network flags. A non-empty request therefore

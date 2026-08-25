@@ -246,7 +246,7 @@ build, and release smoke; the Astro documentation build also passes.
 
 ### Slice 3 — Child closure and attenuation
 
-- [ ] Add source-manifest child syntax with application and delegated capability
+- [x] Add source-manifest child syntax with application and delegated capability
   references, plus interactive-generator support.
 - [ ] Resolve child manifests, delegated grants, required capabilities, and
   layers through the same verified κ resolver.
@@ -259,6 +259,19 @@ build, and release smoke; the Astro documentation build also passes.
 - [ ] Define manifest-order child startup, reverse-order rollback/stop, and exit
   propagation in an ADR amendment.
 - [ ] Remove the M1 child blocker only when the complete child plan is admitted.
+
+Slice 3 compiler evidence (2026-08-25): schema-v3 `children` entries pair a
+verified, self-contained child `.holo` archive with a canonical delegated
+capability document. Compilation embeds each child's canonical manifest and
+verified closure in fat parents, emits the same canonical parent application κ
+for thin parents, and reports the child count through human and JSON CLI paths.
+The interactive generator and paired `--child` / `--child-capabilities` flags
+write the same source model. Runtime child resolution remains explicitly
+blocked pending the unchecked recursive admission, limit, cycle, attenuation,
+and lifecycle work below. Full verification passes formatting, source-size and
+product-boundary gates, all-target checks, 137 library tests, 21 CLI tests,
+Clippy with warnings denied, all 9 BDD scenarios / 80 steps, the optimized
+release build, and release smoke; the Astro documentation build also passes.
 
 Slice 3 acceptance:
 

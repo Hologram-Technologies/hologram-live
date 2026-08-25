@@ -114,7 +114,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
     <article class="doc-card"><h3>Fat</h3><p>The manifest and referenced blobs travel together. It is self-contained and suited to distribution, air-gapped transfer, and first install.</p></article>
     <article class="doc-card"><h3>Thin</h3><p>The manifest travels without payload blobs. The runtime resolves the same κ references from a content store or sync source.</p></article>
   </div>
-  <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives. The upstream format and tools define thin archives, but Live's Wasm runtime currently requires the primary blob to be embedded. Store-backed thin resolution is the next runtime step; it does not require another format change.</div>
+  <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives by default and <code>--thin</code> emits the same canonical manifest without content blobs. Importing a fat archive caches its verified payloads by κ, so catalog-backed resident execution can later resolve a thin archive. Direct file execution requires a self-contained fat archive.</div>
 
   <h2>Build, inspect, and run</h2>
   <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
@@ -129,6 +129,8 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 &#125;
 
 hologram compile hologram.json --output application.holo
+hologram run application.holo --input payload.bin
+hologram compile hologram.json --thin --output application.thin.holo
 hologram holo import application.holo
 hologram --json holo inspect blake3:…
 hologram holo verify blake3:…

@@ -150,11 +150,18 @@ The stable build creates and validates real v3 `.holo` archives. The physical fi
 └─ BLAKE3 footer
 ```
 
-The closed layer kinds are `wasm`, `tensor`, `rootfs`, and `view`. A layer records its content κ and entrypoint plus an architecture for rootfs or surface for views. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live currently emits fat archives and executes archives whose sole primary layer is Wasm through wasmtime.
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, and `view`. A layer records its content κ and entrypoint plus an architecture for rootfs or surface for views. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, and executes archives whose sole primary layer is Wasm through wasmtime.
 
 See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
 
-Archives whose primary layer is Wasm execute in-process through wasmtime, with resident load/run/unload sessions:
+Archives whose primary layer is Wasm execute in-process through wasmtime. A self-contained archive can run directly without starting the service:
+
+```bash
+hologram compile ./my-app/hologram.json -o ./my-app.holo
+hologram run ./my-app.holo --input ./payload.bin
+```
+
+For warm, repeated execution, import and load the archive into a resident session:
 
 ```bash
 hologram compile ./my-app/hologram.json -o ./my-app.holo
@@ -165,9 +172,18 @@ hologram holo resident
 hologram holo unload blake3:...
 ```
 
+The compiler emits fat archives by default. `--thin` emits the same canonical application manifest without its κ-addressed payloads:
+
+```bash
+hologram compile ./my-app/hologram.json -o ./my-app.holo
+hologram compile ./my-app/hologram.json --thin -o ./my-app.thin.holo
+```
+
+Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
+
 Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect blake3:...` exposes the ordered layers, child applications, required capability set, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older v3 archives without it are still inspected by deriving the same view.
 
-`holo load` compiles the Wasm layer once and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Archives whose primary layer is a tensor or rootfs still return a typed `LIVE_CAPABILITY_MISSING` error. The guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
+`holo load` resolves the primary layer by κ, compiles the Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Archives whose primary layer is a tensor or rootfs still return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
 
 ### Inference compatibility APIs
 

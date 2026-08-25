@@ -55,10 +55,7 @@ impl ResidentHoloActor {
         processed: Arc<AtomicUsize>,
     ) -> Result<Self> {
         let kappa = kappa.into();
-        let module = Module::new(engine, wasm).map_err(|error| {
-            LiveError::InvalidHolo(format!("compile wasm layer of {kappa}: {error}"))
-        })?;
-        validate_contract(engine, &module)?;
+        let module = compile_module(engine, &kappa, wasm)?;
         Ok(Self {
             module,
             kappa,
@@ -76,16 +73,46 @@ impl Message<Run> for ResidentHoloActor {
         _context: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         let started = Instant::now();
-        let mut outputs = Vec::with_capacity(message.inputs.len());
-        for input in &message.inputs {
-            outputs.push(run_once(&self.module, &self.kappa, input)?);
-        }
+        let outputs = run_inputs(&self.module, &self.kappa, &message.inputs)?;
         self.processed.fetch_add(1, Ordering::Relaxed);
         Ok(RunOutcome {
             outputs,
             elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
         })
     }
+}
+
+/// Compile and execute a Wasm layer without making it resident. The local
+/// `.holo` file executor uses this path; resident execution uses the same
+/// compiler and per-input invocation below through `ResidentHoloActor`.
+pub fn execute(
+    engine: &Engine,
+    kappa: &str,
+    wasm: &[u8],
+    inputs: &[Vec<u8>],
+) -> Result<RunOutcome> {
+    let started = Instant::now();
+    let module = compile_module(engine, kappa, wasm)?;
+    let outputs = run_inputs(&module, kappa, inputs)?;
+    Ok(RunOutcome {
+        outputs,
+        elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+    })
+}
+
+fn compile_module(engine: &Engine, kappa: &str, wasm: &[u8]) -> Result<Module> {
+    let module = Module::new(engine, wasm).map_err(|error| {
+        LiveError::InvalidHolo(format!("compile wasm layer of {kappa}: {error}"))
+    })?;
+    validate_contract(engine, &module)?;
+    Ok(module)
+}
+
+fn run_inputs(module: &Module, kappa: &str, inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+    inputs
+        .iter()
+        .map(|input| run_once(module, kappa, input))
+        .collect()
 }
 
 /// Instantiate the module against a scratch store and resolve the contract
@@ -223,5 +250,18 @@ mod tests {
         .expect("compile");
         let output = run_once(&actor.module, "blake3:test", b"hello").expect("run");
         assert_eq!(output, b"hello");
+    }
+
+    #[test]
+    fn one_shot_execution_uses_the_same_guest_contract() {
+        let engine = Engine::default();
+        let outcome = execute(
+            &engine,
+            "blake3:test",
+            ECHO_WAT.as_bytes(),
+            &[b"hello".to_vec(), b"world".to_vec()],
+        )
+        .expect("execute");
+        assert_eq!(outcome.outputs, [b"hello", b"world"]);
     }
 }

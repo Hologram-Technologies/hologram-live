@@ -50,9 +50,20 @@ pub enum CompileLayerKind {
 pub struct CompiledHolo {
     pub bytes: Vec<u8>,
     pub layer_count: usize,
+    pub packaging: HoloPackaging,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoloPackaging {
+    Fat,
+    Thin,
 }
 
 pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
+    compile_manifest_with(path, HoloPackaging::Fat)
+}
+
+pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<CompiledHolo> {
     let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
     let specification: CompileManifest = serde_json::from_slice(&source).map_err(|error| {
         LiveError::Config(format!(
@@ -92,23 +103,31 @@ pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
     })?;
 
     let layer_count = manifest.layers.len();
-    let directory = holo_directory::derive(
-        &manifest,
-        blobs
+    let embedded = match packaging {
+        HoloPackaging::Fat => blobs
             .iter()
-            .map(|(kappa, content)| (kappa.as_slice(), content.as_slice())),
-    )?;
+            .map(|(kappa, content)| (kappa.as_slice(), content.as_slice()))
+            .collect::<Vec<_>>(),
+        HoloPackaging::Thin => Vec::new(),
+    };
+    let directory = holo_directory::derive(&manifest, embedded.iter().copied())?;
     let mut writer = HoloWriter::new();
     writer.set_app_manifest(manifest.canonicalize());
     writer.set_metadata(source);
     writer.add_extension(DIRECTORY_EXTENSION_KEY, holo_directory::encode(&directory)?);
-    for (kappa, content) in blobs {
-        writer.add_content_blob(kappa, content);
+    if packaging == HoloPackaging::Fat {
+        for (kappa, content) in blobs {
+            writer.add_content_blob(kappa, content);
+        }
     }
     let bytes = writer
         .finish()
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-    Ok(CompiledHolo { bytes, layer_count })
+    Ok(CompiledHolo {
+        bytes,
+        layer_count,
+        packaging,
+    })
 }
 
 fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> Result<Layer> {
@@ -238,5 +257,38 @@ mod tests {
         assert_eq!(directory.layers[0].kind, "view");
         assert_eq!(directory.layers[0].surface.as_deref(), Some("portable"));
         assert_eq!(directory.blobs.len(), 2);
+    }
+
+    #[test]
+    fn fat_and_thin_packages_share_the_same_application_manifest() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("view.html"), "<h1>Hello</h1>").expect("view");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "layers": [{"kind":"view","path":"view.html","surface":"portable"}]
+            }"#,
+        )
+        .expect("manifest");
+
+        let fat = compile_manifest_with(&manifest_path, HoloPackaging::Fat).expect("fat");
+        let thin = compile_manifest_with(&manifest_path, HoloPackaging::Thin).expect("thin");
+        assert_eq!(fat.packaging, HoloPackaging::Fat);
+        assert_eq!(thin.packaging, HoloPackaging::Thin);
+
+        let fat_loader = hologram::archive::HoloLoader::from_bytes(&fat.bytes).expect("fat loader");
+        let thin_loader =
+            hologram::archive::HoloLoader::from_bytes(&thin.bytes).expect("thin loader");
+        let fat_plan = fat_loader.into_plan().expect("fat plan");
+        let thin_plan = thin_loader.into_plan().expect("thin plan");
+        assert_eq!(fat_plan.app_manifest(), thin_plan.app_manifest());
+        assert_eq!(fat_plan.content_blobs().expect("fat blobs").len(), 2);
+        assert!(thin_plan.content_blobs().expect("thin blobs").is_empty());
+
+        let inspection = inspect_bytes("thin", "hello.holo", &thin.bytes).expect("inspect thin");
+        assert!(inspection.directory_embedded);
+        assert!(inspection.directory.expect("directory").blobs.is_empty());
     }
 }

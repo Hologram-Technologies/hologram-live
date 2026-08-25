@@ -55,8 +55,12 @@ hologram nodes list</code></pre>
   ]
 &#125;
 
-hologram compile hologram.json --output application.holo</code></pre>
-  <p>Supported layer kinds are <code>wasm</code>, <code>tensor</code>, <code>rootfs</code>, and <code>view</code>. This command assembles canonical application archives; source-language and model compilation remain upstream Hologram compiler responsibilities.</p>
+hologram compile hologram.json --output application.holo
+hologram run application.holo --input request.bin
+
+# Same manifest identity, payloads resolved through the local κ store
+hologram compile hologram.json --thin --output application.thin.holo</code></pre>
+  <p>Supported layer kinds are <code>wasm</code>, <code>tensor</code>, <code>rootfs</code>, and <code>view</code>. Fat archives are self-contained and can execute directly without a running service. A thin archive omits content blobs; import a corresponding fat archive first so resident execution can resolve those layer κ values from the local content cache. This command assembles canonical application archives; source-language and model compilation remain upstream Hologram compiler responsibilities.</p>
 
   <h2>Operations</h2>
   <p><code>tracing</code> reads or updates the live filter, <code>openapi</code> writes the generated OpenAPI document, and <code>update</code> checks, installs, or rolls back verified releases.</p>

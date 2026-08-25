@@ -94,6 +94,31 @@ fn run_archive(world: &mut BddWorld, input: String) {
     world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
 }
 
+#[when(expr = "I run the compiled archive directly with input {string}")]
+fn run_local_archive(world: &mut BddWorld, input: String) {
+    let input_path = world
+        .temporary
+        .as_ref()
+        .expect("scenario directory")
+        .path()
+        .join("direct-input.bin");
+    std::fs::write(&input_path, input).expect("write input");
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("run")
+        .arg(world.output_path.as_ref().expect("compiled archive"))
+        .arg("--input")
+        .arg(input_path)
+        .output()
+        .expect("run local archive");
+    assert!(
+        output.status.success(),
+        "local holo run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
+}
+
 #[then(expr = "the run output is {string}")]
 fn run_output_is(world: &mut BddWorld, expected: String) {
     let result = world.run_result.as_ref().expect("run result");

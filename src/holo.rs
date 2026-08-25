@@ -1,12 +1,12 @@
 use crate::actor::ActorSystem;
 use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
-use crate::holo_wasm::{ResidentHoloActor, Run};
+use crate::holo_wasm::{self, ResidentHoloActor, Run};
 use crate::protocol::{HoloInspection, HoloRunResult, HoloSection, ResidentHolo};
 use crate::store::ObjectStore;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
-use hologram::space::{AppManifest, LayerKind};
+use hologram::space::{address_bytes, AppManifest, LayerKind};
 use kameo::actor::{ActorRef, Spawn};
 use kameo::error::SendError;
 use kameo::mailbox;
@@ -37,6 +37,7 @@ impl HoloCatalog {
 
     pub fn import(&self, name: String, bytes: Vec<u8>) -> Result<HoloInspection> {
         let inspection = inspect_bytes("pending", &name, &bytes)?;
+        self.cache_content_blobs(&bytes)?;
         let metadata = self
             .store
             .put("holo", HOLO_MEDIA_TYPE, Some(name.clone()), &bytes)?;
@@ -89,6 +90,28 @@ impl HoloCatalog {
     pub fn bytes(&self, kappa: &str) -> Result<Vec<u8>> {
         self.verify(kappa)?;
         self.store.get(kappa)
+    }
+
+    fn resolve_content(&self, kappa: &str) -> Result<Option<Vec<u8>>> {
+        self.store.get_cached(kappa)
+    }
+
+    fn cache_content_blobs(&self, bytes: &[u8]) -> Result<()> {
+        let loader = HoloLoader::from_bytes(bytes)
+            .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+        let plan = loader
+            .into_plan()
+            .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+        for (label, content) in plan
+            .content_blobs()
+            .map_err(|error| LiveError::InvalidHolo(error.to_string()))?
+        {
+            let kappa = std::str::from_utf8(label).map_err(|_| {
+                LiveError::InvalidHolo("content blob kappa is not valid UTF-8".to_owned())
+            })?;
+            self.store.cache_addressed(kappa, content)?;
+        }
+        Ok(())
     }
 
     pub fn remove(&self, kappa: &str) -> Result<()> {
@@ -233,7 +256,9 @@ impl HoloRuntime {
             return Ok(record);
         }
         let bytes = self.catalog.bytes(kappa)?;
-        let wasm = extract_primary_wasm(kappa, &bytes)?;
+        let wasm = extract_primary_wasm(kappa, &bytes, |content| {
+            self.catalog.resolve_content(content)
+        })?;
         let queued = Arc::new(AtomicUsize::new(0));
         let processed = Arc::new(AtomicUsize::new(0));
         let actor = ResidentHoloActor::compile(kappa, &self.engine, &wasm, processed.clone())?;
@@ -318,6 +343,32 @@ impl HoloRuntime {
     }
 }
 
+/// One-shot execution for a self-contained `.holo` file.
+///
+/// This is deliberately separate from [`HoloRuntime`]: the runtime manages
+/// catalog-backed, warm resident programs, while the executor verifies,
+/// compiles, runs, and drops one local archive without a service process.
+#[derive(Default)]
+pub struct HoloExecutor {
+    engine: Engine,
+}
+
+impl HoloExecutor {
+    pub fn execute(&self, bytes: &[u8], inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
+        let kappa = format!("blake3:{}", blake3::hash(bytes));
+        inspect_bytes(&kappa, "local.holo", bytes)?;
+        let wasm = extract_primary_wasm(&kappa, bytes, |_| Ok(None))?;
+        let resident_bytes = wasm.len();
+        let outcome = holo_wasm::execute(&self.engine, &kappa, &wasm, &inputs)?;
+        Ok(HoloRunResult {
+            kappa,
+            outputs: outcome.outputs,
+            elapsed_micros: outcome.elapsed_micros,
+            resident_bytes,
+        })
+    }
+}
+
 fn not_resident(kappa: &str) -> LiveError {
     LiveError::NotFound(format!(
         "{kappa} is not loaded as a resident holo; run `hologram holo load {kappa}` first"
@@ -327,7 +378,10 @@ fn not_resident(kappa: &str) -> LiveError {
 /// Extract the wasm payload of an archive that is exactly one primary wasm
 /// layer. Anything else is an honest capability error naming the unsupported
 /// layer kinds.
-fn extract_primary_wasm(kappa: &str, bytes: &[u8]) -> Result<Vec<u8>> {
+fn extract_primary_wasm<F>(kappa: &str, bytes: &[u8], resolve: F) -> Result<Vec<u8>>
+where
+    F: FnOnce(&str) -> Result<Option<Vec<u8>>>,
+{
     let loader =
         HoloLoader::from_bytes(bytes).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     let plan = loader
@@ -369,15 +423,25 @@ fn extract_primary_wasm(kappa: &str, bytes: &[u8]) -> Result<Vec<u8>> {
     let blobs = plan
         .content_blobs()
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-    let (_, blob) = blobs
-        .iter()
-        .find(|(label, _)| *label == content.as_bytes())
-        .ok_or_else(|| {
-            LiveError::InvalidHolo(format!(
-                "wasm layer content of {kappa} is not embedded in the archive"
-            ))
-        })?;
-    Ok(blob.to_vec())
+    if let Some((_, blob)) = blobs.iter().find(|(label, _)| *label == content.as_bytes()) {
+        return Ok(blob.to_vec());
+    }
+    let content_kappa = std::str::from_utf8(content.as_bytes()).map_err(|_| {
+        LiveError::InvalidHolo(format!(
+            "primary layer of {kappa} has a malformed content kappa"
+        ))
+    })?;
+    let blob = resolve(content_kappa)?.ok_or_else(|| {
+        LiveError::NotFound(format!(
+            "primary layer content {content_kappa} for {kappa} is not embedded or cached; import a fat archive containing it first"
+        ))
+    })?;
+    if address_bytes(&blob) != content {
+        return Err(LiveError::InvalidHolo(format!(
+            "resolved primary layer content {content_kappa} does not match its kappa"
+        )));
+    }
+    Ok(blob)
 }
 
 const fn layer_kind_name(kind: LayerKind) -> &'static str {
@@ -522,6 +586,64 @@ mod tests {
         assert_eq!(error.code(), "LIVE_NOT_FOUND");
         let error = runtime.unload(&kappa).await.expect_err("must fail");
         assert_eq!(error.code(), "LIVE_NOT_FOUND");
+    }
+
+    #[test]
+    fn one_shot_executor_runs_a_self_contained_archive() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures/wasm-app/hologram.json");
+        let compiled = crate::compile::compile_manifest(&manifest).expect("compile fixture");
+        let result = HoloExecutor::default()
+            .execute(&compiled.bytes, vec![b"hello holo".to_vec()])
+            .expect("execute");
+        assert_eq!(result.outputs, vec![b"HELLO HOLO".to_vec()]);
+        assert!(result.resident_bytes > 0);
+    }
+
+    #[test]
+    fn one_shot_executor_explains_that_thin_content_is_unavailable() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures/wasm-app/hologram.json");
+        let compiled =
+            crate::compile::compile_manifest_with(&manifest, crate::compile::HoloPackaging::Thin)
+                .expect("compile fixture");
+        let error = HoloExecutor::default()
+            .execute(&compiled.bytes, Vec::new())
+            .expect_err("thin local execution needs a content store");
+        assert_eq!(error.code(), "LIVE_NOT_FOUND");
+        assert!(
+            error.to_string().contains("not embedded or cached"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resident_runtime_resolves_a_thin_archive_from_the_content_cache() {
+        let runtime = test_runtime("thin-resolution");
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures/wasm-app/hologram.json");
+        let fat =
+            crate::compile::compile_manifest_with(&manifest, crate::compile::HoloPackaging::Fat)
+                .expect("fat");
+        runtime
+            .catalog
+            .import("fat.holo".to_owned(), fat.bytes)
+            .expect("import fat");
+        let thin =
+            crate::compile::compile_manifest_with(&manifest, crate::compile::HoloPackaging::Thin)
+                .expect("thin");
+        let thin_kappa = runtime
+            .catalog
+            .import("thin.holo".to_owned(), thin.bytes)
+            .expect("import thin")
+            .kappa;
+
+        runtime.load(&thin_kappa).await.expect("load thin");
+        let result = runtime
+            .run(&thin_kappa, vec![b"resolved".to_vec()])
+            .await
+            .expect("run thin");
+        assert_eq!(result.outputs, vec![b"RESOLVED".to_vec()]);
     }
 
     #[tokio::test]

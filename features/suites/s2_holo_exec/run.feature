@@ -18,3 +18,10 @@ Feature: Resident .holo wasm execution
     When I unload the archive
     Then running the archive fails with a not-found error
     And I stop the local service
+
+  Scenario: execute a local .holo file without a service
+    Given the example wasm application manifest
+    When I compile the application
+    Then the compile command succeeds
+    When I run the compiled archive directly with input "hello file"
+    Then the run output is "HELLO FILE"

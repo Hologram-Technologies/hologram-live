@@ -63,7 +63,11 @@ impl AppState {
             store.clone(),
             config.paths.data_dir.join("models"),
         )?);
-        let engine = crate::inference::engine_from_config(&config.inference, models.clone())?;
+        let engine = crate::inference::engine_from_config(
+            &config.inference,
+            models.clone(),
+            config.server.actor_mailbox_capacity,
+        )?;
         let chat = ChatService::new(history.clone(), engine);
         let nodes = Arc::new(NodeDirectory::open(
             config.paths.data_dir.join("control-plane/nodes.json"),

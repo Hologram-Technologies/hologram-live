@@ -286,6 +286,7 @@ async fn generate_core(
             max_tokens: options.num_predict,
             temperature: options.temperature,
             seed: options.seed,
+            session_key: None,
         })
         .await
         .map_err(OllamaError::from)?;
@@ -319,6 +320,7 @@ async fn chat_core(
             max_tokens: options.num_predict,
             temperature: options.temperature,
             seed: options.seed,
+            session_key: None,
         })
         .await
         .map_err(OllamaError::from)?;

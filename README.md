@@ -89,9 +89,13 @@ default_model = ""         # blake3:... of an imported model (weightc) or a mode
 weightc_path = "weightc"
 ollama_endpoint = "http://127.0.0.1:11434"
 request_timeout_secs = 300
+resident_sessions = false  # weightc only: keep one resident enter session per conversation
+max_resident_sessions = 4  # LRU cap on resident sessions
 ```
 
-The default `echo` engine repeats the user message; it needs no model and no external process. The `weightc` engine shells out to `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact, and the `ollama` engine proxies `POST /api/generate` on the configured endpoint. Models are managed with:
+The default `echo` engine repeats the user message; it needs no model and no external process. The `weightc` engine shells out to `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact, and the `ollama` engine proxies `POST /api/generate` on the configured endpoint.
+
+With `resident_sessions = true`, the weightc engine instead keeps a supervised `weightc enter --jsonl` process per conversation, so turns reuse the live KV context instead of replaying a transcript, and only the new message crosses the wire each turn. Sessions are LRU-capped by `max_resident_sessions`; a crashed session is reported as a typed error and lazily respawned (starting fresh context) on the next turn. This mode needs a weightc build with `enter --jsonl` support. Models are managed with:
 
 ```bash
 hologram models import ./tinyllama.wcpu
@@ -295,7 +299,7 @@ The default build does not yet provide:
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Chat runs against the configured inference engine (`echo` remains the default), and Wasm-layer `.holo` archives execute resident; token streaming, `tensor`/`rootfs` layer execution, and resident inference sessions (`weightc enter`) remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives execute resident, and the weightc engine can keep resident per-conversation sessions; token streaming and `tensor`/`rootfs` layer execution remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

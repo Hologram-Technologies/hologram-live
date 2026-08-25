@@ -266,6 +266,7 @@ async fn complete_chat(
             max_tokens: request.max_tokens,
             temperature: request.temperature,
             seed: request.seed,
+            session_key: None,
         })
         .await
         .map_err(OpenAiError::from)?;

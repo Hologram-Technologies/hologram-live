@@ -136,6 +136,12 @@ pub struct InferenceConfig {
     pub weightc_path: String,
     pub ollama_endpoint: String,
     pub request_timeout_secs: u64,
+    /// Keep `weightc enter --jsonl` sessions resident per conversation.
+    /// Only meaningful for the weightc engine.
+    pub resident_sessions: bool,
+    /// Maximum concurrently resident weightc sessions; the least recently
+    /// used session is evicted beyond this bound.
+    pub max_resident_sessions: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -271,6 +277,8 @@ impl Default for InferenceConfig {
             weightc_path: "weightc".to_owned(),
             ollama_endpoint: "http://127.0.0.1:11434".to_owned(),
             request_timeout_secs: 300,
+            resident_sessions: false,
+            max_resident_sessions: 4,
         }
     }
 }
@@ -394,6 +402,11 @@ impl AppConfig {
         if self.inference.request_timeout_secs == 0 {
             return Err(LiveError::Config(
                 "inference.request_timeout_secs must be greater than zero".to_owned(),
+            ));
+        }
+        if self.inference.max_resident_sessions == 0 {
+            return Err(LiveError::Config(
+                "inference.max_resident_sessions must be greater than zero".to_owned(),
             ));
         }
         if self.telemetry.service_name.trim().is_empty() {
@@ -600,7 +613,20 @@ mod tests {
         assert_eq!(config.inference.weightc_path, "weightc");
         assert_eq!(config.inference.ollama_endpoint, "http://127.0.0.1:11434");
         assert_eq!(config.inference.request_timeout_secs, 300);
+        assert!(!config.inference.resident_sessions);
+        assert_eq!(config.inference.max_resident_sessions, 4);
         config.validate().expect("default config validates");
+    }
+
+    #[test]
+    fn zero_max_resident_sessions_is_rejected() {
+        let mut config = AppConfig::default();
+        config.inference.max_resident_sessions = 0;
+        let error = config.validate().expect_err("must fail");
+        assert!(
+            error.to_string().contains("max_resident_sessions"),
+            "{error}"
+        );
     }
 
     #[test]

@@ -15,6 +15,7 @@ struct BddWorld {
     kappa: Option<String>,
     run_result: Option<serde_json::Value>,
     plugin_list: Option<serde_json::Value>,
+    model_id: Option<String>,
 }
 
 impl Drop for BddWorld {
@@ -288,6 +289,99 @@ fn stop_service(world: &mut BddWorld) {
         "stop failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[given("a fake weightc engine with resident sessions")]
+fn fake_weightc_resident(world: &mut BddWorld) {
+    world.temporary = Some(tempfile::tempdir().expect("create scenario directory"));
+    let root = world
+        .temporary
+        .as_ref()
+        .expect("scenario directory")
+        .path()
+        .to_path_buf();
+    let artifact = root.join("tiny.wcpu");
+    std::fs::create_dir_all(&artifact).expect("artifact dir");
+    std::fs::write(artifact.join("manifest.json"), b"{}").expect("manifest");
+
+    // Import with the stock echo config, then restart the daemon onto the
+    // fake weightc engine: the daemon reads its config at startup.
+    let output = run_cli(
+        world,
+        &["--json", "models", "import", &artifact.to_string_lossy()],
+    );
+    assert!(
+        output.status.success(),
+        "models import failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let record: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("parse import output");
+    let model_id = record["id"].as_str().expect("model id").to_owned();
+    stop_service(world);
+
+    let fake = root.join("weightc");
+    std::fs::copy(
+        workspace_root().join("features/fixtures/fake-weightc/weightc"),
+        &fake,
+    )
+    .expect("copy fake weightc");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod fake weightc");
+    }
+
+    let config_path = home_path(world).join(".config/hologram/live.toml");
+    let source = std::fs::read_to_string(&config_path).expect("read config");
+    let mut value: toml::Value = toml::from_str(&source).expect("parse config");
+    value["inference"]["engine"] = toml::Value::String("weightc".to_owned());
+    value["inference"]["weightc_path"] = toml::Value::String(fake.to_string_lossy().into_owned());
+    value["inference"]["default_model"] = toml::Value::String(model_id.clone());
+    value["inference"]["resident_sessions"] = toml::Value::Boolean(true);
+    value["inference"]["max_resident_sessions"] = toml::Value::Integer(2);
+    std::fs::write(
+        &config_path,
+        toml::to_string_pretty(&value).expect("encode config"),
+    )
+    .expect("write config");
+    world.model_id = Some(model_id);
+}
+
+#[then(expr = "the assistant response is {string}")]
+fn assistant_response_is(world: &mut BddWorld, expected: String) {
+    let conversation = conversation_output(world);
+    let messages = conversation["messages"].as_array().expect("messages");
+    let assistant = messages
+        .iter()
+        .rev()
+        .find(|entry| entry["role"] == "assistant")
+        .expect("assistant message");
+    assert_eq!(assistant["content"].as_str(), Some(expected.as_str()));
+}
+
+#[then("the fake engine served both turns on one resident process")]
+fn fake_engine_served_one_process(world: &mut BddWorld) {
+    let model_id = world.model_id.as_ref().expect("model id");
+    let digest = model_id.strip_prefix("blake3:").unwrap_or(model_id);
+    let log_path = home_path(world)
+        .join(".local/share/hologram/models")
+        .join(digest)
+        .join("session.log");
+    let log = std::fs::read_to_string(&log_path).expect("read session log");
+    let starts: Vec<&str> = log
+        .lines()
+        .filter(|line| line.starts_with("start "))
+        .collect();
+    let turns: Vec<&str> = log
+        .lines()
+        .filter(|line| line.starts_with("turn "))
+        .collect();
+    assert_eq!(starts.len(), 1, "one resident process expected: {log}");
+    assert_eq!(turns.len(), 2, "two turns expected: {log}");
+    assert!(turns[0].contains("first turn"), "log: {log}");
+    assert!(turns[1].contains("second turn"), "log: {log}");
 }
 
 #[given("the echo example plugin is enabled in the configuration")]

@@ -64,6 +64,7 @@ pub async fn serve(state: AppState) -> Result<()> {
         .with_graceful_shutdown(async move { shutdown_state.wait_shutdown().await })
         .await
         .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")));
+    state.chat().engine().shutdown().await;
     state.plugins().shutdown().await;
     result
 }

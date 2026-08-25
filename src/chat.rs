@@ -36,17 +36,24 @@ impl ChatService {
         }
         let history = self.history.clone();
         let id = conversation_id.to_owned();
-        let conversation = spawn_history(move || history.get(&id)).await?;
-        let prompt = render_transcript(&conversation, &content);
-        let completion = self
-            .engine
-            .complete(CompletionRequest {
-                prompt,
+        let request = if self.engine.supports_sessions() {
+            // The engine's resident session holds the context, so only the
+            // raw new turn is sent — no transcript rendering.
+            CompletionRequest {
+                prompt: content.clone(),
+                session_key: Some(conversation_id.to_owned()),
                 ..CompletionRequest::default()
-            })
-            .await?;
-        let history = self.history.clone();
-        let id = conversation_id.to_owned();
+            }
+        } else {
+            let history = self.history.clone();
+            let id = conversation_id.to_owned();
+            let conversation = spawn_history(move || history.get(&id)).await?;
+            CompletionRequest {
+                prompt: render_transcript(&conversation, &content),
+                ..CompletionRequest::default()
+            }
+        };
+        let completion = self.engine.complete(request).await?;
         spawn_history(move || history.append_exchange(&id, content, completion.text)).await
     }
 }
@@ -170,5 +177,62 @@ mod tests {
             .expect("send");
 
         assert_eq!(updated.messages[1].content, "pong");
+    }
+
+    struct SessionStubEngine {
+        seen: std::sync::Mutex<Vec<CompletionRequest>>,
+    }
+
+    #[tonic::async_trait]
+    impl InferenceEngine for SessionStubEngine {
+        fn name(&self) -> &'static str {
+            "session-stub"
+        }
+
+        fn supports_sessions(&self) -> bool {
+            true
+        }
+
+        async fn complete(&self, request: CompletionRequest) -> Result<Completion> {
+            self.seen.lock().expect("seen").push(request);
+            Ok(Completion {
+                text: "reply".to_owned(),
+                model: "session-stub".to_owned(),
+                tokens_per_second: None,
+                elapsed_millis: 0,
+            })
+        }
+
+        async fn list_models(&self) -> Result<Vec<ModelInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn session_capable_engines_receive_the_raw_turn_and_conversation_key() {
+        let fixture = fixture();
+        let conversation = fixture.history.create("demo".to_owned()).expect("create");
+        let engine = Arc::new(SessionStubEngine {
+            seen: std::sync::Mutex::new(Vec::new()),
+        });
+        let chat = ChatService::new(fixture.history.clone(), engine.clone());
+
+        chat.send(&conversation.id, "first turn".to_owned())
+            .await
+            .expect("first send");
+        chat.send(&conversation.id, "second turn".to_owned())
+            .await
+            .expect("second send");
+
+        let seen = engine.seen.lock().expect("seen");
+        assert_eq!(seen.len(), 2);
+        // No transcript rendering: the resident session holds the context.
+        assert_eq!(seen[0].prompt, "first turn");
+        assert_eq!(seen[1].prompt, "second turn");
+        assert_eq!(
+            seen[0].session_key.as_deref(),
+            Some(conversation.id.as_str())
+        );
+        assert_eq!(seen[1].session_key, seen[0].session_key);
     }
 }

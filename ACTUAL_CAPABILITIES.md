@@ -23,6 +23,7 @@ This document is deliberately strict about what the current stable build does an
 - Resident `.holo` Wasm execution: load/run/unload sessions over wasmtime with a supervised actor per resident archive.
 - Durable local conversation history.
 - Conversation-backed chat over a configurable inference engine (`echo` by default; `weightc` one-shot CLI or an Ollama-compatible HTTP endpoint via `live.toml`), with independent, switchable threads in the desktop app.
+- Optional resident per-conversation weightc sessions (`resident_sessions = true`): a supervised `weightc enter --jsonl` process per conversation with KV continuity, LRU-capped and lazily respawned on failure.
 - Import, listing, and removal of `weightc` `.wcpu` model artifact directories.
 - Non-streaming OpenAI-compatible (`/v1/chat/completions`, `/v1/models`) and Ollama-compatible (`/api/generate`, `/api/chat`, `/api/tags`, `/api/show`) HTTP inference APIs.
 - Minimal control-plane node inventory and heartbeat records.
@@ -35,7 +36,7 @@ This document is deliberately strict about what the current stable build does an
 ## Present as an extension seam, not implemented by the default module set
 
 - `.holo` execution for `tensor` and `rootfs` layers (Wasm layers execute today).
-- Resident inference sessions (`weightc enter`) and token streaming on the compatibility APIs.
+- Token streaming on the compatibility APIs.
 - Full enterprise users, OIDC/SAML, organizations, and RBAC policy storage.
 - Fleet scheduling.
 - Plugin host-resource capabilities, plugin HTTP routes, and microVM-isolated plugin execution.

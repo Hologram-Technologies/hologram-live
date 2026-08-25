@@ -19,4 +19,4 @@ Imported `.wcpu` artifact directories are copied under `data_dir/models/<digest>
 - Chat behavior changes only through configuration; the echo demo path is preserved exactly for existing clients, tests, and the desktop.
 - An unconfigured engine or missing model returns `LIVE_CAPABILITY_MISSING` instead of simulating a response.
 - Model execution inherits the external engine's isolation and performance characteristics; the daemon only mediates configuration, timeouts, and storage.
-- Token streaming, resident `weightc enter` sessions, and OpenAI/Ollama-compatible HTTP API surfaces are deliberate fast-follows on top of this boundary, not part of v1.
+- Token streaming and OpenAI/Ollama-compatible HTTP API surfaces were deliberate fast-follows on top of this boundary. Resident `weightc enter --jsonl` sessions (one supervised process per conversation, LRU-capped) have since landed as an opt-in engine mode; the boundary itself is unchanged.

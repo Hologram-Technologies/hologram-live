@@ -11,3 +11,14 @@ Feature: Chat through the inference engine boundary
     Then the assistant response echoes the message
     And both sides of the exchange are recorded
     And I stop the local service
+
+  Scenario: resident sessions keep one weightc process across turns
+    Given a fresh Hologram home
+    And an initialized configuration on a test port
+    And a fake weightc engine with resident sessions
+    When I create a conversation titled "resident chat"
+    And I send "first turn" to the conversation
+    And I send "second turn" to the conversation
+    Then the assistant response is "session:second turn"
+    And the fake engine served both turns on one resident process
+    And I stop the local service

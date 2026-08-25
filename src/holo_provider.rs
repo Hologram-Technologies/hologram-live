@@ -313,6 +313,14 @@ pub async fn prepare_and_start_with_grant(
     effective_grant: &EffectiveGrant,
 ) -> Result<RunningApplication> {
     let admitted_grants = plan.admitted_grants(effective_grant)?;
+    prepare_and_start_with_admitted_grants(plan, registry, &admitted_grants).await
+}
+
+pub(crate) async fn prepare_and_start_with_admitted_grants(
+    plan: &ApplicationPlan,
+    registry: &ProviderRegistry,
+    admitted_grants: &HashMap<usize, EffectiveGrant>,
+) -> Result<RunningApplication> {
     let primary_layer = plan.primary_layer.ok_or_else(|| {
         LiveError::Capability(format!(
             "application {} has no primary exit-bearing layer",
@@ -978,6 +986,19 @@ mod tests {
             &network,
             test_capabilities(),
         );
+
+        let mut decisions = Vec::new();
+        let admission_error = plan
+            .admitted_grants_with(&EffectiveGrant::local_baseline(), |decision| {
+                decisions.push(decision);
+            })
+            .expect_err("empty parent grant cannot delegate network");
+        assert_eq!(admission_error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert_eq!(decisions.len(), 2);
+        assert_eq!(decisions[0].relation, "application_request");
+        assert_eq!(decisions[0].outcome, "allowed");
+        assert_eq!(decisions[1].relation, "child_delegation");
+        assert_eq!(decisions[1].outcome, "denied");
 
         let error = prepare_and_start(&plan, &registry)
             .await

@@ -1,10 +1,11 @@
 use crate::actor::ActorSystem;
-use crate::application_plan::{explain_application, PlanLimits};
+use crate::application_plan::{explain_application, ApplicationPlan, PlanLimits};
+use crate::audit::{AuditEvent, AuditLog};
 use crate::error::{LiveError, Result};
 use crate::holo_capability::EffectiveGrant;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_provider::{
-    prepare_and_start_with_grant, ProviderRegistry, ProviderTarget, RunningApplication,
+    prepare_and_start_with_admitted_grants, ProviderRegistry, ProviderTarget, RunningApplication,
 };
 use crate::holo_python::PythonRootfsProvider;
 use crate::holo_wasm::WasmProvider;
@@ -244,6 +245,7 @@ pub struct HoloRuntime {
     actors: OnceLock<ActorSystem>,
     resident: Mutex<HashMap<String, ResidentEntry>>,
     effective_grant: EffectiveGrant,
+    audit: Option<AuditLog>,
 }
 
 /// Cloning is cheap: the actor reference and counters are shared handles.
@@ -268,6 +270,10 @@ impl ResidentEntry {
             resident_bytes: status.resident_bytes,
             queued: status.queued,
             processed: status.processed,
+            requested_capabilities_kappa: self.requested_capabilities_kappa.clone(),
+            effective_grant_kappa: self.effective_grant_kappa.clone(),
+            grant_source: self.grant_source.clone(),
+            authorization: "allowed".to_owned(),
         }
     }
 }
@@ -289,10 +295,26 @@ impl HoloRuntime {
             actors: OnceLock::new(),
             resident: Mutex::new(HashMap::new()),
             effective_grant,
+            audit: None,
         }
     }
 
+    pub fn new_with_grant_and_audit(
+        catalog: Arc<HoloCatalog>,
+        mailbox_capacity: usize,
+        effective_grant: EffectiveGrant,
+        audit: AuditLog,
+    ) -> Self {
+        let mut runtime = Self::new_with_grant(catalog, mailbox_capacity, effective_grant);
+        runtime.audit = Some(audit);
+        runtime
+    }
+
     pub async fn load(&self, kappa: &str) -> Result<ResidentHolo> {
+        self.load_for(kappa, "local-runtime").await
+    }
+
+    pub async fn load_for(&self, kappa: &str, principal: &str) -> Result<ResidentHolo> {
         if let Some(record) = self.resident_record(kappa)? {
             return Ok(record);
         }
@@ -308,8 +330,15 @@ impl HoloRuntime {
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
         let requested_capabilities_kappa = plan.requested_capabilities.kappa.clone();
-        let application =
-            Arc::new(prepare_and_start_with_grant(&plan, &registry, &self.effective_grant).await?);
+        let admitted_grants = admit_with_audit(
+            &plan,
+            &self.effective_grant,
+            self.audit.as_ref().map(|audit| (audit, principal)),
+        )
+        .await?;
+        let application = Arc::new(
+            prepare_and_start_with_admitted_grants(&plan, &registry, &admitted_grants).await?,
+        );
         // The v1 manifest carries no I/O arity, so the contract's
         // one-output-per-input shape is reported as 1/1.
         let entry = ResidentEntry {
@@ -405,13 +434,38 @@ impl HoloExecutor {
         inputs: Vec<Vec<u8>>,
         effective_grant: &EffectiveGrant,
     ) -> Result<HoloRunResult> {
+        self.execute_internal(bytes, inputs, effective_grant, None)
+            .await
+    }
+
+    pub async fn execute_with_grant_and_audit(
+        &self,
+        bytes: &[u8],
+        inputs: Vec<Vec<u8>>,
+        effective_grant: &EffectiveGrant,
+        audit: &AuditLog,
+        principal: &str,
+    ) -> Result<HoloRunResult> {
+        self.execute_internal(bytes, inputs, effective_grant, Some((audit, principal)))
+            .await
+    }
+
+    async fn execute_internal(
+        &self,
+        bytes: &[u8],
+        inputs: Vec<Vec<u8>>,
+        effective_grant: &EffectiveGrant,
+        audit: Option<(&AuditLog, &str)>,
+    ) -> Result<HoloRunResult> {
         let kappa = format!("blake3:{}", blake3::hash(bytes));
         let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
         let registry = direct_registry(self.engine.clone())?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
         let requested_capabilities_kappa = plan.requested_capabilities.kappa.clone();
-        let application = prepare_and_start_with_grant(&plan, &registry, effective_grant).await?;
+        let admitted_grants = admit_with_audit(&plan, effective_grant, audit).await?;
+        let application =
+            prepare_and_start_with_admitted_grants(&plan, &registry, &admitted_grants).await?;
         let resident_bytes = application.status().resident_bytes;
         let outcome = application.invoke_then_stop(inputs).await?;
         Ok(HoloRunResult {
@@ -424,6 +478,44 @@ impl HoloExecutor {
             grant_source: effective_grant.source.name().to_owned(),
             authorization: "allowed".to_owned(),
         })
+    }
+}
+
+async fn admit_with_audit(
+    plan: &ApplicationPlan,
+    effective_grant: &EffectiveGrant,
+    audit: Option<(&AuditLog, &str)>,
+) -> Result<HashMap<usize, EffectiveGrant>> {
+    let mut decisions = Vec::new();
+    let admission = plan.admitted_grants_with(effective_grant, |decision| decisions.push(decision));
+    let audit_result = if let Some((audit, principal)) = audit {
+        let mut result = Ok(());
+        for decision in decisions {
+            if let Err(error) = audit
+                .record(AuditEvent::capability_decision(principal, decision))
+                .await
+            {
+                result = Err(error);
+                break;
+            }
+        }
+        if result.is_ok() {
+            result = audit.flush().await;
+        }
+        result
+    } else {
+        Ok(())
+    };
+
+    match (admission, audit_result) {
+        (Err(error), audit) => {
+            if let Err(audit_error) = audit {
+                tracing::error!(error = %audit_error, "failed to persist denied capability decision");
+            }
+            Err(error)
+        }
+        (Ok(_), Err(error)) => Err(error),
+        (Ok(grants), Ok(())) => Ok(grants),
     }
 }
 
@@ -647,13 +739,25 @@ mod tests {
         writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
         let archive = writer.finish().expect("archive");
 
+        let directory = tempfile::tempdir().expect("tempdir");
+        let audit_path = directory.path().join("audit.jsonl");
+        let actors = ActorSystem::start();
+        let audit = AuditLog::open(&audit_path, 8, actors.root())
+            .await
+            .expect("audit");
+
         let error = HoloExecutor::default()
-            .execute(&archive, vec![b"denied".to_vec()])
+            .execute_with_grant_and_audit(
+                &archive,
+                vec![b"denied".to_vec()],
+                &EffectiveGrant::local_baseline(),
+                &audit,
+                "local-cli",
+            )
             .await
             .expect_err("baseline denies network request");
         assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
 
-        let directory = tempfile::tempdir().expect("tempdir");
         let grant_path = directory.path().join("grant.json");
         std::fs::write(&grant_path, b"{}").expect("insufficient grant");
         let insufficient_grant = EffectiveGrant::from_development_file(
@@ -662,10 +766,12 @@ mod tests {
         )
         .expect("insufficient grant");
         let error = HoloExecutor::default()
-            .execute_with_grant(
+            .execute_with_grant_and_audit(
                 &archive,
                 vec![b"still denied".to_vec()],
                 &insufficient_grant,
+                &audit,
+                "local-cli",
             )
             .await
             .expect_err("an explicit but insufficient grant must remain denied");
@@ -678,7 +784,13 @@ mod tests {
         )
         .expect("grant");
         let result = HoloExecutor::default()
-            .execute_with_grant(&archive, vec![b"authorized".to_vec()], &grant)
+            .execute_with_grant_and_audit(
+                &archive,
+                vec![b"authorized".to_vec()],
+                &grant,
+                &audit,
+                "local-cli",
+            )
             .await
             .expect("authorized execution");
         assert_eq!(result.outputs, vec![b"AUTHORIZED".to_vec()]);
@@ -689,6 +801,20 @@ mod tests {
         assert_eq!(result.effective_grant_kappa, grant.kappa);
         assert_eq!(result.grant_source, "direct_development_file");
         assert_eq!(result.authorization, "allowed");
+
+        let audit_rows = std::fs::read_to_string(audit_path).expect("audit rows");
+        let rows = audit_rows
+            .lines()
+            .map(|row| serde_json::from_str::<serde_json::Value>(row).expect("audit JSON"))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0]["outcome"], "denied");
+        assert_eq!(rows[1]["outcome"], "denied");
+        assert_eq!(rows[2]["outcome"], "allowed");
+        assert!(rows.iter().all(|row| row["principal"] == "local-cli"));
+        assert!(!audit_rows.contains("still denied"));
+        assert!(!audit_rows.contains("authorized"));
+        assert!(!audit_rows.contains("network_fetch"));
     }
 
     #[tokio::test]

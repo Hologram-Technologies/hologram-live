@@ -2,7 +2,7 @@
 
 ## Sprint status
 
-- State: active
+- State: complete
 - Started: 2026-08-25
 - Last reviewed: 2026-08-25
 - Durable milestone: [M2 — Capability enforcement and child attenuation](plans/holo-application-runtime.md#m2--capability-enforcement-and-child-attenuation)
@@ -10,7 +10,7 @@
   content-addressed request and admit it only under an explicit trusted grant
 - Exit signal: insufficient authority returns `LIVE_AUTHORIZATION_DENIED` before
   provider preparation, while child grants can only attenuate parent authority
-- Current focus: Slice 4 capability audit, interfaces, and conformance
+- Current focus: M2 complete; M3.1 typed Wasm contracts are next
 
 This is the short-lived execution tracker. Durable requirements remain in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
@@ -50,8 +50,8 @@ request admitted by grant
   attenuation, including the `0 = unbounded` convention.
 - [x] Child edges already carry application and delegated-capability κ values,
   but M1 deliberately reports them as execution blockers.
-- [x] The service audit log has a stable JSONL boundary but does not yet record
-  application capability decisions.
+- [x] At sprint start, the service audit log had a stable JSONL boundary but did
+  not yet record application capability decisions.
 
 ## Scope guardrails
 
@@ -327,28 +327,46 @@ Slice 3 acceptance:
 
 ### Slice 4 — Audit, interfaces, and conformance
 
-- [ ] Emit capability-decision records for allow/deny with principal, grant
+- [x] Emit capability-decision records for allow/deny with principal, grant
   source, application κ, requested κ, effective-grant κ, and outcome.
-- [ ] Do not log tokens, source documents, payload bytes, or secret values.
-- [ ] Expose grant mode and authorization outcomes consistently through native,
+- [x] Do not log tokens, source documents, payload bytes, or secret values.
+- [x] Expose grant mode and authorization outcomes consistently through native,
   Protobuf/gRPC, JSON/HTTP, CLI, and desktop-consumed surfaces.
-- [ ] Add unit, native round-trip, HTTP/OpenAPI, BDD, security-negative, and
+- [x] Add unit, native round-trip, HTTP/OpenAPI, BDD, security-negative, and
   release-smoke coverage.
-- [ ] Update README, website `.holo` documentation, architecture, actual
+- [x] Update README, website `.holo` documentation, architecture, actual
   capabilities, and durable plan checkboxes.
+
+Slice 4 evidence (2026-08-25): capability admission emits typed decisions for
+root requests, child delegations, and child requests, then awaits and flushes
+the JSONL audit boundary before any provider prepares. Records identify the
+real direct or service principal, logical application relationship, request or
+delegation κ, effective-grant κ, trusted source, and allow/deny outcome without
+copying source documents, roots, channels, tokens, headers, or payload bytes.
+Allowed execution fails closed on audit persistence failure; authorization
+denial remains the primary typed error if denial auditing also fails. Run and
+resident results carry non-secret authorization evidence through CLI,
+Protobuf/gRPC, JSON/HTTP, OpenAPI, and desktop-consumed native records. Unit and
+BDD tests cover allowed and denied direct execution, service principals,
+secret-negative audit content, child amplification, legacy Protobuf defaults,
+HTTP execution, and identical fat/thin decisions. Full verification passes
+formatting, source-size and product-boundary gates, all-target checks, 147
+library tests, 21 CLI tests, Clippy with warnings denied, all 10 BDD scenarios /
+100 steps, the optimized release build, release smoke, and the 13-page Astro
+documentation build.
 
 ## Sprint-wide completion gates
 
-- [ ] Requested, granted, delegated, and enforced capabilities are distinct in
+- [x] Requested, granted, delegated, and enforced capabilities are distinct in
   code, errors, JSON, and documentation.
 - [x] No archive-controlled byte string becomes authority.
 - [x] No provider prepares before closure resolution and authorization finish.
-- [ ] Capability behavior is deterministic across fat and cache-resolved thin
+- [x] Capability behavior is deterministic across fat and cache-resolved thin
   archives.
-- [ ] `cargo fmt`, source-size gate, check, full tests, Clippy, BDD, optimized
+- [x] `cargo fmt`, source-size gate, check, full tests, Clippy, BDD, optimized
   build, release smoke, and website build pass.
-- [ ] Durable plan/ADR checkboxes and discoveries are reconciled before closure.
-- [ ] Work lands in reviewable commits without unrelated changes.
+- [x] Durable plan/ADR checkboxes and discoveries are reconciled before closure.
+- [x] Work lands in reviewable commits without unrelated changes.
 
 ## Discovery log
 

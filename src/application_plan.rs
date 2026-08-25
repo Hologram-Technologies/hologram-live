@@ -1,6 +1,7 @@
 use crate::error::{LiveError, Result};
 use crate::holo_capability::{
-    authorize_child_delegation, DelegatedCapabilities, EffectiveGrant, RequestedCapabilities,
+    authorize_child_delegation, CapabilityDecision, DelegatedCapabilities, EffectiveGrant,
+    RequestedCapabilities,
 };
 use crate::util::hex;
 use hologram::archive::HoloLoader;
@@ -563,6 +564,27 @@ impl ApplicationPlan {
         &self,
         effective_grant: &EffectiveGrant,
     ) -> Result<HashMap<usize, EffectiveGrant>> {
+        self.admitted_grants_with(effective_grant, |_| {})
+    }
+
+    pub fn admitted_grants_with<F>(
+        &self,
+        effective_grant: &EffectiveGrant,
+        mut observe: F,
+    ) -> Result<HashMap<usize, EffectiveGrant>>
+    where
+        F: FnMut(CapabilityDecision),
+    {
+        let root_allowed = effective_grant
+            .capabilities
+            .admits(&self.requested_capabilities.capabilities);
+        observe(CapabilityDecision::application_request(
+            &self.identity.application_kappa,
+            None,
+            &self.requested_capabilities,
+            effective_grant,
+            root_allowed,
+        ));
         effective_grant.authorize(
             &self.identity.application_kappa,
             &self.requested_capabilities,
@@ -575,6 +597,29 @@ impl ApplicationPlan {
                     child.parent_application_kappa, child.application_kappa
                 ))
             })?;
+            let delegation_allowed = parent_grant
+                .capabilities
+                .admits(&child.delegated_capabilities.capabilities);
+            observe(CapabilityDecision::child_delegation(
+                &child.parent_application_kappa,
+                &child.application_kappa,
+                &child.delegated_capabilities,
+                parent_grant,
+                delegation_allowed,
+            ));
+            if delegation_allowed {
+                let child_grant = EffectiveGrant::from_delegation(&child.delegated_capabilities);
+                let request_allowed = child_grant
+                    .capabilities
+                    .admits(&child.requested_capabilities.capabilities);
+                observe(CapabilityDecision::application_request(
+                    &child.application_kappa,
+                    Some(&child.parent_application_kappa),
+                    &child.requested_capabilities,
+                    &child_grant,
+                    request_allowed,
+                ));
+            }
             authorize_child_delegation(
                 &child.parent_application_kappa,
                 &parent_grant.kappa,
@@ -1283,9 +1328,9 @@ mod tests {
         let capabilities_key = capabilities_kappa.to_string();
         let layer_key = layer_kappa.to_string();
 
-        let fat_report =
+        let mut fat_report =
             explain_application(&fat, PlanLimits::default(), |_| Ok(None)).expect("fat plan");
-        let thin_report = explain_application(&thin, PlanLimits::default(), |kappa| {
+        let mut thin_report = explain_application(&thin, PlanLimits::default(), |kappa| {
             if kappa == capabilities_key {
                 Ok(Some(capabilities.to_vec()))
             } else if kappa == layer_key {
@@ -1295,6 +1340,8 @@ mod tests {
             }
         })
         .expect("thin plan");
+        fat_report.evaluate_providers(available);
+        thin_report.evaluate_providers(available);
 
         assert_ne!(
             fat_report.identity.archive_kappa,
@@ -1320,6 +1367,21 @@ mod tests {
             thin_report.layers[0].resolution_source,
             Some(ResolutionSource::LocalStore)
         );
+
+        let grant = EffectiveGrant::local_baseline();
+        let mut fat_decisions = Vec::new();
+        fat_report
+            .into_application_plan()
+            .expect("fat strict plan")
+            .admitted_grants_with(&grant, |decision| fat_decisions.push(decision))
+            .expect("fat admission");
+        let mut thin_decisions = Vec::new();
+        thin_report
+            .into_application_plan()
+            .expect("thin strict plan")
+            .admitted_grants_with(&grant, |decision| thin_decisions.push(decision))
+            .expect("thin admission");
+        assert_eq!(fat_decisions, thin_decisions);
     }
 
     #[test]
@@ -1414,8 +1476,24 @@ mod tests {
         assert!(report.runnable());
         let plan = report.into_application_plan().expect("strict child plan");
         assert_eq!(plan.children.len(), 1);
-        plan.authorize_capability_tree(&EffectiveGrant::local_baseline())
-            .expect("empty child attenuation");
+        let mut decisions = Vec::new();
+        plan.admitted_grants_with(&EffectiveGrant::local_baseline(), |decision| {
+            decisions.push(decision);
+        })
+        .expect("empty child attenuation");
+        assert_eq!(
+            decisions
+                .iter()
+                .map(|decision| (decision.relation.as_str(), decision.outcome.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("application_request", "allowed"),
+                ("child_delegation", "allowed"),
+                ("application_request", "allowed"),
+            ]
+        );
+        assert_eq!(decisions[0].grant_source, "local_baseline");
+        assert_eq!(decisions[2].grant_source, "child_delegation");
     }
 
     #[test]

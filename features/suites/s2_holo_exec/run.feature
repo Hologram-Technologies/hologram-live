@@ -23,21 +23,27 @@ Feature: Resident .holo wasm execution
 
   Scenario: execute a local .holo file without a service
     Given the example wasm application manifest
+    And a fresh Hologram home
     When I compile the application
     Then the compile command succeeds
     When I run the compiled archive directly with input "hello file"
     Then the run output is "HELLO FILE"
     And the run reports allowed authorization from "local_baseline"
+    And the capability audit records "allowed" from "local_baseline" for principal "local-cli"
 
   Scenario: capability requests require an explicit sufficient grant
     Given a Wasm application that requests network fetch
+    And a fresh Hologram home
     When I compile the application
     Then the compile command succeeds
     When I run the compiled archive without a development grant
     Then the run fails with an authorization-denied error
+    And the capability audit records "denied" from "local_baseline" for principal "local-cli"
     When I run the compiled archive with its development grant and input "authorized"
     Then the run output is "AUTHORIZED"
     And the run reports allowed authorization from "direct_development_file"
+    And the capability audit records "allowed" from "direct_development_file" for principal "local-cli"
+    And the capability audit contains no source document or payload data
 
   Scenario: resident execution uses only the service development grant
     Given a Wasm application that requests network fetch
@@ -51,4 +57,19 @@ Feature: Resident .holo wasm execution
     And I run the archive with input "resident grant"
     Then the run output is "RESIDENT GRANT"
     And the run reports allowed authorization from "service_development_file"
+    And the capability audit records "allowed" from "service_development_file" for principal "local-user"
+    And the capability audit contains no source document or payload data
+    And I stop the local service
+
+  Scenario: resident execution exposes authorization evidence over HTTP
+    Given the example wasm application manifest
+    When I compile the application
+    Then the compile command succeeds
+    Given a fresh Hologram home
+    And an initialized configuration on a test port
+    When I import the compiled archive
+    And I load the archive
+    And I run the archive over HTTP with input "http evidence"
+    Then the run output is "HTTP EVIDENCE"
+    And the run reports allowed authorization from "local_baseline"
     And I stop the local service

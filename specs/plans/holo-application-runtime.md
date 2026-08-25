@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M2 Slice 4, capability audit, interfaces, and conformance
-- Next runtime milestone: M3, typed application exit and provider contracts
+- Next delivery: M3.1, typed Wasm entry/exit and host-interface contracts
+- Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the current v4 baseline, compatibility requirements, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -175,7 +175,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Runtime grants
 
-- [ ] Define where effective grants come from for direct local execution, local service execution, remote execution, and child applications.
+- [x] Define where effective grants come from for direct local execution, local service execution, remote execution, and child applications.
   - [x] Direct local execution uses the deny-by-default baseline or an explicit trusted `--development-grant` file.
   - [x] Local service execution uses the baseline or loopback-only `holo.development_grant` host configuration.
   - [x] Remote callers cannot attach self-asserted grants; absent trusted remote authority remains denied.
@@ -183,7 +183,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Fail before provider preparation unless the effective grant admits the application’s `requires` set.
 - [x] Pass only the effective grant—not the untrusted request—to providers and host interfaces.
 - [x] Add an explicit local-development grant mode without making it the production default.
-- [ ] Include capability decisions in structured audit records without leaking secrets.
+- [x] Include capability decisions in structured audit records without leaking secrets.
 
 ### Child applications
 
@@ -216,7 +216,7 @@ dependencies until an explicit child invocation contract is introduced.
 - [x] Insufficient grants fail with `LIVE_AUTHORIZATION_DENIED` before any provider starts.
 - [x] Sufficient grants produce the same plan and behavior as the previous Wasm fixture.
 - [x] Child attenuation succeeds; attempted amplification fails deterministically.
-- [ ] Capability checks are covered by unit, BDD, audit, and native API tests.
+- [x] Capability checks are covered by unit, BDD, audit, native API, and HTTP/OpenAPI tests.
 - [x] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
 
 ## M3 — Real multi-layer providers
@@ -540,9 +540,9 @@ application/DMG builds pass.
 
 ## Open decisions to record as ADRs
 
-- [ ] Provider trait async and platform-bound requirements.
+- [x] Provider trait async and platform-bound requirements.
 - [ ] View-bundle canonical encoding and surface protocol.
-- [ ] Direct-execution capability grant source and safe defaults.
+- [x] Direct-execution capability grant source and safe defaults.
 - [x] Child lifecycle ownership and the current root-primary-only exit boundary.
 - [ ] TensorPlan payload/port schema and weightc adapter contract.
 - [ ] Rootfs image format, architecture naming, and microVM contract.
@@ -555,14 +555,14 @@ application/DMG builds pass.
 
 ## Per-milestone definition of done
 
-- [ ] Public behavior has BDD coverage.
-- [ ] Unit and negative tests cover the new invariants and failure paths.
-- [ ] Native protocol, JSON/HTTP API, CLI, and desktop behavior agree where the capability is exposed.
-- [ ] Error paths use stable typed errors and name the failing application, layer, provider, or κ.
-- [ ] Security-sensitive decisions have an ADR and audit coverage.
-- [ ] README, website documentation, architecture, and actual-capabilities inventory are current.
-- [ ] `cargo fmt`, source-size gate, `cargo check`, tests, Clippy, BDD, release build, and smoke test pass.
-- [ ] Changes are committed as a reviewable milestone without unrelated workspace modifications.
+- [x] Public behavior has BDD coverage.
+- [x] Unit and negative tests cover the new invariants and failure paths.
+- [x] Native protocol, JSON/HTTP API, CLI, and desktop behavior agree where the capability is exposed.
+- [x] Error paths use stable typed errors and name the failing application, layer, provider, or κ.
+- [x] Security-sensitive decisions have an ADR and audit coverage.
+- [x] README, website documentation, architecture, and actual-capabilities inventory are current.
+- [x] `cargo fmt`, source-size gate, `cargo check`, tests, Clippy, BDD, release build, and smoke test pass.
+- [x] Changes are committed as a reviewable milestone without unrelated workspace modifications.
 
 ## Immediate next slice
 
@@ -579,5 +579,7 @@ application/DMG builds pass.
   provider preparation.
 - [x] Prepare and start the admitted child tree in depth-first manifest order,
   invoke only the root primary, and roll back or stop in exact reverse order.
-- [ ] Complete M2 capability audit records, interface coverage, and conformance
+- [x] Complete M2 capability audit records, interface coverage, and conformance
   tests.
+- [ ] Define the M3.1 versioned Wasm entry/exit contract and explicit host
+  interfaces before changing provider behavior.

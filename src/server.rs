@@ -77,7 +77,11 @@ where
         .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")));
     state.chat().engine().shutdown().await;
     state.plugins().shutdown().await;
-    result
+    let audit = state.audit().flush().await;
+    match (result, audit) {
+        (Err(error), _) | (Ok(()), Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 async fn index() -> Html<&'static str> {

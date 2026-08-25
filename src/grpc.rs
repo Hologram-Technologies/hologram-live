@@ -950,6 +950,10 @@ impl From<ResidentHolo> for pb::ResidentHolo {
             resident_bytes: value.resident_bytes.try_into().unwrap_or(u64::MAX),
             queued: value.queued.try_into().unwrap_or(u64::MAX),
             processed: value.processed.try_into().unwrap_or(u64::MAX),
+            requested_capabilities_kappa: value.requested_capabilities_kappa,
+            effective_grant_kappa: value.effective_grant_kappa,
+            grant_source: value.grant_source,
+            authorization: value.authorization,
         }
     }
 }
@@ -970,6 +974,10 @@ impl TryFrom<pb::ResidentHolo> for ResidentHolo {
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
             queued: narrow(value.queued, "queued")?,
             processed: narrow(value.processed, "processed")?,
+            requested_capabilities_kappa: value.requested_capabilities_kappa,
+            effective_grant_kappa: value.effective_grant_kappa,
+            grant_source: value.grant_source,
+            authorization: value.authorization,
         })
     }
 }
@@ -1341,9 +1349,15 @@ mod tests {
             resident_bytes: 42,
             queued: 0,
             processed: 3,
+            requested_capabilities_kappa: "blake3:request".to_owned(),
+            effective_grant_kappa: "blake3:grant".to_owned(),
+            grant_source: "service_development_file".to_owned(),
+            authorization: "allowed".to_owned(),
         };
         let decoded = ResidentHolo::try_from(pb::ResidentHolo::from(resident)).expect("decode");
         assert_eq!(decoded.state, "running");
+        assert_eq!(decoded.authorization, "allowed");
+        assert_eq!(decoded.grant_source, "service_development_file");
 
         let legacy = ResidentHolo::try_from(pb::ResidentHolo {
             kappa: "blake3:legacy".to_owned(),
@@ -1353,9 +1367,14 @@ mod tests {
             queued: 0,
             processed: 0,
             state: String::new(),
+            requested_capabilities_kappa: String::new(),
+            effective_grant_kappa: String::new(),
+            grant_source: String::new(),
+            authorization: String::new(),
         })
         .expect("decode legacy resident");
         assert_eq!(legacy.state, "unknown");
+        assert!(legacy.authorization.is_empty());
     }
 
     #[test]

@@ -399,6 +399,14 @@ pub struct ResidentHolo {
     pub resident_bytes: usize,
     pub queued: usize,
     pub processed: usize,
+    #[serde(default)]
+    pub requested_capabilities_kappa: String,
+    #[serde(default)]
+    pub effective_grant_kappa: String,
+    #[serde(default)]
+    pub grant_source: String,
+    #[serde(default)]
+    pub authorization: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

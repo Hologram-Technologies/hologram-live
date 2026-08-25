@@ -1,10 +1,15 @@
 use crate::app::AppState;
+use crate::auth::Principal;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
-use crate::protocol::{operation, HoloInspection, HoloPlan, OperationKind};
-use axum::extract::{Path, State};
-use axum::routing::get;
+use crate::protocol::{
+    operation, HoloInspection, HoloPlan, HoloRunResult, OperationKind, ResidentHolo,
+};
+use axum::extract::{Extension, Path, State};
+use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 const OPERATIONS: &[OperationDescriptor] = &[
     OperationDescriptor {
@@ -79,6 +84,12 @@ impl LiveModule for HoloModule {
             .route("/api/v1/holo", get(list_holo))
             .route("/api/v1/holo/{kappa}", get(inspect_holo))
             .route("/api/v1/holo/{kappa}/plan", get(plan_holo))
+            .route("/api/v1/holo/resident", get(resident_holo))
+            .route(
+                "/api/v1/holo/{kappa}/load",
+                post(load_holo).delete(unload_holo),
+            )
+            .route("/api/v1/holo/{kappa}/run", post(run_holo))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {
@@ -88,8 +99,8 @@ impl LiveModule for HoloModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_holo, inspect_holo, plan_holo),
-    components(schemas(HoloInspection, HoloPlan)),
+    paths(list_holo, inspect_holo, plan_holo, resident_holo, load_holo, unload_holo, run_holo),
+    components(schemas(HoloInspection, HoloPlan, ResidentHolo, HoloRunResult, HoloRunHttpRequest)),
     tags((name = "holo", description = "Hologram application archives"))
 )]
 struct HoloApiDoc;
@@ -145,4 +156,68 @@ pub async fn plan_holo(
         .await
         .map_err(|error| crate::error::LiveError::Conflict(format!("join .holo plan: {error}")))??;
     Ok(Json(plan))
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct HoloRunHttpRequest {
+    #[serde(default)]
+    pub inputs: Vec<Vec<u8>>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/holo/resident",
+    responses((status = 200, body = [ResidentHolo]))
+)]
+pub async fn resident_holo(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ResidentHolo>>, HttpError> {
+    Ok(Json(state.holo_runtime().list().await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/holo/{kappa}/load",
+    params(("kappa" = String, Path)),
+    responses((status = 200, body = ResidentHolo))
+)]
+pub async fn load_holo(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Path(kappa): Path<String>,
+) -> Result<Json<ResidentHolo>, HttpError> {
+    Ok(Json(
+        state.holo_runtime().load_for(&kappa, &principal.id).await?,
+    ))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/holo/{kappa}/load",
+    params(("kappa" = String, Path)),
+    responses((status = 204))
+)]
+pub async fn unload_holo(
+    State(state): State<AppState>,
+    Path(kappa): Path<String>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    state.holo_runtime().unload(&kappa).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/holo/{kappa}/run",
+    params(("kappa" = String, Path)),
+    request_body = HoloRunHttpRequest,
+    responses((status = 200, body = HoloRunResult))
+)]
+pub async fn run_holo(
+    State(state): State<AppState>,
+    Path(kappa): Path<String>,
+    Json(request): Json<HoloRunHttpRequest>,
+) -> Result<Json<HoloRunResult>, HttpError> {
+    Ok(Json(
+        state.holo_runtime().run(&kappa, request.inputs).await?,
+    ))
 }

@@ -11,6 +11,7 @@ Feature: Compile Hologram applications
 
   Scenario: generate and run a Wasm application manifest
     Given a new application directory
+    And a fresh Hologram home
     When I initialize a Wasm application manifest
     Then the generated manifest is valid
     When I compile the application

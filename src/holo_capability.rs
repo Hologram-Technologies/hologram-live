@@ -162,6 +162,68 @@ pub struct EffectiveGrant {
     pub source: GrantSource,
 }
 
+/// Non-secret evidence for one capability admission relation.
+///
+/// This deliberately contains only content identities and stable labels. It
+/// never carries capability source documents, decoded roots/channels, tokens,
+/// or application payloads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityDecision {
+    pub application_kappa: String,
+    pub parent_application_kappa: Option<String>,
+    pub requested_capabilities_kappa: String,
+    pub effective_grant_kappa: String,
+    pub grant_source: String,
+    pub relation: String,
+    pub outcome: String,
+}
+
+impl CapabilityDecision {
+    pub fn application_request(
+        application_kappa: &str,
+        parent_application_kappa: Option<&str>,
+        request: &RequestedCapabilities,
+        grant: &EffectiveGrant,
+        allowed: bool,
+    ) -> Self {
+        Self {
+            application_kappa: application_kappa.to_owned(),
+            parent_application_kappa: parent_application_kappa.map(str::to_owned),
+            requested_capabilities_kappa: request.kappa.clone(),
+            effective_grant_kappa: grant.kappa.clone(),
+            grant_source: grant.source.name().to_owned(),
+            relation: "application_request".to_owned(),
+            outcome: decision_outcome(allowed).to_owned(),
+        }
+    }
+
+    pub fn child_delegation(
+        parent_application_kappa: &str,
+        child_application_kappa: &str,
+        delegated: &DelegatedCapabilities,
+        parent_grant: &EffectiveGrant,
+        allowed: bool,
+    ) -> Self {
+        Self {
+            application_kappa: child_application_kappa.to_owned(),
+            parent_application_kappa: Some(parent_application_kappa.to_owned()),
+            requested_capabilities_kappa: delegated.kappa.clone(),
+            effective_grant_kappa: parent_grant.kappa.clone(),
+            grant_source: parent_grant.source.name().to_owned(),
+            relation: "child_delegation".to_owned(),
+            outcome: decision_outcome(allowed).to_owned(),
+        }
+    }
+}
+
+const fn decision_outcome(allowed: bool) -> &'static str {
+    if allowed {
+        "allowed"
+    } else {
+        "denied"
+    }
+}
+
 impl EffectiveGrant {
     pub fn local_baseline() -> Self {
         let canonical = empty_canonical();

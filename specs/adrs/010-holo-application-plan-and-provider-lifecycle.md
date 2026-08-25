@@ -149,6 +149,19 @@ the request κ, effective-grant κ, grant source, and allow outcome additively i
 JSON and Protobuf/gRPC; capability source documents and secret values are never
 included.
 
+Every evaluated application request and child delegation also crosses an
+awaited JSONL audit boundary before provider preparation. Its typed record
+contains the authenticated principal, relation, application and optional parent
+application κ, requested or delegated capability κ, effective-grant κ, trusted
+grant-source label, and allow/deny outcome. It never contains raw capability
+documents, storage roots, channels, tokens, authorization headers, or payload
+bytes. Direct execution uses the stable `local-cli` principal; service
+execution uses the authenticated request principal. Allowed execution fails
+closed if persistence fails. A denied authorization remains the primary typed
+error if recording that denial also fails, with the audit failure emitted as an
+error trace. Run and resident records carry the non-secret authorization
+evidence additively across JSON/HTTP and Protobuf/gRPC.
+
 ### Child lifecycle amendment (M2)
 
 The lifecycle order is a depth-first pre-order projection of the canonical

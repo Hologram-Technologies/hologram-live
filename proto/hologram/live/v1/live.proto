@@ -219,6 +219,10 @@ message ResidentHolo {
   uint64 queued = 5;
   uint64 processed = 6;
   string state = 7;
+  string requested_capabilities_kappa = 8;
+  string effective_grant_kappa = 9;
+  string grant_source = 10;
+  string authorization = 11;
 }
 message HoloRunResult {
   string kappa = 1;

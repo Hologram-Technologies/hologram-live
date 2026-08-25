@@ -20,12 +20,34 @@ request="$repo_root/examples/python-numpy-pandas/request.json"
 "$binary" --json compile "$manifest" --check >/dev/null
 "$binary" --json compile "$manifest" --output "$archive" >/dev/null
 run_json=$("$binary" --json run "$archive" --input "$request")
-actual=$(python3 -c 'import json,sys; print(bytes(json.load(sys.stdin)["outputs"][0]).decode())' <<<"$run_json")
-expected='{"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0}'
+python3 -c '
+import json
+import sys
 
-if [[ "$actual" != "$expected" ]]; then
-  printf 'unexpected Python .holo output\nexpected: %s\nactual:   %s\n' "$expected" "$actual" >&2
-  exit 1
-fi
+run = json.load(sys.stdin)
+output = json.loads(bytes(run["outputs"][0]).decode())
+expected = {
+    "columns": ["label", "value"],
+    "mean": 20.0,
+    "rows": 3,
+    "sum": 60.0,
+}
+if output != expected:
+    print(
+        f"unexpected Python .holo output: expected {expected!r}, got {output!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
-printf 'Python .holo demo passed: %s\n' "$actual"
+summary = {
+    "schema_version": 1,
+    "status": "ok",
+    "application": "numpy-pandas-holo",
+    "kappa": run["kappa"],
+    "output": output,
+    "elapsed_micros": run["elapsed_micros"],
+    "archive_bytes": run["resident_bytes"],
+}
+json.dump(summary, sys.stdout, separators=(",", ":"))
+sys.stdout.write("\n")
+' <<<"$run_json"

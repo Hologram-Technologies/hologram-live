@@ -232,6 +232,13 @@ Compilation stages only `pyproject.toml`, the declared `uv.lock`, and `src/`, th
 
 This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. New archives record the exact image ID, so a warm local run skips decompression and `docker image load` only when that trusted ID is already present; a cold machine still restores the image from the archive. Compile once with an optimized release binary and reuse the resulting `.holo`; debug builds spend substantially longer hashing the roughly 100 MiB archive. `just python-holo-demo` builds and uses the release CLI, with a one-time optimized link on the first invocation. Use a digest-pinned value for `source.base` when reproducible builds matter. Portable Python/WASI and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps) and [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md).
 
+The demo writes one JSON document to stdout; progress and failures use stderr:
+
+```bash
+just python-holo-demo | jq .
+just python-holo-demo | jq '.output'
+```
+
 ### Inference compatibility APIs
 
 The daemon exposes non-streaming OpenAI- and Ollama-compatible HTTP surfaces over the configured inference engine:

@@ -2,6 +2,7 @@ use super::{helpers, Cli};
 use clap::{Args, ValueEnum};
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::HoloExecutor;
+use hologram_live::holo_capability::{EffectiveGrant, GrantSource};
 use hologram_live::protocol::{HoloRunResult, RpcRequest, RpcResponse};
 use serde_json::Value;
 use std::io::{self, Write};
@@ -16,6 +17,9 @@ pub struct RunArgs {
     /// Render application outputs as raw protocol bytes, UTF-8 text, or JSON.
     #[arg(long, value_enum, default_value_t = RunOutputFormat::Raw)]
     pub(crate) output_format: RunOutputFormat,
+    /// Development-only effective grant for direct local execution.
+    #[arg(long, value_name = "CAPABILITIES_JSON")]
+    pub(crate) development_grant: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, ValueEnum)]
@@ -47,8 +51,30 @@ pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
         let bytes = tokio::fs::read(&local)
             .await
             .map_err(|error| LiveError::io(&local, error))?;
-        let result = HoloExecutor::default().execute(&bytes, inputs).await?;
+        let result = match args.development_grant.as_deref() {
+            Some(path) => {
+                let grant = EffectiveGrant::from_development_file(
+                    path,
+                    GrantSource::DirectDevelopmentFile,
+                )?;
+                tracing::warn!(
+                    path = %path.display(),
+                    effective_grant_kappa = %grant.kappa,
+                    "direct holo development grant is enabled"
+                );
+                HoloExecutor::default()
+                    .execute_with_grant(&bytes, inputs, &grant)
+                    .await?
+            }
+            None => HoloExecutor::default().execute(&bytes, inputs).await?,
+        };
         return print_result(&cli, &result, args.output_format);
+    }
+    if args.development_grant.is_some() {
+        return Err(LiveError::Config(
+            "--development-grant applies only to direct local .holo files; configure holo.development_grant on the service for catalog execution"
+                .to_owned(),
+        ));
     }
     match helpers::call(
         &cli,

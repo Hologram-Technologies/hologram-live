@@ -212,7 +212,36 @@ object's κ in `AppManifest.requires`. Omitting `requires` produces the canonica
 empty request. A request describes what an application needs—it is never itself
 a grant. In the upstream capability contract, a scalar budget of `0` means
 unbounded; use a nonzero value to request a finite ceiling. Runtime grant
-enforcement and child attenuation are the active M2 work.
+enforcement now decodes this canonical request and authorizes it before any
+provider prepares. Child attenuation remains the next M2 slice.
+
+Ordinary local execution uses the built-in baseline grant: no storage roots,
+publish/subscribe channels, or network flags. A non-empty request therefore
+fails with `LIVE_AUTHORIZATION_DENIED`. For an explicit local demo, provide a
+separate trusted capability source as the effective grant:
+
+```bash
+hologram --json run ./application.holo \
+  --development-grant ./development-grant.json \
+  --input ./payload.bin | jq
+```
+
+Resident execution reads its development grant only from the service's trusted
+configuration, never from a remote request. Set
+`holo.development_grant = "development-grant.json"`; relative paths resolve
+from `paths.config_dir`, and configuration validation rejects this mode on a
+non-loopback listener. Both direct and service modes emit a warning and trace
+the request κ, effective-grant κ, source, and allow/deny decision without
+logging the capability document. Successful raw run results expose the same
+non-secret decision metadata as `requested_capabilities_kappa`,
+`effective_grant_kappa`, `grant_source`, and `authorization`, so automated
+checks can retain the authority evidence:
+
+```bash
+hologram --json run ./application.holo \
+  --development-grant ./development-grant.json |
+  jq '{authorization, grant_source, requested_capabilities_kappa, effective_grant_kappa}'
+```
 
 See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
 

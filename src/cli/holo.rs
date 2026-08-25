@@ -84,6 +84,7 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
                     reference: kappa,
                     inputs,
                     output_format,
+                    development_grant: None,
                 },
             )
             .await

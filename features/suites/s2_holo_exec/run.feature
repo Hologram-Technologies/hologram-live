@@ -27,3 +27,28 @@ Feature: Resident .holo wasm execution
     Then the compile command succeeds
     When I run the compiled archive directly with input "hello file"
     Then the run output is "HELLO FILE"
+    And the run reports allowed authorization from "local_baseline"
+
+  Scenario: capability requests require an explicit sufficient grant
+    Given a Wasm application that requests network fetch
+    When I compile the application
+    Then the compile command succeeds
+    When I run the compiled archive without a development grant
+    Then the run fails with an authorization-denied error
+    When I run the compiled archive with its development grant and input "authorized"
+    Then the run output is "AUTHORIZED"
+    And the run reports allowed authorization from "direct_development_file"
+
+  Scenario: resident execution uses only the service development grant
+    Given a Wasm application that requests network fetch
+    When I compile the application
+    Then the compile command succeeds
+    Given a fresh Hologram home
+    And an initialized configuration on a test port
+    And the service uses the development grant
+    When I import the compiled archive
+    And I load the archive
+    And I run the archive with input "resident grant"
+    Then the run output is "RESIDENT GRANT"
+    And the run reports allowed authorization from "service_development_file"
+    And I stop the local service

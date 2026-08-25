@@ -216,6 +216,10 @@ message HoloRunResult {
   repeated bytes outputs = 2;
   uint64 elapsed_micros = 3;
   uint64 resident_bytes = 4;
+  string requested_capabilities_kappa = 5;
+  string effective_grant_kappa = 6;
+  string grant_source = 7;
+  string authorization = 8;
 }
 
 message ConversationMessage { string role = 1; string content = 2; uint64 created_at_millis = 3; }

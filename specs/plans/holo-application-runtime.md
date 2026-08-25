@@ -167,9 +167,13 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 ### Runtime grants
 
 - [ ] Define where effective grants come from for direct local execution, local service execution, remote execution, and child applications.
-- [ ] Fail before provider preparation unless the effective grant admits the application’s `requires` set.
-- [ ] Pass only the effective grant—not the untrusted request—to providers and host interfaces.
-- [ ] Add an explicit local-development grant mode without making it the production default.
+  - [x] Direct local execution uses the deny-by-default baseline or an explicit trusted `--development-grant` file.
+  - [x] Local service execution uses the baseline or loopback-only `holo.development_grant` host configuration.
+  - [x] Remote callers cannot attach self-asserted grants; absent trusted remote authority remains denied.
+  - [ ] Child execution receives only an admitted attenuation of the parent grant.
+- [x] Fail before provider preparation unless the effective grant admits the application’s `requires` set.
+- [x] Pass only the effective grant—not the untrusted request—to providers and host interfaces.
+- [x] Add an explicit local-development grant mode without making it the production default.
 - [ ] Include capability decisions in structured audit records without leaking secrets.
 
 ### Child applications
@@ -183,11 +187,11 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### M2 acceptance criteria
 
-- [ ] Insufficient grants fail with `LIVE_AUTHORIZATION_DENIED` before any provider starts.
-- [ ] Sufficient grants produce the same plan and behavior as the previous Wasm fixture.
+- [x] Insufficient grants fail with `LIVE_AUTHORIZATION_DENIED` before any provider starts.
+- [x] Sufficient grants produce the same plan and behavior as the previous Wasm fixture.
 - [ ] Child attenuation succeeds; attempted amplification fails deterministically.
 - [ ] Capability checks are covered by unit, BDD, audit, and native API tests.
-- [ ] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
+- [x] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
 
 ## M3 — Real multi-layer providers
 

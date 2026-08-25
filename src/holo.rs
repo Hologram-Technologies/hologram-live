@@ -1,9 +1,10 @@
 use crate::actor::ActorSystem;
 use crate::application_plan::{explain_application, PlanLimits};
 use crate::error::{LiveError, Result};
+use crate::holo_capability::EffectiveGrant;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_provider::{
-    prepare_and_start, ProviderRegistry, ProviderTarget, RunningApplication,
+    prepare_and_start_with_grant, ProviderRegistry, ProviderTarget, RunningApplication,
 };
 use crate::holo_python::PythonRootfsProvider;
 use crate::holo_wasm::WasmProvider;
@@ -242,6 +243,7 @@ pub struct HoloRuntime {
     engine: Engine,
     actors: OnceLock<ActorSystem>,
     resident: Mutex<HashMap<String, ResidentEntry>>,
+    effective_grant: EffectiveGrant,
 }
 
 /// Cloning is cheap: the actor reference and counters are shared handles.
@@ -250,6 +252,9 @@ struct ResidentEntry {
     application: Arc<RunningApplication>,
     input_count: usize,
     output_count: usize,
+    requested_capabilities_kappa: String,
+    effective_grant_kappa: String,
+    grant_source: String,
 }
 
 impl ResidentEntry {
@@ -269,12 +274,21 @@ impl ResidentEntry {
 
 impl HoloRuntime {
     pub fn new(catalog: Arc<HoloCatalog>, mailbox_capacity: usize) -> Self {
+        Self::new_with_grant(catalog, mailbox_capacity, EffectiveGrant::local_baseline())
+    }
+
+    pub fn new_with_grant(
+        catalog: Arc<HoloCatalog>,
+        mailbox_capacity: usize,
+        effective_grant: EffectiveGrant,
+    ) -> Self {
         Self {
             catalog,
             mailbox_capacity: mailbox_capacity.max(1),
             engine: Engine::default(),
             actors: OnceLock::new(),
             resident: Mutex::new(HashMap::new()),
+            effective_grant,
         }
     }
 
@@ -293,13 +307,18 @@ impl HoloRuntime {
         )?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
-        let application = Arc::new(prepare_and_start(&plan, &registry).await?);
+        let requested_capabilities_kappa = plan.requested_capabilities.kappa.clone();
+        let application =
+            Arc::new(prepare_and_start_with_grant(&plan, &registry, &self.effective_grant).await?);
         // The v1 manifest carries no I/O arity, so the contract's
         // one-output-per-input shape is reported as 1/1.
         let entry = ResidentEntry {
             application: application.clone(),
             input_count: 1,
             output_count: 1,
+            requested_capabilities_kappa,
+            effective_grant_kappa: self.effective_grant.kappa.clone(),
+            grant_source: self.effective_grant.source.name().to_owned(),
         };
         let (record, duplicate) = match self.lock_resident()?.entry(kappa.to_owned()) {
             std::collections::hash_map::Entry::Occupied(existing) => {
@@ -331,6 +350,10 @@ impl HoloRuntime {
             outputs: outcome.outputs,
             elapsed_micros: outcome.elapsed_micros,
             resident_bytes: entry.application.status().resident_bytes,
+            requested_capabilities_kappa: entry.requested_capabilities_kappa,
+            effective_grant_kappa: entry.effective_grant_kappa,
+            grant_source: entry.grant_source,
+            authorization: "allowed".to_owned(),
         })
     }
 
@@ -372,12 +395,23 @@ pub struct HoloExecutor {
 
 impl HoloExecutor {
     pub async fn execute(&self, bytes: &[u8], inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
+        self.execute_with_grant(bytes, inputs, &EffectiveGrant::local_baseline())
+            .await
+    }
+
+    pub async fn execute_with_grant(
+        &self,
+        bytes: &[u8],
+        inputs: Vec<Vec<u8>>,
+        effective_grant: &EffectiveGrant,
+    ) -> Result<HoloRunResult> {
         let kappa = format!("blake3:{}", blake3::hash(bytes));
         let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
         let registry = direct_registry(self.engine.clone())?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
-        let application = prepare_and_start(&plan, &registry).await?;
+        let requested_capabilities_kappa = plan.requested_capabilities.kappa.clone();
+        let application = prepare_and_start_with_grant(&plan, &registry, effective_grant).await?;
         let resident_bytes = application.status().resident_bytes;
         let outcome = application.invoke_then_stop(inputs).await?;
         Ok(HoloRunResult {
@@ -385,6 +419,10 @@ impl HoloExecutor {
             outputs: outcome.outputs,
             elapsed_micros: outcome.elapsed_micros,
             resident_bytes,
+            requested_capabilities_kappa,
+            effective_grant_kappa: effective_grant.kappa.clone(),
+            grant_source: effective_grant.source.name().to_owned(),
+            authorization: "allowed".to_owned(),
         })
     }
 }
@@ -424,6 +462,11 @@ fn resident_registry(
 mod tests {
     use super::*;
     use hologram::space::{address_bytes, Layer, Realization};
+
+    fn canonical_capabilities() -> &'static [u8] {
+        static CAPABILITIES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+        CAPABILITIES.get_or_init(crate::holo_capability::empty_canonical)
+    }
 
     #[test]
     fn fixture_is_a_valid_holo_archive() {
@@ -580,6 +623,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn explicit_development_grant_runs_an_authorized_wasm_archive() {
+        let wasm_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures/wasm-app/transform.wat");
+        let wasm = std::fs::read(wasm_path).expect("fixture wasm");
+        let capabilities = crate::holo_capability::compile_source(
+            std::path::Path::new("request.json"),
+            br#"{"network_fetch":true}"#,
+        )
+        .expect("network request");
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(&capabilities),
+            layers: vec![Layer::wasm(address_bytes(&wasm), "holo_run")],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(
+            address_bytes(&capabilities).as_bytes(),
+            capabilities.as_slice(),
+        );
+        writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
+        let archive = writer.finish().expect("archive");
+
+        let error = HoloExecutor::default()
+            .execute(&archive, vec![b"denied".to_vec()])
+            .await
+            .expect_err("baseline denies network request");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(&grant_path, b"{}").expect("insufficient grant");
+        let insufficient_grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("insufficient grant");
+        let error = HoloExecutor::default()
+            .execute_with_grant(
+                &archive,
+                vec![b"still denied".to_vec()],
+                &insufficient_grant,
+            )
+            .await
+            .expect_err("an explicit but insufficient grant must remain denied");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+
+        std::fs::write(&grant_path, br#"{"network_fetch":true}"#).expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+        let result = HoloExecutor::default()
+            .execute_with_grant(&archive, vec![b"authorized".to_vec()], &grant)
+            .await
+            .expect("authorized execution");
+        assert_eq!(result.outputs, vec![b"AUTHORIZED".to_vec()]);
+        assert_eq!(
+            result.requested_capabilities_kappa,
+            address_bytes(&capabilities).to_string()
+        );
+        assert_eq!(result.effective_grant_kappa, grant.kappa);
+        assert_eq!(result.grant_source, "direct_development_file");
+        assert_eq!(result.authorization, "allowed");
+    }
+
+    #[tokio::test]
     async fn one_shot_executor_explains_that_thin_content_is_unavailable() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("features/fixtures/wasm-app/hologram.json");
@@ -600,7 +712,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_non_primary_content_blocks_primary_provider_execution() {
-        let capabilities = b"capabilities";
+        let capabilities = canonical_capabilities();
         let malformed_wasm = b"this is not a wasm module";
         let missing_view = b"missing view";
         let manifest = AppManifest {
@@ -681,7 +793,7 @@ mod tests {
         let wasm_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("features/fixtures/wasm-app/transform.wat");
         let wasm = std::fs::read(wasm_path).expect("read Wasm fixture");
-        let capabilities = b"capabilities";
+        let capabilities = canonical_capabilities();
         let manifest = AppManifest {
             primary: Some(1),
             requires: address_bytes(capabilities),
@@ -733,9 +845,10 @@ mod tests {
     #[tokio::test]
     async fn model_only_execution_reports_the_missing_inference_provider() {
         let bundle = b"deterministic model bundle";
+        let capabilities = canonical_capabilities();
         let manifest = AppManifest {
             primary: None,
-            requires: address_bytes(&[]),
+            requires: address_bytes(capabilities),
             layers: vec![Layer::inference_model(
                 address_bytes(bundle),
                 "ai.default",
@@ -745,7 +858,7 @@ mod tests {
         };
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(&[]).as_bytes(), []);
+        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
         writer.add_content_blob(address_bytes(bundle).as_bytes(), bundle);
         let bytes = writer.finish().expect("model archive");
 
@@ -770,7 +883,7 @@ mod tests {
 
     #[test]
     fn unsupported_layer_kinds_remain_visible_in_a_blocked_plan() {
-        let capabilities = b"capabilities";
+        let capabilities = canonical_capabilities();
         let payloads: [&[u8]; 4] = [b"view", b"tensor", b"rootfs", b"model"];
         let manifest = AppManifest {
             primary: Some(2),

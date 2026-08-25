@@ -5,6 +5,7 @@ use crate::application_plan::{
     ProviderContext, ResolvedLayer,
 };
 use crate::error::{LiveError, Result};
+use crate::holo_capability::EffectiveGrant;
 use hologram::space::LayerKind;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -74,7 +75,7 @@ impl ProviderTarget {
 #[derive(Clone)]
 pub struct LayerPrepareContext {
     pub identity: HoloIdentity,
-    pub required_capabilities: Arc<[u8]>,
+    pub effective_grant: EffectiveGrant,
     pub layer: ResolvedLayer,
     pub target: ProviderTarget,
 }
@@ -293,6 +294,19 @@ pub async fn prepare_and_start(
     plan: &ApplicationPlan,
     registry: &ProviderRegistry,
 ) -> Result<RunningApplication> {
+    let grant = EffectiveGrant::local_baseline();
+    prepare_and_start_with_grant(plan, registry, &grant).await
+}
+
+pub async fn prepare_and_start_with_grant(
+    plan: &ApplicationPlan,
+    registry: &ProviderRegistry,
+    effective_grant: &EffectiveGrant,
+) -> Result<RunningApplication> {
+    effective_grant.authorize(
+        &plan.identity.application_kappa,
+        &plan.requested_capabilities,
+    )?;
     let primary_layer = plan.primary_layer.ok_or_else(|| {
         LiveError::Capability(format!(
             "application {} has no primary exit-bearing layer",
@@ -331,7 +345,7 @@ pub async fn prepare_and_start(
         match provider
             .prepare(LayerPrepareContext {
                 identity: plan.identity.clone(),
-                required_capabilities: plan.required_capabilities.clone(),
+                effective_grant: effective_grant.clone(),
                 layer: layer.clone(),
                 target: registry.target,
             })
@@ -422,6 +436,11 @@ mod tests {
     use hologram::space::{address_bytes, AppManifest, Layer, Realization};
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
+
+    fn test_capabilities() -> &'static [u8] {
+        static CAPABILITIES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+        CAPABILITIES.get_or_init(crate::holo_capability::empty_canonical)
+    }
 
     struct SyntheticProvider {
         events: Arc<Mutex<Vec<String>>>,
@@ -543,7 +562,10 @@ mod tests {
     }
 
     fn plan(registry: &ProviderRegistry) -> ApplicationPlan {
-        let capabilities = b"capabilities";
+        plan_with_capabilities(registry, test_capabilities())
+    }
+
+    fn plan_with_capabilities(registry: &ProviderRegistry, capabilities: &[u8]) -> ApplicationPlan {
         let first = b"first wasm";
         let second = b"second wasm";
         let manifest = AppManifest {
@@ -606,6 +628,56 @@ mod tests {
             .expect("prepare failure");
         assert_eq!(error.code(), "LIVE_CONFLICT");
         assert_eq!(take(&events), ["prepare:0", "prepare:1", "stop:0"]);
+    }
+
+    #[tokio::test]
+    async fn insufficient_grant_denies_before_provider_preparation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events.clone(), None, None, None);
+        let requested = crate::holo_capability::compile_source(
+            std::path::Path::new("request.json"),
+            br#"{"network_fetch":true}"#,
+        )
+        .expect("network request");
+
+        let error = prepare_and_start(&plan_with_capabilities(&registry, &requested), &registry)
+            .await
+            .err()
+            .expect("baseline must deny network authority");
+
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(take(&events).is_empty(), "provider prepare must not run");
+    }
+
+    #[tokio::test]
+    async fn sufficient_development_grant_reaches_provider_preparation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events.clone(), Some(0), None, None);
+        let requested = crate::holo_capability::compile_source(
+            std::path::Path::new("request.json"),
+            br#"{"network_fetch":true}"#,
+        )
+        .expect("network request");
+        let directory = tempfile::tempdir().expect("tempdir");
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(&grant_path, br#"{"network_fetch":true}"#).expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("development grant");
+
+        let error = prepare_and_start_with_grant(
+            &plan_with_capabilities(&registry, &requested),
+            &registry,
+            &grant,
+        )
+        .await
+        .err()
+        .expect("synthetic provider fails after authorization");
+
+        assert_eq!(error.code(), "LIVE_CONFLICT");
+        assert_eq!(take(&events), ["prepare:0"]);
     }
 
     #[tokio::test]

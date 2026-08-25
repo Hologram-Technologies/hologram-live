@@ -17,6 +17,7 @@ struct BddWorld {
     plan_result: Option<serde_json::Value>,
     plugin_list: Option<serde_json::Value>,
     model_id: Option<String>,
+    development_grant: Option<PathBuf>,
 }
 
 impl Drop for BddWorld {
@@ -52,6 +53,34 @@ fn wasm_manifest(world: &mut BddWorld) {
             .join("hologram.json"),
     );
     world.temporary = Some(tempfile::tempdir().expect("create scenario directory"));
+}
+
+#[given("a Wasm application that requests network fetch")]
+fn wasm_manifest_with_network_request(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create scenario directory");
+    std::fs::copy(
+        workspace_root().join("features/fixtures/wasm-app/transform.wat"),
+        temporary.path().join("transform.wat"),
+    )
+    .expect("copy Wasm fixture");
+    let capabilities = r#"{"schema_version":1,"network_fetch":true}"#;
+    std::fs::write(temporary.path().join("capabilities.json"), capabilities)
+        .expect("write capability request");
+    let grant = temporary.path().join("development-grant.json");
+    std::fs::write(&grant, capabilities).expect("write development grant");
+    std::fs::write(
+        temporary.path().join("hologram.json"),
+        r#"{
+          "schema_version": 1,
+          "primary": 0,
+          "requires": "capabilities.json",
+          "layers": [{"kind":"wasm","path":"transform.wat","entry":"holo_run"}]
+        }"#,
+    )
+    .expect("write manifest");
+    world.manifest = Some(temporary.path().join("hologram.json"));
+    world.development_grant = Some(grant);
+    world.temporary = Some(temporary);
 }
 
 #[given("a new application directory")]
@@ -219,6 +248,54 @@ fn run_local_archive(world: &mut BddWorld, input: String) {
     world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
 }
 
+#[when("I run the compiled archive without a development grant")]
+fn run_local_archive_without_grant(world: &mut BddWorld) {
+    world.command_output = Some(
+        Command::new(env!("CARGO_BIN_EXE_hologram"))
+            .arg("--json")
+            .arg("run")
+            .arg(world.output_path.as_ref().expect("compiled archive"))
+            .output()
+            .expect("run local archive"),
+    );
+}
+
+#[then("the run fails with an authorization-denied error")]
+fn run_fails_authorization(world: &mut BddWorld) {
+    let output = world.command_output.as_ref().expect("run output");
+    assert!(!output.status.success(), "run must fail without a grant");
+    let error: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("parse JSON error");
+    assert_eq!(error["code"], "LIVE_AUTHORIZATION_DENIED");
+}
+
+#[when(expr = "I run the compiled archive with its development grant and input {string}")]
+fn run_local_archive_with_grant(world: &mut BddWorld, input: String) {
+    let input_path = world
+        .temporary
+        .as_ref()
+        .expect("scenario directory")
+        .path()
+        .join("granted-input.bin");
+    std::fs::write(&input_path, input).expect("write input");
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("run")
+        .arg(world.output_path.as_ref().expect("compiled archive"))
+        .arg("--development-grant")
+        .arg(world.development_grant.as_ref().expect("development grant"))
+        .arg("--input")
+        .arg(input_path)
+        .output()
+        .expect("run local archive with grant");
+    assert!(
+        output.status.success(),
+        "granted local run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
+}
+
 #[then(expr = "the run output is {string}")]
 fn run_output_is(world: &mut BddWorld, expected: String) {
     let result = world.run_result.as_ref().expect("run result");
@@ -229,6 +306,25 @@ fn run_output_is(world: &mut BddWorld, expected: String) {
         .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("byte in range"))
         .collect();
     assert_eq!(bytes, expected.as_bytes());
+}
+
+#[then(expr = "the run reports allowed authorization from {string}")]
+fn run_reports_authorization(world: &mut BddWorld, source: String) {
+    let result = world.run_result.as_ref().expect("run result");
+    assert_eq!(result["authorization"], "allowed");
+    assert_eq!(result["grant_source"], source);
+    assert!(
+        result["requested_capabilities_kappa"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("blake3:")),
+        "run result must identify its capability request"
+    );
+    assert!(
+        result["effective_grant_kappa"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("blake3:")),
+        "run result must identify its effective grant"
+    );
 }
 
 #[then("the archive appears in the resident list")]
@@ -361,6 +457,36 @@ fn initialized_config(world: &mut BddWorld) {
     // let a lingering listener answer this scenario's requests.
     let port = free_port();
     std::fs::write(&config, source.replace("11435", &port.to_string())).expect("write config");
+}
+
+#[given("the service uses the development grant")]
+fn service_uses_development_grant(world: &mut BddWorld) {
+    let config_path = home_path(world).join(".config/hologram/live.toml");
+    let source = std::fs::read_to_string(&config_path).expect("read config");
+    let mut config: toml::Value = toml::from_str(&source).expect("parse config");
+    let holo = config
+        .as_table_mut()
+        .expect("configuration table")
+        .entry("holo")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    holo.as_table_mut()
+        .expect("holo configuration table")
+        .insert(
+            "development_grant".to_owned(),
+            toml::Value::String(
+                world
+                    .development_grant
+                    .as_ref()
+                    .expect("development grant")
+                    .display()
+                    .to_string(),
+            ),
+        );
+    std::fs::write(
+        config_path,
+        toml::to_string_pretty(&config).expect("encode config"),
+    )
+    .expect("write config");
 }
 
 fn free_port() -> u16 {

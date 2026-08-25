@@ -22,6 +22,7 @@ This document is deliberately strict about what the current stable build does an
 - Bearer-token authentication seam for protected routes.
 - First-class `.holo` fixture creation, import, list, inspect, payload-free plan, verify, and remove through CLI, native gRPC, JSON/HTTP, and OpenAPI surfaces.
 - `.holo` compiler/runtime/execution path: v4 writes with v2/v3 reads, fat or thin packaging, explicit archive object κ / footer fingerprint / canonical application κ reporting, complete pre-provider resolution and re-hashing of capabilities plus all non-child layers with deterministic limits/blockers, explanatory local or catalog-backed plans (including unsupported providers), a closed `LayerKind` provider registry with transactional ordered prepare/start and reverse stop/rollback, multi-layer Wasm execution with nonzero primary positions, direct service-free execution, κ-backed thin payload resolution, and idempotent resident load/unload sessions over supervised Wasmtime actors with lifecycle status.
+- `.holo` capability admission: canonical requests are distinct from trusted effective grants, the default local baseline has no storage/channel/network authority, explicit development grants are restricted to direct files or loopback service configuration, denial occurs before provider preparation, and successful run results report non-secret request/grant identities and their trusted source across JSON and gRPC.
 - `.holo` v4 inference-model packaging, import, verified application-directory metadata, and metadata-only `hologram ai inspect`.
 - Direct execution of locked Python OCI rootfs archives through the experimental local container provider.
 - Durable local conversation history.
@@ -38,6 +39,8 @@ This document is deliberately strict about what the current stable build does an
 
 ## Present as an extension seam, not implemented by the default module set
 
+- Child-application capability delegation and attenuation; child references remain planning blockers.
+- Engine enforcement of scalar CPU, memory, deadline, and concurrency budgets carried by effective grants.
 - `.holo` execution for `tensor`, inference-model, and non-Python/resident `rootfs` layers.
 - Token streaming on the compatibility APIs.
 - Full enterprise users, OIDC/SAML, organizations, and RBAC policy storage.

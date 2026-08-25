@@ -1,4 +1,5 @@
 use crate::error::{LiveError, Result};
+use crate::holo_capability::RequestedCapabilities;
 use crate::util::hex;
 use hologram::archive::HoloLoader;
 use hologram::space::{address_bytes, AppManifest, LayerKind, Realization};
@@ -118,6 +119,10 @@ pub enum PlanBlocker {
         edge: ManifestEdge,
         source: ResolutionSource,
     },
+    InvalidCapabilitySet {
+        kappa: String,
+        reason: String,
+    },
     ProviderUnavailable {
         position: u32,
         kind: String,
@@ -145,6 +150,7 @@ impl PlanBlocker {
         match self {
             Self::MissingObject { .. } => "missing_object",
             Self::ContentMismatch { .. } => "content_mismatch",
+            Self::InvalidCapabilitySet { .. } => "invalid_capability_set",
             Self::ProviderUnavailable { .. } => "provider_unavailable",
             Self::ChildClosureUnsupported { .. } => "child_closure_unsupported",
             Self::LimitExceeded { .. } => "limit_exceeded",
@@ -155,7 +161,9 @@ impl PlanBlocker {
     pub const fn error_code(&self) -> &'static str {
         match self {
             Self::MissingObject { .. } => "LIVE_NOT_FOUND",
-            Self::ContentMismatch { .. } | Self::LimitExceeded { .. } => "LIVE_HOLO_INVALID",
+            Self::ContentMismatch { .. }
+            | Self::InvalidCapabilitySet { .. }
+            | Self::LimitExceeded { .. } => "LIVE_HOLO_INVALID",
             Self::ProviderUnavailable { .. }
             | Self::ChildClosureUnsupported { .. }
             | Self::ExecutionShapeUnsupported { .. } => "LIVE_CAPABILITY_MISSING",
@@ -174,6 +182,9 @@ impl PlanBlocker {
             } => format!(
                 "application {application_kappa} resolved {kappa} for {edge} from {} but the bytes do not match the declared kappa",
                 resolution_source_name(source)
+            ),
+            Self::InvalidCapabilitySet { kappa, reason } => format!(
+                "application {application_kappa} required capability object {kappa} is not a canonical CapabilitySet: {reason}"
             ),
             Self::ProviderUnavailable {
                 position,
@@ -237,6 +248,7 @@ pub struct ApplicationPlanReport {
     pub referenced_object_count: usize,
     pub embedded_object_count: usize,
     pub limits: PlanLimits,
+    requested_capabilities: Option<RequestedCapabilities>,
     manifest: AppManifest,
 }
 
@@ -298,8 +310,8 @@ impl ApplicationPlanReport {
         if let Some(blocker) = self.blockers.into_iter().next() {
             return Err(blocker.into_error(&self.identity.application_kappa));
         }
-        let capabilities = self.objects.get(&self.requires_kappa).ok_or_else(|| {
-            LiveError::Conflict("planner lost the resolved capability object".to_owned())
+        let requested_capabilities = self.requested_capabilities.ok_or_else(|| {
+            LiveError::Conflict("planner lost decoded requested capabilities".to_owned())
         })?;
         let mut layers = Vec::with_capacity(self.layers.len());
         for layer in self.layers {
@@ -337,7 +349,7 @@ impl ApplicationPlanReport {
             identity: self.identity,
             primary_layer: self.primary_layer,
             requires_kappa: self.requires_kappa,
-            required_capabilities: capabilities.bytes.clone(),
+            requested_capabilities,
             layers,
             objects: self.objects,
             manifest: self.manifest,
@@ -349,7 +361,7 @@ pub struct ApplicationPlan {
     pub identity: HoloIdentity,
     pub primary_layer: Option<u32>,
     pub requires_kappa: String,
-    pub required_capabilities: Arc<[u8]>,
+    pub requested_capabilities: RequestedCapabilities,
     pub layers: Vec<ResolvedLayer>,
     pub objects: BTreeMap<String, ResolvedObject>,
     manifest: AppManifest,
@@ -567,6 +579,20 @@ where
             .get(&layer.content_kappa)
             .map(|object| object.source.clone());
     }
+    let requested_capabilities = objects
+        .get(&manifest.requires.to_string())
+        .and_then(|object| {
+            match RequestedCapabilities::decode(&object.kappa, object.bytes.clone()) {
+                Ok(capabilities) => Some(capabilities),
+                Err(error) => {
+                    blockers.push(PlanBlocker::InvalidCapabilitySet {
+                        kappa: object.kappa.clone(),
+                        reason: error.to_string(),
+                    });
+                    None
+                }
+            }
+        });
     Ok(ApplicationPlanReport {
         identity,
         primary_layer: manifest.primary,
@@ -579,6 +605,7 @@ where
         referenced_object_count: requests.len(),
         embedded_object_count,
         limits,
+        requested_capabilities,
         manifest,
     })
 }
@@ -624,6 +651,11 @@ mod tests {
     use hologram::archive::HoloWriter;
     use hologram::space::{KappaLabel71, Layer};
 
+    fn test_capabilities() -> &'static [u8] {
+        static CAPABILITIES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+        CAPABILITIES.get_or_init(crate::holo_capability::empty_canonical)
+    }
+
     fn write_archive(manifest: &AppManifest, blobs: &[(&KappaLabel71, &[u8])]) -> Vec<u8> {
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(manifest.canonicalize());
@@ -641,7 +673,7 @@ mod tests {
 
     #[test]
     fn preserves_multi_layer_order_and_deduplicates_equal_kappas() {
-        let shared = b"shared layer bytes";
+        let shared = test_capabilities();
         let shared_kappa = address_bytes(shared);
         let manifest = AppManifest {
             primary: Some(0),
@@ -676,14 +708,14 @@ mod tests {
             &plan.layers[1].content
         ));
         assert!(Arc::ptr_eq(
-            &plan.required_capabilities,
+            &plan.requested_capabilities.canonical,
             &plan.layers[0].content
         ));
     }
 
     #[test]
     fn missing_non_primary_content_names_kappa_and_layer_position() {
-        let capabilities = b"capabilities";
+        let capabilities = test_capabilities();
         let primary = b"primary wasm";
         let secondary = b"secondary view";
         let capabilities_kappa = address_bytes(capabilities);
@@ -726,8 +758,42 @@ mod tests {
     }
 
     #[test]
+    fn malformed_capability_object_is_an_explainable_typed_blocker() {
+        let capabilities = b"not a canonical capability set";
+        let layer = b"wasm";
+        let capabilities_kappa = address_bytes(capabilities);
+        let layer_kappa = address_bytes(layer);
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: capabilities_kappa,
+            layers: vec![Layer::wasm(layer_kappa, "run")],
+            children: Vec::new(),
+        };
+        let bytes = write_archive(
+            &manifest,
+            &[(&capabilities_kappa, capabilities), (&layer_kappa, layer)],
+        );
+
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("explain");
+        report.evaluate_providers(available);
+
+        assert!(!report.runnable());
+        assert!(report.blockers.iter().any(|blocker| matches!(
+            blocker,
+            PlanBlocker::InvalidCapabilitySet { kappa, .. }
+                if kappa == &capabilities_kappa.to_string()
+        )));
+        let error = report
+            .into_application_plan()
+            .expect_err("invalid capabilities block execution");
+        assert_eq!(error.code(), "LIVE_HOLO_INVALID");
+        assert!(error.to_string().contains("CapabilitySet"), "{error}");
+    }
+
+    #[test]
     fn forged_local_content_is_a_typed_mismatch_blocker() {
-        let capabilities = b"capabilities";
+        let capabilities = test_capabilities();
         let layer = b"declared layer";
         let capabilities_kappa = address_bytes(capabilities);
         let layer_kappa = address_bytes(layer);
@@ -765,7 +831,7 @@ mod tests {
 
     #[test]
     fn fat_and_cache_resolved_thin_archives_have_equivalent_logical_plans() {
-        let capabilities = b"capabilities";
+        let capabilities = test_capabilities();
         let layer = b"portable wasm";
         let capabilities_kappa = address_bytes(capabilities);
         let layer_kappa = address_bytes(layer);
@@ -824,7 +890,7 @@ mod tests {
 
     #[test]
     fn unsupported_service_provider_is_explainable_but_not_executable() {
-        let capabilities = b"capabilities";
+        let capabilities = test_capabilities();
         let model = b"model bundle";
         let capabilities_kappa = address_bytes(capabilities);
         let model_kappa = address_bytes(model);
@@ -863,7 +929,7 @@ mod tests {
 
     #[test]
     fn child_references_are_visible_blockers_until_attenuation_lands() {
-        let capabilities = b"capabilities";
+        let capabilities = test_capabilities();
         let layer = b"wasm";
         let capabilities_kappa = address_bytes(capabilities);
         let layer_kappa = address_bytes(layer);
@@ -904,7 +970,7 @@ mod tests {
 
     #[test]
     fn root_plan_limits_block_before_strict_execution() {
-        let capabilities = b"capabilities";
+        let capabilities = test_capabilities();
         let layer = b"wasm payload";
         let capabilities_kappa = address_bytes(capabilities);
         let layer_kappa = address_bytes(layer);

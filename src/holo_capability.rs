@@ -2,6 +2,7 @@ use crate::error::{LiveError, Result};
 use hologram::space::{Capabilities, CapabilitySet, KappaLabel71, Realization};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::Arc;
 
 const SOURCE_SCHEMA_VERSION: u16 = 1;
 const BLAKE3_LABEL_LENGTH: usize = 71;
@@ -81,6 +82,136 @@ pub fn empty_capabilities() -> Capabilities {
         cpu_time_per_event_ms: 0,
         priority_weight: 0,
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestedCapabilities {
+    pub kappa: String,
+    pub canonical: Arc<[u8]>,
+    pub capabilities: Arc<Capabilities>,
+}
+
+impl RequestedCapabilities {
+    pub fn decode(kappa: &str, bytes: Arc<[u8]>) -> Result<Self> {
+        if hologram::space::address_bytes(&bytes) != kappa {
+            return Err(LiveError::InvalidHolo(format!(
+                "required CapabilitySet bytes do not match declared κ {kappa}"
+            )));
+        }
+        let capabilities = Arc::new(decode_canonical(&bytes)?);
+        Ok(Self {
+            kappa: kappa.to_owned(),
+            canonical: bytes,
+            capabilities,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GrantSource {
+    LocalBaseline,
+    DirectDevelopmentFile,
+    ServiceDevelopmentFile,
+}
+
+impl GrantSource {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::LocalBaseline => "local_baseline",
+            Self::DirectDevelopmentFile => "direct_development_file",
+            Self::ServiceDevelopmentFile => "service_development_file",
+        }
+    }
+}
+
+/// Authority supplied by a trusted execution context, never by an archive.
+#[derive(Debug, Clone)]
+pub struct EffectiveGrant {
+    pub kappa: String,
+    pub canonical: Arc<[u8]>,
+    pub capabilities: Arc<Capabilities>,
+    pub source: GrantSource,
+}
+
+impl EffectiveGrant {
+    pub fn local_baseline() -> Self {
+        let canonical = empty_canonical();
+        Self {
+            kappa: hologram::space::address_bytes(&canonical).to_string(),
+            canonical: Arc::from(canonical),
+            capabilities: Arc::new(empty_capabilities()),
+            source: GrantSource::LocalBaseline,
+        }
+    }
+
+    pub fn from_development_file(path: &Path, source: GrantSource) -> Result<Self> {
+        if source == GrantSource::LocalBaseline {
+            return Err(LiveError::Config(
+                "a development grant file requires a development grant source".to_owned(),
+            ));
+        }
+        let bytes = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
+        Self::from_canonical(compile_source(path, &bytes)?, source)
+    }
+
+    pub fn authorize(
+        &self,
+        application_kappa: &str,
+        request: &RequestedCapabilities,
+    ) -> Result<()> {
+        if self.capabilities.admits(&request.capabilities) {
+            tracing::info!(
+                application_kappa,
+                requested_capabilities_kappa = %request.kappa,
+                effective_grant_kappa = %self.kappa,
+                grant_source = self.source.name(),
+                capability_decision = "allow",
+                "authorized holo application capabilities"
+            );
+            return Ok(());
+        }
+        tracing::warn!(
+            application_kappa,
+            requested_capabilities_kappa = %request.kappa,
+            effective_grant_kappa = %self.kappa,
+            grant_source = self.source.name(),
+            capability_decision = "deny",
+            "denied holo application capabilities"
+        );
+        Err(LiveError::Authorization(format!(
+            "application {application_kappa} requests capabilities {} ({}) not admitted by effective grant {} from {} ({})",
+            request.kappa,
+            summary(&request.capabilities),
+            self.kappa,
+            self.source.name(),
+            summary(&self.capabilities)
+        )))
+    }
+
+    fn from_canonical(bytes: Vec<u8>, source: GrantSource) -> Result<Self> {
+        let capabilities = Arc::new(decode_canonical(&bytes)?);
+        Ok(Self {
+            kappa: hologram::space::address_bytes(&bytes).to_string(),
+            canonical: Arc::from(bytes),
+            capabilities,
+            source,
+        })
+    }
+}
+
+fn summary(capabilities: &Capabilities) -> String {
+    format!(
+        "storage_roots={}, publish_channels={}, subscribe_channels={}, network_fetch={}, network_announce={}, storage_quota_bytes={}, memory_max_bytes={}, cpu_time_per_event_ms={}, priority_weight={}",
+        capabilities.storage_roots.len(),
+        capabilities.publish_channels.len(),
+        capabilities.subscribe_channels.len(),
+        capabilities.network_fetch,
+        capabilities.network_announce,
+        capabilities.storage_quota_bytes,
+        capabilities.memory_max_bytes,
+        capabilities.cpu_time_per_event_ms,
+        capabilities.priority_weight
+    )
 }
 
 impl CapabilitySource {
@@ -241,5 +372,51 @@ mod tests {
             decode_canonical(&explicit).expect("decode"),
             empty_capabilities()
         );
+    }
+
+    #[test]
+    fn baseline_authorizes_empty_requests_and_denies_network_authority() {
+        let baseline = EffectiveGrant::local_baseline();
+        let empty = Arc::<[u8]>::from(empty_canonical());
+        let request =
+            RequestedCapabilities::decode(hologram::space::address_bytes(&empty).as_ref(), empty)
+                .expect("empty request");
+        baseline
+            .authorize("blake3:application", &request)
+            .expect("baseline admits empty request");
+
+        let source = br#"{"network_fetch":true}"#;
+        let bytes = Arc::<[u8]>::from(
+            compile_source(Path::new("network.json"), source).expect("network request"),
+        );
+        let request =
+            RequestedCapabilities::decode(hologram::space::address_bytes(&bytes).as_ref(), bytes)
+                .expect("request");
+        let error = baseline
+            .authorize("blake3:application", &request)
+            .expect_err("baseline denies network fetch");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("network_fetch=true"), "{error}");
+    }
+
+    #[test]
+    fn explicit_development_grant_uses_upstream_attenuation() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("grant.json");
+        std::fs::write(&path, r#"{"network_fetch":true}"#).expect("grant");
+        let grant =
+            EffectiveGrant::from_development_file(&path, GrantSource::DirectDevelopmentFile)
+                .expect("development grant");
+        let bytes = Arc::<[u8]>::from(
+            compile_source(Path::new("request.json"), br#"{"network_fetch":true}"#)
+                .expect("request"),
+        );
+        let request =
+            RequestedCapabilities::decode(hologram::space::address_bytes(&bytes).as_ref(), bytes)
+                .expect("request");
+        grant
+            .authorize("blake3:application", &request)
+            .expect("matching grant admits request");
+        assert_eq!(grant.source.name(), "direct_development_file");
     }
 }

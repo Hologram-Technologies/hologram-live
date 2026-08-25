@@ -97,7 +97,12 @@ import { sitePath } from '../../lib/site';
   "priority_weight": 0
 &#125;</code></pre>
   <p>κ arrays must be strictly sorted, contain no duplicates, and use canonical <code>blake3:&lt;64 lowercase hex&gt;</code> labels. Unknown fields and schema versions fail during both <code>compile --check</code> and <code>compile</code>, with the source path and invalid field/index in the diagnostic. Omitting <code>requires</code> produces the same canonical empty set as the document above. The upstream budget convention uses <code>0</code> for unbounded; set a nonzero budget to request a finite ceiling.</p>
-  <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Grant admission, provider isolation, and attenuated child authority are tracked separately in M2.</div>
+  <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Live decodes and admits the request against a trusted effective grant before provider preparation. Attenuated child authority remains the next M2 slice.</div>
+  <p>The default local grant contains no storage roots, channels, or network flags. A broader request fails with <code>LIVE_AUTHORIZATION_DENIED</code> before a provider prepares. Direct local demos may opt in with <code>hologram run application.holo --development-grant development-grant.json</code>. Resident applications use only <code>holo.development_grant</code> from trusted service configuration; callers cannot attach self-asserted grants to a remote request.</p>
+  <pre><code>hologram --json run application.holo \
+  --development-grant development-grant.json |
+  jq '&#123;authorization, grant_source, requested_capabilities_kappa, effective_grant_kappa&#125;'</code></pre>
+  <p>Successful raw results report <code>authorization: "allowed"</code> plus the request κ, effective-grant κ, and one of <code>local_baseline</code>, <code>direct_development_file</code>, or <code>service_development_file</code>. Denials use the typed JSON error and structured trace path. Neither surface emits the source capability document.</p>
 
   <h3>Source languages do not add layer kinds</h3>
   <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>

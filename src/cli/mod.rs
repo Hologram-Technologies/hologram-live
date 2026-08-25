@@ -13,9 +13,11 @@ mod helpers;
 mod history;
 mod holo;
 mod init;
+mod models;
 mod modules;
 mod nodes;
 mod openapi;
+mod plugins;
 mod registry;
 mod restart;
 mod route;
@@ -84,8 +86,12 @@ enum Command {
     History(history::HistoryArgs),
     /// Chat through an enabled conversation-backed module.
     Chat(chat::ChatArgs),
+    /// List, import, and remove inference models.
+    Models(models::ModelsArgs),
     /// Minimal control-plane node inventory.
     Nodes(nodes::NodesArgs),
+    /// List and invoke subprocess plugin modules.
+    Plugins(plugins::PluginsArgs),
     /// Inspect or change the daemon tracing filter.
     Tracing(tracing::TracingArgs),
     /// Write the generated Utoipa `OpenAPI` document.
@@ -128,7 +134,9 @@ impl Cli {
             Command::Run(args) => run::run(self, args).await,
             Command::History(args) => history::run(self, args).await,
             Command::Chat(args) => chat::run(self, args).await,
+            Command::Models(args) => models::run(self, args).await,
             Command::Nodes(args) => nodes::run(self, args).await,
+            Command::Plugins(args) => plugins::run(self, args).await,
             Command::Tracing(args) => tracing::run(self, args).await,
             Command::Openapi(args) => openapi::run(self, args).await,
             Command::Update(args) => update::run(self, args).await,

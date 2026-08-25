@@ -1,10 +1,11 @@
 use crate::app::AppState;
 use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
+use crate::models::ModelInfo;
 use crate::protocol::{
     CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloInspection,
     HoloRunResult, HoloSection, ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata,
-    OperationInfo, OperationKind, ResidentHolo, RpcRequest, RpcResponse,
+    OperationInfo, OperationKind, PluginStatus, ResidentHolo, RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -190,8 +191,21 @@ impl From<RpcRequest> for pb::RpcRequest {
             RpcRequest::ChatSend { id, content } => {
                 Wire::ChatSend(pb::ChatSendRequest { id, content })
             }
+            RpcRequest::ModelList => Wire::ModelList(empty()),
+            RpcRequest::ModelImport { path } => Wire::ModelImport(pb::ModelImportRequest { path }),
+            RpcRequest::ModelRemove { id } => Wire::ModelRemove(pb::IdRequest { id }),
             RpcRequest::NodesList => Wire::NodesList(empty()),
             RpcRequest::NodeHeartbeat { node } => Wire::NodeHeartbeat(node.into()),
+            RpcRequest::PluginList => Wire::PluginList(empty()),
+            RpcRequest::PluginCall {
+                plugin_id,
+                operation,
+                payload,
+            } => Wire::PluginCall(pb::PluginCallRequest {
+                plugin_id,
+                operation,
+                payload,
+            }),
         };
         Self {
             request: Some(request),
@@ -269,8 +283,17 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
                 id: value.id,
                 content: value.content,
             }),
+            Wire::ModelList(_) => Ok(Self::ModelList),
+            Wire::ModelImport(value) => Ok(Self::ModelImport { path: value.path }),
+            Wire::ModelRemove(value) => Ok(Self::ModelRemove { id: value.id }),
             Wire::NodesList(_) => Ok(Self::NodesList),
             Wire::NodeHeartbeat(value) => Ok(Self::NodeHeartbeat { node: value.into() }),
+            Wire::PluginList(_) => Ok(Self::PluginList),
+            Wire::PluginCall(value) => Ok(Self::PluginCall {
+                plugin_id: value.plugin_id,
+                operation: value.operation,
+                payload: value.payload,
+            }),
         }
     }
 }
@@ -301,7 +324,15 @@ impl From<RpcResponse> for pb::RpcResponse {
             RpcResponse::Conversations(items) => Wire::Conversations(pb::ConversationList {
                 items: items.into_iter().map(Into::into).collect(),
             }),
+            RpcResponse::Model(value) => Wire::Model(value.into()),
+            RpcResponse::Models(items) => Wire::Models(pb::ModelList {
+                items: items.into_iter().map(Into::into).collect(),
+            }),
             RpcResponse::Nodes(items) => Wire::Nodes(pb::NodeList {
+                items: items.into_iter().map(Into::into).collect(),
+            }),
+            RpcResponse::PluginResult(json) => Wire::PluginResult(pb::PluginResult { json }),
+            RpcResponse::Plugins(items) => Wire::Plugins(pb::PluginList {
                 items: items.into_iter().map(Into::into).collect(),
             }),
             RpcResponse::TracingFilter(filter) => Wire::TracingFilter(pb::TracingFilter { filter }),
@@ -353,7 +384,15 @@ impl TryFrom<pb::RpcResponse> for RpcResponse {
             Wire::Conversations(value) => Ok(Self::Conversations(
                 value.items.into_iter().map(Into::into).collect(),
             )),
+            Wire::Model(value) => Ok(Self::Model(value.into())),
+            Wire::Models(value) => Ok(Self::Models(
+                value.items.into_iter().map(Into::into).collect(),
+            )),
             Wire::Nodes(value) => Ok(Self::Nodes(
+                value.items.into_iter().map(Into::into).collect(),
+            )),
+            Wire::PluginResult(value) => Ok(Self::PluginResult(value.json)),
+            Wire::Plugins(value) => Ok(Self::Plugins(
                 value.items.into_iter().map(Into::into).collect(),
             )),
             Wire::TracingFilter(value) => Ok(Self::TracingFilter(value.filter)),
@@ -714,6 +753,60 @@ impl From<pb::NodeRecord> for NodeRecord {
             version: value.version,
             operations: value.operations,
             last_seen_millis: value.last_seen_millis,
+        }
+    }
+}
+
+impl From<ModelInfo> for pb::ModelInfo {
+    fn from(value: ModelInfo) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            engine: value.engine,
+            source: value.source,
+            size: value.size,
+            created_at_millis: value.created_at_millis,
+        }
+    }
+}
+
+impl From<pb::ModelInfo> for ModelInfo {
+    fn from(value: pb::ModelInfo) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            engine: value.engine,
+            source: value.source,
+            size: value.size,
+            created_at_millis: value.created_at_millis,
+        }
+    }
+}
+
+impl From<PluginStatus> for pb::PluginStatus {
+    fn from(value: PluginStatus) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            version: value.version,
+            operations: value.operations,
+            running: value.running,
+            restart_count: value.restart_count,
+            last_error: value.last_error,
+        }
+    }
+}
+
+impl From<pb::PluginStatus> for PluginStatus {
+    fn from(value: pb::PluginStatus) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            version: value.version,
+            operations: value.operations,
+            running: value.running,
+            restart_count: value.restart_count,
+            last_error: value.last_error,
         }
     }
 }

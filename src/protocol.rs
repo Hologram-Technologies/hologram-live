@@ -34,8 +34,13 @@ pub mod operation {
     pub const HISTORY_DELETE: &str = "history.delete";
     pub const HISTORY_ARCHIVE: &str = "history.archive";
     pub const CHAT_SEND: &str = "chat.send";
+    pub const MODEL_LIST: &str = "model.list";
+    pub const MODEL_IMPORT: &str = "model.import";
+    pub const MODEL_REMOVE: &str = "model.remove";
     pub const NODES_LIST: &str = "nodes.list";
     pub const NODES_HEARTBEAT: &str = "nodes.heartbeat";
+    pub const PLUGIN_LIST: &str = "plugin.list";
+    pub const PLUGIN_CALL: &str = "plugin.call";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -161,6 +166,18 @@ pub struct NodeRecord {
     pub last_seen_millis: u64,
 }
 
+/// Runtime status of one allowlisted subprocess plugin.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PluginStatus {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub operations: Vec<String>,
+    pub running: bool,
+    pub restart_count: u64,
+    pub last_error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RpcRequest {
     Handshake,
@@ -245,9 +262,24 @@ pub enum RpcRequest {
         id: String,
         content: String,
     },
+    ModelList,
+    ModelImport {
+        /// Local path of a `.wcpu` artifact directory readable by the daemon.
+        path: String,
+    },
+    ModelRemove {
+        id: String,
+    },
     NodesList,
     NodeHeartbeat {
         node: NodeRecord,
+    },
+    PluginList,
+    PluginCall {
+        plugin_id: String,
+        operation: String,
+        /// JSON payload forwarded verbatim to the plugin.
+        payload: String,
     },
 }
 
@@ -283,8 +315,13 @@ impl RpcRequest {
             Self::HistoryDelete { .. } => operation::HISTORY_DELETE,
             Self::HistoryArchive { .. } => operation::HISTORY_ARCHIVE,
             Self::ChatSend { .. } => operation::CHAT_SEND,
+            Self::ModelList => operation::MODEL_LIST,
+            Self::ModelImport { .. } => operation::MODEL_IMPORT,
+            Self::ModelRemove { .. } => operation::MODEL_REMOVE,
             Self::NodesList => operation::NODES_LIST,
             Self::NodeHeartbeat { .. } => operation::NODES_HEARTBEAT,
+            Self::PluginList => operation::PLUGIN_LIST,
+            Self::PluginCall { .. } => operation::PLUGIN_CALL,
         }
     }
 
@@ -304,7 +341,9 @@ impl RpcRequest {
             | Self::HoloResident
             | Self::HistoryList { .. }
             | Self::HistoryGet { .. }
-            | Self::NodesList => OperationKind::Read,
+            | Self::ModelList
+            | Self::NodesList
+            | Self::PluginList => OperationKind::Read,
             Self::HoloRun { .. } => OperationKind::Stream,
             _ => OperationKind::Mutation,
         }
@@ -325,7 +364,12 @@ pub enum RpcResponse {
     HoloRun(HoloRunResult),
     Conversation(Conversation),
     Conversations(Vec<Conversation>),
+    Model(crate::models::ModelInfo),
+    Models(Vec<crate::models::ModelInfo>),
     Nodes(Vec<NodeRecord>),
+    /// Raw JSON result string returned by a plugin invocation.
+    PluginResult(String),
+    Plugins(Vec<PluginStatus>),
     TracingFilter(String),
     Accepted,
     Error(ApiError),

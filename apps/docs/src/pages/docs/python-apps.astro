@@ -111,6 +111,118 @@ hologram run greeter.holo --input request.json</code></pre>
 &#125;</code></pre>
   <p>The compiler builds a normalized filesystem, installs only locked artifacts, records its target architecture, and stores the image as a <code>RootfsImage</code> layer. Execution must go through the planned microVM provider with explicit CPU, memory, disk, network, and lifetime budgets. Hologram should not unpack and run this environment directly on the host.</p>
 
+  <h2>Worked example: NumPy + pandas</h2>
+  <p>This example is the target end-to-end experience for a Python application with native dependencies. It uses the rootfs profile because NumPy contains compiled extensions and pandas requires NumPy. The resulting fat <code>.holo</code> carries the locked Linux environment—interpreter, application, NumPy, pandas, transitive dependencies, and required shared libraries—as one content-addressed <code>RootfsImage</code> payload.</p>
+  <p>The <a href="https://numpy.org/install/">NumPy installation guide</a> recommends using binary distributions when they are available for the target, while the <a href="https://pandas.pydata.org/docs/getting_started/install.html#dependencies">pandas dependency guide</a> lists NumPy as required. Packaging the ordinary Linux artifacts in a rootfs is therefore the first broadly compatible profile; a portable component remains possible only when the complete locked closure is available for the selected WebAssembly target.</p>
+
+  <div class="note"><strong>Planned workflow</strong>You can create and test the Python project today, but the <code>hologram app init --template python</code>, schema-v2 compilation, rootfs provider, and rootfs execution commands shown below are not implemented yet. They document the exact workflow the milestone should deliver.</div>
+
+  <h3>1. Create the project and lock its dependencies</h3>
+  <pre><code>uv init --app numpy-pandas-holo
+cd numpy-pandas-holo
+uv add numpy pandas
+uv lock
+uv tree</code></pre>
+  <p><a href="https://docs.astral.sh/uv/guides/projects/"><code>uv add</code></a> records both direct dependencies in <code>pyproject.toml</code> and creates <code>uv.lock</code> with the exact resolved closure. Commit both files. Hologram compilation uses the lock file as input and ignores the workstation's <code>.venv</code>.</p>
+
+  <pre><code>numpy-pandas-holo/
+├─ pyproject.toml
+├─ uv.lock
+├─ src/numpy_pandas_holo/__init__.py
+└─ hologram.json</code></pre>
+
+  <h3>2. Implement the <code>main</code> entrypoint</h3>
+  <p>The initial Python contract is <code>main(request: bytes) -&gt; bytes</code>. Hologram passes the bytes supplied with <code>--input</code> to this function and returns the bytes it produces.</p>
+  <pre><code># src/numpy_pandas_holo/__init__.py
+import json
+
+import numpy as np
+import pandas as pd
+
+
+def main(request: bytes) -&gt; bytes:
+    payload = json.loads(request)
+    frame = pd.DataFrame(payload["rows"])
+    values = frame["value"].to_numpy(dtype=np.float64)
+
+    result = &#123;
+        "columns": frame.columns.tolist(),
+        "mean": float(np.mean(values)),
+        "rows": int(frame.shape[0]),
+        "sum": float(np.sum(values)),
+    &#125;
+    return json.dumps(result, separators=(",", ":"), sort_keys=True).encode()</code></pre>
+  <p>The generated rootfs launcher imports <code>numpy_pandas_holo.main</code>, reads one request from the Hologram execution channel, invokes the function once, and writes its returned bytes as the application output. Missing modules, a missing entrypoint, or a non-byte return value are typed preparation or protocol errors rather than successful application exits.</p>
+
+  <h3>3. Test the function before packaging</h3>
+  <pre><code>uv run python - &lt;&lt;'PY'
+from numpy_pandas_holo import main
+
+request = b'&#123;"rows":[&#123;"label":"a","value":10&#125;,&#123;"label":"b","value":20&#125;,&#123;"label":"c","value":30&#125;]&#125;'
+print(main(request).decode())
+PY</code></pre>
+  <pre><code>&#123;"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0&#125;</code></pre>
+
+  <h3>4. Generate the Python rootfs manifest</h3>
+  <pre><code># Proposed CLI
+hologram app init \
+  --template python \
+  --profile rootfs \
+  --project . \
+  --entry numpy_pandas_holo:main \
+  --lock uv.lock \
+  --arch arm64</code></pre>
+  <p>Use <code>x86_64</code> for an Intel/AMD target. The generator resolves a digest-pinned Python base for that target and writes the proposed schema-v2 manifest:</p>
+  <pre><code>&#123;
+  "schema_version": 2,
+  "primary": 0,
+  "layers": [
+    &#123;
+      "kind": "rootfs",
+      "arch": "arm64",
+      "source": &#123;
+        "language": "python",
+        "project": ".",
+        "entry": "numpy_pandas_holo:main",
+        "lock": "uv.lock",
+        "profile": "rootfs",
+        "base": "oci://python@sha256:&lt;resolved-image-digest&gt;"
+      &#125;
+    &#125;
+  ]
+&#125;</code></pre>
+
+  <h3>5. Compile a self-contained <code>.holo</code></h3>
+  <pre><code># Proposed CLI
+hologram compile --check hologram.json
+hologram compile hologram.json --output numpy-pandas.holo</code></pre>
+  <p>The compiler creates a clean target build root, installs only artifacts selected by <code>uv.lock</code>, verifies that NumPy and pandas import in that target, installs the generated launcher, normalizes filesystem metadata, and emits a fat v3 archive. It never copies the host <code>.venv</code>. The archive's <code>AppManifest</code> points to the resulting rootfs bytes by κ, and the application directory reports the layer as <code>rootfs</code> with its architecture and entrypoint.</p>
+
+  <h3>6. Execute the archive</h3>
+  <pre><code>printf '%s' '&#123;"rows":[&#123;"label":"a","value":10&#125;,&#123;"label":"b","value":20&#125;,&#123;"label":"c","value":30&#125;]&#125;' &gt; request.json
+
+# Proposed CLI
+hologram run numpy-pandas.holo --input request.json</code></pre>
+  <pre><code>&#123;"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0&#125;</code></pre>
+  <p>Execution validates the archive, checks the rootfs architecture and capability grant, boots the image through the microVM provider, invokes <code>numpy_pandas_holo:main</code>, returns its output, and shuts the application down cleanly. The example needs no network or host-filesystem capability at runtime because its input and output cross the execution channel.</p>
+
+  <h3>What is actually inside the archive?</h3>
+  <pre><code>numpy-pandas.holo
+├─ AppManifest
+│  └─ primary layer: RootfsImage · arm64 · κ(rootfs)
+├─ Extension: application-directory/v1
+├─ Metadata: schema-v2 source recipe + build provenance
+├─ ContentBlob: κ(rootfs)
+│  └─ normalized Linux filesystem
+│     ├─ pinned CPython runtime
+│     ├─ numpy-pandas-holo application
+│     ├─ NumPy + compiled extension modules
+│     ├─ pandas + transitive dependencies
+│     ├─ required shared libraries
+│     └─ generated Hologram launcher
+└─ BLAKE3 footer</code></pre>
+  <p>A fat archive embeds that rootfs blob and runs by itself. A thin variant keeps the same canonical application identity but requires the verified rootfs κ to exist in the local or configured content store. Dependency versions remain visible in build provenance and the packaged Python distribution metadata even though dependencies are not separate logical <code>.holo</code> layers.</p>
+
   <h2>Reproducibility and identity</h2>
   <p>For equal source, lock file, toolchain, target, and options, compilation should produce equal layer bytes and therefore the same layer κ and application κ. Stable output requires sorted paths, normalized permissions and timestamps, a fixed source epoch, pinned base images and toolchains, deterministic generated bindings, and a clean build environment.</p>
   <p>A first implementation may embed the interpreter, standard library, dependencies, and application in one self-contained layer payload. Later, shared κ-addressed runtime and dependency objects can reduce transfer and storage without changing the logical application identity model. Fat and thin packaging remains an independent archive choice.</p>

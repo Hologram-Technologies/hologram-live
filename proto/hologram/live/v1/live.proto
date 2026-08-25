@@ -150,6 +150,7 @@ message HoloInspection {
   repeated HoloSection sections = 7;
   HoloDirectory directory = 8;
   bool directory_embedded = 9;
+  optional string application_kappa = 10;
 }
 message ResidentHolo {
   string kappa = 1;

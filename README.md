@@ -212,9 +212,24 @@ hologram compile ./my-app/hologram.json -o ./my-app.holo
 hologram compile ./my-app/hologram.json --thin -o ./my-app.thin.holo
 ```
 
+With `--json`, compilation reports the three distinct identities directly:
+
+```bash
+hologram --json compile ./my-app/hologram.json -o ./my-app.holo |
+  jq '{archive_kappa, archive_fingerprint, application_kappa}'
+```
+
+`archive_kappa` is the BLAKE3 address of the complete physical file,
+`archive_fingerprint` is the footer integrity value, and
+`application_kappa` addresses the canonical `AppManifest`. Fat and thin files
+have different archive κ values and footer fingerprints but the same
+application κ. The existing `kappa` returned by `holo inspect`, catalog,
+resident, and run operations continues to mean the physical archive object;
+inspection adds `application_kappa` when an application manifest is present.
+
 Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
 
-Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view.
+Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the physical `kappa`, canonical `application_kappa`, footer fingerprint, ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view, and pre-application structural archives report no application κ.
 
 #### AI model applications
 

@@ -75,30 +75,36 @@ tests and acceptance notes pass.
 
 ### Slice 1 — ADR 010 and identity plumbing
 
-- [ ] Write ADR 010 for `ApplicationPlan`, resolver ownership, provider method
+- [x] Write ADR 010 for `ApplicationPlan`, resolver ownership, provider method
   async/`Send` requirements, lifecycle phases, rollback, and the difference
   between an explanatory plan report and a strict executable plan.
-- [ ] Define one identity record with explicit fields for:
+- [x] Define one identity record with explicit fields for:
   - physical archive object κ (BLAKE3 of the complete file);
   - archive footer fingerprint;
   - canonical application-manifest κ.
-- [ ] Document which identity appears in logs, errors, resident records, run
+- [x] Document which identity appears in logs, errors, resident records, run
   results, and audit events. Do not silently repurpose the existing `kappa`.
-- [ ] Add `application_kappa` additively to inspection, compile reports,
+- [x] Add `application_kappa` additively to inspection, compile reports,
   Protobuf/gRPC, HTTP/OpenAPI, and JSON CLI output.
-- [ ] Add archive object κ to compile output so a freshly written file reports
+- [x] Add archive object κ to compile output so a freshly written file reports
   all three identities without requiring import.
-- [ ] Prove fat and thin variants have different archive object κ values and
+- [x] Prove fat and thin variants have different archive object κ values and
   footer fingerprints but the same `application_kappa`.
-- [ ] Amend ADR 007's v3-only wording to acknowledge v4 writes and ADR 009.
+- [x] Amend ADR 007's v3-only wording to acknowledge v4 writes and ADR 009.
 
 Slice 1 acceptance:
 
-- [ ] Existing inspection clients remain decodable through additive/defaulted
+- [x] Existing inspection clients remain decodable through additive/defaulted
   fields.
-- [ ] `hologram --json compile ... | jq` returns all three identities.
-- [ ] `hologram --json holo inspect ... | jq` returns the same application κ
+- [x] `hologram --json compile ... | jq` returns all three identities.
+- [x] `hologram --json holo inspect ... | jq` returns the same application κ
   for fat and thin variants.
+
+Slice 1 evidence (2026-08-25): unit tests cover identity equivalence and legacy
+Protobuf decoding; direct fat/thin CLI output passed the documented `jq`
+assertions; `just verify` passed formatting, file-size, check, 118 unit tests,
+7 BDD scenarios, Clippy, release build, and smoke; the Astro documentation build
+also passed.
 
 ### Slice 2 — `ApplicationPlan` and closure resolution
 

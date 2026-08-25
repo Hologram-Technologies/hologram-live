@@ -138,7 +138,17 @@ if [ -z "$KAPPA" ]; then
 fi
 HOME="$HOME_DIR" json_output "$BIN" --json holo inspect "$KAPPA" >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json holo verify "$KAPPA" >/dev/null
-HOME="$HOME_DIR" json_output "$BIN" --json compile "$ROOT/features/fixtures/wasm-app/hologram.json" -o "$TMP/wasm-app.holo" >/dev/null
+COMPILE=$(HOME="$HOME_DIR" json_output "$BIN" --json compile "$ROOT/features/fixtures/wasm-app/hologram.json" -o "$TMP/wasm-app.holo")
+printf '%s\n' "$COMPILE" | jq -e '
+  (.archive_kappa | startswith("blake3:")) and
+  (.archive_fingerprint | length > 0) and
+  (.application_kappa | startswith("blake3:"))
+' >/dev/null
+INSPECTION=$(HOME="$HOME_DIR" json_output "$BIN" --json holo inspect "$TMP/wasm-app.holo")
+printf '%s\n' "$INSPECTION" | jq -e --arg application_kappa "$(printf '%s\n' "$COMPILE" | jq -r '.application_kappa')" '
+  (.kappa | startswith("blake3:")) and
+  .application_kappa == $application_kappa
+' >/dev/null
 WASM_IMPORT=$(HOME="$HOME_DIR" json_output "$BIN" --json holo import "$TMP/wasm-app.holo")
 WASM_KAPPA=$(printf '%s\n' "$WASM_IMPORT" | jq -er '.kappa')
 if [ -z "$WASM_KAPPA" ]; then

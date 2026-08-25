@@ -111,10 +111,16 @@ import { sitePath } from '../../lib/site';
   <h2>Identity and verification</h2>
   <ul>
     <li><strong>Layer identity:</strong> each layer refers to content by its κ label.</li>
-    <li><strong>Application identity:</strong> the canonical <code>AppManifest</code> κ is unchanged when packaging changes between fat and thin.</li>
-    <li><strong>Archive fingerprint:</strong> the footer authenticates the physical archive bytes before it.</li>
-    <li><strong>Live object ID:</strong> importing stores the complete file under a BLAKE3 content ID. Because that hash includes the footer, it is distinct from the footer fingerprint.</li>
+    <li><strong>Application κ (<code>application_kappa</code>):</strong> <code>address_bytes(AppManifest::canonicalize())</code>. It is unchanged when packaging changes between fat and thin, and absent when an archive has no application manifest.</li>
+    <li><strong>Archive fingerprint (<code>archive_fingerprint</code>):</strong> the footer integrity value for the physical archive layout.</li>
+    <li><strong>Archive object κ (<code>archive_kappa</code> in compile output, existing <code>kappa</code> in inspection):</strong> BLAKE3 over the complete file. It changes between fat and thin and is distinct from the footer fingerprint.</li>
   </ul>
+  <pre><code>hologram --json compile hologram.json --output application.holo |
+  jq '&#123;archive_kappa, archive_fingerprint, application_kappa&#125;'
+
+hologram --json holo inspect application.holo |
+  jq '&#123;kappa, archive_fingerprint, application_kappa&#125;'</code></pre>
+  <p>Catalog lookup, import, verification, resident records, and run results identify a particular physical archive with <code>kappa</code>. Planning and manifest-graph diagnostics use <code>application_kappa</code>. Existing <code>kappa</code> fields keep their physical meaning.</p>
   <p>Live rejects a bad footer, truncated or out-of-bounds payloads when accessed, an invalid manifest, duplicate blob labels, a blob whose κ does not match its bytes, duplicate application directories, unknown directory schema versions, and a directory that disagrees with the manifest.</p>
 
   <h2>Fat and thin packaging</h2>
@@ -150,5 +156,5 @@ hologram run blake3:… --input payload.bin
 hologram holo unload blake3:…</code></pre>
 
   <h2>Design provenance</h2>
-  <p>The one-format principle, ordered layers, capability-attenuated child applications, view surfaces, and fat/thin identity model come from the original <a href="https://github.com/Hologram-Technologies/hologram/blob/94ecb886811115491a77c8229e494965bea03fc2/specs/refactor/03-holo-format.md?plain=1#L19">Hologram v3 application-container design</a>. Hologram Live's verified directory is an additive use of v3's extension seam.</p>
+  <p>The one-format principle, ordered layers, capability-attenuated child applications, view surfaces, and fat/thin identity model come from the original <a href="https://github.com/Hologram-Technologies/hologram/blob/94ecb886811115491a77c8229e494965bea03fc2/specs/refactor/03-holo-format.md?plain=1#L19">Hologram v3 application-container design</a>. Hologram Live's verified directory is an additive use of v3's extension seam. <a href="https://github.com/Hologram-Technologies/hologram-live/blob/main/specs/adrs/010-holo-application-plan-and-provider-lifecycle.md">ADR 010</a> fixes the identity vocabulary used by the runtime and APIs.</p>
 </DocsLayout>

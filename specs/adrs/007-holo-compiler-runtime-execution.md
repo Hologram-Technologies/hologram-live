@@ -6,19 +6,21 @@ Accepted.
 
 ## Context
 
-The v3 archive format separates a canonical application manifest from its physical packaging. A fat archive embeds the κ-addressed content referenced by the manifest; a thin archive carries the same manifest but expects a content store to resolve those references. Treating archive parsing, content resolution, and execution as one operation would erase that distinction and make new execution providers difficult to add.
+The archive format separates a canonical application manifest from its physical packaging. Live writes v4 archives and retains v2/v3 read compatibility; ADR 009 records the additive v4 inference-model layer. A fat archive embeds the κ-addressed content referenced by the manifest; a thin archive carries the same manifest but expects a content store to resolve those references. Treating archive parsing, content resolution, and execution as one operation would erase that distinction and make new execution providers difficult to add.
 
 ## Decision
 
 Hologram Live uses three explicit product layers:
 
-1. The compiler reads `hologram.json`, canonicalizes its `AppManifest`, and emits either a fat or thin v3 archive. Packaging does not change the canonical manifest.
+1. The compiler reads `hologram.json`, canonicalizes its `AppManifest`, and emits either a fat or thin v4 archive. Packaging does not change the canonical manifest. Readers continue accepting v2/v3 archives.
 2. The runtime verifies the archive, decodes and validates its manifest, resolves primary-layer content by κ from the archive and then the local content cache, and manages warm resident programs.
 3. The execution provider compiles and invokes the resolved layer. Wasmtime is the first provider and implements the core-Wasm guest contract in `src/holo_wasm.rs`.
 
 Importing a fat archive caches its verified `ContentBlob` payloads without creating user-facing registry metadata. A later thin archive can therefore resolve the same κ locally. Direct file execution intentionally accepts only self-contained archives because it has no configured external resolver; catalog-backed resident execution supports thin archives when their content is cached.
 
 `hologram run` selects the direct executor when its reference is a local `.holo` path and the catalog-backed RPC when the reference is a κ. The two paths return the same `HoloRunResult` shape.
+
+ADR 010 refines the runtime side of this boundary with an explicit three-part identity model, a runtime-owned `ApplicationPlan`, complete pre-start resolution, and transactional provider lifecycle phases.
 
 ## Consequences
 

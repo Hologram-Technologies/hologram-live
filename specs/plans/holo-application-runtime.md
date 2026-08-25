@@ -15,9 +15,9 @@ This is the living implementation plan for turning `.holo` archives into complet
 ## Product principles
 
 - [x] Keep one append-only `.holo` application format; v4 adds `InferenceModel` without renumbering prior layer kinds and retains v2/v3 reads.
-- [ ] Keep the canonical `AppManifest` as application identity and execution truth.
-- [ ] Keep the application-directory extension a verified projection, never a second manifest.
-- [ ] Keep physical archive identity distinct from canonical application identity.
+- [x] Keep the canonical `AppManifest` as application identity and execution truth.
+- [x] Keep the application-directory extension a verified projection, never a second manifest.
+- [x] Keep physical archive identity distinct from canonical application identity.
 - [ ] Resolve content by κ; do not make filenames or catalog metadata authoritative.
 - [ ] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
 - [ ] Boot ordered layers transactionally and unwind partial starts in reverse order.
@@ -93,10 +93,10 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Identity model
 
-- [ ] Introduce an explicit identity record containing archive object κ, archive footer fingerprint, and canonical application-manifest κ.
-- [ ] Add `application_kappa` to inspection and compile reports without renaming the existing physical archive `kappa` field silently.
-- [ ] Prove in tests that fat and thin variants have different archive IDs but the same application κ.
-- [ ] Make logs, errors, resident records, and audit events identify which identity they report.
+- [x] Introduce an explicit identity record containing archive object κ, archive footer fingerprint, and canonical application-manifest κ.
+- [x] Add `application_kappa` to inspection and compile reports without renaming the existing physical archive `kappa` field silently.
+- [x] Prove in tests that fat and thin variants have different archive IDs but the same application κ.
+- [x] Make logs, errors, resident records, and audit events identify which identity they report.
 
 ### `ApplicationPlan`
 
@@ -466,8 +466,8 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 ## Immediate next slice
 
 - [x] Implement M0 `hologram app init` as a small standalone commit.
-- [ ] Draft the M1 provider and lifecycle ADR before runtime refactoring.
-- [ ] Add `application_kappa` to compile and inspection results.
+- [x] Draft the M1 provider and lifecycle ADR before runtime refactoring.
+- [x] Add `application_kappa` to compile and inspection results.
 - [ ] Introduce the read-only `ApplicationPlan` and full non-child layer resolution.
 - [ ] Add `hologram holo plan` over local paths and catalog κ values.
 - [ ] Route existing direct and resident Wasm execution through the plan.

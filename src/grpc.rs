@@ -706,6 +706,7 @@ impl From<HoloInspection> for pb::HoloInspection {
     fn from(value: HoloInspection) -> Self {
         Self {
             kappa: value.kappa,
+            application_kappa: value.application_kappa,
             name: value.name,
             format_version: u32::from(value.format_version),
             byte_length: value.byte_length,
@@ -724,6 +725,7 @@ impl TryFrom<pb::HoloInspection> for HoloInspection {
     fn try_from(value: pb::HoloInspection) -> Result<Self> {
         Ok(Self {
             kappa: value.kappa,
+            application_kappa: value.application_kappa,
             name: value.name,
             format_version: narrow(value.format_version, "format_version")?,
             byte_length: value.byte_length,
@@ -1016,6 +1018,7 @@ mod tests {
     fn holo_directory_round_trip_preserves_normalized_rows() {
         let response = RpcResponse::HoloInspection(HoloInspection {
             kappa: "blake3:archive".to_owned(),
+            application_kappa: Some("blake3:application".to_owned()),
             name: "app.holo".to_owned(),
             format_version: 4,
             byte_length: 128,
@@ -1053,12 +1056,33 @@ mod tests {
         assert!(matches!(
             decoded,
             RpcResponse::HoloInspection(HoloInspection {
+                application_kappa: Some(application_kappa),
                 directory: Some(HoloDirectory { layers, blobs, .. }),
                 directory_embedded: true,
                 ..
-            }) if layers[0].content_kappa == "blake3:model"
+            }) if application_kappa == "blake3:application"
+                && layers[0].content_kappa == "blake3:model"
                 && layers[0].engine.as_deref() == Some("uor-r4")
                 && blobs[0].byte_length == 42
         ));
+    }
+
+    #[test]
+    fn older_holo_inspection_without_application_identity_decodes() {
+        let decoded = HoloInspection::try_from(pb::HoloInspection {
+            kappa: "blake3:archive".to_owned(),
+            name: "legacy.holo".to_owned(),
+            format_version: 3,
+            byte_length: 64,
+            archive_fingerprint: "fingerprint".to_owned(),
+            footer_verified: true,
+            sections: Vec::new(),
+            directory: None,
+            directory_embedded: false,
+            application_kappa: None,
+        })
+        .expect("decode legacy inspection");
+
+        assert!(decoded.application_kappa.is_none());
     }
 }

@@ -7,7 +7,7 @@ use crate::protocol::{HoloInspection, HoloRunResult, HoloSection, ResidentHolo};
 use crate::store::ObjectStore;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
-use hologram::space::{address_bytes, AppManifest, LayerKind};
+use hologram::space::{address_bytes, AppManifest, LayerKind, Realization};
 use kameo::actor::{ActorRef, Spawn};
 use kameo::error::SendError;
 use kameo::mailbox;
@@ -148,10 +148,11 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
         ));
     }
     let directory_embedded = !directory_extensions.is_empty();
-    let directory = if let Some(manifest_bytes) = plan.app_manifest() {
+    let (directory, application_kappa) = if let Some(manifest_bytes) = plan.app_manifest() {
         let manifest = AppManifest::decode(manifest_bytes).map_err(|error| {
             LiveError::InvalidHolo(format!("decode application manifest: {error:?}"))
         })?;
+        let application_kappa = address_bytes(&manifest.canonicalize()).to_string();
         let blobs = plan
             .content_blobs()
             .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
@@ -165,14 +166,14 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
                 ));
             }
         }
-        Some(derived)
+        (Some(derived), Some(application_kappa))
     } else {
         if directory_embedded {
             return Err(LiveError::InvalidHolo(
                 "application directory requires an application manifest".to_owned(),
             ));
         }
-        None
+        (None, None)
     };
     let sections = plan
         .sections()
@@ -185,6 +186,7 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
         .collect();
     Ok(HoloInspection {
         kappa: kappa.to_owned(),
+        application_kappa,
         name: name.to_owned(),
         format_version,
         byte_length: bytes.len().try_into().unwrap_or(u64::MAX),
@@ -524,6 +526,7 @@ mod tests {
         let inspection = inspect_bytes("fixture", "fixture.holo", &bytes).expect("inspect");
         assert!(inspection.footer_verified);
         assert_eq!(inspection.format_version, 4);
+        assert!(inspection.application_kappa.is_none());
         assert!(inspection.directory.is_none());
         assert!(!inspection.directory_embedded);
     }
@@ -540,6 +543,10 @@ mod tests {
 
         let bytes = writer.finish().expect("legacy archive");
         let inspection = inspect_bytes("legacy", "legacy.holo", &bytes).expect("inspect");
+        assert_eq!(
+            inspection.application_kappa.as_deref(),
+            Some(address_bytes(&manifest.canonicalize()).to_string().as_str())
+        );
         let directory = inspection.directory.expect("derived directory");
 
         assert!(!inspection.directory_embedded);

@@ -1,7 +1,9 @@
 use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
-use hologram::archive::HoloWriter;
+use crate::protocol::HoloIdentity;
+use crate::util::hex;
+use hologram::archive::{HoloLoader, HoloWriter};
 use hologram::space::{address_bytes, AppManifest, Layer, Realization};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -64,6 +66,7 @@ pub struct CompiledHolo {
     pub bytes: Vec<u8>,
     pub layer_count: usize,
     pub packaging: HoloPackaging,
+    pub identity: HoloIdentity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +135,8 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
     })?;
 
     let layer_count = manifest.layers.len();
+    let manifest_bytes = manifest.canonicalize();
+    let application_kappa = address_bytes(&manifest_bytes).to_string();
     let embedded = match packaging {
         HoloPackaging::Fat => blobs
             .iter()
@@ -141,7 +146,7 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
     };
     let directory = holo_directory::derive(&manifest, embedded.iter().copied())?;
     let mut writer = HoloWriter::new();
-    writer.set_app_manifest(manifest.canonicalize());
+    writer.set_app_manifest(manifest_bytes);
     writer.set_metadata(source);
     writer.add_extension(DIRECTORY_EXTENSION_KEY, holo_directory::encode(&directory)?);
     if packaging == HoloPackaging::Fat {
@@ -152,10 +157,18 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
     let bytes = writer
         .finish()
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let archive = HoloLoader::from_bytes(&bytes)
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let identity = HoloIdentity {
+        archive_kappa: address_bytes(&bytes).to_string(),
+        archive_fingerprint: hex(&archive.fingerprint()),
+        application_kappa,
+    };
     Ok(CompiledHolo {
         bytes,
         layer_count,
         packaging,
+        identity,
     })
 }
 
@@ -383,7 +396,21 @@ mod tests {
 
         let compiled = compile_manifest(&directory.path().join("hologram.json")).expect("compile");
         assert_eq!(compiled.layer_count, 1);
-        let inspection = inspect_bytes("local", "hello.holo", &compiled.bytes).expect("inspect");
+        let inspection = inspect_bytes(
+            &compiled.identity.archive_kappa,
+            "hello.holo",
+            &compiled.bytes,
+        )
+        .expect("inspect");
+        assert_eq!(inspection.kappa, compiled.identity.archive_kappa);
+        assert_eq!(
+            inspection.application_kappa.as_deref(),
+            Some(compiled.identity.application_kappa.as_str())
+        );
+        assert_eq!(
+            inspection.archive_fingerprint,
+            compiled.identity.archive_fingerprint
+        );
         assert!(inspection
             .sections
             .iter()
@@ -429,9 +456,36 @@ mod tests {
         assert_eq!(fat_plan.content_blobs().expect("fat blobs").len(), 2);
         assert!(thin_plan.content_blobs().expect("thin blobs").is_empty());
 
-        let inspection = inspect_bytes("thin", "hello.holo", &thin.bytes).expect("inspect thin");
-        assert!(inspection.directory_embedded);
-        assert!(inspection.directory.expect("directory").blobs.is_empty());
+        assert_ne!(fat.identity.archive_kappa, thin.identity.archive_kappa);
+        assert_ne!(
+            fat.identity.archive_fingerprint,
+            thin.identity.archive_fingerprint
+        );
+        assert_eq!(
+            fat.identity.application_kappa,
+            thin.identity.application_kappa
+        );
+
+        let fat_inspection = inspect_bytes(&fat.identity.archive_kappa, "hello.holo", &fat.bytes)
+            .expect("inspect fat");
+        let thin_inspection =
+            inspect_bytes(&thin.identity.archive_kappa, "hello.thin.holo", &thin.bytes)
+                .expect("inspect thin");
+        assert_ne!(fat_inspection.kappa, thin_inspection.kappa);
+        assert_ne!(
+            fat_inspection.archive_fingerprint,
+            thin_inspection.archive_fingerprint
+        );
+        assert_eq!(
+            fat_inspection.application_kappa,
+            thin_inspection.application_kappa
+        );
+        assert!(thin_inspection.directory_embedded);
+        assert!(thin_inspection
+            .directory
+            .expect("directory")
+            .blobs
+            .is_empty());
     }
 
     #[test]

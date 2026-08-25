@@ -21,7 +21,7 @@ This document is deliberately strict about what the current stable build does an
 - A separate audit-event boundary.
 - Bearer-token authentication seam for protected routes.
 - First-class `.holo` fixture creation, import, list, inspect, verify, and remove.
-- `.holo` compiler/runtime/execution path: v4 writes with v2/v3 reads, fat or thin packaging, direct service-free execution of self-contained Wasm archives, κ-backed thin payload resolution, and resident load/run/unload sessions over wasmtime.
+- `.holo` compiler/runtime/execution path: v4 writes with v2/v3 reads, fat or thin packaging, explicit archive object κ / footer fingerprint / canonical application κ reporting, direct service-free execution of self-contained Wasm archives, κ-backed thin payload resolution, and resident load/run/unload sessions over wasmtime.
 - `.holo` v4 inference-model packaging, import, verified application-directory metadata, and metadata-only `hologram ai inspect`.
 - Direct execution of locked Python OCI rootfs archives through the experimental local container provider.
 - Durable local conversation history.

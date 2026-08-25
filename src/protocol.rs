@@ -153,9 +153,28 @@ pub struct HoloDirectory {
     pub blobs: Vec<HoloBlob>,
 }
 
+/// The three deliberately distinct identities of a compiled application.
+///
+/// `archive_kappa` addresses the complete physical file, while
+/// `application_kappa` addresses the canonical application manifest and is
+/// therefore stable across fat and thin packaging. The archive fingerprint is
+/// the integrity value recorded in the `.holo` footer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloIdentity {
+    pub archive_kappa: String,
+    pub archive_fingerprint: String,
+    pub application_kappa: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HoloInspection {
+    /// Physical archive object kappa (BLAKE3 of the complete file).
     pub kappa: String,
+    /// Canonical application-manifest kappa, absent for structural archives
+    /// that do not contain an application manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application_kappa: Option<String>,
     pub name: String,
     pub format_version: u16,
     pub byte_length: u64,

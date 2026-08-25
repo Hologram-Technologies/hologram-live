@@ -60,10 +60,12 @@ pub async fn serve(state: AppState) -> Result<()> {
         })?;
     tracing::info!(listen = %state.config().server.listen, "hologram server ready");
     let shutdown_state = state.clone();
-    axum::serve(listener, router)
+    let result = axum::serve(listener, router)
         .with_graceful_shutdown(async move { shutdown_state.wait_shutdown().await })
         .await
-        .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
+        .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")));
+    state.plugins().shutdown().await;
+    result
 }
 
 async fn index() -> Html<&'static str> {

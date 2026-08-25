@@ -109,8 +109,13 @@ def main(request: bytes) -&gt; bytes:
   <pre><code>hologram --json run numpy-pandas.holo --input request.json \
   | jq -r '.outputs[0] | implode'</code></pre>
   <pre><code>&#123;"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0&#125;</code></pre>
-  <p>For each input, Hologram loads the embedded image and starts its generated entrypoint with networking disabled, a read-only root filesystem, all Linux capabilities dropped, <code>no-new-privileges</code>, one CPU, 1 GiB of memory, 64 PIDs, and a 64 MiB temporary filesystem. Inputs and outputs are limited to 16 MiB and execution to 30 seconds. No project directory is mounted into the container.</p>
-  <p>From the repository root, <code>just python-holo-demo</code> builds the CLI and repeats this complete check against the committed example.</p>
+  <p>Hologram ensures the verified image is available, then starts its generated entrypoint for each input with networking disabled, a read-only root filesystem, all Linux capabilities dropped, <code>no-new-privileges</code>, one CPU, 1 GiB of memory, 64 PIDs, and a 64 MiB temporary filesystem. Inputs and outputs are limited to 16 MiB and execution to 30 seconds. No project directory is mounted into the container.</p>
+  <p>Bundle schema v2 records the exact Docker image ID. When that same ID is already present under the content-derived local tag, Hologram skips decompressing and loading the embedded image. A missing or mismatched image takes the cold path and is restored from the archive before execution. This preserves the self-contained archive guarantee without trusting a mutable local tag.</p>
+  <p>From the repository root, <code>just python-holo-demo</code> builds the optimized release CLI and repeats this complete check against the committed example. The first invocation pays the one-time Rust release link; later invocations reuse that binary. Prefer the release CLI for large fat archives because debug-mode verification and hashing are substantially slower.</p>
+
+  <h2>Local versus <code>mvm</code></h2>
+  <p>The available provider is local OCI execution. The repository's planned <code>mvm</code> boundary currently lives in <code>hologram-sandbox</code>: its hardware-backed backend requires KVM on Linux x86_64, while its guest understands the existing Hologram graph execution protocol rather than this Python OCI/rootfs envelope. It therefore cannot run this archive today, and an Apple Silicon development host cannot use that KVM backend directly.</p>
+  <p>The intended provider boundary keeps the archive stable: <code>local</code> restores or reuses the OCI image on the current machine, while a future <code>mvm</code> provider will place the same verified rootfs content behind a Linux microVM guest and warm-instance pool. Moving execution to <code>mvm</code> improves isolation and can improve warm throughput, but it does not remove the cold dependency/image build performed by <code>hologram compile</code>.</p>
 
   <h3>What is inside?</h3>
   <pre><code>numpy-pandas.holo
@@ -132,7 +137,7 @@ def main(request: bytes) -&gt; bytes:
   <h2>Current boundaries</h2>
   <ul>
     <li>Only direct execution of a self-contained fat archive is supported. <code>holo load</code> remains Wasm-only.</li>
-    <li>The provider requires a local Docker-compatible engine and leaves its content-derived image in the engine cache.</li>
+    <li>The provider requires a local Docker-compatible engine and leaves its content-derived, image-ID-verified image in the engine cache.</li>
     <li>Container isolation is useful for a local demo, but this provider is not advertised as an untrusted or multi-tenant security boundary.</li>
     <li>Base digest resolution, byte-for-byte reproducible OCI output, build provenance, SBOMs, signatures, and the microVM provider remain milestone work.</li>
     <li>The portable WebAssembly Component Model/WASI profile is still planned; the current Wasm runtime accepts Hologram's core-Wasm guest contract v1.</li>

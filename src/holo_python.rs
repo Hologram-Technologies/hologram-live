@@ -18,8 +18,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const MAGIC: &[u8; 8] = b"HOLOPYR1";
-const BUNDLE_SCHEMA_VERSION: u16 = 1;
+const BUNDLE_SCHEMA_VERSION: u16 = 2;
+const LEGACY_BUNDLE_SCHEMA_VERSION: u16 = 1;
 const UV_VERSION: &str = "0.11.8";
+const OCI_COMPRESSION_LEVEL: i32 = 3;
 const MAX_METADATA_BYTES: usize = 64 * 1024;
 const MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
@@ -51,6 +53,8 @@ struct BundleMetadata {
     schema_version: u16,
     provider: String,
     image_tag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    image_id: Option<String>,
     entry: String,
     arch: String,
     image_uncompressed_bytes: u64,
@@ -141,17 +145,26 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<V
         .output()
         .map_err(|error| LiveError::Io(format!("start Docker image save: {error}")))?;
     command_succeeded("Docker image save", &save)?;
-    let image = fs::read(&image_path).map_err(|error| LiveError::io(&image_path, error))?;
-    let compressed = zstd::stream::encode_all(image.as_slice(), 3)
+    let image_bytes = fs::metadata(&image_path)
+        .map_err(|error| LiveError::io(&image_path, error))?
+        .len();
+    let image = fs::File::open(&image_path).map_err(|error| LiveError::io(&image_path, error))?;
+    let compressed = zstd::stream::encode_all(image, OCI_COMPRESSION_LEVEL)
         .map_err(|error| LiveError::Io(format!("compress Python OCI image: {error}")))?;
+    let image_id = inspect_image_id(&image_tag)?.ok_or_else(|| {
+        LiveError::Conflict(format!(
+            "Docker build completed but image {image_tag} is unavailable"
+        ))
+    })?;
     encode_bundle(
         &BundleMetadata {
             schema_version: BUNDLE_SCHEMA_VERSION,
             provider: "oci-docker-zstd-v1".to_owned(),
             image_tag,
+            image_id: Some(image_id),
             entry: source.entry.clone(),
             arch: normalize_arch(arch)?.to_owned(),
-            image_uncompressed_bytes: u64::try_from(image.len()).unwrap_or(u64::MAX),
+            image_uncompressed_bytes: image_bytes,
         },
         &compressed,
     )
@@ -190,15 +203,9 @@ pub fn execute(
         )));
     }
     ensure_docker("execute a Python rootfs")?;
-    let image = decompress_image(compressed_image, metadata.image_uncompressed_bytes)?;
-    let image_file = tempfile::NamedTempFile::new().map_err(LiveError::from)?;
-    fs::write(image_file.path(), image).map_err(|error| LiveError::io(image_file.path(), error))?;
-    let load = Command::new("docker")
-        .args(["image", "load", "--input"])
-        .arg(image_file.path())
-        .output()
-        .map_err(|error| LiveError::Io(format!("start Docker image load: {error}")))?;
-    command_succeeded("Docker image load", &load)?;
+    if !cached_image_matches(&metadata)? {
+        load_embedded_image(&metadata, compressed_image)?;
+    }
 
     let mut outputs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -378,7 +385,10 @@ fn decode_bundle(bundle: &[u8]) -> Result<(BundleMetadata, &[u8])> {
     let start = MAGIC.len() + 4;
     let metadata: BundleMetadata = serde_json::from_slice(&bundle[start..start + length])
         .map_err(|error| LiveError::InvalidHolo(format!("decode Python metadata: {error}")))?;
-    if metadata.schema_version != BUNDLE_SCHEMA_VERSION || metadata.provider != "oci-docker-zstd-v1"
+    if !matches!(
+        metadata.schema_version,
+        LEGACY_BUNDLE_SCHEMA_VERSION | BUNDLE_SCHEMA_VERSION
+    ) || metadata.provider != "oci-docker-zstd-v1"
     {
         return Err(LiveError::Capability(format!(
             "unsupported Python rootfs provider {} schema {}",
@@ -387,6 +397,13 @@ fn decode_bundle(bundle: &[u8]) -> Result<(BundleMetadata, &[u8])> {
     }
     validate_entry(&metadata.entry).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     normalize_arch(&metadata.arch).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    if metadata.schema_version == BUNDLE_SCHEMA_VERSION
+        && !metadata.image_id.as_deref().is_some_and(valid_image_id)
+    {
+        return Err(LiveError::InvalidHolo(
+            "Python rootfs bundle is missing a valid Docker image ID".to_owned(),
+        ));
+    }
     if metadata.image_uncompressed_bytes == 0 || metadata.image_uncompressed_bytes > MAX_IMAGE_BYTES
     {
         return Err(LiveError::InvalidHolo(format!(
@@ -428,6 +445,59 @@ fn ensure_docker(action: &str) -> Result<()> {
             "{action} requires a running Docker-compatible engine: {}",
             diagnostic(&output.stderr)
         )));
+    }
+    Ok(())
+}
+
+fn cached_image_matches(metadata: &BundleMetadata) -> Result<bool> {
+    let Some(expected) = metadata.image_id.as_deref() else {
+        return Ok(false);
+    };
+    Ok(inspect_image_id(&metadata.image_tag)?.as_deref() == Some(expected))
+}
+
+fn inspect_image_id(image_tag: &str) -> Result<Option<String>> {
+    let output = Command::new("docker")
+        .args(["image", "inspect", "--format", "{{.Id}}", image_tag])
+        .output()
+        .map_err(|error| LiveError::Io(format!("inspect Docker image {image_tag}: {error}")))?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let image_id = String::from_utf8(output.stdout)
+        .map_err(|error| LiveError::Protocol(format!("decode Docker image ID: {error}")))?;
+    let image_id = image_id.trim();
+    if valid_image_id(image_id) {
+        Ok(Some(image_id.to_owned()))
+    } else {
+        Err(LiveError::Protocol(format!(
+            "Docker returned invalid image ID {image_id} for {image_tag}"
+        )))
+    }
+}
+
+fn load_embedded_image(metadata: &BundleMetadata, compressed_image: &[u8]) -> Result<()> {
+    let image = decompress_image(compressed_image, metadata.image_uncompressed_bytes)?;
+    let image_file = tempfile::NamedTempFile::new().map_err(LiveError::from)?;
+    fs::write(image_file.path(), image).map_err(|error| LiveError::io(image_file.path(), error))?;
+    let load = Command::new("docker")
+        .args(["image", "load", "--input"])
+        .arg(image_file.path())
+        .output()
+        .map_err(|error| LiveError::Io(format!("start Docker image load: {error}")))?;
+    command_succeeded("Docker image load", &load)?;
+    if let Some(expected) = metadata.image_id.as_deref() {
+        let actual = inspect_image_id(&metadata.image_tag)?.ok_or_else(|| {
+            LiveError::InvalidHolo(format!(
+                "embedded Python image did not load tag {}",
+                metadata.image_tag
+            ))
+        })?;
+        if actual != expected {
+            return Err(LiveError::InvalidHolo(format!(
+                "embedded Python image loaded as {actual}; expected {expected}"
+            )));
+        }
     }
     Ok(())
 }
@@ -594,6 +664,12 @@ fn validate_base(base: &str) -> Result<()> {
     Ok(())
 }
 
+fn valid_image_id(image_id: &str) -> bool {
+    image_id.strip_prefix("sha256:").is_some_and(|digest| {
+        digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+    })
+}
+
 fn normalize_arch(arch: &str) -> Result<&'static str> {
     match arch {
         "host" => host_arch(),
@@ -726,9 +802,10 @@ mod tests {
 
     fn metadata() -> BundleMetadata {
         BundleMetadata {
-            schema_version: 1,
+            schema_version: BUNDLE_SCHEMA_VERSION,
             provider: "oci-docker-zstd-v1".to_owned(),
             image_tag: "hologram-python-test:local".to_owned(),
+            image_id: Some(format!("sha256:{}", "a".repeat(64))),
             entry: "example:main".to_owned(),
             arch: "arm64".to_owned(),
             image_uncompressed_bytes: 9,
@@ -748,10 +825,28 @@ mod tests {
     }
 
     #[test]
+    fn legacy_bundle_without_an_image_id_still_decodes() {
+        let mut legacy = metadata();
+        legacy.schema_version = LEGACY_BUNDLE_SCHEMA_VERSION;
+        legacy.image_id = None;
+        let compressed = zstd::stream::encode_all(b"image tar".as_slice(), 1).expect("compress");
+        let bundle = encode_bundle(&legacy, &compressed).expect("encode");
+        let (decoded, _) = decode_bundle(&bundle).expect("decode");
+        assert_eq!(decoded, legacy);
+    }
+
+    #[test]
     fn entrypoint_requires_module_and_function() {
         assert!(validate_entry("analytics.app:main").is_ok());
         assert!(validate_entry("analytics-app:main").is_err());
         assert!(validate_entry("analytics.app").is_err());
+    }
+
+    #[test]
+    fn docker_image_ids_require_a_sha256_digest() {
+        assert!(valid_image_id(&format!("sha256:{}", "a".repeat(64))));
+        assert!(!valid_image_id("126a833f0669"));
+        assert!(!valid_image_id(&format!("sha256:{}", "z".repeat(64))));
     }
 
     #[test]

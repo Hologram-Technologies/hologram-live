@@ -231,6 +231,11 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 - [ ] Define the rootfs payload and boot descriptor contract, including architecture validation.
 - [ ] Use the mvm/microVM boundary rather than booting an untrusted rootfs in the host process.
+- [ ] Add an explicit rootfs provider selector and adapter: local OCI for trusted development, `mvm`/hologram-sandbox for production isolation.
+- [ ] Extend the `mvm` guest protocol to mount or restore the verified Python rootfs payload and invoke the byte-oriented launcher.
+- [ ] Provide an HVF path or a remote Linux execution target before advertising `mvm` rootfs execution on Apple Silicon.
+- [ ] Add a resident framed Python worker for repeated local calls so container startup is paid once per loaded application.
+- [ ] Cache completed Python rootfs bundles by source, lock, toolchain, base digest, and target so unchanged recompiles avoid image export and compression.
 - [ ] Refuse an architecture mismatch before VM creation.
 - [ ] Define block, network, console, shutdown, exit-code, snapshot, and cleanup semantics.
 - [ ] Enforce capabilities and resource budgets at the VM boundary.

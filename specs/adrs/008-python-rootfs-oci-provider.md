@@ -20,6 +20,8 @@ Add a schema-v2 Python source recipe that compiles into the existing `RootfsImag
 5. Embed that envelope as the rootfs content blob in a fat `.holo` archive.
 6. For direct execution, verify the archive and architecture, load the embedded image, and invoke the launcher once per input.
 
+Bundle schema v2 also records the exact OCI image ID. Direct execution may reuse a local image only when both its content-derived tag and inspected image ID match the archive metadata. Legacy schema-v1 bundles and cache misses always load the embedded bytes. A tag match alone is never trusted.
+
 The launcher contract is:
 
 ```python
@@ -40,7 +42,7 @@ The default base `python:3.12-slim` is convenient but mutable. Users who need re
 - `.holo` v3 and its four layer kinds remain unchanged; source schema and provider implementation can evolve independently.
 - Python and dependencies are isolated from the Hologram host process, and the workstation virtual environment is excluded by construction.
 - Compiling and running this profile requires a Docker-compatible engine and sufficient space for the OCI image and approximately 100 MiB compressed archive.
-- Loaded images remain in the engine cache so repeated runs avoid rebuilding layers.
+- Loaded images remain in the engine cache. Image-ID verification lets repeated runs skip decompression and image loading without weakening the archive boundary.
 - Container isolation is not presented as equivalent to a hardware-backed microVM, especially on a shared Linux host.
 
 ## Follow-up

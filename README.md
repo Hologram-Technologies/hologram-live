@@ -237,6 +237,11 @@ The demo writes one JSON document to stdout; progress and failures use stderr:
 ```bash
 just python-holo-demo | jq .
 just python-holo-demo | jq '.output'
+
+# Retain the verified archive instead of deleting the temporary artifact
+just python-holo-package target/numpy-pandas.holo | jq '{archive, archive_bytes}'
+target/release/hologram --json run target/numpy-pandas.holo \
+  --input examples/python-numpy-pandas/request.json
 ```
 
 ### Inference compatibility APIs

@@ -114,7 +114,15 @@ def main(request: bytes) -&gt; bytes:
   <p>From the repository root, <code>just python-holo-demo</code> builds the optimized release CLI and repeats this complete check against the committed example. The first invocation pays the one-time Rust release link; later invocations reuse that binary. Prefer the release CLI for large fat archives because debug-mode verification and hashing are substantially slower.</p>
   <p>The check writes exactly one versioned JSON document to standard output and sends build progress or failures to standard error, so it composes directly with <code>jq</code>:</p>
   <pre><code>just python-holo-demo | jq .
-just python-holo-demo | jq '.output'</code></pre>
+just python-holo-demo | jq '.output'
+
+# Compile, execute, verify, and retain the archive
+just python-holo-package target/numpy-pandas.holo \
+  | jq '&#123;archive, archive_bytes&#125;'
+
+# Run that same self-contained file again
+target/release/hologram --json run target/numpy-pandas.holo \
+  --input examples/python-numpy-pandas/request.json</code></pre>
 
   <h2>Local versus <code>mvm</code></h2>
   <p>The available provider is local OCI execution. The repository's planned <code>mvm</code> boundary currently lives in <code>hologram-sandbox</code>: its hardware-backed backend requires KVM on Linux x86_64, while its guest understands the existing Hologram graph execution protocol rather than this Python OCI/rootfs envelope. It therefore cannot run this archive today, and an Apple Silicon development host cannot use that KVM backend directly.</p>

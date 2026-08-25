@@ -2,10 +2,39 @@
 set -euo pipefail
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+output_path=""
+case "${1:-}" in
+  "") ;;
+  --output)
+    if [[ $# -ne 2 || -z "${2:-}" ]]; then
+      printf 'usage: %s [--output PATH]\n' "$0" >&2
+      exit 2
+    fi
+    output_path=$2
+    ;;
+  --help|-h)
+    printf 'usage: %s [--output PATH]\n' "$0"
+    exit 0
+    ;;
+  *)
+    printf 'usage: %s [--output PATH]\n' "$0" >&2
+    exit 2
+    ;;
+esac
+
 demo_dir=$(mktemp -d "${TMPDIR:-/tmp}/hologram-python-demo.XXXXXX")
-archive="$demo_dir/numpy-pandas.holo"
+archive_persisted=false
+if [[ -n "$output_path" ]]; then
+  archive=$output_path
+  archive_persisted=true
+  mkdir -p "$(dirname -- "$archive")"
+else
+  archive="$demo_dir/numpy-pandas.holo"
+fi
 cleanup() {
-  rm -f "$archive"
+  if [[ "$archive_persisted" == false ]]; then
+    rm -f "$archive"
+  fi
   rmdir "$demo_dir"
 }
 trap cleanup EXIT
@@ -47,7 +76,9 @@ summary = {
     "output": output,
     "elapsed_micros": run["elapsed_micros"],
     "archive_bytes": run["resident_bytes"],
+    "archive": sys.argv[2] if sys.argv[1] == "true" else None,
+    "archive_persisted": sys.argv[1] == "true",
 }
 json.dump(summary, sys.stdout, separators=(",", ":"))
 sys.stdout.write("\n")
-' <<<"$run_json"
+' "$archive_persisted" "$archive" <<<"$run_json"

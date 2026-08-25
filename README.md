@@ -152,6 +152,8 @@ Use `--yes` for a minimal `app.wasm`/`_start` manifest. Existing manifests are p
 hologram holo fixture ./fixture.holo
 hologram holo import ./fixture.holo
 hologram holo list
+hologram holo inspect ./application.holo
+hologram holo verify ./application.holo
 hologram holo inspect blake3:...
 hologram holo verify blake3:...
 hologram holo remove blake3:...
@@ -200,7 +202,7 @@ hologram compile ./my-app/hologram.json --thin -o ./my-app.thin.holo
 
 Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
 
-Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect blake3:...` exposes the ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view.
+Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view.
 
 #### AI model applications
 

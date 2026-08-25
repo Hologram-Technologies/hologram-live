@@ -5,7 +5,8 @@
 - State: active
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
-- Next delivery: M1, provider and lifecycle ADR
+- Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
+- Next delivery: M1, identity, planning, provider, and lifecycle foundation
 - Next runtime milestone: M1, application planning and provider boundary
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 

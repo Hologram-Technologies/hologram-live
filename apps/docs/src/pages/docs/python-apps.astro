@@ -2,137 +2,45 @@
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import { sitePath } from '../../lib/site';
 ---
-<DocsLayout title="Python applications" description="The proposed compiler and runtime profiles for packaging Python projects and locked dependencies as executable .holo applications.">
+<DocsLayout title="Python applications" description="Package a locked Python project and its dependencies as an executable rootfs layer in a .holo application.">
   <h1>Python applications</h1>
-  <p>A Python project should become a <code>.holo</code> application through a source-language compiler stage, not through a new Python layer kind. The compiler turns the project, its locked dependencies, and a pinned Python runtime into either a portable WebAssembly component or an isolated root filesystem. The resulting payload still uses the existing <code>wasm</code> or <code>rootfs</code> layer descriptor.</p>
+  <p>Hologram can compile a locked Python project into an architecture-specific <code>RootfsImage</code>, embed it in a fat <code>.holo</code> archive, and execute its <code>main(request: bytes) -&gt; bytes</code> function. Python remains a compiler input rather than a fifth layer kind, so the canonical <code>.holo</code> v3 model stays unchanged.</p>
 
-  <div class="note"><strong>Design proposal, not current CLI behavior</strong>Hologram Live currently assembles prebuilt layer files and executes only a single primary core-Wasm layer using the v1 <code>holo_alloc</code>/<code>holo_run</code> guest contract. It does not yet resolve Python dependencies, build WebAssembly components, provide WASI, or execute rootfs layers. The commands and schema-v2 examples below define the intended milestone.</div>
+  <div class="note"><strong>Experimental local provider</strong>The workflow on this page works today and is intended for demos and trusted local applications. Compilation and direct execution require a running Docker-compatible engine. Execution uses a locked-down OCI container, not the planned hardware-backed microVM provider, and resident or thin-archive Python execution is not supported yet.</div>
 
-  <h2>Two execution profiles</h2>
+  <h2>What is supported</h2>
   <div class="doc-grid">
-    <article class="doc-card"><h3>Portable WASI</h3><p>Bundle CPython, application code, and compatible dependencies into a WebAssembly component. This is the default for pure-Python applications that fit WASI's sandboxed host surface.</p></article>
-    <article class="doc-card"><h3>Isolated rootfs</h3><p>Build a locked Linux filesystem containing CPython, wheels, and system libraries, then execute it through the future microVM provider. This supports more of the normal Python ecosystem but is larger and architecture-specific.</p></article>
+    <article class="doc-card"><h3>Rootfs profile · available</h3><p>Packages CPython, the application, locked Linux dependencies, compiled extensions, and shared libraries into a compressed OCI image carried by a <code>rootfs</code> layer.</p></article>
+    <article class="doc-card"><h3>Portable WASI · planned</h3><p>A future profile will package CPython and compatible dependencies as a WebAssembly component. Hologram does not silently fall back to host Python or claim that ordinary native wheels are WASI binaries.</p></article>
   </div>
 
-  <p>The portable profile should fail with a useful dependency report when a package cannot target WASI; it must not silently fall back to host execution. The user can then choose the rootfs profile explicitly.</p>
-
-  <h2>Example project</h2>
-  <pre><code>greeter/
-├─ pyproject.toml
-├─ uv.lock
-├─ src/greeter/__init__.py
-└─ hologram.json</code></pre>
-
-  <p>The application exposes one byte-oriented function initially. A generated binding adapts it to a versioned Hologram WIT world so Python code does not implement the current low-level core-Wasm memory ABI itself.</p>
-  <pre><code># src/greeter/__init__.py
-import json
-import humanize
-
-def run(request: bytes) -&gt; bytes:
-    payload = json.loads(request)
-    result = &#123;"size": humanize.naturalsize(payload["bytes"])&#125;
-    return json.dumps(result).encode()</code></pre>
-  <p><code>humanize</code> illustrates a locked Python dependency in the portable path. A dependency containing native code is accepted only when a compatible WASI build exists; otherwise the project selects the rootfs profile or replaces that dependency.</p>
-
-  <h2>Proposed source manifest</h2>
-  <p>Source-manifest schema v2 replaces a prebuilt <code>path</code> with a typed <code>source</code> recipe. This recipe is compiler input only. The canonical <code>AppManifest</code> inside the archive still contains a content κ, entrypoint, and one of the four closed layer kinds.</p>
-  <pre><code>&#123;
-  "schema_version": 2,
-  "primary": 0,
-  "requires": "capabilities.json",
-  "layers": [
-    &#123;
-      "kind": "wasm",
-      "source": &#123;
-        "language": "python",
-        "project": ".",
-        "entry": "greeter:run",
-        "lock": "uv.lock",
-        "profile": "wasi-component"
-      &#125;
-    &#125;
-  ]
-&#125;</code></pre>
-  <p>The interactive flow can gather these fields without making users author JSON:</p>
-  <pre><code># Proposed
-hologram app init --template python
-hologram compile --check hologram.json
-hologram compile hologram.json --output greeter.holo
-hologram run greeter.holo --input request.json</code></pre>
-
-  <h2>Portable build pipeline</h2>
-  <pre><code>pyproject.toml + lock + source
-          │
-          ├─ validate an exact, target-aware dependency closure
-          ├─ stage application and dependency modules in a clean build root
-          ├─ generate bindings for hologram:app/run@1.0.0
-          ├─ bundle pinned CPython + modules as a Wasm component
-          ├─ validate component imports, exports, limits, and capabilities
-          └─ write component bytes as a WasmCodemodule ContentBlob
-                                      │
-                                      └─ AppManifest → .holo v3</code></pre>
-
-  <p><a href="https://component-model.bytecodealliance.org/language-support/building-a-simple-component/python.html"><code>componentize-py</code></a> provides a useful reference implementation: it packages a Python application as a WebAssembly component and generates bindings from WIT. Hologram still needs its own pinned toolchain wrapper, guest world, import policy, deterministic-build checks, and component-model runtime provider.</p>
-
-  <h3>Dependency rules</h3>
+  <h2>Requirements and contract</h2>
   <ul>
-    <li>Require a lock file and reject unresolved or unpinned dependencies.</li>
-    <li>Resolve for the declared target, never for the developer workstation by accident.</li>
-    <li>Accept portable wheels only when their code also avoids unsupported host assumptions.</li>
-    <li>Require native extensions to have a compatible target build; ordinary macOS, Windows, and <code>manylinux</code> wheels are not WASI binaries.</li>
-    <li>Record the exact compiler, Python runtime, dependency artifacts, hashes, and target ABI in build metadata.</li>
-    <li>Exclude <code>.git</code>, local virtual environments, caches, credentials, and undeclared files by default.</li>
+    <li>A <code>pyproject.toml</code>, a committed <code>uv.lock</code>, and a <code>src/</code> package layout.</li>
+    <li>Python 3.12 for the current generated image and a Docker-compatible engine with Linux container support.</li>
+    <li>An entrypoint written as <code>module.path:function</code>. It receives one byte string and must return one byte string.</li>
+    <li>A target architecture of <code>arm64</code> or <code>x86_64</code>. <code>host</code> resolves to the current machine for portable examples; direct execution requires the resolved architecture to match the host.</li>
   </ul>
-  <p>Python's <a href="https://docs.python.org/3/library/intro.html#webassembly-platforms">WebAssembly platform notes</a> describe the restricted process, networking, threading, signal, IPC, and filesystem behavior. Python packaging's <a href="https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/">compatibility tags</a> explain why a wheel built for one Python ABI and platform cannot be assumed to work on another.</p>
-
-  <h2>Runtime contract</h2>
-  <p>The Wasm provider would load the component and link only host interfaces admitted by the application's effective capability grant. The first WIT world can expose a byte request and byte response, then evolve through explicit versions toward typed ports, streams, logs, and cancellation. WASI filesystem directories, clocks, environment values, random data, and outbound network access remain denied unless the host deliberately supplies them.</p>
-  <p>This requires the planned provider boundary and capability work. A component produced by <code>componentize-py</code> will not run in Hologram Live today because the current engine expects a core module implementing Hologram guest contract v1 rather than a component with WASI imports.</p>
-
-  <h2>Rootfs fallback</h2>
-  <p>Applications that need standard native wheels, operating-system packages, subprocesses, or a broader POSIX environment use a rootfs recipe instead:</p>
-  <pre><code>&#123;
-  "schema_version": 2,
-  "primary": 0,
-  "layers": [
-    &#123;
-      "kind": "rootfs",
-      "arch": "arm64",
-      "source": &#123;
-        "language": "python",
-        "project": ".",
-        "entry": "python -m greeter",
-        "lock": "uv.lock",
-        "profile": "rootfs",
-        "base": "oci://python@sha256:&lt;pinned-image-digest&gt;"
-      &#125;
-    &#125;
-  ]
-&#125;</code></pre>
-  <p>The compiler builds a normalized filesystem, installs only locked artifacts, records its target architecture, and stores the image as a <code>RootfsImage</code> layer. Execution must go through the planned microVM provider with explicit CPU, memory, disk, network, and lifetime budgets. Hologram should not unpack and run this environment directly on the host.</p>
+  <p>The compiler stages only <code>pyproject.toml</code>, the declared lock file, <code>src/</code>, and its generated launcher. It rejects absolute paths, paths escaping the manifest directory, and symlinks. The host <code>.venv</code>, Git metadata, caches, credentials, and undeclared files do not enter the image.</p>
 
   <h2>Worked example: NumPy + pandas</h2>
-  <p>This example is the target end-to-end experience for a Python application with native dependencies. It uses the rootfs profile because NumPy contains compiled extensions and pandas requires NumPy. The resulting fat <code>.holo</code> carries the locked Linux environment—interpreter, application, NumPy, pandas, transitive dependencies, and required shared libraries—as one content-addressed <code>RootfsImage</code> payload.</p>
-  <p>The <a href="https://numpy.org/install/">NumPy installation guide</a> recommends using binary distributions when they are available for the target, while the <a href="https://pandas.pydata.org/docs/getting_started/install.html#dependencies">pandas dependency guide</a> lists NumPy as required. Packaging the ordinary Linux artifacts in a rootfs is therefore the first broadly compatible profile; a portable component remains possible only when the complete locked closure is available for the selected WebAssembly target.</p>
+  <p>The repository contains the complete project under <code>examples/python-numpy-pandas/</code>. It uses the rootfs profile because NumPy contains native extensions and pandas requires NumPy. The <a href="https://numpy.org/install/">NumPy installation guide</a> recommends binary distributions when available, and the <a href="https://pandas.pydata.org/docs/getting_started/install.html#dependencies">pandas dependency guide</a> lists NumPy as required.</p>
 
-  <div class="note"><strong>Planned workflow</strong>You can create and test the Python project today, but the <code>hologram app init --template python</code>, schema-v2 compilation, rootfs provider, and rootfs execution commands shown below are not implemented yet. They document the exact workflow the milestone should deliver.</div>
-
-  <h3>1. Create the project and lock its dependencies</h3>
+  <h3>1. Create and lock the project</h3>
   <pre><code>uv init --app numpy-pandas-holo
 cd numpy-pandas-holo
 uv add numpy pandas
 uv lock
 uv tree</code></pre>
-  <p><a href="https://docs.astral.sh/uv/guides/projects/"><code>uv add</code></a> records both direct dependencies in <code>pyproject.toml</code> and creates <code>uv.lock</code> with the exact resolved closure. Commit both files. Hologram compilation uses the lock file as input and ignores the workstation's <code>.venv</code>.</p>
-
+  <p><a href="https://docs.astral.sh/uv/guides/projects/"><code>uv add</code></a> records the dependencies in <code>pyproject.toml</code>; <code>uv.lock</code> records the exact resolved closure. Commit both files.</p>
   <pre><code>numpy-pandas-holo/
 ├─ pyproject.toml
 ├─ uv.lock
+├─ request.json
 ├─ src/numpy_pandas_holo/__init__.py
 └─ hologram.json</code></pre>
 
-  <h3>2. Implement the <code>main</code> entrypoint</h3>
-  <p>The initial Python contract is <code>main(request: bytes) -&gt; bytes</code>. Hologram passes the bytes supplied with <code>--input</code> to this function and returns the bytes it produces.</p>
+  <h3>2. Implement <code>main(request: bytes) -&gt; bytes</code></h3>
   <pre><code># src/numpy_pandas_holo/__init__.py
 import json
 
@@ -144,7 +52,6 @@ def main(request: bytes) -&gt; bytes:
     payload = json.loads(request)
     frame = pd.DataFrame(payload["rows"])
     values = frame["value"].to_numpy(dtype=np.float64)
-
     result = &#123;
         "columns": frame.columns.tolist(),
         "mean": float(np.mean(values)),
@@ -152,89 +59,84 @@ def main(request: bytes) -&gt; bytes:
         "sum": float(np.sum(values)),
     &#125;
     return json.dumps(result, separators=(",", ":"), sort_keys=True).encode()</code></pre>
-  <p>The generated rootfs launcher imports <code>numpy_pandas_holo.main</code>, reads one request from the Hologram execution channel, invokes the function once, and writes its returned bytes as the application output. Missing modules, a missing entrypoint, or a non-byte return value are typed preparation or protocol errors rather than successful application exits.</p>
+  <p>The generated launcher imports the declared function, reads one request from standard input, calls it once, and writes the returned bytes to standard output. Import failures, exceptions, and non-byte return values fail the invocation.</p>
 
-  <h3>3. Test the function before packaging</h3>
-  <pre><code>uv run python - &lt;&lt;'PY'
-from numpy_pandas_holo import main
-
-request = b'&#123;"rows":[&#123;"label":"a","value":10&#125;,&#123;"label":"b","value":20&#125;,&#123;"label":"c","value":30&#125;]&#125;'
-print(main(request).decode())
-PY</code></pre>
-  <pre><code>&#123;"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0&#125;</code></pre>
-
-  <h3>4. Generate the Python rootfs manifest</h3>
-  <pre><code># Proposed CLI
-hologram app init \
+  <h3>3. Generate the manifest</h3>
+  <pre><code>hologram app init . \
   --template python \
   --profile rootfs \
   --project . \
   --entry numpy_pandas_holo:main \
   --lock uv.lock \
   --arch arm64</code></pre>
-  <p>Use <code>x86_64</code> for an Intel/AMD target. The generator resolves a digest-pinned Python base for that target and writes the proposed schema-v2 manifest:</p>
+  <p>Use <code>x86_64</code> on an Intel/AMD host. The command writes source-manifest schema v2:</p>
   <pre><code>&#123;
   "schema_version": 2,
   "primary": 0,
   "layers": [
     &#123;
       "kind": "rootfs",
-      "arch": "arm64",
       "source": &#123;
         "language": "python",
         "project": ".",
         "entry": "numpy_pandas_holo:main",
         "lock": "uv.lock",
         "profile": "rootfs",
-        "base": "oci://python@sha256:&lt;resolved-image-digest&gt;"
-      &#125;
+        "base": "python:3.12-slim"
+      &#125;,
+      "arch": "arm64"
     &#125;
   ]
 &#125;</code></pre>
+  <p>The convenience default is <code>python:3.12-slim</code>. Tags are mutable; replace it with the registry's <code>repository@sha256:digest</code> form when reproducibility matters. Hologram validates that value but does not yet resolve or record a tag's digest automatically.</p>
 
-  <h3>5. Compile a self-contained <code>.holo</code></h3>
-  <pre><code># Proposed CLI
-hologram compile --check hologram.json
-hologram compile hologram.json --output numpy-pandas.holo</code></pre>
-  <p>The compiler creates a clean target build root, installs only artifacts selected by <code>uv.lock</code>, verifies that NumPy and pandas import in that target, installs the generated launcher, normalizes filesystem metadata, and emits a fat v3 archive. It never copies the host <code>.venv</code>. The archive's <code>AppManifest</code> points to the resulting rootfs bytes by κ, and the application directory reports the layer as <code>rootfs</code> with its architecture and entrypoint.</p>
+  <h3>4. Validate without building</h3>
+  <pre><code>hologram --json compile hologram.json --check</code></pre>
+  <pre><code>&#123;
+  "manifest": "hologram.json",
+  "layer_count": 1,
+  "schema_version": 2,
+  "valid": true
+&#125;</code></pre>
+  <p>This parses the schema, validates the primary layer and entrypoint, and verifies that <code>pyproject.toml</code>, <code>uv.lock</code>, and <code>src/</code> exist. It does not contact the container engine or write an archive.</p>
 
-  <h3>6. Execute the archive</h3>
-  <pre><code>printf '%s' '&#123;"rows":[&#123;"label":"a","value":10&#125;,&#123;"label":"b","value":20&#125;,&#123;"label":"c","value":30&#125;]&#125;' &gt; request.json
+  <h3>5. Compile a self-contained archive</h3>
+  <pre><code>hologram --json compile hologram.json \
+  --output numpy-pandas.holo</code></pre>
+  <p>The compiler builds a clean Linux image for the selected architecture, installs the pinned <code>uv</code> build tool, runs <code>uv sync --locked --no-dev --no-editable</code>, adds the generated launcher, saves the OCI image, compresses it with Zstandard, and embeds it as a content-addressed rootfs blob. The resulting archive contains the source manifest as metadata and the canonical runtime manifest as its application identity.</p>
 
-# Proposed CLI
-hologram run numpy-pandas.holo --input request.json</code></pre>
+  <h3>6. Execute the <code>.holo</code></h3>
+  <pre><code>hologram --json run numpy-pandas.holo --input request.json \
+  | jq -r '.outputs[0] | implode'</code></pre>
   <pre><code>&#123;"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0&#125;</code></pre>
-  <p>Execution validates the archive, checks the rootfs architecture and capability grant, boots the image through the microVM provider, invokes <code>numpy_pandas_holo:main</code>, returns its output, and shuts the application down cleanly. The example needs no network or host-filesystem capability at runtime because its input and output cross the execution channel.</p>
+  <p>For each input, Hologram loads the embedded image and starts its generated entrypoint with networking disabled, a read-only root filesystem, all Linux capabilities dropped, <code>no-new-privileges</code>, one CPU, 1 GiB of memory, 64 PIDs, and a 64 MiB temporary filesystem. Inputs and outputs are limited to 16 MiB and execution to 30 seconds. No project directory is mounted into the container.</p>
+  <p>From the repository root, <code>just python-holo-demo</code> builds the CLI and repeats this complete check against the committed example.</p>
 
-  <h3>What is actually inside the archive?</h3>
+  <h3>What is inside?</h3>
   <pre><code>numpy-pandas.holo
 ├─ AppManifest
-│  └─ primary layer: RootfsImage · arm64 · κ(rootfs)
+│  └─ primary: RootfsImage · arm64 · κ(image bundle)
 ├─ Extension: application-directory/v1
-├─ Metadata: schema-v2 source recipe + build provenance
-├─ ContentBlob: κ(rootfs)
-│  └─ normalized Linux filesystem
-│     ├─ pinned CPython runtime
-│     ├─ numpy-pandas-holo application
-│     ├─ NumPy + compiled extension modules
-│     ├─ pandas + transitive dependencies
-│     ├─ required shared libraries
+├─ Metadata: schema-v2 source recipe
+├─ ContentBlob: κ(image bundle)
+│  ├─ Python OCI provider metadata
+│  └─ Zstandard-compressed OCI image archive
+│     ├─ CPython 3.12
+│     ├─ numpy-pandas-holo
+│     ├─ NumPy and compiled extensions
+│     ├─ pandas and transitive dependencies
+│     ├─ required Linux shared libraries
 │     └─ generated Hologram launcher
 └─ BLAKE3 footer</code></pre>
-  <p>A fat archive embeds that rootfs blob and runs by itself. A thin variant keeps the same canonical application identity but requires the verified rootfs κ to exist in the local or configured content store. Dependency versions remain visible in build provenance and the packaged Python distribution metadata even though dependencies are not separate logical <code>.holo</code> layers.</p>
 
-  <h2>Reproducibility and identity</h2>
-  <p>For equal source, lock file, toolchain, target, and options, compilation should produce equal layer bytes and therefore the same layer κ and application κ. Stable output requires sorted paths, normalized permissions and timestamps, a fixed source epoch, pinned base images and toolchains, deterministic generated bindings, and a clean build environment.</p>
-  <p>A first implementation may embed the interpreter, standard library, dependencies, and application in one self-contained layer payload. Later, shared κ-addressed runtime and dependency objects can reduce transfer and storage without changing the logical application identity model. Fat and thin packaging remains an independent archive choice.</p>
+  <h2>Current boundaries</h2>
+  <ul>
+    <li>Only direct execution of a self-contained fat archive is supported. <code>holo load</code> remains Wasm-only.</li>
+    <li>The provider requires a local Docker-compatible engine and leaves its content-derived image in the engine cache.</li>
+    <li>Container isolation is useful for a local demo, but this provider is not advertised as an untrusted or multi-tenant security boundary.</li>
+    <li>Base digest resolution, byte-for-byte reproducible OCI output, build provenance, SBOMs, signatures, and the microVM provider remain milestone work.</li>
+    <li>The portable WebAssembly Component Model/WASI profile is still planned; the current Wasm runtime accepts Hologram's core-Wasm guest contract v1.</li>
+  </ul>
 
-  <h2>Recommended delivery slices</h2>
-  <ol>
-    <li>Land <code>ApplicationPlan</code>, providers, capability grants, limits, and guest-contract versioning.</li>
-    <li>Prove a dependency-free Python component through a versioned <code>run(bytes) -&gt; bytes</code> WIT world.</li>
-    <li>Add a locked, pure-Python dependency and byte-for-byte reproducibility tests on macOS, Linux, and Windows.</li>
-    <li>Add target-aware dependency diagnostics and compatible native-extension fixtures.</li>
-    <li>Add the explicit rootfs profile only after the microVM provider and cleanup gates are ready.</li>
-  </ol>
-
-  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a> for the archive model and the repository's <code>specs/plans/holo-application-runtime.md</code> for the milestone checklist.</p>
+  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider decision, and remaining milestone checklist.</p>
 </DocsLayout>

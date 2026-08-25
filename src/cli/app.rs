@@ -1,9 +1,10 @@
 use super::Cli;
 use clap::{Args, Subcommand, ValueEnum};
 use hologram_live::compile::{
-    validate_compile_manifest, CompileLayer, CompileLayerKind, CompileManifest,
+    validate_compile_manifest, CompileLayer, CompileLayerKind, CompileManifest, CompileSource,
 };
 use hologram_live::error::{LiveError, Result};
+use hologram_live::holo_python::{PythonProfile, PythonRootfsSource};
 use hologram_live::util::atomic_write;
 use serde::Serialize;
 use std::io::{BufRead, IsTerminal, Write};
@@ -26,6 +27,9 @@ struct InitArgs {
     /// Directory that will contain hologram.json.
     #[arg(default_value = ".")]
     directory: PathBuf,
+    /// Source-language application template.
+    #[arg(long, value_enum)]
+    template: Option<TemplateArg>,
     /// Kind of the first layer.
     #[arg(long, value_enum)]
     kind: Option<LayerKindArg>,
@@ -41,6 +45,18 @@ struct InitArgs {
     /// Surface required by a view layer.
     #[arg(long)]
     surface: Option<String>,
+    /// Python execution profile.
+    #[arg(long, value_enum)]
+    profile: Option<PythonProfileArg>,
+    /// Python project path, relative to hologram.json.
+    #[arg(long)]
+    project: Option<PathBuf>,
+    /// Python lock file, relative to the project.
+    #[arg(long)]
+    lock: Option<PathBuf>,
+    /// OCI base image used by a Python rootfs build.
+    #[arg(long)]
+    base: Option<String>,
     /// Zero-based primary layer position.
     #[arg(long, conflicts_with = "no_primary")]
     primary: Option<u32>,
@@ -64,6 +80,16 @@ enum LayerKindArg {
     Tensor,
     Rootfs,
     View,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+enum TemplateArg {
+    Python,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+enum PythonProfileArg {
+    Rootfs,
 }
 
 #[derive(Debug, Serialize)]
@@ -106,10 +132,15 @@ pub async fn run(cli: Cli, args: AppArgs) -> Result<()> {
 
 fn has_layer_flags(args: &InitArgs) -> bool {
     args.kind.is_some()
+        || args.template.is_some()
         || args.path.is_some()
         || args.entry.is_some()
         || args.arch.is_some()
         || args.surface.is_some()
+        || args.profile.is_some()
+        || args.project.is_some()
+        || args.lock.is_some()
+        || args.base.is_some()
 }
 
 fn initialize<R: BufRead, W: Write>(
@@ -126,7 +157,10 @@ fn initialize<R: BufRead, W: Write>(
         )));
     }
 
-    let mut layers = if interactive {
+    let python = args.template == Some(TemplateArg::Python);
+    let mut layers = if python {
+        vec![python_layer_from_args(&args)?]
+    } else if interactive {
         interactive_layers(input, output)?
     } else {
         vec![layer_from_args(&args)?]
@@ -155,7 +189,7 @@ fn initialize<R: BufRead, W: Write>(
     };
 
     let specification = CompileManifest {
-        schema_version: 1,
+        schema_version: if python { 2 } else { 1 },
         primary,
         requires,
         layers: std::mem::take(&mut layers),
@@ -189,6 +223,11 @@ fn initialize<R: BufRead, W: Write>(
 }
 
 fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
+    if args.template.is_some() {
+        return Err(LiveError::Config(
+            "source templates cannot be combined with --kind or --path".to_owned(),
+        ));
+    }
     let kind = args
         .kind
         .or(args.yes.then_some(LayerKindArg::Wasm))
@@ -210,10 +249,45 @@ fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
         })?;
     Ok(CompileLayer {
         kind: kind.into(),
-        path,
+        path: Some(path),
+        source: None,
         entry: args.entry.clone(),
         arch: args.arch.clone(),
         surface: args.surface.clone(),
+    })
+}
+
+fn python_layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
+    if args.kind.is_some() || args.path.is_some() || args.surface.is_some() || args.yes {
+        return Err(LiveError::Config(
+            "--template python cannot be combined with --kind, --path, --surface, or --yes"
+                .to_owned(),
+        ));
+    }
+    if args.profile.unwrap_or(PythonProfileArg::Rootfs) != PythonProfileArg::Rootfs {
+        return Err(LiveError::Config(
+            "Python applications currently support only --profile rootfs".to_owned(),
+        ));
+    }
+    let entry = args.entry.clone().ok_or_else(|| {
+        LiveError::Config("--template python requires --entry module:function".to_owned())
+    })?;
+    Ok(CompileLayer {
+        kind: CompileLayerKind::Rootfs,
+        path: None,
+        source: Some(CompileSource::Python(PythonRootfsSource {
+            project: args.project.clone().unwrap_or_else(|| ".".into()),
+            entry,
+            lock: args.lock.clone().unwrap_or_else(|| "uv.lock".into()),
+            profile: PythonProfile::Rootfs,
+            base: args
+                .base
+                .clone()
+                .unwrap_or_else(|| "python:3.12-slim".to_owned()),
+        })),
+        entry: None,
+        arch: Some(args.arch.clone().unwrap_or_else(default_arch)),
+        surface: None,
     })
 }
 
@@ -259,7 +333,8 @@ fn interactive_layers<R: BufRead, W: Write>(
         };
         layers.push(CompileLayer {
             kind: kind.into(),
-            path,
+            path: Some(path),
+            source: None,
             entry,
             arch,
             surface,
@@ -401,6 +476,15 @@ fn default_path(kind: LayerKindArg) -> PathBuf {
     .into()
 }
 
+fn default_arch() -> String {
+    match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x86_64",
+        arch => arch,
+    }
+    .to_owned()
+}
+
 fn display_path(path: &std::path::Path) -> String {
     path.to_string_lossy().into_owned()
 }
@@ -432,11 +516,16 @@ mod tests {
     fn args(directory: PathBuf) -> InitArgs {
         InitArgs {
             directory,
+            template: None,
             kind: None,
             path: None,
             entry: None,
             arch: None,
             surface: None,
+            profile: None,
+            project: None,
+            lock: None,
+            base: None,
             primary: None,
             no_primary: false,
             capabilities: None,
@@ -477,7 +566,10 @@ mod tests {
         let bytes = std::fs::read(directory.path().join("hologram.json")).expect("manifest");
         let manifest: CompileManifest = serde_json::from_slice(&bytes).expect("parse");
         assert_eq!(manifest.primary, Some(0));
-        assert_eq!(manifest.layers[0].path, PathBuf::from("app.wasm"));
+        assert_eq!(
+            manifest.layers[0].path.as_deref(),
+            Some(std::path::Path::new("app.wasm"))
+        );
     }
 
     #[test]
@@ -530,5 +622,26 @@ mod tests {
             .expect_err("missing surface");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
         assert!(error.to_string().contains("require surface"), "{error}");
+    }
+
+    #[test]
+    fn python_template_generates_a_schema_two_rootfs_source() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let mut options = args(directory.path().to_path_buf());
+        options.template = Some(TemplateArg::Python);
+        options.entry = Some("numpy_pandas_holo:main".to_owned());
+        options.arch = Some("arm64".to_owned());
+        initialize(options, false, &mut Cursor::new([]), &mut Vec::new()).expect("initialize");
+
+        let manifest: CompileManifest = serde_json::from_slice(
+            &std::fs::read(directory.path().join("hologram.json")).expect("manifest"),
+        )
+        .expect("parse");
+        assert_eq!(manifest.schema_version, 2);
+        assert_eq!(manifest.primary, Some(0));
+        assert!(matches!(
+            manifest.layers[0].source,
+            Some(CompileSource::Python(_))
+        ));
     }
 }

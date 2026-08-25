@@ -169,7 +169,7 @@ The stable build creates and validates real v3 `.holo` archives. The physical fi
 └─ BLAKE3 footer
 ```
 
-The closed layer kinds are `wasm`, `tensor`, `rootfs`, and `view`. A layer records its content κ and entrypoint plus an architecture for rootfs or surface for views. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, and executes archives whose sole primary layer is Wasm through wasmtime.
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, and `view`. A layer records its content κ and entrypoint plus an architecture for rootfs or surface for views. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider.
 
 See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
 
@@ -202,27 +202,35 @@ Importing the fat archive verifies and caches its content blobs. A subsequently 
 
 Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect blake3:...` exposes the ordered layers, child applications, required capability set, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older v3 archives without it are still inspected by deriving the same view.
 
-`holo load` resolves the primary layer by κ, compiles the Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Archives whose primary layer is a tensor or rootfs still return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
+`holo load` resolves the primary layer by κ, compiles a Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Python rootfs archives currently run only as direct local fat files. Tensors, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
 
-#### Python applications (planned)
+#### Python applications
 
-Python should be a compiler input, not a fifth `.holo` layer kind. A future source-manifest schema will turn a Python project plus its lock file into one of the existing executable payloads:
+Python is a compiler input, not a fifth `.holo` layer kind. Source-manifest schema v2 can now turn a locked Python project into an architecture-specific `rootfs` layer containing CPython, the application, dependencies, and required Linux libraries. The entrypoint contract is `module:function` where the function accepts and returns `bytes`.
 
-- `wasm` for a portable WebAssembly component containing pinned CPython, the application, and WASI-compatible dependencies; or
-- `rootfs` for an architecture-specific, microVM-isolated Python environment when the application needs ordinary native wheels, OS packages, or a broader POSIX surface.
+The repository includes a working NumPy + pandas project in `examples/python-numpy-pandas/`. A running Docker-compatible engine is required for this experimental compiler and direct executor:
 
-The intended workflow is:
-
-```bash
-hologram app init --template python       # proposed
-hologram compile --check hologram.json    # proposed
-hologram compile hologram.json -o app.holo
-hologram run app.holo --input request.json
+```console
+$ hologram compile --check examples/python-numpy-pandas/hologram.json
+$ hologram compile examples/python-numpy-pandas/hologram.json \
+    --output numpy-pandas.holo
+$ hologram --json run numpy-pandas.holo \
+    --input examples/python-numpy-pandas/request.json \
+    | jq -r '.outputs[0] | implode'
+{"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0}
 ```
 
-This is not implemented yet. Today `hologram compile` packages prebuilt layer files, and the runtime accepts only a core-Wasm module implementing guest contract v1; it does not provide WASI or the WebAssembly Component Model. The portable compiler must resolve dependencies for the declared target rather than reuse the host virtual environment, reject incompatible native wheels with actionable diagnostics, and pin the interpreter, toolchain, lock file, and dependency hashes for reproducible κ identity.
+Generate the same schema without hand-writing JSON:
 
-See the [Python applications design](https://hologram-technologies.github.io/hologram-live/docs/python-apps) for proposed schema-v2 manifests, both build pipelines, dependency rules, runtime contracts, reproducibility requirements, and delivery order.
+```bash
+hologram app init ./my-python-app \
+  --template python --profile rootfs \
+  --project . --entry my_package:main --lock uv.lock --arch arm64
+```
+
+Compilation stages only `pyproject.toml`, the declared `uv.lock`, and `src/`, then runs `uv sync --locked` in a clean Linux image. It does not read or copy the host `.venv`. Direct execution validates the archive and target architecture, disables networking, mounts the container filesystem read-only, drops Linux capabilities, enables `no-new-privileges`, and applies CPU, memory, PID, temporary-storage, input/output, and 30-second wall-clock limits.
+
+This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. Use a digest-pinned value for `source.base` when reproducible builds matter. Portable Python/WASI and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps) and [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md).
 
 ### Inference compatibility APIs
 
@@ -372,7 +380,7 @@ The default build does not yet provide:
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives execute resident, and the weightc engine can keep resident per-conversation sessions; token streaming and `tensor`/`rootfs` layer execution remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, resident rootfs execution, portable Python/WASI, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

@@ -12,3 +12,6 @@
 *.pid
 *.lock.tmp
 .env
+/examples/python-numpy-pandas/.venv/
+/examples/python-numpy-pandas/*.holo
+__pycache__/

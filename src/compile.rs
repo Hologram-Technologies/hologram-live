@@ -1,12 +1,13 @@
 use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
+use crate::holo_python::{self, PythonRootfsSource};
 use hologram::archive::HoloWriter;
 use hologram::space::{address_bytes, AppManifest, Layer, Realization};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const MANIFEST_SCHEMA_VERSION: u16 = 1;
+const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 2;
 
 /// Source manifest accepted by `hologram compile`.
 ///
@@ -29,7 +30,10 @@ pub struct CompileManifest {
 #[serde(deny_unknown_fields)]
 pub struct CompileLayer {
     pub kind: CompileLayerKind,
-    pub path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<CompileSource>,
     #[serde(default)]
     pub entry: Option<String>,
     #[serde(default)]
@@ -45,6 +49,12 @@ pub enum CompileLayerKind {
     Tensor,
     Rootfs,
     View,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "language", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum CompileSource {
+    Python(PythonRootfsSource),
 }
 
 pub struct CompiledHolo {
@@ -63,6 +73,32 @@ pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
     compile_manifest_with(path, HoloPackaging::Fat)
 }
 
+pub fn check_manifest(path: &Path) -> Result<CompileManifest> {
+    let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
+    let specification = parse_compile_manifest(path, &source)?;
+    validate_compile_manifest(&specification)?;
+    let root = path.parent().unwrap_or_else(|| Path::new("."));
+    let _ = read_relative(root, specification.requires.as_deref())?;
+    for layer in &specification.layers {
+        match (&layer.path, &layer.source) {
+            (Some(path), None) => {
+                let _ = read_required(root, path)?;
+            }
+            (None, Some(CompileSource::Python(source))) => {
+                let arch = required_field(layer, "arch", layer.arch.as_deref())?;
+                holo_python::check_source(root, source, arch)?;
+            }
+            _ => {
+                return Err(layer_config_error(
+                    layer,
+                    "exactly one of path or source is required",
+                ));
+            }
+        }
+    }
+    Ok(specification)
+}
+
 pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<CompiledHolo> {
     let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
     let specification = parse_compile_manifest(path, &source)?;
@@ -76,7 +112,7 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
 
     let mut layers = Vec::with_capacity(specification.layers.len());
     for source_layer in &specification.layers {
-        let content = read_required(root, &source_layer.path)?;
+        let content = compile_layer_content(root, source_layer)?;
         let kappa = address_bytes(&content);
         blobs.insert(kappa.as_bytes().to_vec(), content);
         layers.push(build_layer(source_layer, kappa)?);
@@ -130,14 +166,18 @@ pub fn parse_compile_manifest(path: &Path, source: &[u8]) -> Result<CompileManif
 }
 
 pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> {
-    if specification.schema_version != MANIFEST_SCHEMA_VERSION {
+    if !matches!(
+        specification.schema_version,
+        1 | CURRENT_MANIFEST_SCHEMA_VERSION
+    ) {
         return Err(LiveError::Config(format!(
-            "unsupported compile manifest schema {}; expected {MANIFEST_SCHEMA_VERSION}",
+            "unsupported compile manifest schema {}; expected 1 or {CURRENT_MANIFEST_SCHEMA_VERSION}",
             specification.schema_version
         )));
     }
     let mut layers = Vec::with_capacity(specification.layers.len());
     for source_layer in &specification.layers {
+        validate_layer_source(specification.schema_version, source_layer)?;
         layers.push(build_layer(source_layer, address_bytes(&[]))?);
     }
     let manifest = AppManifest {
@@ -159,7 +199,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             reject_aux(source, "surface", source.surface.as_deref())?;
             Ok(Layer::wasm(
                 kappa,
-                source.entry.as_deref().unwrap_or("_start"),
+                effective_entry(source).unwrap_or("_start"),
             ))
         }
         CompileLayerKind::Tensor => {
@@ -167,15 +207,20 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             reject_aux(source, "surface", source.surface.as_deref())?;
             Ok(Layer::tensor(
                 kappa,
-                source.entry.as_deref().unwrap_or("session"),
+                effective_entry(source).unwrap_or("session"),
             ))
         }
         CompileLayerKind::Rootfs => {
             reject_aux(source, "surface", source.surface.as_deref())?;
             let arch = required_field(source, "arch", source.arch.as_deref())?;
+            let arch = if matches!(source.source.as_ref(), Some(CompileSource::Python(_))) {
+                holo_python::canonical_arch(arch)?
+            } else {
+                arch
+            };
             Ok(Layer::rootfs(
                 kappa,
-                source.entry.as_deref().unwrap_or("boot"),
+                effective_entry(source).unwrap_or("boot"),
                 arch,
             ))
         }
@@ -202,6 +247,56 @@ fn read_required(root: &Path, path: &Path) -> Result<Vec<u8>> {
     std::fs::read(&resolved).map_err(|error| LiveError::io(&resolved, error))
 }
 
+fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<Vec<u8>> {
+    match (&layer.path, &layer.source) {
+        (Some(path), None) => read_required(root, path),
+        (None, Some(CompileSource::Python(source))) => {
+            let arch = required_field(layer, "arch", layer.arch.as_deref())?;
+            holo_python::compile(root, source, arch)
+        }
+        _ => Err(layer_config_error(
+            layer,
+            "exactly one of path or source is required",
+        )),
+    }
+}
+
+fn validate_layer_source(schema_version: u16, layer: &CompileLayer) -> Result<()> {
+    match (&layer.path, &layer.source) {
+        (Some(path), None) if !path.as_os_str().is_empty() => Ok(()),
+        (None, Some(_)) if schema_version == 1 => Err(layer_config_error(
+            layer,
+            "source recipes require schema_version 2",
+        )),
+        (None, Some(CompileSource::Python(source))) => {
+            if !matches!(layer.kind, CompileLayerKind::Rootfs) {
+                return Err(layer_config_error(
+                    layer,
+                    "Python rootfs sources require kind rootfs",
+                ));
+            }
+            if layer.entry.is_some() {
+                return Err(layer_config_error(
+                    layer,
+                    "Python source entry belongs inside source",
+                ));
+            }
+            holo_python::validate_source(source, layer.arch.as_deref())
+        }
+        _ => Err(layer_config_error(
+            layer,
+            "exactly one of path or source is required",
+        )),
+    }
+}
+
+fn effective_entry(layer: &CompileLayer) -> Option<&str> {
+    layer.entry.as_deref().or(match layer.source.as_ref() {
+        Some(CompileSource::Python(source)) => Some(source.entry.as_str()),
+        None => None,
+    })
+}
+
 fn required_field<'a>(
     layer: &CompileLayer,
     field: &str,
@@ -225,9 +320,19 @@ fn reject_aux(layer: &CompileLayer, field: &str, value: Option<&str>) -> Result<
 fn layer_config_error(layer: &CompileLayer, message: &str) -> LiveError {
     LiveError::Config(format!(
         "compile layer {} ({}): {message}",
-        layer.path.display(),
+        layer_name(layer),
         kind(layer)
     ))
+}
+
+fn layer_name(layer: &CompileLayer) -> String {
+    layer.path.as_ref().map_or_else(
+        || match layer.source.as_ref() {
+            Some(CompileSource::Python(source)) => source.project.display().to_string(),
+            None => "<missing>".to_owned(),
+        },
+        |path| path.display().to_string(),
+    )
 }
 
 const fn kind(layer: &CompileLayer) -> &'static str {
@@ -240,7 +345,7 @@ const fn kind(layer: &CompileLayer) -> &'static str {
 }
 
 const fn default_schema_version() -> u16 {
-    MANIFEST_SCHEMA_VERSION
+    1
 }
 
 #[cfg(test)]
@@ -312,5 +417,58 @@ mod tests {
         let inspection = inspect_bytes("thin", "hello.holo", &thin.bytes).expect("inspect thin");
         assert!(inspection.directory_embedded);
         assert!(inspection.directory.expect("directory").blobs.is_empty());
+    }
+
+    #[test]
+    fn schema_two_accepts_a_python_rootfs_source() {
+        let manifest: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 2,
+                "primary": 0,
+                "layers": [{
+                    "kind": "rootfs",
+                    "source": {
+                        "language": "python",
+                        "project": ".",
+                        "entry": "analytics:main",
+                        "lock": "uv.lock",
+                        "profile": "rootfs",
+                        "base": "python:3.12-slim"
+                    },
+                    "arch": "arm64"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        validate_compile_manifest(&manifest).expect("validate");
+        assert!(manifest.layers[0].path.is_none());
+        assert!(matches!(
+            manifest.layers[0].source,
+            Some(CompileSource::Python(_))
+        ));
+    }
+
+    #[test]
+    fn schema_one_rejects_source_recipes() {
+        let manifest: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "layers": [{
+                    "kind": "rootfs",
+                    "source": {
+                        "language": "python",
+                        "project": ".",
+                        "entry": "analytics:main",
+                        "lock": "uv.lock",
+                        "profile": "rootfs"
+                    },
+                    "arch": "arm64"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        let error = validate_compile_manifest(&manifest).expect_err("schema mismatch");
+        assert!(error.to_string().contains("schema_version 2"), "{error}");
     }
 }

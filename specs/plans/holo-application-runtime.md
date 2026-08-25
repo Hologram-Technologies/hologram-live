@@ -256,14 +256,14 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Python source compilation
 
-- [ ] Add source-manifest schema v2 with a typed source recipe while retaining schema-v1 prebuilt `path` compatibility.
-- [ ] Add `hologram app init --template python` prompts and equivalent non-interactive flags for project, entrypoint, lock file, and execution profile.
+- [x] Add source-manifest schema v2 with a typed source recipe while retaining schema-v1 prebuilt `path` compatibility.
+- [x] Add `hologram app init --template python` and non-interactive flags for project, entrypoint, lock file, and execution profile. Interactive Python-specific prompting remains a UX follow-up.
 - [ ] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
-- [ ] Require a lock file and resolve dependencies for the declared target in an isolated build root.
+- [x] Require `uv.lock` and resolve it for the declared Linux target in a clean OCI build root for the experimental rootfs provider.
 - [ ] Pin and record the Python runtime, component toolchain, target ABI, dependency artifacts, and hashes.
-- [ ] Exclude host virtual environments, VCS metadata, caches, credentials, absolute paths, and undeclared files by default.
+- [x] Stage only `pyproject.toml`, the declared lock file, `src/`, and the generated launcher for the experimental rootfs provider; reject absolute/escaping paths and symlinks.
 - [ ] Diagnose native dependencies that lack a compatible WASI build and recommend the explicit rootfs profile.
-- [ ] Add a `rootfs` Python profile using a digest-pinned base image and target architecture only after the microVM provider is ready.
+- [ ] Promote the experimental `rootfs` Python profile to supported status only after digest pinning, reproducibility, and the microVM provider are ready. The current direct OCI provider is demo-only.
 - [ ] Normalize file order, paths, permissions, timestamps, generated bindings, and source epoch for reproducible layer κ values.
 - [ ] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
 - [ ] Keep fat/thin archive packaging independent from source-language compilation.
@@ -279,7 +279,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Compiler UX
 
-- [ ] Add `hologram compile --check hologram.json` to validate and print the intended application plan without writing an archive.
+- [x] Add `hologram compile --check hologram.json` to validate the manifest and source paths without writing an archive. Printing the complete application plan remains a follow-up.
 - [ ] Report canonical application κ, physical archive κ, footer fingerprint, packaging profile, layers, and embedded-byte totals.
 - [ ] Add human-readable and JSON diagnostics with stable error codes.
 - [ ] Integrate M0’s generator with the compiler parser rather than maintaining a second schema model.

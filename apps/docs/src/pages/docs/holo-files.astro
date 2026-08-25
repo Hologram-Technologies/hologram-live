@@ -74,7 +74,7 @@ import { sitePath } from '../../lib/site';
     <tbody>
       <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and entrypoint; portable.</td><td>Executes in-process when it is the single primary layer.</td></tr>
       <tr><td><code>tensor</code></td><td><code>TensorPlan</code></td><td>Content κ and session entrypoint; no app exit code.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
-      <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
+      <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Directly executes experimental Python OCI bundles; other providers remain explicit.</td></tr>
       <tr><td><code>view</code></td><td><code>View</code></td><td>Content κ and target surface; no app exit code.</td><td>Packages and inspects; the desktop does not attach it yet.</td></tr>
     </tbody>
   </table></div>
@@ -82,7 +82,7 @@ import { sitePath } from '../../lib/site';
 
   <h3>Source languages do not add layer kinds</h3>
   <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
-  <p>This keeps <code>.holo</code> v3 stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python applications design</a> for the proposed dependency-aware compiler and runtime profiles.</p>
+  <p>This keeps <code>.holo</code> v3 stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-aware rootfs compiler and the planned portable profile.</p>
 
   <h2>Queryable application directory</h2>
   <p>New Hologram Live archives carry the extension <code>https://hologram.foundation/extension/application-directory/v1</code>. Its deterministic JSON is a normalized projection of the manifest and physical packaging:</p>
@@ -123,7 +123,7 @@ import { sitePath } from '../../lib/site';
 
   <h2>Build, inspect, and run</h2>
   <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
-  <div class="note"><strong>Schema v1 accepts prebuilt payloads</strong>The current compiler reads <code>path</code> for each layer and does not compile Python projects or resolve language dependencies. The proposed Python workflow uses a future source-manifest schema while preserving the same canonical v3 layer model.</div>
+  <div class="note"><strong>Two source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Both produce the same canonical v3 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,

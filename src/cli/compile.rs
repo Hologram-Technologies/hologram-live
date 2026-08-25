@@ -1,6 +1,6 @@
 use super::{helpers, Cli};
 use clap::Args;
-use hologram_live::compile::{compile_manifest_with, HoloPackaging};
+use hologram_live::compile::{check_manifest, compile_manifest_with, HoloPackaging};
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::inspect_bytes;
 use serde::Serialize;
@@ -16,6 +16,9 @@ pub struct CompileArgs {
     /// Emit a manifest-only archive whose layer payloads resolve by kappa.
     #[arg(long)]
     pub thin: bool,
+    /// Validate the manifest and its source inputs without writing an archive.
+    #[arg(long)]
+    pub check: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -27,7 +30,35 @@ struct CompileReport {
     packaging: &'static str,
 }
 
+#[derive(Debug, Serialize)]
+struct CheckReport {
+    manifest: PathBuf,
+    layer_count: usize,
+    schema_version: u16,
+    valid: bool,
+}
+
 pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
+    if args.check {
+        if args.output.is_some() || args.thin {
+            return Err(LiveError::Config(
+                "compile --check cannot be combined with --output or --thin".to_owned(),
+            ));
+        }
+        let manifest = args.manifest.clone();
+        let checked = tokio::task::spawn_blocking(move || check_manifest(&manifest))
+            .await
+            .map_err(|error| LiveError::Conflict(format!("check task failed: {error}")))??;
+        return helpers::print(
+            &cli,
+            &CheckReport {
+                manifest: args.manifest,
+                layer_count: checked.layers.len(),
+                schema_version: checked.schema_version,
+                valid: true,
+            },
+        );
+    }
     let manifest = args.manifest.clone();
     let packaging = if args.thin {
         HoloPackaging::Thin

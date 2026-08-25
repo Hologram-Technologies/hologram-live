@@ -1,0 +1,13 @@
+[project]
+name = "numpy-pandas-holo"
+version = "0.1.0"
+description = "NumPy and pandas .holo execution example"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy",
+  "pandas",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

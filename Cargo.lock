@@ -1230,6 +1230,7 @@ dependencies = [
  "uor-hologram",
  "utoipa",
  "wasmtime",
+ "zstd",
 ]
 
 [[package]]

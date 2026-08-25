@@ -1,6 +1,7 @@
 use crate::actor::ActorSystem;
 use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
+use crate::holo_python;
 use crate::holo_wasm::{self, ResidentHoloActor, Run};
 use crate::protocol::{HoloInspection, HoloRunResult, HoloSection, ResidentHolo};
 use crate::store::ObjectStore;
@@ -24,8 +25,9 @@ const HOLO_MEDIA_TYPE: &str = "application/vnd.hologram.holo";
 /// currently compiles AVX-512 intrinsics that require unstable Rust APIs; Live
 /// refuses to hide that behind `RUSTC_BOOTSTRAP`. Execution of primary wasm
 /// layers runs in-process through wasmtime instead (see [`HoloRuntime`] and
-/// `crate::holo_wasm`); tensor and rootfs layers remain explicit capability
-/// seams until the upstream stable-toolchain issue is fixed.
+/// `crate::holo_wasm`). Python OCI payloads in a rootfs layer have an
+/// experimental direct provider; other tensor and rootfs layers remain
+/// explicit capability seams.
 pub struct HoloCatalog {
     store: Arc<ObjectStore>,
 }
@@ -198,9 +200,10 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
 
 /// In-process execution provider for `.holo` archives.
 ///
-/// v1 executes archives containing exactly one primary wasm layer
-/// (see `crate::holo_wasm` for the guest contract); tensor, rootfs, and view
-/// layers remain typed `LIVE_CAPABILITY_MISSING` seams. Loading a kappa
+/// Resident v1 execution supports exactly one primary wasm layer (see
+/// `crate::holo_wasm` for the guest contract). Python OCI rootfs payloads are
+/// currently direct-only; tensor, other rootfs, and view layers remain typed
+/// `LIVE_CAPABILITY_MISSING` seams. Loading a kappa
 /// spawns a resident `ResidentHoloActor` under the runtime's own supervision
 /// root; `run` messages it, `unload` stops it.
 ///
@@ -357,15 +360,34 @@ impl HoloExecutor {
     pub fn execute(&self, bytes: &[u8], inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
         let kappa = format!("blake3:{}", blake3::hash(bytes));
         inspect_bytes(&kappa, "local.holo", bytes)?;
-        let wasm = extract_primary_wasm(&kappa, bytes, |_| Ok(None))?;
-        let resident_bytes = wasm.len();
-        let outcome = holo_wasm::execute(&self.engine, &kappa, &wasm, &inputs)?;
-        Ok(HoloRunResult {
-            kappa,
-            outputs: outcome.outputs,
-            elapsed_micros: outcome.elapsed_micros,
-            resident_bytes,
-        })
+        let layer = extract_primary_layer(&kappa, bytes, |_| Ok(None))?;
+        match layer.kind {
+            LayerKind::WasmCodemodule => {
+                let resident_bytes = layer.content.len();
+                let outcome = holo_wasm::execute(&self.engine, &kappa, &layer.content, &inputs)?;
+                Ok(HoloRunResult {
+                    kappa,
+                    outputs: outcome.outputs,
+                    elapsed_micros: outcome.elapsed_micros,
+                    resident_bytes,
+                })
+            }
+            LayerKind::RootfsImage if holo_python::is_python_rootfs(&layer.content) => {
+                let outcome =
+                    holo_python::execute(&layer.content, &layer.entry, &layer.aux, &inputs)?;
+                Ok(HoloRunResult {
+                    kappa,
+                    outputs: outcome.outputs,
+                    elapsed_micros: outcome.elapsed_micros,
+                    resident_bytes: outcome.resident_bytes,
+                })
+            }
+            kind => Err(LiveError::Capability(format!(
+                "direct execution for {kappa} has no provider for {} layer entry {}",
+                layer_kind_name(kind),
+                layer.entry
+            ))),
+        }
     }
 }
 
@@ -382,6 +404,27 @@ fn extract_primary_wasm<F>(kappa: &str, bytes: &[u8], resolve: F) -> Result<Vec<
 where
     F: FnOnce(&str) -> Result<Option<Vec<u8>>>,
 {
+    let layer = extract_primary_layer(kappa, bytes, resolve)?;
+    if layer.kind != LayerKind::WasmCodemodule {
+        return Err(LiveError::Capability(format!(
+            "holo.load for {kappa} supports resident wasm layers only; primary layer is {}",
+            layer_kind_name(layer.kind)
+        )));
+    }
+    Ok(layer.content)
+}
+
+struct ResolvedPrimaryLayer {
+    kind: LayerKind,
+    entry: String,
+    aux: String,
+    content: Vec<u8>,
+}
+
+fn extract_primary_layer<F>(kappa: &str, bytes: &[u8], resolve: F) -> Result<ResolvedPrimaryLayer>
+where
+    F: FnOnce(&str) -> Result<Option<Vec<u8>>>,
+{
     let loader =
         HoloLoader::from_bytes(bytes).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     let plan = loader
@@ -389,42 +432,41 @@ where
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     let manifest_bytes = plan.app_manifest().ok_or_else(|| {
         LiveError::Capability(format!(
-            "holo.load for {kappa} requires an application manifest with a primary wasm layer"
+            "execution for {kappa} requires an application manifest with a primary layer"
         ))
     })?;
     let manifest = AppManifest::decode(manifest_bytes).map_err(|error| {
         LiveError::InvalidHolo(format!("decode application manifest of {kappa}: {error:?}"))
     })?;
-    let unsupported: Vec<&'static str> = manifest
-        .layers
-        .iter()
-        .filter(|layer| layer.kind != LayerKind::WasmCodemodule)
-        .map(|layer| layer_kind_name(layer.kind))
-        .collect();
-    if !unsupported.is_empty() {
-        return Err(LiveError::Capability(format!(
-            "holo.load for {kappa} supports wasm layers only; the archive contains unsupported \
-             layer kinds: {}",
-            unsupported.join(", ")
-        )));
-    }
     if manifest.layers.len() != 1 {
         return Err(LiveError::Capability(format!(
-            "holo.load for {kappa} requires exactly one wasm layer; the archive declares {} layers",
+            "execution for {kappa} requires exactly one layer; the archive declares {} layers",
             manifest.layers.len()
         )));
     }
     if manifest.primary != Some(0) {
+        let kinds = manifest
+            .layers
+            .iter()
+            .map(|layer| layer_kind_name(layer.kind))
+            .collect::<Vec<_>>()
+            .join(", ");
         return Err(LiveError::Capability(format!(
-            "holo.load for {kappa} requires the wasm layer to be the archive's primary layer"
+            "execution for {kappa} requires layer zero to be the archive's primary layer; declared layer kinds: {kinds}"
         )));
     }
-    let content = manifest.layers[0].content;
+    let primary = &manifest.layers[0];
+    let content = primary.content;
     let blobs = plan
         .content_blobs()
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     if let Some((_, blob)) = blobs.iter().find(|(label, _)| *label == content.as_bytes()) {
-        return Ok(blob.to_vec());
+        return Ok(ResolvedPrimaryLayer {
+            kind: primary.kind,
+            entry: primary.entry.clone(),
+            aux: primary.aux.clone(),
+            content: blob.to_vec(),
+        });
     }
     let content_kappa = std::str::from_utf8(content.as_bytes()).map_err(|_| {
         LiveError::InvalidHolo(format!(
@@ -441,7 +483,12 @@ where
             "resolved primary layer content {content_kappa} does not match its kappa"
         )));
     }
-    Ok(blob)
+    Ok(ResolvedPrimaryLayer {
+        kind: primary.kind,
+        entry: primary.entry.clone(),
+        aux: primary.aux.clone(),
+        content: blob,
+    })
 }
 
 const fn layer_kind_name(kind: LayerKind) -> &'static str {

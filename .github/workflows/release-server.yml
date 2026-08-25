@@ -18,8 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: ./scripts/check-release-tag.sh server "$GITHUB_REF_NAME"
-      - uses: dtolnay/rust-toolchain@1.88.0
-      - run: cargo test --all-targets --locked
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - run: ./scripts/check-product-boundaries.sh
+      - run: cargo test --workspace --all-targets --locked
 
   build:
     needs: verify
@@ -50,11 +51,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: ${{ matrix.target }}
       - name: Build standalone server
-        run: cargo build --release --locked --bin hologram --target ${{ matrix.target }}
+        run: cargo build --release --locked --package hologram-live --bin hologram --target ${{ matrix.target }}
       - name: Package Unix binary
         if: matrix.archive == 'tar'
         shell: bash

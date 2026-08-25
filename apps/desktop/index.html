@@ -10,17 +10,17 @@
   <body>
     <div class="app-shell">
       <div class="titlebar" data-tauri-drag-region>
-        <div class="titlebar-lead" aria-hidden="true"></div>
+        <div class="titlebar-lead" data-tauri-drag-region aria-hidden="true"></div>
         <div class="titlebar-title" data-tauri-drag-region>
-          <span class="state-dot unknown" aria-hidden="true"></span>
-          <span>Hologram Live</span>
+          <span class="state-dot unknown" data-tauri-drag-region aria-hidden="true"></span>
+          <span data-tauri-drag-region>Hologram Live</span>
         </div>
-        <div class="titlebar-actions">
-          <span id="role-pill" class="title-pill">
-            <span class="state-dot unknown" aria-hidden="true"></span>
-            <span id="role-text">checking</span>
+        <div class="titlebar-actions" data-tauri-drag-region>
+          <span id="role-pill" class="title-pill" data-tauri-drag-region>
+            <span class="state-dot unknown" data-tauri-drag-region aria-hidden="true"></span>
+            <span id="role-text" data-tauri-drag-region>checking</span>
           </span>
-          <span id="api-pill" class="title-pill quiet-pill">API —</span>
+          <span id="api-pill" class="title-pill quiet-pill" data-tauri-drag-region>API —</span>
         </div>
       </div>
 
@@ -54,6 +54,12 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
               </span>
               <span class="nav-label">Files</span><span id="nav-object-count" class="nav-count">—</span>
+            </button>
+            <button class="nav-item" data-view="holo">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5z"/><path d="M3 7v10l9 5 9-5V7"/><path d="M12 12v10"/></svg>
+              </span>
+              <span class="nav-label">Applications</span><span id="nav-holo-count" class="nav-count">—</span>
             </button>
             <button class="nav-item" data-view="modules">
               <span class="nav-icon" aria-hidden="true">
@@ -222,6 +228,52 @@
                 <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
                 <div class="loading-row" aria-hidden="true"><span></span><span></span></div>
               </div>
+            </section>
+
+            <section class="view" data-page="holo" hidden aria-labelledby="holo-heading">
+              <header class="page-header">
+                <div>
+                  <h1 id="holo-heading">Applications</h1>
+                  <p class="page-meta">Watch source directories, compile them, and inspect real .holo archives</p>
+                </div>
+                <div class="actions">
+                  <button id="add-holo-directory" class="primary command-button" data-when="ready">Add directory</button>
+                  <button id="refresh-holo" class="secondary command-button" data-when="ready">Refresh</button>
+                </div>
+              </header>
+
+              <section class="holo-section" aria-labelledby="watched-projects-heading">
+                <div class="console-section-head">
+                  <div>
+                    <h2 id="watched-projects-heading">Watched projects</h2>
+                    <p>Changes to a project’s <code>hologram.json</code> or referenced files trigger a new build.</p>
+                  </div>
+                </div>
+                <div id="holo-watches" class="holo-watch-list">
+                  <div class="loading-row" aria-label="Loading watched projects"><span></span><span></span></div>
+                </div>
+              </section>
+
+              <section class="holo-section" aria-labelledby="holo-archives-heading">
+                <div class="console-section-head">
+                  <div>
+                    <h2 id="holo-archives-heading">.holo archives</h2>
+                    <p>Verified applications currently stored in the local Hologram catalog.</p>
+                  </div>
+                </div>
+                <div class="holo-browser">
+                  <div id="holo-archives" class="holo-archive-list">
+                    <div class="loading-row" aria-label="Loading applications"><span></span><span></span></div>
+                  </div>
+                  <aside id="holo-inspector" class="holo-inspector" aria-live="polite">
+                    <div class="holo-inspector-empty">
+                      <span class="empty-symbol" aria-hidden="true">◇</span>
+                      <strong>Select an application</strong>
+                      <p>Inspect its verified identities, layers, capabilities, sections, and embedded blobs.</p>
+                    </div>
+                  </aside>
+                </div>
+              </section>
             </section>
 
             <section class="view" data-page="modules" hidden aria-labelledby="modules-heading">

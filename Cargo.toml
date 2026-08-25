@@ -2,12 +2,16 @@
 name = "hologram-live"
 version = "1.0.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.94"
 license = "MIT OR Apache-2.0"
 description = "Extensible local and remote module host for Hologram"
 repository = "https://github.com/Hologram-Technologies/hologram-live"
 default-run = "hologram"
 publish = false
+
+[workspace]
+members = ["crates/hologram-application-watch"]
+resolver = "2"
 
 [lib]
 name = "hologram_live"

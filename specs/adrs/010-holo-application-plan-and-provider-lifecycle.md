@@ -118,6 +118,32 @@ Provider-owned resident handles remain opaque and are stored by the runtime.
 Shared status reports expose lifecycle state, resident bytes, and typed failure
 details. Existing bounded mailboxes and backpressure remain mandatory.
 
+### Capability admission amendment (M2)
+
+`AppManifest.requires` is an application-controlled request. Planning must
+resolve it, prove its κ, require canonical upstream `CapabilitySet` bytes, and
+decode it into typed requested capabilities; it must never promote those bytes
+into authority. Execution constructs a separate `EffectiveGrant` from trusted
+host context and applies upstream `Capabilities::admits` after complete
+non-child resolution but before any provider `prepare` call. Providers receive
+only that effective grant.
+
+Ordinary direct and local-service execution use the canonical empty local
+baseline, which grants no storage roots, channels, or network flags. A direct
+local file may opt into a source-schema grant through the explicit
+`--development-grant` flag. A resident runtime may use
+`holo.development_grant` from host configuration only while listening on
+loopback. Catalog and remote run requests carry no grant field and cannot
+self-assert authority. Child grants remain unavailable until recursive M2
+planning can prove their attenuation from the admitted parent grant.
+
+Denial returns `LIVE_AUTHORIZATION_DENIED` with application, request, and grant
+identities plus aggregate non-secret capability facts. Allow/deny traces use
+the same identities and trusted-source label. Successful raw run results expose
+the request κ, effective-grant κ, grant source, and allow outcome additively in
+JSON and Protobuf/gRPC; capability source documents and secret values are never
+included.
+
 ## Consequences
 
 - Fat and thin archives can be correlated by `application_kappa` without
@@ -129,6 +155,8 @@ details. Existing bounded mailboxes and backpressure remain mandatory.
   before additional providers are enabled.
 - Child applications remain explicit blockers in M1 and become executable only
   after M2 defines grants, attenuation, recursion, and exit propagation.
+- An archive cannot grant authority to itself, and remote callers cannot opt
+  into the local development escape hatch.
 - The async, `Send` provider contract may require actor adapters for
   thread-affine desktop or platform engines, but keeps the runtime boundary
   deterministic and portable.

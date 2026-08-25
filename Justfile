@@ -9,15 +9,15 @@ fmt:
 
 # Check code
 check:
-    cargo check --all-targets --locked
+    cargo check --workspace --all-targets --locked
 
 # Run workspace tests
 test:
-    cargo test --all-targets --locked
+    cargo test --workspace --all-targets --locked
 
 # Run public-boundary Gherkin scenarios.
 bdd:
-    cargo test --features bdd --test bdd --locked
+    cargo test --package hologram-live --features bdd --test bdd --locked
 
 # Compile and execute the locked NumPy + pandas example in a .holo archive.
 python-holo-demo:
@@ -31,13 +31,17 @@ python-holo-package output="target/numpy-pandas.holo":
 file-size:
     ./scripts/check-file-size.sh
 
+# Keep the standalone server dependency graph free of desktop code.
+product-boundary:
+    ./scripts/check-product-boundaries.sh
+
 # Run clippy
 clippy:
-    cargo clippy --all-targets --locked -- -D warnings
+    cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # Build the standalone server binary.
 server-build:
-    cargo build --release --locked
+    cargo build --release --locked --package hologram-live --bin hologram
 
 # Build the Tauri desktop application and its bundled server sidecar.
 desktop-build:
@@ -47,17 +51,17 @@ desktop-build:
 build: server-build
 
 # Verify code
-verify: fmt file-size check test clippy bdd build
+verify: fmt file-size product-boundary check test clippy bdd build
     ./scripts/smoke.sh ./target/release/hologram
 
 # Run project
 run *args:
-    cargo run --locked --bin hologram -- {{args}}
+    cargo run --locked --package hologram-live --bin hologram -- {{args}}
 
 # Recompile and restart the foreground daemon when Rust/server inputs change.
 dev:
     @command -v cargo-watch >/dev/null || { echo "error: just dev requires cargo-watch (cargo install cargo-watch --locked)" >&2; exit 1; }
-    cargo watch --clear --watch src --watch proto --watch build.rs --watch Cargo.toml --watch Cargo.lock --exec 'run --locked --bin hologram -- serve'
+    cargo watch --clear --watch src --watch proto --watch build.rs --watch Cargo.toml --watch Cargo.lock --exec 'run --locked --package hologram-live --bin hologram -- serve'
 
 # Build the docs
 docs:

@@ -40,7 +40,7 @@ cleanup() {
 trap cleanup EXIT
 
 docker version --format '{{.Server.Version}}' >/dev/null
-cargo build --release --locked --bin hologram --manifest-path "$repo_root/Cargo.toml"
+cargo build --release --locked --package hologram-live --bin hologram --manifest-path "$repo_root/Cargo.toml"
 
 binary="$repo_root/target/release/hologram"
 manifest="$repo_root/examples/python-numpy-pandas/hologram.json"

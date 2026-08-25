@@ -35,7 +35,7 @@ jobs:
           node-version: lts/*
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.97.1
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: |

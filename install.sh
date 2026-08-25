@@ -12,7 +12,7 @@ if ! command -v "$CARGO_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
-"$CARGO_BIN" build --manifest-path "$ROOT/Cargo.toml" --release --locked
+"$CARGO_BIN" build --manifest-path "$ROOT/Cargo.toml" --release --locked --package hologram-live --bin hologram
 mkdir -p "$PREFIX/bin"
 if command -v install >/dev/null 2>&1; then
   install -m 0755 "$ROOT/target/release/hologram" "$DEST"

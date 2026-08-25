@@ -167,9 +167,13 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 ### Runtime grants
 
 - [ ] Define where effective grants come from for direct local execution, local service execution, remote execution, and child applications.
-- [ ] Fail before provider preparation unless the effective grant admits the application’s `requires` set.
-- [ ] Pass only the effective grant—not the untrusted request—to providers and host interfaces.
-- [ ] Add an explicit local-development grant mode without making it the production default.
+  - [x] Direct local execution uses the deny-by-default baseline or an explicit trusted `--development-grant` file.
+  - [x] Local service execution uses the baseline or loopback-only `holo.development_grant` host configuration.
+  - [x] Remote callers cannot attach self-asserted grants; absent trusted remote authority remains denied.
+  - [ ] Child execution receives only an admitted attenuation of the parent grant.
+- [x] Fail before provider preparation unless the effective grant admits the application’s `requires` set.
+- [x] Pass only the effective grant—not the untrusted request—to providers and host interfaces.
+- [x] Add an explicit local-development grant mode without making it the production default.
 - [ ] Include capability decisions in structured audit records without leaking secrets.
 
 ### Child applications
@@ -183,11 +187,11 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### M2 acceptance criteria
 
-- [ ] Insufficient grants fail with `LIVE_AUTHORIZATION_DENIED` before any provider starts.
-- [ ] Sufficient grants produce the same plan and behavior as the previous Wasm fixture.
+- [x] Insufficient grants fail with `LIVE_AUTHORIZATION_DENIED` before any provider starts.
+- [x] Sufficient grants produce the same plan and behavior as the previous Wasm fixture.
 - [ ] Child attenuation succeeds; attempted amplification fails deterministically.
 - [ ] Capability checks are covered by unit, BDD, audit, and native API tests.
-- [ ] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
+- [x] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
 
 ## M3 — Real multi-layer providers
 
@@ -265,6 +269,63 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] Provider availability appears in `holo plan`, module capabilities, health, and documentation.
 
 ## M4 — Compiler completion
+
+### Desktop development loop and watched projects
+
+- [x] Let Hologram Desktop add a local application directory containing
+  `hologram.json` without granting the service ambient filesystem access.
+- [x] Watch the selected directory recursively, debounce relevant changes, and
+  compile a fat `.holo` archive outside the source tree.
+- [x] Import each successful build through the existing catalog boundary so
+  `holo list` and `holo inspect` remain the source of truth for the frontend.
+- [x] Replace the watched project's prior catalog variant after a changed build
+  while preserving content-addressed identity when the output is unchanged.
+- [x] Persist watched directory registrations across desktop restarts and show
+  compiling, ready, and failed states with actionable diagnostics.
+- [x] Add an Applications view that lists real cataloged `.holo` archives and
+  renders their verified inspection metadata, directory, layers, and sections.
+- [x] Keep watched-project path authorization local to the desktop adapter;
+  remote authorities and archive contents cannot request arbitrary host
+  directories. Keep reusable registration, persistence, filtering, debounce,
+  and build-state orchestration in a Tauri-independent workspace crate outside
+  `src-tauri`.
+
+Watched-project acceptance:
+
+- [x] Adding the Wasm fixture directory creates a cataloged `.holo` visible in
+  the desktop Applications list.
+- [x] Editing a referenced source file rebuilds and refreshes the inspected
+  archive without writing generated output into the watched directory.
+- [x] A compile failure leaves the last successful archive inspectable and
+  reports the new failure on the watched project.
+- [x] Removing a watch stops future builds without silently deleting the last
+  immutable cataloged archive.
+
+Watched-project evidence (2026-08-25): the packaged desktop application added
+the Wasm fixture through the native picker, showed the resulting verified v4
+archive from the catalog, and inspected its three identities, capabilities,
+logical layer, physical sections, and embedded blobs. A temporary source edit
+changed the archive κ after the debounce; an invalid manifest reported Failed
+while retaining that last good κ; restoring valid source recovered Ready; and
+a source edit after removing the watch did not rebuild or delete the final
+archive. The implementation persists registrations in the Tauri application
+configuration, stores generated archives in its cache, ignores dependency/build
+trees, and exposes only fixed compile/import/list/inspect commands. Five watch
+engine tests and the desktop adapter test, Clippy with warnings denied,
+production frontend and packaged Tauri builds, the Astro site build, and the
+complete repository verification pass.
+
+Architecture follow-up (2026-08-25): the watcher engine moved to
+`crates/hologram-application-watch`; the Tauri file now only resolves desktop
+configuration/cache paths, invokes fixed sidecar commands, and emits UI events.
+The extracted engine has five focused tests, including a complete debounced
+register/build/persist/remove cycle. Server builds and releases explicitly
+select the root `hologram-live` package and `hologram` binary, preserving a
+Tauri- and Node-independent cloud deployment boundary. The server manifest now
+declares Rust 1.94, the actual floor imposed by Wasmtime 46, and release jobs
+install the repository's pinned Rust 1.97.1 toolchain consistently. A permanent
+product-boundary gate inspects the resolved server graph and rejects Tauri or
+application-watch dependencies.
 
 ### Source transformations
 

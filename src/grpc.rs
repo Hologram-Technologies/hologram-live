@@ -963,6 +963,10 @@ impl From<HoloRunResult> for pb::HoloRunResult {
             outputs: value.outputs,
             elapsed_micros: value.elapsed_micros,
             resident_bytes: value.resident_bytes.try_into().unwrap_or(u64::MAX),
+            requested_capabilities_kappa: value.requested_capabilities_kappa,
+            effective_grant_kappa: value.effective_grant_kappa,
+            grant_source: value.grant_source,
+            authorization: value.authorization,
         }
     }
 }
@@ -976,6 +980,10 @@ impl TryFrom<pb::HoloRunResult> for HoloRunResult {
             outputs: value.outputs,
             elapsed_micros: value.elapsed_micros,
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
+            requested_capabilities_kappa: value.requested_capabilities_kappa,
+            effective_grant_kappa: value.effective_grant_kappa,
+            grant_source: value.grant_source,
+            authorization: value.authorization,
         })
     }
 }
@@ -1330,5 +1338,38 @@ mod tests {
         })
         .expect("decode legacy resident");
         assert_eq!(legacy.state, "unknown");
+    }
+
+    #[test]
+    fn holo_run_authorization_metadata_round_trips_and_defaults_for_older_peers() {
+        let result = HoloRunResult {
+            kappa: "blake3:archive".to_owned(),
+            outputs: vec![b"ok".to_vec()],
+            elapsed_micros: 7,
+            resident_bytes: 42,
+            requested_capabilities_kappa: "blake3:request".to_owned(),
+            effective_grant_kappa: "blake3:grant".to_owned(),
+            grant_source: "local_baseline".to_owned(),
+            authorization: "allowed".to_owned(),
+        };
+        let decoded = HoloRunResult::try_from(pb::HoloRunResult::from(result)).expect("decode");
+        assert_eq!(decoded.requested_capabilities_kappa, "blake3:request");
+        assert_eq!(decoded.effective_grant_kappa, "blake3:grant");
+        assert_eq!(decoded.grant_source, "local_baseline");
+        assert_eq!(decoded.authorization, "allowed");
+
+        let legacy = HoloRunResult::try_from(pb::HoloRunResult {
+            kappa: "blake3:legacy".to_owned(),
+            outputs: Vec::new(),
+            elapsed_micros: 0,
+            resident_bytes: 0,
+            requested_capabilities_kappa: String::new(),
+            effective_grant_kappa: String::new(),
+            grant_source: String::new(),
+            authorization: String::new(),
+        })
+        .expect("decode legacy result");
+        assert!(legacy.authorization.is_empty());
+        assert!(legacy.grant_source.is_empty());
     }
 }

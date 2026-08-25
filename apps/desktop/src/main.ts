@@ -6,7 +6,7 @@ import "./styles.css";
 type Action = "service_start" | "service_stop" | "service_restart";
 type ServiceState = "ready" | "stopped" | "unknown";
 type Theme = "light" | "dark";
-type View = "console" | "chat" | "files" | "modules";
+type View = "console" | "chat" | "files" | "holo" | "modules";
 
 type HealthInfo = {
   status: string;
@@ -42,6 +42,50 @@ type ObjectMetadata = {
   created_at_millis: number;
 };
 
+type WatchedHoloProject = {
+  id: string;
+  name: string;
+  directory: string;
+  manifest: string;
+  status: "watching" | "compiling" | "ready" | "failed";
+  archive_kappa?: string;
+  archive_name?: string;
+  last_compiled_at_millis?: number;
+  error?: string;
+};
+
+type HoloLayer = {
+  position: number;
+  kind: string;
+  content_kappa: string;
+  entry: string;
+  architecture: string | null;
+  surface: string | null;
+  engine: string | null;
+};
+
+type HoloDirectory = {
+  schema_version: number;
+  primary_layer: number | null;
+  requires_kappa: string;
+  layers: HoloLayer[];
+  children: unknown[];
+  blobs: { kappa: string; byte_length: number }[];
+};
+
+type HoloInspection = {
+  kappa: string;
+  application_kappa?: string;
+  name: string;
+  format_version: number;
+  byte_length: number;
+  archive_fingerprint: string;
+  footer_verified: boolean;
+  sections: { kind: string; offset: number; length: number }[];
+  directory: HoloDirectory | null;
+  directory_embedded: boolean;
+};
+
 type ConversationMessage = {
   role: string;
   content: string;
@@ -62,6 +106,7 @@ const modules = document.querySelector<HTMLDivElement>("#modules")!;
 const objects = document.querySelector<HTMLDivElement>("#objects")!;
 const navModuleCount = document.querySelector<HTMLElement>("#nav-module-count")!;
 const navObjectCount = document.querySelector<HTMLElement>("#nav-object-count")!;
+const navHoloCount = document.querySelector<HTMLElement>("#nav-holo-count")!;
 const navThreadCount = document.querySelector<HTMLElement>("#nav-thread-count")!;
 const content = document.querySelector<HTMLElement>(".content")!;
 const threads = document.querySelector<HTMLDivElement>("#threads")!;
@@ -93,6 +138,9 @@ const sidebarCollapse = document.querySelector<HTMLButtonElement>("#sidebar-coll
 const themeToggle = document.querySelector<HTMLButtonElement>("#theme-toggle")!;
 const themeIcon = document.querySelector<HTMLElement>("#theme-icon")!;
 const themeLabel = document.querySelector<HTMLElement>("#theme-label")!;
+const holoWatches = document.querySelector<HTMLDivElement>("#holo-watches")!;
+const holoArchives = document.querySelector<HTMLDivElement>("#holo-archives")!;
+const holoInspector = document.querySelector<HTMLElement>("#holo-inspector")!;
 let currentState: ServiceState = "unknown";
 let health: HealthInfo | null = null;
 let apiAddress: string | null = null;
@@ -103,6 +151,9 @@ let conversations: Conversation[] = [];
 let activeThreadId: string | null = null;
 let chatBusy = false;
 let archiveExpanded = false;
+let catalogedHolos: HoloInspection[] = [];
+let watchedHoloProjects: WatchedHoloProject[] = [];
+let activeHoloKappa: string | null = null;
 
 function storedTheme(): Theme | null {
   try {
@@ -226,7 +277,7 @@ async function refresh() {
       health = null;
     }
     setState("ready");
-    const results = await Promise.all([refreshModules(), refreshObjects(), refreshChatThreads(true)]);
+    const results = await Promise.all([refreshModules(), refreshObjects(), refreshHoloWorkspace(), refreshChatThreads(true)]);
     showNotice(results.every(Boolean) ? "Everything is up to date." : "Some items couldn’t be loaded.", results.every(Boolean) ? "success" : "error");
   } catch {
     health = null;
@@ -234,7 +285,70 @@ async function refresh() {
     showNotice("Start Hologram to use your local workspace.", "neutral");
     renderModules([], true);
     renderObjects([], true);
+    renderHoloWorkspace([], [], true);
     renderChatUnavailable();
+  }
+}
+
+async function refreshHoloWorkspace() {
+  try {
+    const [watches, archives] = await Promise.all([
+      invoke<WatchedHoloProject[]>("holo_watch_list"),
+      invoke<string>("holo_catalog_list"),
+    ]);
+    watchedHoloProjects = watches;
+    catalogedHolos = JSON.parse(archives) as HoloInspection[];
+    if (activeHoloKappa !== null && !catalogedHolos.some((item) => item.kappa === activeHoloKappa)) {
+      activeHoloKappa = null;
+      renderHoloInspector(null);
+    }
+    renderHoloWorkspace(watchedHoloProjects, catalogedHolos);
+    return true;
+  } catch (error) {
+    renderHoloWorkspace(watchedHoloProjects, [], true);
+    showNotice(friendlyError(error), "error", true);
+    return false;
+  }
+}
+
+async function addHoloDirectory() {
+  const path = await open({ multiple: false, directory: true, title: "Add a Hologram application directory" });
+  if (path === null) return;
+  setBusy(true);
+  try {
+    await invoke<WatchedHoloProject>("holo_watch_add", { path });
+    showView("holo");
+    await refreshHoloWorkspace();
+  } catch (error) {
+    showNotice(friendlyError(error), "error", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function removeHoloWatch(project: WatchedHoloProject) {
+  setBusy(true);
+  try {
+    await invoke<void>("holo_watch_remove", { id: project.id });
+    await refreshHoloWorkspace();
+  } catch (error) {
+    showNotice(friendlyError(error), "error", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function inspectHolo(kappa: string) {
+  activeHoloKappa = kappa;
+  renderHoloArchives(catalogedHolos);
+  holoInspector.innerHTML = '<div class="holo-inspector-loading"><div class="loading-row"><span></span><span></span></div></div>';
+  try {
+    const result = await invoke<string>("holo_catalog_inspect", { kappa });
+    if (activeHoloKappa === kappa) renderHoloInspector(JSON.parse(result) as HoloInspection);
+  } catch (error) {
+    if (activeHoloKappa === kappa) {
+      holoInspector.innerHTML = `<div class="holo-inspector-empty"><span class="empty-symbol" aria-hidden="true">!</span><strong>Inspection failed</strong><p>${escapeHtml(friendlyError(error))}</p></div>`;
+    }
   }
 }
 
@@ -638,6 +752,105 @@ function renderObjects(items: ObjectMetadata[], unavailable = false) {
   syncControls();
 }
 
+function renderHoloWorkspace(watches: WatchedHoloProject[], archives: HoloInspection[], unavailable = false) {
+  navHoloCount.textContent = unavailable ? "—" : String(archives.length);
+  renderHoloWatches(watches, unavailable);
+  renderHoloArchives(archives, unavailable);
+}
+
+function renderHoloWatches(items: WatchedHoloProject[], unavailable = false) {
+  if (items.length === 0) {
+    holoWatches.innerHTML = unavailable
+      ? emptyState("◇", "Hologram is stopped", "Start Hologram to compile watched application projects.", "Go to Console", "open-console")
+      : emptyState("+", "Add an application directory", "Choose a directory containing hologram.json. Hologram will compile it now and whenever its files change.", "Add directory", "empty-add-holo");
+    holoWatches.querySelector(".open-console")?.addEventListener("click", () => showView("console"));
+    holoWatches.querySelector(".empty-add-holo")?.addEventListener("click", () => void addHoloDirectory());
+    syncControls();
+    return;
+  }
+  holoWatches.innerHTML = items.map((project, index) => {
+    const detail = project.status === "failed"
+      ? project.error ?? "Compilation failed"
+      : project.status === "compiling"
+        ? "Compiling and importing changes…"
+        : project.last_compiled_at_millis === undefined
+          ? "Waiting for the first build"
+          : `Last built ${formatThreadTime(project.last_compiled_at_millis)}`;
+    return `<article class="holo-watch-row">
+      <span class="watch-state ${escapeHtml(project.status)}" aria-hidden="true"></span>
+      <div class="holo-watch-description">
+        <div><strong>${escapeHtml(project.name)}</strong><span class="watch-status ${escapeHtml(project.status)}">${escapeHtml(project.status)}</span></div>
+        <code title="${escapeHtml(project.directory)}">${escapeHtml(project.directory)}</code>
+        <p class="${project.status === "failed" ? "watch-error" : ""}">${escapeHtml(detail)}</p>
+      </div>
+      <button class="secondary command-button stop-watch" data-index="${index}" type="button">Stop watching</button>
+    </article>`;
+  }).join("");
+  holoWatches.querySelectorAll<HTMLButtonElement>(".stop-watch").forEach((button) => {
+    button.addEventListener("click", () => void removeHoloWatch(items[Number(button.dataset.index)]));
+  });
+  syncControls();
+}
+
+function renderHoloArchives(items: HoloInspection[], unavailable = false) {
+  if (items.length === 0) {
+    holoArchives.innerHTML = unavailable
+      ? emptyState("◇", "Applications couldn’t be loaded", "Start Hologram to browse the local .holo catalog.")
+      : emptyState("◇", "No .holo applications yet", "Add a watched directory or import an archive with the CLI.");
+    return;
+  }
+  holoArchives.innerHTML = items.map((item, index) => {
+    const watched = watchedHoloProjects.find((project) => project.archive_kappa === item.kappa);
+    const title = watched?.name ?? item.name;
+    const layers = item.directory?.layers.length ?? 0;
+    return `<button class="holo-archive-row${item.kappa === activeHoloKappa ? " active" : ""}" data-index="${index}" type="button">
+      <span class="holo-archive-mark" aria-hidden="true">H</span>
+      <span class="holo-archive-description">
+        <span><strong>${escapeHtml(title)}</strong><small>.holo v${item.format_version}</small></span>
+        <code title="${escapeHtml(item.kappa)}">${escapeHtml(item.kappa)}</code>
+        <small>${formatBytes(item.byte_length)} · ${layers} layer${layers === 1 ? "" : "s"} · ${item.footer_verified ? "verified" : "unverified"}</small>
+      </span>
+      <span class="inspect-caret" aria-hidden="true">›</span>
+    </button>`;
+  }).join("");
+  holoArchives.querySelectorAll<HTMLButtonElement>(".holo-archive-row").forEach((button) => {
+    button.addEventListener("click", () => void inspectHolo(items[Number(button.dataset.index)].kappa));
+  });
+}
+
+function renderHoloInspector(item: HoloInspection | null) {
+  if (item === null) {
+    holoInspector.innerHTML = `<div class="holo-inspector-empty">
+      <span class="empty-symbol" aria-hidden="true">◇</span>
+      <strong>Select an application</strong>
+      <p>Inspect its verified identities, layers, capabilities, sections, and embedded blobs.</p>
+    </div>`;
+    return;
+  }
+  const directory = item.directory;
+  const layers = directory?.layers.map((layer) => `<article class="inspect-layer">
+    <div><strong>${layer.position}. ${escapeHtml(layer.kind)}</strong>${directory.primary_layer === layer.position ? '<span class="kind">primary</span>' : ""}</div>
+    <p>${escapeHtml(layer.entry)}${layer.architecture === null ? "" : ` · ${escapeHtml(layer.architecture)}`}${layer.surface === null ? "" : ` · ${escapeHtml(layer.surface)}`}${layer.engine === null ? "" : ` · ${escapeHtml(layer.engine)}`}</p>
+    <code>${escapeHtml(layer.content_kappa)}</code>
+  </article>`).join("") ?? '<p class="inspect-muted">No application directory.</p>';
+  const sections = item.sections.map((section) => `<li><span>${escapeHtml(section.kind)}</span><code>${section.offset} + ${section.length}</code></li>`).join("");
+  holoInspector.innerHTML = `<div class="holo-inspector-head">
+      <div><span class="kind">verified archive</span><h2>${escapeHtml(item.name)}</h2></div>
+      <span class="verified-mark" title="Footer verified">${item.footer_verified ? "✓" : "!"}</span>
+    </div>
+    <dl class="inspect-facts">
+      <div><dt>Archive</dt><dd><code>${escapeHtml(item.kappa)}</code></dd></div>
+      <div><dt>Application</dt><dd><code>${escapeHtml(item.application_kappa ?? "not present")}</code></dd></div>
+      <div><dt>Fingerprint</dt><dd><code>${escapeHtml(item.archive_fingerprint)}</code></dd></div>
+      <div><dt>Format</dt><dd>v${item.format_version} · ${formatBytes(item.byte_length)}</dd></div>
+      <div><dt>Directory</dt><dd>${directory === null ? "derived / unavailable" : `schema ${directory.schema_version} · ${item.directory_embedded ? "embedded" : "derived"}`}</dd></div>
+      <div><dt>Capabilities</dt><dd><code>${escapeHtml(directory?.requires_kappa ?? "not present")}</code></dd></div>
+    </dl>
+    <section class="inspect-section"><h3>Layers</h3><div class="inspect-layers">${layers}</div></section>
+    <section class="inspect-section"><h3>Physical sections</h3><ul class="inspect-sections">${sections}</ul></section>
+    <p class="inspect-summary">${directory?.blobs.length ?? 0} embedded blob${directory?.blobs.length === 1 ? "" : "s"} · ${directory?.children.length ?? 0} child application${directory?.children.length === 1 ? "" : "s"}</p>`;
+}
+
 function beginObjectRename(items: ObjectMetadata[], index: number) {
   const item = items[index];
   const row = objects.querySelectorAll<HTMLElement>(".object-row")[index];
@@ -814,6 +1027,8 @@ document.querySelector("#stop")!.addEventListener("click", () => void execute("s
 document.querySelector("#refresh-modules")!.addEventListener("click", () => void refreshModules());
 document.querySelector("#refresh-objects")!.addEventListener("click", () => void refreshObjects());
 document.querySelector("#upload-file")!.addEventListener("click", () => void uploadFile());
+document.querySelector("#refresh-holo")!.addEventListener("click", () => void refreshHoloWorkspace());
+document.querySelector("#add-holo-directory")!.addEventListener("click", () => void addHoloDirectory());
 document.querySelector("#new-thread")!.addEventListener("click", startNewThread);
 threadSearch.addEventListener("input", renderThreadList);
 chatForm.addEventListener("submit", (event) => {
@@ -838,12 +1053,17 @@ void listen<ServiceState>("service-state-changed", (event) => {
   if (event.payload === "stopped") {
     renderModules([], true);
     renderObjects([], true);
+    renderHoloWorkspace([], [], true);
     renderChatUnavailable();
     showNotice("Hologram has stopped.", "neutral");
   } else if (!isBusy && previous !== "ready") {
-    void Promise.all([refreshModules(), refreshObjects(), refreshChatThreads(true)]);
+    void Promise.all([refreshModules(), refreshObjects(), refreshHoloWorkspace(), refreshChatThreads(true)]);
     showNotice("Hologram is ready.", "success");
   }
+});
+
+void listen("holo-watch-changed", () => {
+  if (currentState === "ready") void refreshHoloWorkspace();
 });
 
 // --- Text size -------------------------------------------------------------
@@ -900,6 +1120,7 @@ const commands: Command[] = [
   { id: "console", label: "Go to Console", hint: "View", run: () => showView("console") },
   { id: "chat", label: "Go to Chat", hint: "View", run: () => showView("chat") },
   { id: "files", label: "Go to Files", hint: "View", run: () => showView("files") },
+  { id: "holo", label: "Go to Applications", hint: "View", run: () => showView("holo") },
   { id: "modules", label: "Go to Modules", hint: "View", run: () => showView("modules") },
   {
     id: "new-chat",
@@ -924,6 +1145,13 @@ const commands: Command[] = [
     hint: "Files",
     enabled: () => currentState === "ready",
     run: () => void uploadFile(),
+  },
+  {
+    id: "add-holo-directory",
+    label: "Add application directory",
+    hint: "Applications",
+    enabled: () => currentState === "ready",
+    run: () => void addHoloDirectory(),
   },
   { id: "refresh", label: "Refresh everything", hint: "Service", run: () => void refresh() },
   {

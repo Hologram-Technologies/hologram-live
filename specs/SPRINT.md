@@ -10,6 +10,7 @@
   content-addressed request and admit it only under an explicit trusted grant
 - Exit signal: insufficient authority returns `LIVE_AUTHORIZATION_DENIED` before
   provider preparation, while child grants can only attenuate parent authority
+- Current focus: Slice 3 child closure and attenuation
 
 This is the short-lived execution tracker. Durable requirements remain in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
@@ -78,6 +79,60 @@ request admitted by grant
 
 ## Delivery slices
 
+### Interruption — Desktop watched application projects
+
+- [x] Add/remove local source directories containing `hologram.json` through
+  the Tauri adapter and persist them with the reusable watch engine.
+- [x] Recursively watch and debounce relevant file changes without writing
+  build output into the source directory.
+- [x] Compile and import through the existing CLI/service boundaries; retain
+  the last successful archive when a later build fails.
+- [x] Replace obsolete watched variants after successful changed builds while
+  leaving a final immutable archive when a watch is removed.
+- [x] Add a desktop Applications navigation item, watched-project status list,
+  real `.holo` catalog listing, and verified inspection detail.
+- [x] Add focused watcher tests, frontend/desktop builds, documentation, and
+  full verification evidence.
+- [x] Extract watch persistence, event filtering, debounce, and build-state
+  orchestration from `src-tauri` into the Tauri-independent
+  `hologram-application-watch` workspace crate; retain only path authorization,
+  fixed sidecar invocation, and UI events in the desktop adapter.
+- [x] Make server build, install, CI, and release commands select the root
+  `hologram-live` package and `hologram` binary explicitly so hosted builds do
+  not depend on Tauri or Node.js.
+
+Acceptance:
+
+- [x] Adding `features/fixtures/wasm-app/` produces an inspectable catalog entry.
+- [x] A referenced-file edit triggers one debounced rebuild and refreshes the
+  Applications view.
+- [x] Invalid source shows a project error without discarding its last good
+  archive.
+- [x] All list and inspect data comes from `holo list` / `holo inspect`, not a
+  frontend reconstruction of archive metadata.
+
+Interruption evidence (2026-08-25): the packaged Tauri app selected
+`features/fixtures/wasm-app`, compiled/imported it to a verified v4 catalog row,
+and rendered its archive/application/capability identities, Wasm layer, section
+offsets, and embedded-blob counts from `holo inspect`. A source edit changed the
+archive κ after one debounced rebuild; malformed `hologram.json` showed Failed
+while the prior κ remained inspectable; restoring the manifest returned Ready;
+and an edit after Stop watching left the final archive unchanged. Watcher unit
+tests, ANSI-diagnostic coverage, desktop Clippy, production frontend/Tauri
+builds, the 13-page documentation build, and full repository verification all
+pass (135 library tests, 15 CLI tests, 9 BDD scenarios / 80 steps, optimized
+build, and release smoke).
+
+Boundary follow-up (2026-08-25): `apps/desktop/src-tauri/src/holo_watch.rs` is
+now a thin adapter over `crates/hologram-application-watch`. The extracted
+crate's five tests include a real debounced register/build/persist/remove cycle;
+the server and desktop workspaces compile independently, and server recipes and
+release workflows explicitly build `--package hologram-live --bin hologram`.
+The server's declared MSRV is corrected from 1.88 to Wasmtime 46's actual Rust
+1.94 floor, while development and release jobs consistently install 1.97.1.
+The new product-boundary gate rejects Tauri or application-watch dependencies
+in the resolved standalone-server graph.
+
 ### Slice 1 — Canonical capability source
 
 - [x] Add a versioned, deny-unknown-fields `capabilities.json` source schema for
@@ -113,28 +168,42 @@ source-size gate, all-target check, 126 library tests, 15 CLI tests, Clippy, all
 
 ### Slice 2 — Effective grants and authorization boundary
 
-- [ ] Add typed requested capabilities and an `EffectiveGrant` that records its
+- [x] Add typed requested capabilities and an `EffectiveGrant` that records its
   trusted source without treating archive content as authority.
-- [ ] Decode/validate the requested canonical capability object during planning.
-- [ ] Define a deny-by-default grant for ordinary direct execution and local
+- [x] Decode/validate the requested canonical capability object during planning.
+- [x] Define a deny-by-default grant for ordinary direct execution and local
   service execution.
-- [ ] Add an explicit local-development grant mode and CLI/config surface; make
+- [x] Add an explicit local-development grant mode and CLI/config surface; make
   its scope and warning visible in JSON and human output.
-- [ ] Authorize with upstream `Capabilities::admits` after resolution and before
+- [x] Authorize with upstream `Capabilities::admits` after resolution and before
   any provider `prepare` call.
-- [ ] Return `LIVE_AUTHORIZATION_DENIED` with application/request/grant identity
+- [x] Return `LIVE_AUTHORIZATION_DENIED` with application/request/grant identity
   and a non-secret capability summary when admission fails.
-- [ ] Replace provider `required_capabilities` with the trusted effective grant.
-- [ ] Preserve current behavior for applications requesting the empty set.
-- [ ] Add synthetic-provider proof that denial occurs before preparation.
+- [x] Replace provider `required_capabilities` with the trusted effective grant.
+- [x] Preserve current behavior for applications requesting the empty set.
+- [x] Add synthetic-provider proof that denial occurs before preparation.
 
 Slice 2 acceptance:
 
-- [ ] Empty-requirement Wasm and Python demos continue to run without an unsafe
+- [x] Empty-requirement Wasm and Python demos continue to run without an unsafe
   grant flag.
-- [ ] A non-empty request is denied by default before provider preparation.
-- [ ] The same request runs under an explicit sufficient development grant.
-- [ ] An insufficient explicit grant remains denied.
+- [x] A non-empty request is denied by default before provider preparation.
+- [x] The same request runs under an explicit sufficient development grant.
+- [x] An insufficient explicit grant remains denied.
+
+Slice 2 evidence (2026-08-25): planning now canonical-decodes requests into a
+typed value; execution constructs authority only from the built-in baseline,
+the direct CLI development file, or loopback-only service configuration. Both
+direct and resident paths authorize before provider preparation and providers
+receive only the effective grant. Successful raw results carry request/grant κ,
+trusted source, and allow outcome across JSON and Protobuf/gRPC; denial returns
+the typed authorization error and a non-secret summary. Unit coverage proves an
+insufficient explicit grant remains denied and synthetic provider preparation
+does not run. The BDD suite passes all 9 scenarios / 80 steps, including direct
+baseline, direct development, and resident service development sources. Full
+verification passes formatting, the source-size gate, all-target checks, 135
+library tests, 15 CLI tests, Clippy with warnings denied, the optimized release
+build, and release smoke; the Astro documentation build also passes.
 
 ### Slice 3 — Child closure and attenuation
 
@@ -189,16 +258,21 @@ Slice 3 acceptance:
 - [x] `DISC-009` — **Now** — The upstream `KappaLabel::from_bytes` checks only
   width and ASCII, so source validation must additionally enforce the exact
   `blake3:<64 lowercase hex>` grammar. Routed to Slice 1.
-- [ ] `DISC-010` — **Now** — Existing M1 fixtures use arbitrary capability
+- [x] `DISC-010` — **Now** — Existing M1 fixtures use arbitrary capability
   bytes; runtime decoding will require converting fixtures to canonical empty
   or explicit capability sets while retaining a legacy-invalid negative test.
   Routed to Slices 1–2.
-- [ ] `DISC-011` — **Now** — Direct execution has no trusted principal or grant
+- [x] `DISC-011` — **Now** — Direct execution has no trusted principal or grant
   input today. The explicit development mode must be a deliberate CLI/API value,
   not inferred from loopback networking. Routed to Slice 2 and an ADR.
 - [ ] `DISC-012` — **Next** — Provider receipt of scalar budgets does not itself
   enforce them. Engine and host-interface enforcement remains M5 and must be
   reported honestly. Routed to M5.
+- [x] `DISC-013` — **Now** — The desktop exposes files but has no local source
+  project boundary, so users cannot turn directory changes into real cataloged
+  `.holo` archives or inspect them in the application UI. Keep filesystem watch
+  authority in Tauri and route outputs through compile/import/list/inspect.
+  Routed to: desktop watched-project interruption and M4 development loop.
 
 Template:
 

@@ -54,6 +54,7 @@ pub struct AppConfig {
     pub modules: ModulesConfig,
     pub update: UpdateConfig,
     pub inference: InferenceConfig,
+    pub holo: HoloConfig,
     pub plugins: PluginsConfig,
 }
 
@@ -146,6 +147,14 @@ pub struct InferenceConfig {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+pub struct HoloConfig {
+    /// Explicit development-only effective grant for resident applications.
+    /// Relative paths resolve from `paths.config_dir`.
+    pub development_grant: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct PluginsConfig {
     /// Master switch for subprocess plugin modules. Defaults to off.
     pub enabled: bool,
@@ -180,6 +189,7 @@ impl Default for AppConfig {
             modules: ModulesConfig::default(),
             update: UpdateConfig::default(),
             inference: InferenceConfig::default(),
+            holo: HoloConfig::default(),
             plugins: PluginsConfig::default(),
         }
     }
@@ -354,6 +364,12 @@ impl AppConfig {
                 "non-loopback server.listen requires auth.required = true".to_owned(),
             ));
         }
+        if self.holo.development_grant.is_some() && !is_loopback(listen.ip()) {
+            return Err(LiveError::Config(
+                "holo.development_grant is development-only and requires a loopback server.listen"
+                    .to_owned(),
+            ));
+        }
         if self.server.max_rpc_bytes == 0 || self.server.max_http_body_bytes == 0 {
             return Err(LiveError::Config(
                 "message and body limits must be greater than zero".to_owned(),
@@ -519,6 +535,12 @@ impl AppConfig {
         for module in &mut self.plugins.modules {
             module.path = expand_home(&module.path);
         }
+        if let Some(path) = &mut self.holo.development_grant {
+            *path = expand_home(&*path);
+            if path.is_relative() {
+                *path = self.paths.config_dir.join(&*path);
+            }
+        }
     }
 }
 
@@ -677,6 +699,34 @@ mod tests {
             .expect("plugins section is serialized");
         let reparsed: AppConfig = toml::from_str(source).expect("parse without plugins section");
         assert!(!reparsed.plugins.enabled);
+    }
+
+    #[test]
+    fn holo_development_grants_are_explicit_and_resolve_from_config_dir() {
+        let mut config = AppConfig::default();
+        assert!(config.holo.development_grant.is_none());
+        config.paths.config_dir = PathBuf::from("/tmp/hologram-config");
+        config.holo.development_grant = Some(PathBuf::from("development-grant.json"));
+
+        config.expand_paths();
+
+        assert_eq!(
+            config.holo.development_grant,
+            Some(PathBuf::from("/tmp/hologram-config/development-grant.json"))
+        );
+    }
+
+    #[test]
+    fn holo_development_grant_is_rejected_on_non_loopback_servers() {
+        let mut config = AppConfig::default();
+        config.server.listen = "0.0.0.0:11435".to_owned();
+        config.auth.required = true;
+        config.holo.development_grant = Some(PathBuf::from("grant.json"));
+
+        let error = config
+            .validate()
+            .expect_err("development grant must stay local");
+        assert!(error.to_string().contains("loopback"), "{error}");
     }
 
     #[test]

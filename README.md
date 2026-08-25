@@ -7,7 +7,7 @@ Hologram Live is a local-first module host for the Hologram ecosystem. This repo
 - **Hologram Server** — the standalone `hologram` binary, containing the CLI and background service.
 - **Hologram Desktop** — a Tauri application that bundles `hologram` as a managed sidecar.
 
-The current desktop experience provides a Console dashboard, multi-thread Chat with archiving, content-addressed Files, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Chat routes through a configurable inference engine: the default `echo` engine repeats your message, while `weightc` (one-shot CLI over imported `.wcpu` artifacts) and Ollama-compatible HTTP endpoints serve real model completions.
+The current desktop experience provides a Console dashboard, multi-thread Chat with archiving, content-addressed Files, watched `.holo` Applications, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Chat routes through a configurable inference engine: the default `echo` engine repeats your message, while `weightc` (one-shot CLI over imported `.wcpu` artifacts) and Ollama-compatible HTTP endpoints serve real model completions.
 
 ## Quick start
 
@@ -24,6 +24,8 @@ The preparation step builds the server sidecar before Tauri opens. The desktop a
 - start, restart, and stop the local Hologram service;
 - create and switch between chat threads with independent, durable histories;
 - upload, rename, list, and download local files;
+- watch application source directories, compile/import their `.holo` archives,
+  and inspect verified archive metadata;
 - inspect the enabled module catalogue;
 - follow the system appearance or remember a light/dark choice; and
 - remain available from the system menu bar after the main window closes.
@@ -37,7 +39,7 @@ just desktop-build
 ### Standalone server
 
 ```bash
-cargo build --release --locked
+cargo build --release --locked --package hologram-live --bin hologram
 ./target/release/hologram init
 ./target/release/hologram start
 ./target/release/hologram status
@@ -173,6 +175,21 @@ hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
 
+#### Desktop watch loop
+
+Open **Applications** in Hologram Desktop and choose **Add directory**, then
+select a project containing `hologram.json`. The desktop compiles it immediately,
+imports the successful archive into the normal local catalog, and recursively
+watches the project for later changes. Builds are debounced and written to the
+desktop cache rather than into the source directory.
+
+The Applications list is backed by the same `holo list` and `holo inspect`
+operations shown above, so its archive κ, application κ, layers, capabilities,
+physical sections, and verification state are not reconstructed by the web
+frontend. A failed rebuild is shown on the watched project while the last good
+immutable archive stays available. **Stop watching** removes only the persisted
+watch registration; it does not delete the last cataloged `.holo` archive.
+
 The stable build creates and validates real v4 `.holo` archives while retaining v2/v3 read compatibility. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ.
 
 ```text
@@ -212,7 +229,36 @@ object's κ in `AppManifest.requires`. Omitting `requires` produces the canonica
 empty request. A request describes what an application needs—it is never itself
 a grant. In the upstream capability contract, a scalar budget of `0` means
 unbounded; use a nonzero value to request a finite ceiling. Runtime grant
-enforcement and child attenuation are the active M2 work.
+enforcement now decodes this canonical request and authorizes it before any
+provider prepares. Child attenuation remains the next M2 slice.
+
+Ordinary local execution uses the built-in baseline grant: no storage roots,
+publish/subscribe channels, or network flags. A non-empty request therefore
+fails with `LIVE_AUTHORIZATION_DENIED`. For an explicit local demo, provide a
+separate trusted capability source as the effective grant:
+
+```bash
+hologram --json run ./application.holo \
+  --development-grant ./development-grant.json \
+  --input ./payload.bin | jq
+```
+
+Resident execution reads its development grant only from the service's trusted
+configuration, never from a remote request. Set
+`holo.development_grant = "development-grant.json"`; relative paths resolve
+from `paths.config_dir`, and configuration validation rejects this mode on a
+non-loopback listener. Both direct and service modes emit a warning and trace
+the request κ, effective-grant κ, source, and allow/deny decision without
+logging the capability document. Successful raw run results expose the same
+non-secret decision metadata as `requested_capabilities_kappa`,
+`effective_grant_kappa`, `grant_source`, and `authorization`, so automated
+checks can retain the authority evidence:
+
+```bash
+hologram --json run ./application.holo \
+  --development-grant ./development-grant.json |
+  jq '{authorization, grant_source, requested_capabilities_kappa, effective_grant_kappa}'
+```
 
 See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
 
@@ -440,6 +486,25 @@ browser/API ───── JSON/HTTP ───────┘    config · auth
 
 The kernel owns configuration, lifecycle, capability-aware routing, authenticated dispatch, tracing, audit, update coordination, and actor supervision primitives. Product behavior belongs to modules. Kameo actors are used only for long-lived mutable state or bounded background work; ordinary request handlers remain ordinary Rust code.
 
+The source tree enforces the product boundary:
+
+```text
+src/                                  standalone server, CLI, and shared protocol/runtime
+crates/hologram-application-watch/    Tauri-independent local development engine
+apps/desktop/src-tauri/               thin native shell and sidecar adapter only
+apps/desktop/src/                     webview frontend
+```
+
+The desktop never owns a second server implementation. Its preparation script
+builds the root `hologram-live` package explicitly and copies the resulting
+`hologram` executable into Tauri's ignored sidecar staging directory. The
+application-watch crate owns reusable persistence and debounce behavior outside
+`src-tauri`; the desktop adapter supplies user-approved paths, fixed
+compile/import commands, and UI events. A cloud server build therefore needs
+only Rust and the root package—no Tauri, WebKit, Node.js, or desktop source.
+The `product-boundary` verification gate inspects the resolved Cargo graph and
+fails if Tauri or the application-watch crate enters the standalone server.
+
 ## Releases
 
 Server and desktop versions advance independently and create separate GitHub Releases:
@@ -468,7 +533,7 @@ This builds the release binary and installs `hologram` into `~/.local/bin`. Set 
 
 ## Development
 
-The crate declares Rust 1.88 as its minimum supported version. `rust-toolchain.toml` currently pins Rust 1.97.1 for repository development. The desktop and documentation projects also require Node.js and npm; `just` is used for the common project recipes.
+The server crate declares Rust 1.94 as its minimum supported version, matching Wasmtime 46's compiler floor. `rust-toolchain.toml` currently pins Rust 1.97.1 for repository development and release CI. The desktop and documentation projects also require Node.js and npm; `just` is used for the common project recipes.
 
 Run the complete server verification path with:
 

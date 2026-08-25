@@ -6,6 +6,7 @@ use crate::config::AppConfig;
 use crate::error::{ApiError, LiveError, Result};
 use crate::history::HistoryService;
 use crate::holo::{HoloCatalog, HoloRuntime};
+use crate::holo_capability::{EffectiveGrant, GrantSource};
 use crate::models::ModelCatalog;
 use crate::module::{ModuleContext, ModuleRegistry};
 use crate::nodes::NodeDirectory;
@@ -54,9 +55,25 @@ impl AppState {
         let registry: Arc<dyn RegistryProvider> =
             Arc::new(LocalRegistryProvider::new(store.clone()));
         let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
-        let holo_runtime = Arc::new(HoloRuntime::new(
+        let effective_grant = match &config.holo.development_grant {
+            Some(path) => {
+                let grant = EffectiveGrant::from_development_file(
+                    path,
+                    GrantSource::ServiceDevelopmentFile,
+                )?;
+                tracing::warn!(
+                    path = %path.display(),
+                    effective_grant_kappa = %grant.kappa,
+                    "resident holo development grant is enabled"
+                );
+                grant
+            }
+            None => EffectiveGrant::local_baseline(),
+        };
+        let holo_runtime = Arc::new(HoloRuntime::new_with_grant(
             holo_catalog.clone(),
             config.server.actor_mailbox_capacity,
+            effective_grant,
         ));
         let history = Arc::new(HistoryService::open(config.paths.data_dir.join("history"))?);
         let models = Arc::new(ModelCatalog::open(

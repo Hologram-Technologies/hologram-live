@@ -6,7 +6,7 @@ import { sitePath } from '../../lib/site';
   <h1>Python applications</h1>
   <p>Hologram can compile a locked Python project into an architecture-specific <code>RootfsImage</code>, embed it in a fat <code>.holo</code> archive, and execute its <code>main(request: bytes) -&gt; bytes</code> function. Python remains a compiler input rather than a layer kind, so the canonical <code>.holo</code> model stays unchanged.</p>
 
-  <div class="note"><strong>Experimental local provider</strong>The workflow on this page works today and is intended for demos and trusted local applications. Compilation and direct execution require a running Docker-compatible engine. Execution uses a locked-down OCI container, not the planned hardware-backed microVM provider, and resident or thin-archive Python execution is not supported yet.</div>
+  <div class="note"><strong>Experimental local provider</strong>The workflow on this page works today and is intended for demos and trusted local applications. Compilation and direct execution require a running Docker-compatible engine. Execution uses a locked-down OCI container, not the planned hardware-backed microVM provider, and resident or thin-archive Python execution is not supported yet. Desktop's Run panel verifies and downloads a catalog archive before using this direct executor.</div>
 
   <h2>What is supported</h2>
   <div class="doc-grid">
@@ -22,6 +22,35 @@ import { sitePath } from '../../lib/site';
     <li>A target architecture of <code>arm64</code> or <code>x86_64</code>. <code>host</code> resolves to the current machine for portable examples; direct execution requires the resolved architecture to match the host.</li>
   </ul>
   <p>The compiler stages only <code>pyproject.toml</code>, the declared lock file, <code>src/</code>, and its generated launcher. It rejects absolute paths, paths escaping the manifest directory, and symlinks. The host <code>.venv</code>, Git metadata, caches, credentials, and undeclared files do not enter the image.</p>
+
+  <h2>Quick example: Python hello</h2>
+  <p><code>examples/python-hello/</code> is the small companion to the Wasm project example. It has no third-party dependencies, but it still carries a committed <code>uv.lock</code>, uses the schema-v2 rootfs recipe, and implements the real byte entrypoint contract:</p>
+  <pre><code># examples/python-hello/src/python_hello_holo/__init__.py
+import json
+
+
+def main(request: bytes) -&gt; bytes:
+    name = request.decode("utf-8").strip() or "Hologram"
+    return json.dumps(&#123;
+        "message": f"Hello, &#123;name&#125;!",
+        "name": name,
+        "runtime": "python",
+    &#125;, separators=(",", ":"), sort_keys=True).encode()</code></pre>
+  <pre><code># Validate without Docker work
+hologram --json compile examples/python-hello/hologram.json --check
+
+# Compile the project in memory and execute it
+hologram run examples/python-hello \
+  --input-text Ada --output-format json
+
+# Equivalent convenience recipe
+just python-hello-demo | jq .</code></pre>
+  <pre><code>&#123;
+  "message": "Hello, Ada!",
+  "name": "Ada",
+  "runtime": "python"
+&#125;</code></pre>
+  <p>In Desktop, add <code>examples/python-hello/</code> from <strong>Applications → Add directory</strong>. Once the Docker-backed build is Ready, choose <strong>Run</strong>, enter a name, and read the JSON response in the output panel. Existing <code>.holo</code> files can be selected with <strong>Add .holo</strong> and run the same way.</p>
 
   <h2>Worked example: NumPy + pandas</h2>
   <p>The repository contains the complete project under <code>examples/python-numpy-pandas/</code>. It uses the rootfs profile because NumPy contains native extensions and pandas requires NumPy. The <a href="https://numpy.org/install/">NumPy installation guide</a> recommends binary distributions when available, and the <a href="https://pandas.pydata.org/docs/getting_started/install.html#dependencies">pandas dependency guide</a> lists NumPy as required.</p>

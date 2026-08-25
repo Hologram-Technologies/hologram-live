@@ -177,6 +177,7 @@ hologram --json holo plan blake3:… |
 
 hologram compile hologram.json --output application.holo
 hologram --json compile --check hologram.json | jq '&#123;valid, capabilities_kappa&#125;'
+hologram run . --input-text 'hello from source' --output-format text
 hologram run application.holo --input payload.bin
 hologram compile hologram.json --thin --output application.thin.holo
 hologram holo import application.holo
@@ -192,7 +193,8 @@ hologram holo unload blake3:…</code></pre>
 
   <h3>Desktop watch-and-compile loop</h3>
   <p>Hologram Desktop's <strong>Applications</strong> view can add a local directory containing <code>hologram.json</code>. The trusted Tauri adapter authorizes the selected path and runs fixed compiler commands into a desktop cache outside the source tree. A Tauri-independent workspace crate performs recursive watching, debounce, persistence, and build-state transitions. Each successful archive goes through the normal catalog import path.</p>
-  <p>The list and inspector then call <code>holo list</code> and <code>holo inspect</code>. They therefore display the verified archive object κ, canonical application κ, capability κ, directory, logical layers, and physical sections produced by the archive reader—not metadata independently inferred by browser code. When a changed build succeeds, the watch's previous catalog variant is removed; if compilation fails, that last good archive remains inspectable and the project shows the compiler diagnostic. Removing the watch stops future builds and leaves its final immutable archive in the catalog.</p>
+  <p>The list and inspector then call <code>holo list</code> and <code>holo inspect</code>. They therefore display the verified archive object κ, canonical application κ, capability κ, directory, logical layers, and physical sections produced by the archive reader—not metadata independently inferred by browser code. A ready watch has a <strong>Run</strong> action; catalog rows expose the same text-input/output panel. <strong>Add .holo</strong> imports an existing archive through the native picker. Execution verifies and downloads the immutable catalog archive to a κ-derived desktop cache path before invoking the direct executor, which supports Wasm and experimental Python rootfs applications while still surfacing provider or authorization failures explicitly.</p>
+  <p>When a changed build succeeds, the watch's previous catalog variant is removed; if compilation fails, that last good archive remains inspectable and the project shows the compiler diagnostic. Removing the watch stops future builds and leaves its final immutable archive in the catalog.</p>
   <div class="note"><strong>Trust boundary</strong>The webview receives no general shell command and the background service receives no ambient access to arbitrary host directories. A user selects each source directory through the native picker; the reusable watch engine lives outside <code>src-tauri</code>, while the local adapter owns path authorization and fixed sidecar invocations.</div>
 
   <h2>Design provenance</h2>

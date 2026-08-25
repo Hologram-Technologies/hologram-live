@@ -75,6 +75,7 @@ Global `--json` is supported by every CLI command and may appear before or after
 ```bash
 hologram status --json | jq -r '.status'
 hologram files get blake3:... --output ./asset.bin --json | jq '.byte_length'
+hologram run ./my-app --input-text 'hello' --output-format text --json | jq -r '.[]'
 hologram run application.holo --output-format text --json | jq -r '.[]'
 ```
 
@@ -183,6 +184,12 @@ imports the successful archive into the normal local catalog, and recursively
 watches the project for later changes. Builds are debounced and written to the
 desktop cache rather than into the source directory.
 
+Choose **Run** on a ready watched project, enter a text input in its inspector,
+and the desktop loads the latest successful archive and displays its output.
+Choose **Add .holo** to import an existing archive through the native file picker;
+catalog archives use the same Run panel. Unsupported providers and denied
+capabilities remain explicit runtime errors.
+
 The Applications list is backed by the same `holo list` and `holo inspect`
 operations shown above, so its archive κ, application κ, layers, capabilities,
 physical sections, and verification state are not reconstructed by the web
@@ -265,9 +272,18 @@ See the [complete `.holo` format guide](https://hologram-technologies.github.io/
 Archives whose primary layer is Wasm execute in-process through wasmtime. A self-contained archive can run directly without starting the service:
 
 ```bash
+# Compile a source directory in memory and run it immediately
+hologram run ./my-app --input-text 'hello' --output-format text
+
+# Or compile once and run the resulting immutable archive
 hologram compile ./my-app/hologram.json -o ./my-app.holo
 hologram run ./my-app.holo --input ./payload.bin
 ```
+
+`hologram run` accepts a project directory, its `hologram.json`, a local
+self-contained `.holo` file, or a catalog κ. Project references are compiled as
+fat archives in memory and are not written or imported. Repeat `--input` for
+binary file inputs or `--input-text` for UTF-8 values.
 
 For warm, repeated execution, import and load the archive into a resident session:
 
@@ -351,7 +367,20 @@ Before direct execution or `holo load` starts a provider, Live builds a runtime-
 
 Python is a compiler input, not a fifth `.holo` layer kind. Source-manifest schema v2 can now turn a locked Python project into an architecture-specific `rootfs` layer containing CPython, the application, dependencies, and required Linux libraries. The entrypoint contract is `module:function` where the function accepts and returns `bytes`.
 
-The repository includes a working NumPy + pandas project in `examples/python-numpy-pandas/`. A running Docker-compatible engine is required for this experimental compiler and direct executor:
+For a small second application example, `examples/python-hello/` uses only the Python standard library and runs directly from its project directory:
+
+```console
+$ hologram run examples/python-hello --input-text Ada --output-format json
+{
+  "message": "Hello, Ada!",
+  "name": "Ada",
+  "runtime": "python"
+}
+```
+
+The same project can be added as a watched directory in Desktop. After its Docker-backed build reaches **Ready**, choose **Run** and enter a name. Desktop verifies and retrieves the immutable catalog archive, then uses the direct executor so experimental Python rootfs applications do not depend on resident rootfs support.
+
+The repository also includes the dependency-heavy NumPy + pandas project in `examples/python-numpy-pandas/`. A running Docker-compatible engine is required for both examples and this experimental compiler/direct executor:
 
 ```console
 $ hologram compile --check examples/python-numpy-pandas/hologram.json
@@ -390,6 +419,7 @@ The demo writes one JSON document to stdout; progress and failures use stderr:
 ```bash
 just python-holo-demo | jq .
 just python-holo-demo | jq '.output'
+just python-hello-demo | jq .
 
 # Retain the verified archive instead of deleting the temporary artifact
 just python-holo-package target/numpy-pandas.holo | jq '{archive, archive_bytes}'

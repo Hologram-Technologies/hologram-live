@@ -3,7 +3,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 ---
 <DocsLayout title="Desktop application" description="Develop and package the Tauri desktop shell for Hologram Live.">
   <h1>Desktop application</h1>
-  <p>The Tauri application in <code>apps/desktop</code> packages Hologram's background service and provides a focused workspace for files and modules. Its sidebar follows the desktop navigation model and offers remembered light and dark appearances, while a system menu-bar item reports Hologram's state and provides Open, Start, Restart, Stop, and Quit actions after the main window closes.</p>
+  <p>The Tauri application in <code>apps/desktop</code> packages Hologram's background service and provides a focused workspace for chat, files, watched <code>.holo</code> applications, and modules. Its sidebar follows the desktop navigation model and offers remembered light and dark appearances, while a system menu-bar item reports Hologram's state and provides Open, Start, Restart, Stop, and Quit actions after the main window closes.</p>
 
   <h2>Run in development</h2>
   <pre><code>just tauri
@@ -13,6 +13,18 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <h2>Build a release bundle</h2>
   <pre><code>just tauri build</code></pre>
   <p>Tauri builds the web frontend, compiles the native shell, and includes the release sidecar in the platform bundle.</p>
+
+  <h2>Watch an application directory</h2>
+  <ol>
+    <li>Put a valid <code>hologram.json</code> and its referenced layer files in one project directory.</li>
+    <li>Open <strong>Applications</strong> in the desktop sidebar and choose <strong>Add directory</strong>.</li>
+    <li>Select the project directory. Hologram compiles a fat archive into its desktop cache, imports it into the local catalog, and shows the watch as <strong>Ready</strong>.</li>
+    <li>Select the catalog row to inspect the verified archive and application identities, capability request, logical layers, physical section offsets, and embedded blobs.</li>
+    <li>Edit <code>hologram.json</code> or a project file. Recursive changes are debounced, then compiled and imported again. A changed archive replaces only the prior variant produced by that watch.</li>
+    <li>Choose <strong>Stop watching</strong> when the development loop is finished. The final immutable catalog archive remains available until it is explicitly removed.</li>
+  </ol>
+  <div class="note"><strong>Safe failure behavior</strong>A failed compile changes the watch to <strong>Failed</strong> and shows the compiler diagnostic, but it does not discard the last successful archive. Fixing the source triggers another build and returns the watch to <strong>Ready</strong>.</div>
+  <p>Watch registrations are stored in the desktop application's configuration and restored after restart. Generated archives live under the desktop cache, never inside the selected project, which prevents output-triggered rebuild loops. Common dependency and build trees such as <code>.git</code>, <code>.venv</code>, <code>node_modules</code>, <code>target</code>, and <code>__pycache__</code> are ignored.</p>
 
   <h2>Command boundary</h2>
   <p>The webview can invoke these narrow application commands:</p>
@@ -28,8 +40,14 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
     <li><code>chat_send</code></li>
     <li><code>objects_list</code></li>
     <li><code>file_put</code></li>
+    <li><code>file_rename</code></li>
     <li><code>object_get</code></li>
+    <li><code>holo_watch_list</code></li>
+    <li><code>holo_watch_add</code></li>
+    <li><code>holo_watch_remove</code></li>
+    <li><code>holo_catalog_list</code></li>
+    <li><code>holo_catalog_inspect</code></li>
   </ul>
   <div class="note"><strong>No arbitrary shell bridge</strong>Each command maps to one fixed sidecar argument, keeping the browser-facing authority narrow.</div>
-  <p><code>modules_list</code> reads Hologram's negotiated module manifest. The chat view creates and switches among durable conversation threads, then sends messages through the enabled chat module. The files view uses native open/save dialogs, uploads and renames files, lists content-addressed metadata, and downloads the stored bytes. Because the sidecar uses the normal Hologram configuration, the same surface can target a local service or a future authenticated cloud endpoint.</p>
+  <p><code>modules_list</code> reads Hologram's negotiated module manifest. The chat view creates and switches among durable conversation threads, then sends messages through the enabled chat module. The files view uses native open/save dialogs, uploads and renames files, lists content-addressed metadata, and downloads the stored bytes. The Applications view keeps host-directory selection and watching in the trusted Tauri shell, invokes only the fixed compile/import/list/inspect operations, and gives the webview structured results rather than a general filesystem or shell API. Because the sidecar uses the normal Hologram configuration, the service-backed surfaces can target a local service or a future authenticated cloud endpoint; host directory watching remains local-only.</p>
 </DocsLayout>

@@ -270,6 +270,47 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ## M4 — Compiler completion
 
+### Desktop development loop and watched projects
+
+- [x] Let Hologram Desktop add a local application directory containing
+  `hologram.json` without granting the service ambient filesystem access.
+- [x] Watch the selected directory recursively, debounce relevant changes, and
+  compile a fat `.holo` archive outside the source tree.
+- [x] Import each successful build through the existing catalog boundary so
+  `holo list` and `holo inspect` remain the source of truth for the frontend.
+- [x] Replace the watched project's prior catalog variant after a changed build
+  while preserving content-addressed identity when the output is unchanged.
+- [x] Persist watched directory registrations across desktop restarts and show
+  compiling, ready, and failed states with actionable diagnostics.
+- [x] Add an Applications view that lists real cataloged `.holo` archives and
+  renders their verified inspection metadata, directory, layers, and sections.
+- [x] Keep watched-project compilation local to the desktop shell; remote
+  authorities and archive contents cannot request arbitrary host directories.
+
+Watched-project acceptance:
+
+- [x] Adding the Wasm fixture directory creates a cataloged `.holo` visible in
+  the desktop Applications list.
+- [x] Editing a referenced source file rebuilds and refreshes the inspected
+  archive without writing generated output into the watched directory.
+- [x] A compile failure leaves the last successful archive inspectable and
+  reports the new failure on the watched project.
+- [x] Removing a watch stops future builds without silently deleting the last
+  immutable cataloged archive.
+
+Watched-project evidence (2026-08-25): the packaged desktop application added
+the Wasm fixture through the native picker, showed the resulting verified v4
+archive from the catalog, and inspected its three identities, capabilities,
+logical layer, physical sections, and embedded blobs. A temporary source edit
+changed the archive κ after the debounce; an invalid manifest reported Failed
+while retaining that last good κ; restoring valid source recovered Ready; and
+a source edit after removing the watch did not rebuild or delete the final
+archive. The implementation persists registrations in the Tauri application
+configuration, stores generated archives in its cache, ignores dependency/build
+trees, and exposes only fixed compile/import/list/inspect commands. Four desktop
+unit tests, Clippy with warnings denied, production frontend and packaged Tauri
+builds, the Astro site build, and the complete repository verification pass.
+
 ### Source transformations
 
 - [ ] Normalize `.wat` source into WebAssembly binary during compilation so `WasmCodemodule` content is portable Wasm bytes.

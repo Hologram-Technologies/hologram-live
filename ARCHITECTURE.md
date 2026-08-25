@@ -57,7 +57,7 @@ Kameo provides process-local actors with bounded mailboxes, actor links, and sup
 
 ## Desktop
 
-The Tauri application in `apps/desktop` bundles and controls the `hologram` executable as a sidecar. Its commands expose a narrow lifecycle/status/module-discovery interface rather than arbitrary shell execution. Module discovery follows `LiveClient` routing, so the configured authority may be the local daemon or a future cloud endpoint. The desktop build is isolated from the daemon crate.
+The Tauri application in `apps/desktop` bundles and controls the `hologram` executable as a sidecar. Its commands expose narrow lifecycle, workspace, and archive operations rather than arbitrary shell execution. Module discovery follows `LiveClient` routing, so the configured authority may be the local service or a future cloud endpoint. Local application development is deliberately desktop-owned: the native picker grants the Tauri shell access to a selected directory containing `hologram.json`; a persistent recursive watcher debounces changes, compiles into the app cache, and imports through the existing CLI/catalog boundary. The webview lists and inspects the resulting archives only through `holo list` and `holo inspect`, while the service never receives ambient host-filesystem authority. Successful changed builds replace the prior watched catalog variant, failed builds preserve the last good archive, and removing a watch leaves its final immutable archive. The desktop build remains isolated from the server crate.
 
 ## Storage
 

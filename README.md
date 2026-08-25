@@ -7,7 +7,7 @@ Hologram Live is a local-first module host for the Hologram ecosystem. This repo
 - **Hologram Server** — the standalone `hologram` binary, containing the CLI and background service.
 - **Hologram Desktop** — a Tauri application that bundles `hologram` as a managed sidecar.
 
-The current desktop experience provides a Console dashboard, multi-thread Chat with archiving, content-addressed Files, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Chat routes through a configurable inference engine: the default `echo` engine repeats your message, while `weightc` (one-shot CLI over imported `.wcpu` artifacts) and Ollama-compatible HTTP endpoints serve real model completions.
+The current desktop experience provides a Console dashboard, multi-thread Chat with archiving, content-addressed Files, watched `.holo` Applications, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Chat routes through a configurable inference engine: the default `echo` engine repeats your message, while `weightc` (one-shot CLI over imported `.wcpu` artifacts) and Ollama-compatible HTTP endpoints serve real model completions.
 
 ## Quick start
 
@@ -24,6 +24,8 @@ The preparation step builds the server sidecar before Tauri opens. The desktop a
 - start, restart, and stop the local Hologram service;
 - create and switch between chat threads with independent, durable histories;
 - upload, rename, list, and download local files;
+- watch application source directories, compile/import their `.holo` archives,
+  and inspect verified archive metadata;
 - inspect the enabled module catalogue;
 - follow the system appearance or remember a light/dark choice; and
 - remain available from the system menu bar after the main window closes.
@@ -172,6 +174,21 @@ hologram holo plan blake3:...
 hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
+
+#### Desktop watch loop
+
+Open **Applications** in Hologram Desktop and choose **Add directory**, then
+select a project containing `hologram.json`. The desktop compiles it immediately,
+imports the successful archive into the normal local catalog, and recursively
+watches the project for later changes. Builds are debounced and written to the
+desktop cache rather than into the source directory.
+
+The Applications list is backed by the same `holo list` and `holo inspect`
+operations shown above, so its archive κ, application κ, layers, capabilities,
+physical sections, and verification state are not reconstructed by the web
+frontend. A failed rebuild is shown on the watched project while the last good
+immutable archive stays available. **Stop watching** removes only the persisted
+watch registration; it does not delete the last cataloged `.holo` archive.
 
 The stable build creates and validates real v4 `.holo` archives while retaining v2/v3 read compatibility. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ.
 

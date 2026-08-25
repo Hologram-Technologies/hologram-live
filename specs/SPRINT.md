@@ -10,7 +10,7 @@
   content-addressed request and admit it only under an explicit trusted grant
 - Exit signal: insufficient authority returns `LIVE_AUTHORIZATION_DENIED` before
   provider preparation, while child grants can only attenuate parent authority
-- Current focus: Slice 3 — child closure and attenuation
+- Current focus: Slice 3 child closure and attenuation
 
 This is the short-lived execution tracker. Durable requirements remain in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
@@ -78,6 +78,43 @@ request admitted by grant
 - Signatures, revocation, transparency, and publisher trust: M7.
 
 ## Delivery slices
+
+### Interruption — Desktop watched application projects
+
+- [x] Add/remove and persist local source directories containing
+  `hologram.json` in the Tauri shell.
+- [x] Recursively watch and debounce relevant file changes without writing
+  build output into the source directory.
+- [x] Compile and import through the existing CLI/service boundaries; retain
+  the last successful archive when a later build fails.
+- [x] Replace obsolete watched variants after successful changed builds while
+  leaving a final immutable archive when a watch is removed.
+- [x] Add a desktop Applications navigation item, watched-project status list,
+  real `.holo` catalog listing, and verified inspection detail.
+- [x] Add focused watcher tests, frontend/desktop builds, documentation, and
+  full verification evidence.
+
+Acceptance:
+
+- [x] Adding `features/fixtures/wasm-app/` produces an inspectable catalog entry.
+- [x] A referenced-file edit triggers one debounced rebuild and refreshes the
+  Applications view.
+- [x] Invalid source shows a project error without discarding its last good
+  archive.
+- [x] All list and inspect data comes from `holo list` / `holo inspect`, not a
+  frontend reconstruction of archive metadata.
+
+Interruption evidence (2026-08-25): the packaged Tauri app selected
+`features/fixtures/wasm-app`, compiled/imported it to a verified v4 catalog row,
+and rendered its archive/application/capability identities, Wasm layer, section
+offsets, and embedded-blob counts from `holo inspect`. A source edit changed the
+archive κ after one debounced rebuild; malformed `hologram.json` showed Failed
+while the prior κ remained inspectable; restoring the manifest returned Ready;
+and an edit after Stop watching left the final archive unchanged. Watcher unit
+tests, ANSI-diagnostic coverage, desktop Clippy, production frontend/Tauri
+builds, the 13-page documentation build, and full repository verification all
+pass (135 library tests, 15 CLI tests, 9 BDD scenarios / 80 steps, optimized
+build, and release smoke).
 
 ### Slice 1 — Canonical capability source
 
@@ -214,6 +251,11 @@ Slice 3 acceptance:
 - [ ] `DISC-012` — **Next** — Provider receipt of scalar budgets does not itself
   enforce them. Engine and host-interface enforcement remains M5 and must be
   reported honestly. Routed to M5.
+- [x] `DISC-013` — **Now** — The desktop exposes files but has no local source
+  project boundary, so users cannot turn directory changes into real cataloged
+  `.holo` archives or inspect them in the application UI. Keep filesystem watch
+  authority in Tauri and route outputs through compile/import/list/inspect.
+  Routed to: desktop watched-project interruption and M4 development loop.
 
 Template:
 

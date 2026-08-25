@@ -261,6 +261,62 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .empty-state strong { font-size: .875rem; font-weight: 640; }
 .empty-state p { max-width: 310px; margin-top: 6px; }
 .empty-state button { margin-top: 18px; }
+.holo-section + .holo-section { margin-top: 30px; }
+.holo-section code { font-family: var(--mono); }
+.holo-watch-list { display: grid; gap: 8px; }
+.holo-watch-row { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 15px 17px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.watch-state { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--accent-idle); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-idle) 16%, transparent); }
+.watch-state.ready { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent); }
+.watch-state.compiling { background: var(--accent-blue); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-blue) 16%, transparent); animation: watch-pulse 1s ease-in-out infinite; }
+.watch-state.failed { background: var(--danger-text); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger-text) 16%, transparent); }
+.holo-watch-description { min-width: 0; flex: 1; }
+.holo-watch-description > div { display: flex; align-items: center; gap: 8px; }
+.holo-watch-description strong { overflow: hidden; font-size: .8125rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.holo-watch-description code { display: block; margin-top: 5px; overflow: hidden; color: var(--code); font-size: .625rem; text-overflow: ellipsis; white-space: nowrap; }
+.holo-watch-description p { margin-top: 4px; font-size: .6875rem; }
+.holo-watch-description .watch-error { color: var(--error-text); }
+.watch-status { padding: 3px 6px; border-radius: 5px; color: var(--muted-strong); background: var(--soft); font-family: var(--mono); font-size: .5625rem; letter-spacing: .04em; text-transform: uppercase; }
+.watch-status.ready { color: var(--success-text); background: var(--success-bg); }
+.watch-status.compiling { color: var(--tag-text); background: var(--tag-bg); }
+.watch-status.failed { color: var(--error-text); background: var(--error-bg); }
+.holo-browser { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(360px, 1.2fr); min-height: 440px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.holo-archive-list { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 8px; border-right: 1px solid var(--border); }
+.holo-archive-list > .empty-state { min-height: 420px; border: 0; }
+.holo-archive-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 11px; overflow: hidden; border: 1px solid transparent; border-radius: 9px; color: var(--text); background: transparent; text-align: left; cursor: pointer; }
+.holo-archive-row:hover { background: var(--soft); }
+.holo-archive-row.active { border-color: var(--border-strong); background: var(--nav-active); }
+.holo-archive-mark { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 9px; color: var(--tag-text); background: var(--tag-bg); font-family: var(--mono); font-size: .6875rem; font-weight: 700; }
+.holo-archive-description { display: grid; min-width: 0; gap: 4px; }
+.holo-archive-description > span { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.holo-archive-description strong { overflow: hidden; font-size: .75rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.holo-archive-description small { color: var(--muted); font-size: .5625rem; }
+.holo-archive-description code { overflow: hidden; color: var(--code); font-size: .5625rem; text-overflow: ellipsis; white-space: nowrap; }
+.inspect-caret { color: var(--muted); font-size: 1rem; }
+.holo-inspector { min-width: 0; padding: 22px; background: var(--workspace); }
+.holo-inspector-empty { display: grid; justify-items: center; align-content: center; min-height: 100%; padding: 36px; text-align: center; }
+.holo-inspector-empty strong { font-size: .8125rem; }
+.holo-inspector-empty p { max-width: 310px; margin-top: 6px; font-size: .6875rem; }
+.holo-inspector-loading { padding-top: 30px; }
+.holo-inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
+.holo-inspector-head h2 { margin: 8px 0 0; overflow-wrap: anywhere; }
+.verified-mark { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--success-border); border-radius: 50%; color: var(--success-text); background: var(--success-bg); font-size: .75rem; }
+.inspect-facts { display: grid; gap: 0; margin: 16px 0 0; }
+.inspect-facts > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.inspect-facts dt { color: var(--muted); font-size: .625rem; }
+.inspect-facts dd { min-width: 0; margin: 0; color: var(--muted-strong); font-size: .625rem; text-align: right; }
+.inspect-facts code { display: block; overflow: hidden; color: var(--code); font-size: .5625rem; text-overflow: ellipsis; white-space: nowrap; }
+.inspect-section { margin-top: 20px; }
+.inspect-section h3 { margin: 0 0 9px; color: var(--muted-strong); font-size: .6875rem; letter-spacing: .04em; text-transform: uppercase; }
+.inspect-layers { display: grid; gap: 6px; }
+.inspect-layer { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.inspect-layer > div { display: flex; align-items: center; gap: 7px; }
+.inspect-layer strong { font-size: .6875rem; }
+.inspect-layer p { margin-top: 4px; font-size: .625rem; }
+.inspect-layer code { display: block; margin-top: 5px; overflow: hidden; color: var(--code); font-size: .5625rem; text-overflow: ellipsis; white-space: nowrap; }
+.inspect-sections { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.inspect-sections li { display: flex; justify-content: space-between; gap: 12px; color: var(--muted-strong); font-size: .625rem; }
+.inspect-sections code { color: var(--code); font-size: .5625rem; }
+.inspect-summary, .inspect-muted { margin-top: 18px; color: var(--muted); font-size: .625rem; }
 .loading-row { display: grid; gap: 9px; padding: 18px; border: 1px solid var(--border); border-radius: 11px; background: var(--card); }
 .loading-row span { height: 10px; border-radius: 999px; background: linear-gradient(90deg, var(--loading) 25%, var(--loading-highlight) 50%, var(--loading) 75%); background-size: 200% 100%; animation: loading 1.25s ease-in-out infinite; }
 .loading-row span:first-child { width: 42%; }
@@ -338,6 +394,7 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 @keyframes loading { to { background-position: -200% 0; } }
 @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-3px); opacity: 1; } }
+@keyframes watch-pulse { 50% { opacity: .45; } }
 
 @media (max-width: 1080px) {
   .service-row { align-items: flex-start; flex-direction: column; gap: 16px; }
@@ -349,6 +406,8 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 @media (max-width: 860px) {
   .metric-grid, .preset-grid { grid-template-columns: 1fr; }
+  .holo-browser { grid-template-columns: 1fr; }
+  .holo-archive-list { border-right: 0; border-bottom: 1px solid var(--border); }
   .metric-aside { position: static; margin-top: 4px; text-align: left; }
   .page-header { align-items: flex-start; flex-direction: column; gap: 14px; }
 }
@@ -357,6 +416,8 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .app-body { grid-template-columns: 184px minmax(0, 1fr); }
   .content { padding-right: 22px; padding-left: 22px; }
   .object-row { align-items: flex-start; flex-direction: column; }
+  .holo-watch-row { align-items: flex-start; flex-wrap: wrap; }
+  .holo-watch-row .stop-watch { margin-left: 23px; }
   .object-actions { align-self: stretch; }
   .object-actions button { flex: 1; }
   .rename-form { align-items: stretch; flex-wrap: wrap; }
@@ -389,6 +450,6 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .notice { transition: none; }
-  .loading-row span, .thread-loading, .typing i { animation: none; }
+  .loading-row span, .thread-loading, .typing i, .watch-state.compiling { animation: none; }
   .chat-scroll { scroll-behavior: auto; }
 }

@@ -34,7 +34,11 @@ This document is deliberately strict about what the current stable build does an
 - Dynamic third-party modules as sha256-pinned, supervised subprocess plugins speaking gRPC over a Unix socket (`plugins list` / `plugins call`); plugins receive no host resource access in v1.
 - Digest-verified update/rollback foundation.
 - Built-in browser status page.
-- Tauri desktop shell that bundles the daemon as a managed sidecar.
+- Tauri desktop shell that bundles the server as a managed sidecar, persists
+  user-selected application-directory watches, debounces recursive changes,
+  compiles/imports outside the source tree, and lists/inspects the resulting
+  verified `.holo` archives through the real catalog boundary while preserving
+  the last good archive after a failed build.
 - Responsive Astro documentation website.
 
 ## Present as an extension seam, not implemented by the default module set

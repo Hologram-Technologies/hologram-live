@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod holo_watch;
+
 use serde::Serialize;
 use std::ffi::OsStr;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -86,13 +88,7 @@ async fn file_put(app: AppHandle, path: String) -> Result<String, String> {
 async fn file_rename(app: AppHandle, id: String, filename: String) -> Result<String, String> {
     run_hologram(
         &app,
-        [
-            "--json",
-            "files",
-            "rename",
-            id.as_str(),
-            filename.as_str(),
-        ],
+        ["--json", "files", "rename", id.as_str(), filename.as_str()],
     )
     .await
 }
@@ -152,7 +148,7 @@ fn system_info() -> SystemInfo {
     }
 }
 
-async fn run_hologram<I, S>(app: &AppHandle, arguments: I) -> Result<String, String>
+pub(crate) async fn run_hologram<I, S>(app: &AppHandle, arguments: I) -> Result<String, String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -167,8 +163,8 @@ where
         .output()
         .await
         .map_err(|error| error.to_string())?;
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = strip_ansi(&String::from_utf8_lossy(&output.stdout));
+    let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
     if output.status.success() {
         Ok(if stdout.trim().is_empty() {
             stderr
@@ -184,6 +180,28 @@ where
     }
 }
 
+fn strip_ansi(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut characters = value.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character != '\u{1b}' {
+            output.push(character);
+            continue;
+        }
+        if characters.next_if_eq(&'[').is_some() {
+            for control in characters.by_ref() {
+                if ('@'..='~').contains(&control) {
+                    break;
+                }
+            }
+        } else {
+            // Non-CSI escape sequences have a one-character final byte.
+            let _ = characters.next();
+        }
+    }
+    output
+}
+
 async fn run_service_action(
     app: &AppHandle,
     arguments: &[&str],
@@ -192,6 +210,9 @@ async fn run_service_action(
     let result = run_hologram(app, arguments).await;
     if result.is_ok() {
         publish_service_state(app, running_after);
+        if running_after {
+            holo_watch::schedule_all(app);
+        }
     }
     result
 }
@@ -234,6 +255,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(holo_watch::HoloWatchState::default())
         .setup(|app| {
             let open = MenuItem::with_id(app, "open", "Open Hologram", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
@@ -286,6 +308,7 @@ fn main() {
             }
             tray.build(app)?;
             let handle = app.handle().clone();
+            holo_watch::restore(&handle);
             tauri::async_runtime::spawn(async move {
                 let running = run_hologram(&handle, &["status"]).await.is_ok();
                 update_menu_bar(&handle, running);
@@ -312,6 +335,11 @@ fn main() {
             file_put,
             file_rename,
             object_get,
+            holo_watch::holo_catalog_list,
+            holo_watch::holo_catalog_inspect,
+            holo_watch::holo_watch_list,
+            holo_watch::holo_watch_add,
+            holo_watch::holo_watch_remove,
             history_archive,
             config_show,
             system_info
@@ -324,5 +352,19 @@ fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_ansi;
+
+    #[test]
+    fn sidecar_diagnostics_are_plain_text() {
+        assert_eq!(
+            strip_ansi("\u{1b}[2mstamp\u{1b}[0m \u{1b}[31mERROR\u{1b}[0m: failed"),
+            "stamp ERROR: failed"
+        );
+        assert_eq!(strip_ansi("already plain"), "already plain");
     }
 }

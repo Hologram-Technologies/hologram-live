@@ -157,10 +157,10 @@ hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
 
-The stable build creates and validates real v3 `.holo` archives. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ.
+The stable build creates and validates real v4 `.holo` archives while retaining v2/v3 read compatibility. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ.
 
 ```text
-.holo v3
+.holo v4
 ├─ header + section table
 ├─ AppManifest       primary · requires · ordered layers · children
 ├─ Extension         verified, queryable application directory
@@ -169,7 +169,7 @@ The stable build creates and validates real v3 `.holo` archives. The physical fi
 └─ BLAKE3 footer
 ```
 
-The closed layer kinds are `wasm`, `tensor`, `rootfs`, and `view`. A layer records its content κ and entrypoint plus an architecture for rootfs or surface for views. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider.
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider.
 
 See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
 
@@ -200,9 +200,36 @@ hologram compile ./my-app/hologram.json --thin -o ./my-app.thin.holo
 
 Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
 
-Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect blake3:...` exposes the ordered layers, child applications, required capability set, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older v3 archives without it are still inspected by deriving the same view.
+Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect blake3:...` exposes the ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view.
 
-`holo load` resolves the primary layer by κ, compiles a Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Python rootfs archives currently run only as direct local fat files. Tensors, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
+#### AI model applications
+
+Hologram Live now reads and writes `.holo` v4 `InferenceModel` layers. A complete model archive produced by `hologram-ai` can be imported and inspected without initializing its engine:
+
+```bash
+hologram --json ai inspect model.holo
+hologram holo import model.holo
+```
+
+The inspection lists each callable service entry, its engine identifier, content κ, and whether the bundle is embedded. Model-source acquisition and R4G1 compilation remain owned by `hologram-ai`; this binary does not yet expose `hologram ai compile` or connect a model session to `hologram ai infer`. Attempting to execute a model-only archive returns `LIVE_CAPABILITY_MISSING` and names the unconnected service rather than simulating inference.
+
+For low-level archive assembly, a source manifest can package an already-built provider bundle:
+
+```json
+{
+  "schema_version": 1,
+  "layers": [{
+    "kind": "inference-model",
+    "path": "model.bundle",
+    "entry": "ai.default",
+    "engine": "uor-r4"
+  }]
+}
+```
+
+`weightc` remains a chat execution provider over imported `.wcpu` directories. Those directories are not placed into `.holo` files until a deterministic single-blob bundle and validation contract is defined. See the [AI model application guide](https://hologram-technologies.github.io/hologram-live/docs/model-apps) and [ADR 009](specs/adrs/009-inference-model-holo-v4.md).
+
+`holo load` resolves the primary layer by κ, compiles a Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Python rootfs archives currently run only as direct local fat files. Inference-model services can be inspected but not invoked through Live yet. Tensors, inference models without a provider, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
 
 #### Python applications
 
@@ -402,7 +429,7 @@ The default build does not yet provide:
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, resident rootfs execution, portable Python/WASI, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, inference-model provider invocation, resident rootfs execution, portable Python/WASI, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

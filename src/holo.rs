@@ -21,13 +21,11 @@ const HOLO_MEDIA_TYPE: &str = "application/vnd.hologram.holo";
 /// Stable, content-addressed catalog support for `.holo` archives.
 ///
 /// The default Hologram Live build intentionally depends only on the archive
-/// surface of the pinned Hologram revision. The pinned upstream x86 CPU runtime
-/// currently compiles AVX-512 intrinsics that require unstable Rust APIs; Live
-/// refuses to hide that behind `RUSTC_BOOTSTRAP`. Execution of primary wasm
-/// layers runs in-process through wasmtime instead (see [`HoloRuntime`] and
+/// surface of the pinned Hologram revision. Execution of primary wasm layers
+/// runs in-process through wasmtime (see [`HoloRuntime`] and
 /// `crate::holo_wasm`). Python OCI payloads in a rootfs layer have an
-/// experimental direct provider; other tensor and rootfs layers remain
-/// explicit capability seams.
+/// experimental direct provider; tensor, inference-model, and other rootfs
+/// layers remain explicit capability seams.
 pub struct HoloCatalog {
     store: Arc<ObjectStore>,
 }
@@ -438,6 +436,20 @@ where
     let manifest = AppManifest::decode(manifest_bytes).map_err(|error| {
         LiveError::InvalidHolo(format!("decode application manifest of {kappa}: {error:?}"))
     })?;
+    if manifest.primary.is_none() {
+        let services = manifest
+            .layers
+            .iter()
+            .filter(|layer| layer.kind == LayerKind::InferenceModel)
+            .map(|layer| format!("{} ({})", layer.entry, layer.aux))
+            .collect::<Vec<_>>();
+        if !services.is_empty() {
+            return Err(LiveError::Capability(format!(
+                "execution for {kappa} declares inference-model services [{}], but no inference provider is connected to hologram run",
+                services.join(", ")
+            )));
+        }
+    }
     if manifest.layers.len() != 1 {
         return Err(LiveError::Capability(format!(
             "execution for {kappa} requires exactly one layer; the archive declares {} layers",
@@ -497,6 +509,7 @@ const fn layer_kind_name(kind: LayerKind) -> &'static str {
         LayerKind::TensorPlan => "tensor",
         LayerKind::RootfsImage => "rootfs",
         LayerKind::View => "view",
+        LayerKind::InferenceModel => "inference-model",
     }
 }
 
@@ -510,7 +523,7 @@ mod tests {
         let bytes = HoloCatalog::fixture().expect("fixture");
         let inspection = inspect_bytes("fixture", "fixture.holo", &bytes).expect("inspect");
         assert!(inspection.footer_verified);
-        assert_eq!(inspection.format_version, 3);
+        assert_eq!(inspection.format_version, 4);
         assert!(inspection.directory.is_none());
         assert!(!inspection.directory_embedded);
     }
@@ -700,6 +713,32 @@ mod tests {
         let error = runtime.load(&kappa).await.expect_err("must fail");
         assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
         assert!(error.to_string().contains("view"), "{error}");
+    }
+
+    #[test]
+    fn model_only_execution_reports_the_missing_inference_provider() {
+        let bundle = b"deterministic model bundle";
+        let manifest = AppManifest {
+            primary: None,
+            requires: address_bytes(&[]),
+            layers: vec![Layer::inference_model(
+                address_bytes(bundle),
+                "ai.default",
+                "uor-r4",
+            )],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(bundle).as_bytes(), bundle);
+        let bytes = writer.finish().expect("model archive");
+
+        let error = HoloExecutor::default()
+            .execute(&bytes, Vec::new())
+            .expect_err("model provider is not connected");
+        assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
+        assert!(error.to_string().contains("ai.default (uor-r4)"), "{error}");
+        assert!(error.to_string().contains("inference provider"), "{error}");
     }
 
     fn test_runtime(name: &str) -> HoloRuntime {

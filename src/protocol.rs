@@ -120,6 +120,7 @@ pub struct HoloLayer {
     pub entry: String,
     pub architecture: Option<String>,
     pub surface: Option<String>,
+    pub engine: Option<String>,
 }
 
 /// One composed child application and its attenuated capability set.

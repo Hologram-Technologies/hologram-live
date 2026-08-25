@@ -14,7 +14,7 @@ import { sitePath } from '../../lib/site';
   <p>Modules expose stable operation identifiers and declare dependencies. Startup resolves those dependencies before a module becomes available.</p>
 
   <h2>Application archives</h2>
-  <p><a href={sitePath('/docs/holo-files')}><code>.holo</code> v3 files</a> separate their physical section table from a canonical application manifest containing ordered, κ-addressed layers. New archives add a verified application-directory projection so tools can inspect those relationships without changing the manifest's identity role.</p>
+  <p><a href={sitePath('/docs/holo-files')}><code>.holo</code> v4 files</a> separate their physical section table from a canonical application manifest containing ordered, κ-addressed layers. Readers retain v2/v3 compatibility. New archives add a verified application-directory projection so tools can inspect those relationships without changing the manifest's identity role.</p>
 
   <h2>Two protocol surfaces</h2>
   <p>Native clients use the versioned <code>hologram.live.v1.HologramLive</code> Protobuf/gRPC service. Browsers use JSON/HTTP routes described by Utoipa OpenAPI and rendered by Scalar.</p>

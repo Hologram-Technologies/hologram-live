@@ -36,7 +36,7 @@ struct InitArgs {
     /// Path to the first layer, relative to hologram.json.
     #[arg(long)]
     path: Option<PathBuf>,
-    /// Entrypoint for a Wasm, tensor, or rootfs layer.
+    /// Entrypoint for a Wasm, tensor, rootfs, or inference-model layer.
     #[arg(long)]
     entry: Option<String>,
     /// Architecture required by a rootfs layer.
@@ -45,6 +45,9 @@ struct InitArgs {
     /// Surface required by a view layer.
     #[arg(long)]
     surface: Option<String>,
+    /// Runtime engine for an inference-model layer.
+    #[arg(long)]
+    engine: Option<String>,
     /// Python execution profile.
     #[arg(long, value_enum)]
     profile: Option<PythonProfileArg>,
@@ -80,6 +83,7 @@ enum LayerKindArg {
     Tensor,
     Rootfs,
     View,
+    InferenceModel,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -137,6 +141,7 @@ fn has_layer_flags(args: &InitArgs) -> bool {
         || args.entry.is_some()
         || args.arch.is_some()
         || args.surface.is_some()
+        || args.engine.is_some()
         || args.profile.is_some()
         || args.project.is_some()
         || args.lock.is_some()
@@ -254,13 +259,19 @@ fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
         entry: args.entry.clone(),
         arch: args.arch.clone(),
         surface: args.surface.clone(),
+        engine: args.engine.clone(),
     })
 }
 
 fn python_layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
-    if args.kind.is_some() || args.path.is_some() || args.surface.is_some() || args.yes {
+    if args.kind.is_some()
+        || args.path.is_some()
+        || args.surface.is_some()
+        || args.engine.is_some()
+        || args.yes
+    {
         return Err(LiveError::Config(
-            "--template python cannot be combined with --kind, --path, --surface, or --yes"
+            "--template python cannot be combined with --kind, --path, --surface, --engine, or --yes"
                 .to_owned(),
         ));
     }
@@ -288,6 +299,7 @@ fn python_layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
         entry: None,
         arch: Some(args.arch.clone().unwrap_or_else(default_arch)),
         surface: None,
+        engine: None,
     })
 }
 
@@ -304,9 +316,10 @@ fn interactive_layers<R: BufRead, W: Write>(
             "Layer path",
             Some(&default_path(kind).to_string_lossy()),
         )?);
-        let (entry, arch, surface) = match kind {
+        let (entry, arch, surface, engine) = match kind {
             LayerKindArg::Wasm => (
                 Some(prompt(input, output, "Entrypoint", Some("_start"))?),
+                None,
                 None,
                 None,
             ),
@@ -319,16 +332,30 @@ fn interactive_layers<R: BufRead, W: Write>(
                 )?),
                 None,
                 None,
+                None,
             ),
             LayerKindArg::Rootfs => (
                 Some(prompt(input, output, "Boot entrypoint", Some("boot"))?),
                 Some(prompt_required(input, output, "Architecture")?),
+                None,
                 None,
             ),
             LayerKindArg::View => (
                 None,
                 None,
                 Some(prompt(input, output, "Surface", Some("portable"))?),
+                None,
+            ),
+            LayerKindArg::InferenceModel => (
+                Some(prompt(
+                    input,
+                    output,
+                    "Callable service entry",
+                    Some("ai.default"),
+                )?),
+                None,
+                None,
+                Some(prompt_required(input, output, "Inference engine")?),
             ),
         };
         layers.push(CompileLayer {
@@ -338,6 +365,7 @@ fn interactive_layers<R: BufRead, W: Write>(
             entry,
             arch,
             surface,
+            engine,
         });
         if !prompt_yes_no(input, output, "Add another layer", false)? {
             break;
@@ -351,7 +379,7 @@ fn prompt_kind<R: BufRead, W: Write>(input: &mut R, output: &mut W) -> Result<La
         let value = prompt(
             input,
             output,
-            "Layer kind (wasm/tensor/rootfs/view)",
+            "Layer kind (wasm/tensor/rootfs/view/inference-model)",
             Some("wasm"),
         )?;
         let kind = match value.to_ascii_lowercase().as_str() {
@@ -359,12 +387,17 @@ fn prompt_kind<R: BufRead, W: Write>(input: &mut R, output: &mut W) -> Result<La
             "tensor" => Some(LayerKindArg::Tensor),
             "rootfs" => Some(LayerKindArg::Rootfs),
             "view" => Some(LayerKindArg::View),
+            "inference-model" | "model" => Some(LayerKindArg::InferenceModel),
             _ => None,
         };
         if let Some(kind) = kind {
             return Ok(kind);
         }
-        writeln!(output, "Choose wasm, tensor, rootfs, or view.").map_err(prompt_write_error)?;
+        writeln!(
+            output,
+            "Choose wasm, tensor, rootfs, view, or inference-model."
+        )
+        .map_err(prompt_write_error)?;
     }
 }
 
@@ -472,6 +505,7 @@ fn default_path(kind: LayerKindArg) -> PathBuf {
         LayerKindArg::Tensor => "model.bin",
         LayerKindArg::Rootfs => "rootfs.img",
         LayerKindArg::View => "index.html",
+        LayerKindArg::InferenceModel => "model.bundle",
     }
     .into()
 }
@@ -504,6 +538,7 @@ impl From<LayerKindArg> for CompileLayerKind {
             LayerKindArg::Tensor => Self::Tensor,
             LayerKindArg::Rootfs => Self::Rootfs,
             LayerKindArg::View => Self::View,
+            LayerKindArg::InferenceModel => Self::InferenceModel,
         }
     }
 }
@@ -522,6 +557,7 @@ mod tests {
             entry: None,
             arch: None,
             surface: None,
+            engine: None,
             profile: None,
             project: None,
             lock: None,
@@ -622,6 +658,31 @@ mod tests {
             .expect_err("missing surface");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
         assert!(error.to_string().contains("require surface"), "{error}");
+    }
+
+    #[test]
+    fn inference_model_flags_generate_a_model_only_manifest() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let mut options = args(directory.path().to_path_buf());
+        options.kind = Some(LayerKindArg::InferenceModel);
+        options.path = Some("model.bundle".into());
+        options.entry = Some("ai.default".to_owned());
+        options.engine = Some("uor-r4".to_owned());
+        let report = initialize(options, false, &mut Cursor::new([]), &mut Vec::new())
+            .expect("initialize model application");
+
+        assert_eq!(report.primary, None);
+        assert!(report.run_command.is_none());
+        let manifest: CompileManifest = serde_json::from_slice(
+            &std::fs::read(directory.path().join("hologram.json")).expect("manifest"),
+        )
+        .expect("parse");
+        assert!(matches!(
+            manifest.layers[0].kind,
+            CompileLayerKind::InferenceModel
+        ));
+        assert_eq!(manifest.layers[0].entry.as_deref(), Some("ai.default"));
+        assert_eq!(manifest.layers[0].engine.as_deref(), Some("uor-r4"));
     }
 
     #[test]

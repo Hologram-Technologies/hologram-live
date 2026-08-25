@@ -4,7 +4,7 @@ import { sitePath } from '../../lib/site';
 ---
 <DocsLayout title="Python applications" description="Package a locked Python project and its dependencies as an executable rootfs layer in a .holo application.">
   <h1>Python applications</h1>
-  <p>Hologram can compile a locked Python project into an architecture-specific <code>RootfsImage</code>, embed it in a fat <code>.holo</code> archive, and execute its <code>main(request: bytes) -&gt; bytes</code> function. Python remains a compiler input rather than a fifth layer kind, so the canonical <code>.holo</code> v3 model stays unchanged.</p>
+  <p>Hologram can compile a locked Python project into an architecture-specific <code>RootfsImage</code>, embed it in a fat <code>.holo</code> archive, and execute its <code>main(request: bytes) -&gt; bytes</code> function. Python remains a compiler input rather than a layer kind, so the canonical <code>.holo</code> model stays unchanged.</p>
 
   <div class="note"><strong>Experimental local provider</strong>The workflow on this page works today and is intended for demos and trusted local applications. Compilation and direct execution require a running Docker-compatible engine. Execution uses a locked-down OCI container, not the planned hardware-backed microVM provider, and resident or thin-archive Python execution is not supported yet.</div>
 

@@ -4,6 +4,7 @@ use hologram_live::error::Result;
 use hologram_live::observability::TracingHandle;
 use std::path::PathBuf;
 
+mod ai;
 mod app;
 mod chat;
 mod compile;
@@ -55,6 +56,8 @@ pub struct Cli {
 
 #[derive(Debug, Clone, Subcommand)]
 enum Command {
+    /// Inspect AI model services packaged in .holo archives.
+    Ai(ai::AiArgs),
     /// Create and manage Hologram application source manifests.
     App(app::AppArgs),
     /// Create ~/.config/hologram/live.toml.
@@ -121,6 +124,7 @@ impl Cli {
 
     pub async fn run(self, tracing_handle: TracingHandle) -> Result<()> {
         match self.command.clone() {
+            Command::Ai(args) => ai::run(self, args).await,
             Command::App(args) => app::run(self, args).await,
             Command::Init(args) => init::run(self, args).await,
             Command::Compile(args) => compile::run(self, args).await,

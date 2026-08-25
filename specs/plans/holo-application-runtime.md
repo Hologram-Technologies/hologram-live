@@ -4,16 +4,16 @@
 
 - State: active
 - Created: 2026-08-25
-- Format target: `.holo` v3
+- Format target: `.holo` v4 with v2/v3 read compatibility
 - Next delivery: M1, provider and lifecycle ADR
 - Next runtime milestone: M1, application planning and provider boundary
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
-This is the living implementation plan for turning `.holo` v3 archives into complete Hologram applications. It records the current baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
+This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the current v4 baseline, compatibility requirements, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
 
 ## Product principles
 
-- [ ] Keep one `.holo` v3 application format unless a demonstrated incompatibility requires a version bump.
+- [x] Keep one append-only `.holo` application format; v4 adds `InferenceModel` without renumbering prior layer kinds and retains v2/v3 reads.
 - [ ] Keep the canonical `AppManifest` as application identity and execution truth.
 - [ ] Keep the application-directory extension a verified projection, never a second manifest.
 - [ ] Keep physical archive identity distinct from canonical application identity.
@@ -25,7 +25,7 @@ This is the living implementation plan for turning `.holo` v3 archives into comp
 
 ## Completed baseline
 
-- [x] Read and write verified `.holo` v3 archives using the pinned upstream format implementation.
+- [x] Read v2/v3 and read/write verified `.holo` v4 archives using the pinned upstream format implementation.
 - [x] Compile `hologram.json` into a canonical `AppManifest` plus κ-addressed layer payloads.
 - [x] Emit self-contained fat archives by default.
 - [x] Emit thin archives with `hologram compile --thin` while preserving identical canonical manifest bytes.
@@ -69,7 +69,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 ### Generated files and safety
 
 - [x] Generate a minimal schema-v1 `hologram.json` accepted by the same parser used by `hologram compile`.
-- [x] Offer Wasm, tensor, rootfs, and view layer templates without claiming unsupported runtime execution.
+- [x] Offer Wasm, tensor, rootfs, view, and inference-model layer templates without claiming unsupported runtime execution.
 - [x] Accept an existing capability-file path but defer generating `capabilities.json` until M2 defines and validates its canonical source schema; do not scaffold a placeholder that will become invalid.
 - [x] Generate paths relative to `hologram.json`; never persist absolute workstation paths by default.
 - [x] Write files atomically.
@@ -218,7 +218,20 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] Make direct headless execution report an explicit unavailable-surface capability when a required view cannot attach.
 - [ ] Demonstrate a composed Wasm + View `.holo` application in Hologram Desktop.
 
-### M3.3 Tensor provider
+### M3.3 Inference-model provider
+
+- [x] Upgrade the archive/space boundary to additive `.holo` v4 while retaining v2/v3 reads.
+- [x] Represent `InferenceModel` as a non-exit-bearing service layer with required entry and engine tags.
+- [x] Include model entry, engine, content κ, and embedded size in verified inspection output.
+- [x] Add `hologram ai inspect` as a metadata-only operation that never initializes an engine.
+- [x] Keep `hologram run` honest with a typed missing-provider error for model-only applications.
+- [ ] Consume and validate the deterministic R4 bundle through the `hologram-ai` facade rather than duplicating its schema.
+- [ ] Add `hologram ai compile` and `hologram ai infer` by delegating source acquisition, compilation, loading, and sessions to `hologram-ai`.
+- [ ] Route a selected archive model into Chat and the OpenAI/Ollama compatibility modules.
+- [ ] Define model residency, cancellation, resource budgets, and session reuse at the provider boundary.
+- [ ] Prove a real pinned model can compile in `hologram-ai`, import into Live, and answer a prompt end to end.
+
+### M3.3a Tensor provider
 
 - [ ] Define the TensorPlan payload contract and supported port metadata.
 - [ ] Adapt the existing weightc engine boundary as the first provider instead of embedding unstable upstream CPU code.
@@ -246,6 +259,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] Wasm remains fully compatible behind the provider boundary.
 - [ ] Wasm + View validates ordered multi-layer startup and reverse-order shutdown in the desktop.
 - [ ] Tensor execution uses a real weightc artifact and reports typed ports/results.
+- [ ] Inference-model execution uses a real `hologram-ai` archive and reports typed completions/status.
 - [ ] Rootfs execution is not marked supported until microVM isolation and cleanup gates pass.
 - [ ] Provider availability appears in `holo plan`, module capabilities, health, and documentation.
 
@@ -382,9 +396,9 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Golden and compatibility fixtures
 
-- [ ] Maintain golden v3 archives for Wasm, tensor, rootfs, view, multi-layer, child-app, fat, thin, signed, and legacy-without-directory cases.
+- [ ] Maintain golden v3/v4 archives for Wasm, tensor, rootfs, view, inference-model, multi-layer, child-app, fat, thin, signed, and legacy-without-directory cases.
 - [ ] Prove fat/thin application-identity equivalence and physical-fingerprint difference.
-- [ ] Test supported v2 read compatibility and v3 write behavior.
+- [ ] Test supported v2/v3 read compatibility and v4 write behavior.
 - [ ] Verify Live-produced archives with upstream Hologram tooling and upstream-produced archives with Live.
 - [ ] Add round-trip tests that ensure unknown extension bytes survive tooling that claims to preserve them.
 

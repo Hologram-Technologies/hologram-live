@@ -617,6 +617,7 @@ impl From<HoloLayer> for pb::HoloLayer {
             entry: value.entry,
             architecture: value.architecture,
             surface: value.surface,
+            engine: value.engine,
         }
     }
 }
@@ -630,6 +631,7 @@ impl From<pb::HoloLayer> for HoloLayer {
             entry: value.entry,
             architecture: value.architecture,
             surface: value.surface,
+            engine: value.engine,
         }
     }
 }
@@ -1015,7 +1017,7 @@ mod tests {
         let response = RpcResponse::HoloInspection(HoloInspection {
             kappa: "blake3:archive".to_owned(),
             name: "app.holo".to_owned(),
-            format_version: 3,
+            format_version: 4,
             byte_length: 128,
             archive_fingerprint: "fingerprint".to_owned(),
             footer_verified: true,
@@ -1026,19 +1028,20 @@ mod tests {
             }],
             directory: Some(HoloDirectory {
                 schema_version: 1,
-                primary_layer: Some(0),
+                primary_layer: None,
                 requires_kappa: "blake3:capabilities".to_owned(),
                 layers: vec![HoloLayer {
                     position: 0,
-                    kind: "wasm".to_owned(),
-                    content_kappa: "blake3:wasm".to_owned(),
-                    entry: "holo_run".to_owned(),
+                    kind: "inference-model".to_owned(),
+                    content_kappa: "blake3:model".to_owned(),
+                    entry: "ai.default".to_owned(),
                     architecture: None,
                     surface: None,
+                    engine: Some("uor-r4".to_owned()),
                 }],
                 children: Vec::new(),
                 blobs: vec![HoloBlob {
-                    kappa: "blake3:wasm".to_owned(),
+                    kappa: "blake3:model".to_owned(),
                     byte_length: 42,
                 }],
             }),
@@ -1053,7 +1056,9 @@ mod tests {
                 directory: Some(HoloDirectory { layers, blobs, .. }),
                 directory_embedded: true,
                 ..
-            }) if layers[0].content_kappa == "blake3:wasm" && blobs[0].byte_length == 42
+            }) if layers[0].content_kappa == "blake3:model"
+                && layers[0].engine.as_deref() == Some("uor-r4")
+                && blobs[0].byte_length == 42
         ));
     }
 }

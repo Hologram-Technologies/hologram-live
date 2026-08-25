@@ -1,4 +1,4 @@
-//! Queryable application-directory projection for `.holo` v3 archives.
+//! Queryable application-directory projection for `.holo` v3/v4 archives.
 
 use crate::error::{LiveError, Result};
 use crate::protocol::{HoloBlob, HoloChild, HoloDirectory, HoloLayer};
@@ -47,11 +47,14 @@ where
             let position = u32::try_from(position).map_err(|_| {
                 LiveError::InvalidHolo("application has too many layers".to_owned())
             })?;
-            let (kind, architecture, surface) = match layer.kind {
-                LayerKind::WasmCodemodule => ("wasm", None, None),
-                LayerKind::TensorPlan => ("tensor", None, None),
-                LayerKind::RootfsImage => ("rootfs", Some(layer.aux.clone()), None),
-                LayerKind::View => ("view", None, Some(layer.aux.clone())),
+            let (kind, architecture, surface, engine) = match layer.kind {
+                LayerKind::WasmCodemodule => ("wasm", None, None, None),
+                LayerKind::TensorPlan => ("tensor", None, None, None),
+                LayerKind::RootfsImage => ("rootfs", Some(layer.aux.clone()), None, None),
+                LayerKind::View => ("view", None, Some(layer.aux.clone()), None),
+                LayerKind::InferenceModel => {
+                    ("inference-model", None, None, Some(layer.aux.clone()))
+                }
             };
             Ok(HoloLayer {
                 position,
@@ -60,6 +63,7 @@ where
                 entry: layer.entry.clone(),
                 architecture,
                 surface,
+                engine,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -170,5 +174,29 @@ mod tests {
         assert!(error
             .to_string()
             .contains("unsupported application directory schema"));
+    }
+
+    #[test]
+    fn pre_v4_directory_rows_without_engine_remain_readable() {
+        let directory = decode(
+            br#"{
+                "schema_version":1,
+                "primary_layer":0,
+                "requires_kappa":"blake3:capabilities",
+                "layers":[{
+                    "position":0,
+                    "kind":"wasm",
+                    "content_kappa":"blake3:wasm",
+                    "entry":"holo_run",
+                    "architecture":null,
+                    "surface":null
+                }],
+                "children":[],
+                "blobs":[]
+            }"#,
+        )
+        .expect("legacy directory");
+
+        assert_eq!(directory.layers[0].engine, None);
     }
 }

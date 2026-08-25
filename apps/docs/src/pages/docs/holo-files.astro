@@ -2,9 +2,9 @@
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import { sitePath } from '../../lib/site';
 ---
-<DocsLayout title=".holo files" description="The physical layout, logical layers, identity model, packaging profiles, and verification rules of Hologram v3 application archives.">
+<DocsLayout title=".holo files" description="The physical layout, logical layers, identity model, packaging profiles, and verification rules of Hologram v4 application archives.">
   <h1><code>.holo</code> files</h1>
-  <p>A <code>.holo</code> file is Hologram's native executable and application archive. One v3 format represents a Wasm program, tensor plan, root filesystem, view, or a composed application containing several of those layers.</p>
+  <p>A <code>.holo</code> file is Hologram's native executable and application archive. Version 4 represents a Wasm program, tensor plan, root filesystem, view, callable inference model, or a composed application containing several of those layers. Readers retain v2/v3 compatibility.</p>
 
   <div class="note"><strong>Sections are not layers</strong>The physical file has a header and section table. Logical application layers live inside the canonical <code>AppManifest</code> section and point to content by κ. A layer does not receive a second physical header of its own.</div>
 
@@ -14,7 +14,7 @@ import { sitePath } from '../../lib/site';
     <article class="doc-card"><h3>Application view</h3><p>Requirements, ordered layers, child applications, and κ references. This view defines what the application means.</p></article>
   </div>
 
-  <pre><code>.holo v3
+  <pre><code>.holo v4
 ├─ header                         magic · version · flags · section count
 ├─ section table                 kind · offset · length, repeated
 ├─ AppManifest section           primary · requires · layers · children
@@ -30,7 +30,7 @@ import { sitePath } from '../../lib/site';
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>0</code></td><td>4 bytes</td><td><code>magic</code></td><td>ASCII <code>HOLO</code>.</td></tr>
-      <tr><td><code>4</code></td><td>2 bytes</td><td><code>format_version</code></td><td>Current writers emit version <code>3</code>.</td></tr>
+      <tr><td><code>4</code></td><td>2 bytes</td><td><code>format_version</code></td><td>Current writers emit version <code>4</code>; readers accept versions 2–4.</td></tr>
       <tr><td><code>6</code></td><td>2 bytes</td><td><code>flags</code></td><td>Reserved format flags.</td></tr>
       <tr><td><code>8</code></td><td>2 bytes</td><td><code>section_count</code></td><td>Number of section-table entries.</td></tr>
       <tr><td><code>10</code></td><td>24 bytes each</td><td><code>section[]</code></td><td><code>kind:u8</code>, seven padding bytes, <code>offset:u64</code>, and <code>length:u64</code>.</td></tr>
@@ -52,7 +52,7 @@ import { sitePath } from '../../lib/site';
       <tr><td>9–11</td><td><code>Inputs</code>, <code>Outputs</code>, <code>Constants</code></td><td>Typed execution ports and constant values.</td></tr>
       <tr><td>12–13</td><td><code>ExecPlan</code>, <code>WarmStart</code></td><td>Parallel execution levels and warm-start material.</td></tr>
       <tr><td>14</td><td><code>Extension</code></td><td>Keyed, producer-defined bytes. Repeatable.</td></tr>
-      <tr><td>15</td><td><code>AppManifest</code></td><td>Canonical v3 application structure.</td></tr>
+      <tr><td>15</td><td><code>AppManifest</code></td><td>Canonical application structure.</td></tr>
       <tr><td>16</td><td><code>ContentBlob</code></td><td>A 71-byte κ label followed by its content bytes. Repeatable.</td></tr>
     </tbody>
   </table></div>
@@ -66,6 +66,7 @@ import { sitePath } from '../../lib/site';
 ├─ layer[1]: tensor · κ · session
 ├─ layer[2]: rootfs · κ · boot · arm64
 ├─ layer[3]: view · κ · portable
+├─ layer[4]: inference-model · κ · ai.default · uor-r4
 └─ child[0]: application κ · delegated capabilities κ</code></pre>
 
   <h3>Layer kinds</h3>
@@ -76,13 +77,14 @@ import { sitePath } from '../../lib/site';
       <tr><td><code>tensor</code></td><td><code>TensorPlan</code></td><td>Content κ and session entrypoint; no app exit code.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
       <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Directly executes experimental Python OCI bundles; other providers remain explicit.</td></tr>
       <tr><td><code>view</code></td><td><code>View</code></td><td>Content κ and target surface; no app exit code.</td><td>Packages and inspects; the desktop does not attach it yet.</td></tr>
+      <tr><td><code>inference-model</code></td><td><code>InferenceModel</code></td><td>Content κ, unique callable entry, and engine identifier; no app exit code.</td><td>Imports, verifies, packages, and inspects; provider invocation remains explicit.</td></tr>
     </tbody>
   </table></div>
-  <p>Manifest order is boot order in the v3 design. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
+  <p>Manifest order is initialization order. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>; a model-only archive uses <code>primary = null</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
 
   <h3>Source languages do not add layer kinds</h3>
   <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
-  <p>This keeps <code>.holo</code> v3 stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-aware rootfs compiler and the planned portable profile.</p>
+  <p>This keeps the canonical layer model stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-aware rootfs compiler and <a href={sitePath('/docs/model-apps')}>AI model applications</a> for the v4 service layer.</p>
 
   <h2>Queryable application directory</h2>
   <p>New Hologram Live archives carry the extension <code>https://hologram.foundation/extension/application-directory/v1</code>. Its deterministic JSON is a normalized projection of the manifest and physical packaging:</p>
@@ -97,13 +99,14 @@ import { sitePath } from '../../lib/site';
       "content_kappa": "blake3:…",
       "entry": "holo_run",
       "architecture": null,
-      "surface": null
+      "surface": null,
+      "engine": null
     &#125;
   ],
   "children": [],
   "blobs": [&#123; "kappa": "blake3:…", "byte_length": 842 &#125;]
 &#125;</code></pre>
-  <p>The directory is a read model, not a second source of truth. During import and inspection, Live decodes the canonical manifest, hashes every embedded blob, derives this directory again, and rejects disagreement. Legacy v3 archives without the extension remain valid; Live derives the same view and reports <code>directory_embedded: false</code>.</p>
+  <p>The directory is a read model, not a second source of truth. During import and inspection, Live decodes the canonical manifest, hashes every embedded blob, derives this directory again, and rejects disagreement. Legacy archives without the extension remain valid; Live derives the same view and reports <code>directory_embedded: false</code>. Model rows use the optional <code>engine</code> field.</p>
 
   <h2>Identity and verification</h2>
   <ul>
@@ -123,7 +126,7 @@ import { sitePath } from '../../lib/site';
 
   <h2>Build, inspect, and run</h2>
   <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
-  <div class="note"><strong>Two source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Both produce the same canonical v3 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
+  <div class="note"><strong>Two source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Both produce the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,

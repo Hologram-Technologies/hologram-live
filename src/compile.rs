@@ -12,7 +12,7 @@ const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 2;
 /// Source manifest accepted by `hologram compile`.
 ///
 /// Paths are resolved relative to the manifest file. The resulting archive is
-/// a self-contained Hologram v3 application: every layer and the declared
+/// a self-contained Hologram v4 application: every layer and the declared
 /// capability set are embedded under their canonical kappa labels.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,6 +40,8 @@ pub struct CompileLayer {
     pub arch: Option<String>,
     #[serde(default)]
     pub surface: Option<String>,
+    #[serde(default)]
+    pub engine: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -49,6 +51,7 @@ pub enum CompileLayerKind {
     Tensor,
     Rootfs,
     View,
+    InferenceModel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,6 +200,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
         CompileLayerKind::Wasm => {
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             Ok(Layer::wasm(
                 kappa,
                 effective_entry(source).unwrap_or("_start"),
@@ -205,6 +209,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
         CompileLayerKind::Tensor => {
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             Ok(Layer::tensor(
                 kappa,
                 effective_entry(source).unwrap_or("session"),
@@ -212,6 +217,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
         }
         CompileLayerKind::Rootfs => {
             reject_aux(source, "surface", source.surface.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             let arch = required_field(source, "arch", source.arch.as_deref())?;
             let arch = if matches!(source.source.as_ref(), Some(CompileSource::Python(_))) {
                 holo_python::canonical_arch(arch)?
@@ -226,6 +232,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
         }
         CompileLayerKind::View => {
             reject_aux(source, "arch", source.arch.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             if source.entry.is_some() {
                 return Err(layer_config_error(
                     source,
@@ -234,6 +241,13 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             }
             let surface = required_field(source, "surface", source.surface.as_deref())?;
             Ok(Layer::view(kappa, surface))
+        }
+        CompileLayerKind::InferenceModel => {
+            reject_aux(source, "arch", source.arch.as_deref())?;
+            reject_aux(source, "surface", source.surface.as_deref())?;
+            let entry = required_field(source, "entry", source.entry.as_deref())?;
+            let engine = required_field(source, "engine", source.engine.as_deref())?;
+            Ok(Layer::inference_model(kappa, entry, engine))
         }
     }
 }
@@ -341,6 +355,7 @@ const fn kind(layer: &CompileLayer) -> &'static str {
         CompileLayerKind::Tensor => "tensor",
         CompileLayerKind::Rootfs => "rootfs",
         CompileLayerKind::View => "view",
+        CompileLayerKind::InferenceModel => "inference-model",
     }
 }
 
@@ -470,5 +485,68 @@ mod tests {
         .expect("parse");
         let error = validate_compile_manifest(&manifest).expect_err("schema mismatch");
         assert!(error.to_string().contains("schema_version 2"), "{error}");
+    }
+
+    #[test]
+    fn packages_a_precompiled_inference_bundle_as_a_v4_model_layer() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            directory.path().join("model.bundle"),
+            b"deterministic R4 bundle",
+        )
+        .expect("bundle");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "layers": [{
+                    "kind": "inference-model",
+                    "path": "model.bundle",
+                    "entry": "ai.default",
+                    "engine": "uor-r4"
+                }]
+            }"#,
+        )
+        .expect("manifest");
+
+        let compiled = compile_manifest(&manifest_path).expect("compile model archive");
+        let inspection = inspect_bytes("model", "model.holo", &compiled.bytes).expect("inspect");
+        assert_eq!(inspection.format_version, 4);
+        let directory = inspection.directory.expect("application directory");
+        assert_eq!(directory.primary_layer, None);
+        assert_eq!(directory.layers[0].kind, "inference-model");
+        assert_eq!(directory.layers[0].entry, "ai.default");
+        assert_eq!(directory.layers[0].engine.as_deref(), Some("uor-r4"));
+        assert_eq!(directory.blobs.len(), 2);
+    }
+
+    #[test]
+    fn inference_model_layers_require_an_entry_and_engine() {
+        let missing_engine: CompileManifest = serde_json::from_str(
+            r#"{
+                "layers": [{
+                    "kind": "inference-model",
+                    "path": "model.bundle",
+                    "entry": "ai.default"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        let error = validate_compile_manifest(&missing_engine).expect_err("engine is required");
+        assert!(error.to_string().contains("require engine"), "{error}");
+
+        let missing_entry: CompileManifest = serde_json::from_str(
+            r#"{
+                "layers": [{
+                    "kind": "inference-model",
+                    "path": "model.bundle",
+                    "engine": "uor-r4"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        let error = validate_compile_manifest(&missing_entry).expect_err("entry is required");
+        assert!(error.to_string().contains("require entry"), "{error}");
     }
 }

@@ -52,7 +52,7 @@ hologram app init my-app
 # Non-interactive equivalent for scripts and CI
 hologram app init my-app --kind wasm --path app.wasm --entry holo_run</code></pre>
   <p><code>--yes</code> accepts a minimal Wasm manifest using <code>app.wasm</code> and <code>_start</code>. Global <code>--json</code> returns the manifest path, layer count, primary position, and suggested commands as structured output.</p>
-  <p><code>hologram compile</code> then packages the JSON application manifest, its capability declaration, and its layer files into a Hologram v3 archive. Layer paths are relative to the source manifest.</p>
+  <p><code>hologram compile</code> then packages the JSON application manifest, its capability declaration, and its layer files into a Hologram v4 archive. Readers retain v2/v3 compatibility, and layer paths are relative to the source manifest.</p>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,
@@ -71,11 +71,20 @@ hologram run application.holo --input request.json --output-format json
 
 # Same manifest identity, payloads resolved through the local κ store
 hologram compile hologram.json --thin --output application.thin.holo</code></pre>
-  <p>Supported layer kinds are <code>wasm</code>, <code>tensor</code>, <code>rootfs</code>, and <code>view</code>. Fat archives are self-contained and can execute directly without a running service. A thin archive omits content blobs; import a corresponding fat archive first so resident execution can resolve those layer κ values from the local content cache. Schema v1 assembles prebuilt payloads. Schema v2 also accepts the experimental Python rootfs source recipe described below.</p>
+  <p>Supported layer kinds are <code>wasm</code>, <code>tensor</code>, <code>rootfs</code>, <code>view</code>, and <code>inference-model</code>. Fat archives are self-contained and can execute directly when their primary layer has a connected provider. A thin archive omits content blobs; import a corresponding fat archive first so resident execution can resolve those layer κ values from the local content cache. Schema v1 assembles prebuilt payloads. Schema v2 also accepts the experimental Python rootfs source recipe described below.</p>
   <p><code>hologram run</code> uses binary-safe <code>raw</code> output by default, retaining the execution metadata and byte arrays. <code>--output-format text</code> validates and prints UTF-8 payloads directly. <code>--output-format json</code> parses and prints a single JSON result directly, or an array when several <code>--input</code> arguments produce several results. Invalid encodings fail explicitly.</p>
 
   <h3>Python source projects</h3>
   <p><code>hologram app init --template python --profile rootfs</code> records a project, <code>module:function</code> entrypoint, <code>uv.lock</code>, OCI base, and target architecture in a schema-v2 manifest. <code>hologram compile --check</code> validates the recipe without building it. A normal compile creates an existing <code>rootfs</code> layer—never a new Python layer kind—and requires a running Docker-compatible engine. See <a href={sitePath('/docs/python-apps')}>Python applications</a> for the working NumPy + pandas example and current isolation limits.</p>
+
+  <h3>AI model archives</h3>
+  <pre><code>hologram --json ai inspect model.holo
+
+# Low-level assembly of an already-built provider bundle
+hologram app init model-app --kind inference-model \
+  --path model.bundle --entry ai.default --engine uor-r4
+hologram compile model-app/hologram.json --output model-app.holo</code></pre>
+  <p><code>ai inspect</code> reads service entry, engine, content identity, and embedded size without initializing an inference engine. The normal model-source compiler remains <code>hologram-ai</code>, which produces a complete v4 archive. Live's compile manifest accepts a prebuilt opaque provider bundle for low-level composition; it does not duplicate model compilation or validate a private R4 bundle itself. See <a href={sitePath('/docs/model-apps')}>AI model applications</a>.</p>
 
   <h2>Operations</h2>
   <p><code>tracing</code> reads or updates the live filter, <code>openapi</code> writes the generated OpenAPI document, and <code>update</code> checks, installs, or rolls back verified releases.</p>

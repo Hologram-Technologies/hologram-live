@@ -124,6 +124,7 @@ message HoloLayer {
   string entry = 4;
   optional string architecture = 5;
   optional string surface = 6;
+  optional string engine = 7;
 }
 message HoloChild {
   uint32 position = 1;

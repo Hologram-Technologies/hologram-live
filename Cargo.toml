@@ -47,11 +47,11 @@ utoipa = { version = "5", features = ["axum_extras"] }
 wasmtime = "46"
 zstd = "0.13"
 
-# The only domain dependency. The stable default uses the canonical .holo
-# archive reader/writer only. The pinned upstream x86 CPU backend currently
-# depends on unstable AVX-512 intrinsics, so execution is represented by a
-# typed provider seam rather than hidden behind RUSTC_BOOTSTRAP.
-hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "94ecb886811115491a77c8229e494965bea03fc2", default-features = false, features = ["archive", "space"] }
+# The only domain dependency. This revision adds the append-only `.holo` v4
+# `InferenceModel` layer while retaining v2/v3 reads. The stable default still
+# uses only the canonical archive/space surface: model compilation and runtime
+# providers remain outside this crate until their typed adapters are enabled.
+hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "fdd119045ab7ef595132b651915b16ed1618039c", default-features = false, features = ["archive", "space"] }
 
 [dev-dependencies]
 cucumber = "0.23"

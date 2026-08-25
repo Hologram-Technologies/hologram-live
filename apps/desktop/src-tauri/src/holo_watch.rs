@@ -61,20 +61,54 @@ pub async fn holo_catalog_run(
     kappa: String,
     input: String,
 ) -> Result<String, String> {
-    run_hologram(&app, ["--json", "holo", "load", kappa.as_str()]).await?;
+    let cache_directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("resolve application cache: {error}"))?
+        .join("holo-run");
+    std::fs::create_dir_all(&cache_directory)
+        .map_err(|error| format!("create application run cache: {error}"))?;
+    let archive = cache_directory.join(catalog_cache_name(&kappa)?);
+
+    run_hologram(&app, ["--json", "holo", "verify", kappa.as_str()]).await?;
     run_hologram(
         &app,
-        [
-            "--json",
-            "run",
-            kappa.as_str(),
-            "--input-text",
-            input.as_str(),
-            "--output-format",
-            "text",
+        vec![
+            OsString::from("--json"),
+            OsString::from("files"),
+            OsString::from("get"),
+            OsString::from(&kappa),
+            OsString::from("--output"),
+            archive.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+    run_hologram(
+        &app,
+        vec![
+            OsString::from("--json"),
+            OsString::from("run"),
+            archive.as_os_str().to_owned(),
+            OsString::from("--input-text"),
+            OsString::from(input),
+            OsString::from("--output-format"),
+            OsString::from("text"),
         ],
     )
     .await
+}
+
+fn catalog_cache_name(kappa: &str) -> Result<String, String> {
+    let digest = kappa
+        .strip_prefix("blake3:")
+        .filter(|value| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+        .ok_or_else(|| format!("invalid .holo catalog kappa {kappa:?}"))?;
+    Ok(format!("{digest}.holo"))
 }
 
 #[tauri::command]
@@ -112,7 +146,20 @@ fn build_and_import(app: &AppHandle, request: BuildRequest) -> Result<BuildResul
             OsString::from("import"),
             request.output.as_os_str().to_owned(),
         ];
-        let imported = run_hologram(app, import_arguments).await?;
+        let imported = match run_hologram(app, import_arguments.clone()).await {
+            Ok(imported) => imported,
+            Err(error) if import_needs_larger_transport(&error) => {
+                run_hologram(app, ["--json", "restart"])
+                    .await
+                    .map_err(|restart| {
+                        format!(
+                            "{error}\nrestart the local service for a larger .holo import: {restart}"
+                        )
+                    })?;
+                run_hologram(app, import_arguments).await?
+            }
+            Err(error) => return Err(error),
+        };
         let inspection: ImportedHolo = serde_json::from_str(&imported)
             .map_err(|error| format!("decode imported .holo inspection: {error}"))?;
 
@@ -127,4 +174,40 @@ fn build_and_import(app: &AppHandle, request: BuildRequest) -> Result<BuildResul
             archive_name: inspection.name,
         })
     })
+}
+
+fn import_needs_larger_transport(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("h2 protocol error")
+        || error.contains("message length too large")
+        || error.contains("resource exhausted")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{catalog_cache_name, import_needs_larger_transport};
+
+    #[test]
+    fn catalog_cache_names_accept_only_a_blake3_digest() {
+        let digest = "a".repeat(64);
+        assert_eq!(
+            catalog_cache_name(&format!("blake3:{digest}")).expect("valid kappa"),
+            format!("{digest}.holo")
+        );
+        assert!(catalog_cache_name("../../application.holo").is_err());
+        assert!(catalog_cache_name("blake3:not-a-digest").is_err());
+    }
+
+    #[test]
+    fn only_transport_size_failures_restart_an_existing_local_service() {
+        assert!(import_needs_larger_transport(
+            "Internal error: h2 protocol error: stream reset"
+        ));
+        assert!(import_needs_larger_transport(
+            "Resource exhausted: message length too large"
+        ));
+        assert!(!import_needs_larger_transport(
+            "LIVE_INVALID_HOLO: malformed archive"
+        ));
+    }
 }

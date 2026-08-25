@@ -23,6 +23,12 @@ bdd:
 python-holo-demo:
     ./scripts/check-python-holo-demo.sh
 
+# Compile and execute the small standard-library Python example.
+python-hello-demo:
+    cargo build --release --locked --package hologram-live --bin hologram
+    ./target/release/hologram --json compile examples/python-hello/hologram.json --check >/dev/null
+    ./target/release/hologram --json run examples/python-hello --input-text Ada --output-format json
+
 # Compile, verify, and retain the NumPy + pandas .holo artifact.
 python-holo-package output="target/numpy-pandas.holo":
     ./scripts/check-python-holo-demo.sh --output "{{output}}"

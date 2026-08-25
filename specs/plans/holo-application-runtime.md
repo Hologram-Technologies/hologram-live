@@ -145,7 +145,10 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Add equivalent native API and JSON/HTTP representations without exposing engine-specific internals.
 - [x] Keep `hologram run <PATH|KAPPA>` output compatible while routing both direct and resident preparation through `ApplicationPlan`.
 - [x] Accept project directories and `hologram.json` manifests in `hologram run`, with file and UTF-8 text inputs.
-- [x] Expose fixed desktop import/load/run commands and an Applications input/output panel for watched builds and existing archives.
+- [x] Expose fixed desktop import/verify/download/direct-run commands and an Applications input/output panel for watched builds and existing archives.
+- [x] Give the Desktop-owned local transport enough room for documented rootfs
+  archives, with a bounded restart/retry migration for an already-running
+  service that retained the former message limit.
 
 ### M1 acceptance criteria
 
@@ -292,6 +295,9 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
   directories. Keep reusable registration, persistence, filtering, debounce,
   and build-state orchestration in a Tauri-independent workspace crate outside
   `src-tauri`.
+- [x] Run cataloged rootfs applications by verifying and downloading their
+  immutable archive to a κ-derived cache path, then invoking the direct
+  provider rather than claiming resident rootfs support.
 
 Watched-project acceptance:
 
@@ -330,6 +336,16 @@ install the repository's pinned Rust 1.97.1 toolchain consistently. A permanent
 product-boundary gate inspects the resolved server graph and rejects Tauri or
 application-watch dependencies.
 
+Python follow-up (2026-08-25): the packaged desktop application compiled and
+cataloged the locked `examples/python-hello` project as a verified 57.0 MiB v4
+archive, inspected its `python_hello_holo:main` rootfs layer, and rendered
+`{"message":"Hello, Grace!","name":"Grace","runtime":"python"}` from the Run
+panel. Desktop sidecars use a 256 MiB local RPC limit, and the watched import
+performs one restart/retry only for a transport-size failure so existing
+32 MiB local configurations migrate without weakening the server default. Full
+repository verification, Desktop Clippy, documentation, and packaged macOS
+application/DMG builds pass.
+
 ### Source transformations
 
 - [ ] Normalize `.wat` source into WebAssembly binary during compilation so `WasmCodemodule` content is portable Wasm bytes.
@@ -342,6 +358,7 @@ application-watch dependencies.
 
 - [x] Add source-manifest schema v2 with a typed source recipe while retaining schema-v1 prebuilt `path` compatibility.
 - [x] Add `hologram app init --template python` and non-interactive flags for project, entrypoint, lock file, and execution profile. Interactive Python-specific prompting remains a UX follow-up.
+- [x] Keep a minimal locked standard-library Python project as a fast teaching example alongside the NumPy/pandas dependency proof.
 - [ ] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
 - [x] Require `uv.lock` and resolve it for the declared Linux target in a clean OCI build root for the experimental rootfs provider.
 - [ ] Pin and record the Python runtime, component toolchain, target ABI, dependency artifacts, and hashes.

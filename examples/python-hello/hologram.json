@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "primary": 0,
+  "layers": [
+    {
+      "kind": "rootfs",
+      "source": {
+        "language": "python",
+        "project": ".",
+        "entry": "python_hello_holo:main",
+        "lock": "uv.lock",
+        "profile": "rootfs",
+        "base": "python:3.12-slim"
+      },
+      "arch": "host"
+    }
+  ]
+}

@@ -9,6 +9,11 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
 use tauri_plugin_shell::ShellExt;
 
+// Rootfs-backed applications include a compressed OCI image. The desktop owns
+// its local service lifecycle, so give both its CLI clients and spawned service
+// enough headroom to import the documented Python examples.
+const DESKTOP_MAX_RPC_BYTES: &str = "268435456";
+
 struct MenuBarItems {
     status: MenuItem<Wry>,
     start: MenuItem<Wry>,
@@ -156,7 +161,8 @@ where
     let command = app
         .shell()
         .sidecar("hologram")
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .env("HOLOGRAM_MAX_RPC_BYTES", DESKTOP_MAX_RPC_BYTES);
     let output = arguments
         .into_iter()
         .fold(command, |command, argument| command.arg(argument.as_ref()))

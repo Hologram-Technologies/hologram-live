@@ -329,7 +329,7 @@ impl AppConfig {
             let bytes = toml::to_string_pretty(&config)?;
             atomic_write(&path, bytes.as_bytes())?;
         }
-        config.apply_environment();
+        config.apply_environment()?;
         config.expand_paths();
         config.validate()?;
         Ok((config, path))
@@ -498,9 +498,16 @@ impl AppConfig {
         }
     }
 
-    fn apply_environment(&mut self) {
+    fn apply_environment(&mut self) -> Result<()> {
         if let Ok(value) = env::var("HOLOGRAM_LISTEN") {
             self.server.listen = value;
+        }
+        if let Ok(value) = env::var("HOLOGRAM_MAX_RPC_BYTES") {
+            self.server.max_rpc_bytes = value.parse().map_err(|error| {
+                LiveError::Config(format!(
+                    "HOLOGRAM_MAX_RPC_BYTES must be a positive byte count: {error}"
+                ))
+            })?;
         }
         if let Ok(value) = env::var("HOLOGRAM_REMOTE_ENDPOINT") {
             self.client.remote_endpoint = Some(value);
@@ -525,6 +532,7 @@ impl AppConfig {
         if let Some(value) = env::var_os("HOLOGRAM_CACHE_DIR") {
             self.paths.cache_dir = PathBuf::from(value);
         }
+        Ok(())
     }
 
     fn expand_paths(&mut self) {

@@ -106,6 +106,13 @@ request admitted by grant
   files so interactive clients do not need temporary payload files.
 - [x] Import existing `.holo` files and run ready watched/catalog applications
   with text input and visible output from the desktop Applications view.
+- [x] Add a small locked `examples/python-hello/` project alongside the Wasm
+  fixture and dependency-heavy NumPy/pandas example.
+- [x] Make Desktop catalog execution verify and retrieve the immutable archive,
+  then use direct execution so Python rootfs applications do not require the
+  unsupported resident rootfs provider.
+- [x] Raise the Desktop-owned local RPC boundary for rootfs archives and
+  restart/retry once when an already-running service still has the old limit.
 
 Acceptance:
 
@@ -118,8 +125,8 @@ Acceptance:
   frontend reconstruction of archive metadata.
 - [x] CLI project execution uses the same compiler and direct executor as an
   explicitly compiled fat archive.
-- [x] Desktop execution uses fixed import/load/run sidecar operations and does
-  not expose a general shell bridge to the webview.
+- [x] Desktop execution uses fixed import/verify/download/run sidecar operations
+  and does not expose a general shell bridge to the webview.
 
 Interruption evidence (2026-08-25): the packaged Tauri app selected
 `features/fixtures/wasm-app`, compiled/imported it to a verified v4 catalog row,
@@ -147,9 +154,23 @@ Execution follow-up (2026-08-25): `hologram run features/fixtures/wasm-app
 --input-text 'hello project' --output-format text --json` compiled the source
 directory in memory and returned `HELLO PROJECT`; addressing its
 `hologram.json` directly returned `HELLO MANIFEST`. In the packaged Tauri app,
-the catalog inspector accepted `hello desktop`, performed the fixed load/run
+the catalog inspector accepted `hello desktop`, performed the application run
 flow, and rendered `HELLO DESKTOP`. The native Applications view also exposes
 the `.holo` picker and ready watched-project Run actions.
+
+Python-example follow-up (2026-08-25): the committed `python-hello` project
+passes `compile --check` and direct project execution returned
+`{"message":"Hello, Ada!","name":"Ada","runtime":"python"}` through the
+real Docker-backed rootfs compiler/provider. Desktop catalog runs now use a
+validated κ-derived cache path and fixed verify/download/direct-run commands,
+which preserves Wasm behavior and enables the same panel for Python archives.
+The packaged app imported the 57.0 MiB archive, inspected its rootfs layer, and
+ran it with `Grace`, rendering
+`{"message":"Hello, Grace!","name":"Grace","runtime":"python"}`. The desktop
+sets a 256 MiB local RPC ceiling and safely restarts/retries only transport-size
+failures, so installations retaining the former 32 MiB config can complete the
+first rootfs import. Full repository verification, Desktop Clippy, the 13-page
+documentation build, and the packaged `.app`/DMG build pass.
 
 ### Slice 1 — Canonical capability source
 

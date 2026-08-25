@@ -5,7 +5,7 @@
 - State: active
 - Created: 2026-08-25
 - Format target: `.holo` v3
-- Next delivery: M0, interactive manifest generation
+- Next delivery: M1, provider and lifecycle ADR
 - Next runtime milestone: M1, application planning and provider boundary
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -21,7 +21,7 @@ This is the living implementation plan for turning `.holo` v3 archives into comp
 - [ ] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
 - [ ] Boot ordered layers transactionally and unwind partial starts in reverse order.
 - [ ] Keep execution providers behind typed boundaries so Wasm, views, tensors, and root filesystems do not leak engine details into the archive loader.
-- [ ] Make every interactive workflow available non-interactively for automation and CI.
+- [x] Make every interactive workflow available non-interactively for automation and CI.
 
 ## Completed baseline
 
@@ -40,7 +40,7 @@ This is the living implementation plan for turning `.holo` v3 archives into comp
 
 ## Delivery order
 
-1. M0: interactive manifest generation, delivered as a small developer-experience slice.
+1. M0: interactive manifest generation. Completed in the first implementation slice.
 2. M1: `ApplicationPlan`, closure resolution, and the provider/lifecycle boundary.
 3. M2: capability decoding, grants, and child attenuation.
 4. M3: multi-layer execution—Wasm migration, then View, Tensor, and Rootfs providers.
@@ -56,37 +56,37 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Command design
 
-- [ ] Add `hologram app init [DIRECTORY]` as the friendly interactive command.
-- [ ] Keep the existing top-level `hologram init` dedicated to service configuration.
-- [ ] Default `DIRECTORY` to the current directory.
-- [ ] Detect whether stdin and stderr are terminals before prompting.
-- [ ] Refuse to prompt in non-interactive environments unless all required choices are supplied as flags.
-- [ ] Add non-interactive flags for layer kind, layer path, entrypoint, architecture, surface, primary layer, and capability file.
-- [ ] Support repeated layer flags or a repeatable interactive “add another layer” step.
-- [ ] Show the resulting compile and run commands after generation.
-- [ ] Return a machine-readable creation report when global `--json` is active.
+- [x] Add `hologram app init [DIRECTORY]` as the friendly interactive command.
+- [x] Keep the existing top-level `hologram init` dedicated to service configuration.
+- [x] Default `DIRECTORY` to the current directory.
+- [x] Detect whether stdin and stderr are terminals before prompting.
+- [x] Refuse to prompt in non-interactive environments unless all required choices are supplied as flags.
+- [x] Add non-interactive flags for layer kind, layer path, entrypoint, architecture, surface, primary layer, and capability file.
+- [x] Support repeated layer flags or a repeatable interactive “add another layer” step.
+- [x] Show the resulting compile and run commands after generation.
+- [x] Return a machine-readable creation report when global `--json` is active.
 
 ### Generated files and safety
 
-- [ ] Generate a minimal schema-v1 `hologram.json` accepted by the same parser used by `hologram compile`.
-- [ ] Offer Wasm, tensor, rootfs, and view layer templates without claiming unsupported runtime execution.
-- [ ] Offer to generate a starter `capabilities.json`, while clearly marking capability enforcement status until M2 lands.
-- [ ] Generate paths relative to `hologram.json`; never persist absolute workstation paths by default.
-- [ ] Write files atomically.
-- [ ] Refuse to overwrite an existing manifest unless `--force` is explicit.
-- [ ] Do not leave a partial scaffold if any write or validation step fails.
-- [ ] Validate the generated manifest before reporting success.
-- [ ] Keep packaging selection out of `hologram.json`; explain `compile` versus `compile --thin` after generation.
+- [x] Generate a minimal schema-v1 `hologram.json` accepted by the same parser used by `hologram compile`.
+- [x] Offer Wasm, tensor, rootfs, and view layer templates without claiming unsupported runtime execution.
+- [x] Accept an existing capability-file path but defer generating `capabilities.json` until M2 defines and validates its canonical source schema; do not scaffold a placeholder that will become invalid.
+- [x] Generate paths relative to `hologram.json`; never persist absolute workstation paths by default.
+- [x] Write files atomically.
+- [x] Refuse to overwrite an existing manifest unless `--force` is explicit.
+- [x] Do not leave a partial scaffold if any write or validation step fails.
+- [x] Validate the generated manifest before reporting success.
+- [x] Keep packaging selection out of `hologram.json`; explain `compile` versus `compile --thin` after generation.
 
 ### M0 acceptance criteria
 
-- [ ] A new user can generate a one-layer Wasm manifest interactively and compile it without editing JSON.
-- [ ] A CI job can generate the same manifest with flags and no terminal prompts.
-- [ ] Rootfs and view prompts require `arch` and `surface`, respectively.
-- [ ] Existing files survive aborted, invalid, and non-`--force` runs unchanged.
-- [ ] CLI unit tests cover prompt decisions, flags, validation, overwrite protection, and JSON output.
-- [ ] A BDD scenario generates, compiles, and directly executes the Wasm fixture.
-- [ ] README and website CLI documentation include the interactive and non-interactive workflows.
+- [x] A new user can generate a one-layer Wasm manifest interactively and compile it without editing JSON.
+- [x] A CI job can generate the same manifest with flags and no terminal prompts.
+- [x] Rootfs and view prompts require `arch` and `surface`, respectively.
+- [x] Existing files survive aborted, invalid, and non-`--force` runs unchanged.
+- [x] Automated CLI and BDD tests cover prompt decisions, flags, validation, overwrite protection, and JSON output.
+- [x] A BDD scenario generates, compiles, and directly executes the Wasm fixture.
+- [x] README and website CLI documentation include the interactive and non-interactive workflows.
 
 ## M1 — Canonical application plan and provider boundary
 
@@ -416,7 +416,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ## Immediate next slice
 
-- [ ] Implement M0 `hologram app init` as a small standalone commit.
+- [x] Implement M0 `hologram app init` as a small standalone commit.
 - [ ] Draft the M1 provider and lifecycle ADR before runtime refactoring.
 - [ ] Add `application_kappa` to compile and inspection results.
 - [ ] Introduce the read-only `ApplicationPlan` and full non-child layer resolution.

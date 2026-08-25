@@ -53,6 +53,54 @@ fn wasm_manifest(world: &mut BddWorld) {
     world.temporary = Some(tempfile::tempdir().expect("create scenario directory"));
 }
 
+#[given("a new application directory")]
+fn new_application_directory(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create application directory");
+    let fixture = workspace_root().join("features/fixtures/wasm-app/transform.wat");
+    std::fs::copy(fixture, temporary.path().join("transform.wat")).expect("copy Wasm fixture");
+    world.temporary = Some(temporary);
+}
+
+#[when("I initialize a Wasm application manifest")]
+fn initialize_wasm_manifest(world: &mut BddWorld) {
+    let directory = world
+        .temporary
+        .as_ref()
+        .expect("application directory")
+        .path();
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("app")
+        .arg("init")
+        .arg(directory)
+        .arg("--kind")
+        .arg("wasm")
+        .arg("--path")
+        .arg("transform.wat")
+        .arg("--entry")
+        .arg("holo_run")
+        .output()
+        .expect("initialize app manifest");
+    assert!(
+        output.status.success(),
+        "app init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("parse init report");
+    assert_eq!(report["layer_count"], 1);
+    world.manifest = Some(directory.join("hologram.json"));
+}
+
+#[then("the generated manifest is valid")]
+fn generated_manifest_is_valid(world: &mut BddWorld) {
+    let bytes = std::fs::read(world.manifest.as_ref().expect("manifest")).expect("read manifest");
+    let manifest: hologram_live::compile::CompileManifest =
+        serde_json::from_slice(&bytes).expect("parse manifest");
+    hologram_live::compile::validate_compile_manifest(&manifest).expect("validate manifest");
+    assert_eq!(manifest.primary, Some(0));
+}
+
 #[when("I import the compiled archive")]
 fn import_archive(world: &mut BddWorld) {
     let path = world

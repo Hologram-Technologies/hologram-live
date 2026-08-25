@@ -2,7 +2,7 @@ use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use hologram::archive::HoloWriter;
 use hologram::space::{address_bytes, AppManifest, Layer, Realization};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -13,7 +13,7 @@ const MANIFEST_SCHEMA_VERSION: u16 = 1;
 /// Paths are resolved relative to the manifest file. The resulting archive is
 /// a self-contained Hologram v3 application: every layer and the declared
 /// capability set are embedded under their canonical kappa labels.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileManifest {
     #[serde(default = "default_schema_version")]
@@ -25,7 +25,7 @@ pub struct CompileManifest {
     pub layers: Vec<CompileLayer>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileLayer {
     pub kind: CompileLayerKind,
@@ -38,7 +38,7 @@ pub struct CompileLayer {
     pub surface: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CompileLayerKind {
     Wasm,
@@ -65,18 +65,8 @@ pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
 
 pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<CompiledHolo> {
     let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
-    let specification: CompileManifest = serde_json::from_slice(&source).map_err(|error| {
-        LiveError::Config(format!(
-            "parse compile manifest {}: {error}",
-            path.display()
-        ))
-    })?;
-    if specification.schema_version != MANIFEST_SCHEMA_VERSION {
-        return Err(LiveError::Config(format!(
-            "unsupported compile manifest schema {}; expected {MANIFEST_SCHEMA_VERSION}",
-            specification.schema_version
-        )));
-    }
+    let specification = parse_compile_manifest(path, &source)?;
+    validate_compile_manifest(&specification)?;
 
     let root = path.parent().unwrap_or_else(|| Path::new("."));
     let requires_bytes = read_relative(root, specification.requires.as_deref())?;
@@ -128,6 +118,38 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
         layer_count,
         packaging,
     })
+}
+
+pub fn parse_compile_manifest(path: &Path, source: &[u8]) -> Result<CompileManifest> {
+    serde_json::from_slice(source).map_err(|error| {
+        LiveError::Config(format!(
+            "parse compile manifest {}: {error}",
+            path.display()
+        ))
+    })
+}
+
+pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> {
+    if specification.schema_version != MANIFEST_SCHEMA_VERSION {
+        return Err(LiveError::Config(format!(
+            "unsupported compile manifest schema {}; expected {MANIFEST_SCHEMA_VERSION}",
+            specification.schema_version
+        )));
+    }
+    let mut layers = Vec::with_capacity(specification.layers.len());
+    for source_layer in &specification.layers {
+        layers.push(build_layer(source_layer, address_bytes(&[]))?);
+    }
+    let manifest = AppManifest {
+        primary: specification.primary,
+        requires: address_bytes(&[]),
+        layers,
+        children: Vec::new(),
+    };
+    manifest
+        .validate()
+        .map_err(|error| LiveError::Config(format!("invalid application manifest: {error:?}")))?;
+    Ok(())
 }
 
 fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> Result<Layer> {

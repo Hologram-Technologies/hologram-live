@@ -44,7 +44,14 @@ hologram nodes list</code></pre>
   <p><code>files</code> is the friendly file-oriented view of the registry. <code>registry</code> lists every object kind, including imported <code>.holo</code> archives. Writes return a BLAKE3 content ID; renaming updates only the display and download name, so that stable ID continues to fetch the exact same bytes.</p>
 
   <h2>Compile an application</h2>
-  <p><code>hologram compile</code> packages a JSON application manifest, its capability declaration, and its layer files into a self-contained Hologram v3 archive. Layer paths are relative to the source manifest.</p>
+  <p><code>hologram app init</code> generates a validated source manifest. With a terminal it prompts for ordered layers, kind-specific fields, the primary layer, and an optional capability file. Existing manifests require an explicit <code>--force</code>.</p>
+  <pre><code>mkdir my-app
+hologram app init my-app
+
+# Non-interactive equivalent for scripts and CI
+hologram app init my-app --kind wasm --path app.wasm --entry holo_run</code></pre>
+  <p><code>--yes</code> accepts a minimal Wasm manifest using <code>app.wasm</code> and <code>_start</code>. Global <code>--json</code> returns the manifest path, layer count, primary position, and suggested commands as structured output.</p>
+  <p><code>hologram compile</code> then packages the JSON application manifest, its capability declaration, and its layer files into a Hologram v3 archive. Layer paths are relative to the source manifest.</p>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,

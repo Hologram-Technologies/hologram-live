@@ -129,6 +129,25 @@ File bytes are addressed by their BLAKE3 content ID. Renaming changes only persi
 
 ### `.holo` archives
 
+Generate a validated source manifest interactively:
+
+```bash
+mkdir my-app
+cd my-app
+hologram app init
+```
+
+The generator prompts for ordered layers, their kind-specific entrypoint or surface information, the primary layer, and an optional capability file. It writes `hologram.json` atomically and prints the commands needed to compile and run it. For scripts and CI, provide the first layer as flags:
+
+```bash
+hologram app init ./my-app \
+  --kind wasm \
+  --path app.wasm \
+  --entry holo_run
+```
+
+Use `--yes` for a minimal `app.wasm`/`_start` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
+
 ```bash
 hologram holo fixture ./fixture.holo
 hologram holo import ./fixture.holo

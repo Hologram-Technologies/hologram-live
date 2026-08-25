@@ -2,6 +2,7 @@
 
 pub mod actor;
 pub mod app;
+pub mod application_plan;
 pub mod audit;
 pub mod auth;
 pub mod chat;

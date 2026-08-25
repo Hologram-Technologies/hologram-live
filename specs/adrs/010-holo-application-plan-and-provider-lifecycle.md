@@ -69,10 +69,12 @@ Resolution order is embedded content followed by the configured local content
 store. Network, registry, or peer fetching requires an explicitly configured
 future resolver and is never an implicit fallback. Every resolved payload is
 re-hashed before use. Equal κ values share one resolved object while their
-logical edges and layer positions remain distinct. Root planning enforces
-limits for layer count, object count, and total bytes. Recursive child planning
-will additionally enforce depth and cycle limits when M2 defines capability
-attenuation; until then, child edges are visible blockers and are not ignored.
+logical edges and layer positions remain distinct. Root planning defaults to at
+most 256 layers, 512 unique resolved objects, and 4 GiB of cumulative resolved
+bytes. Recursive child planning will additionally enforce a maximum depth of
+32, the cumulative root object/byte limits, and cycle detection when M2 defines
+capability attenuation; until then, child edges are visible blockers and are
+not ignored.
 
 `ApplicationPlan` is the strict, executable form: construction fails if any
 required non-child object is missing, malformed, over a limit, or has an
@@ -130,4 +132,3 @@ details. Existing bounded mailboxes and backpressure remain mandatory.
 - The async, `Send` provider contract may require actor adapters for
   thread-affine desktop or platform engines, but keeps the runtime boundary
   deterministic and portable.
-

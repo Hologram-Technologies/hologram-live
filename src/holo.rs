@@ -1,4 +1,7 @@
 use crate::actor::ActorSystem;
+use crate::application_plan::{
+    explain_application, layer_kind_name, PlanLimits, ProviderAvailability, ProviderContext,
+};
 use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python;
@@ -259,9 +262,16 @@ impl HoloRuntime {
             return Ok(record);
         }
         let bytes = self.catalog.bytes(kappa)?;
-        let wasm = extract_primary_wasm(kappa, &bytes, |content| {
+        let mut report = explain_application(&bytes, PlanLimits::default(), |content| {
             self.catalog.resolve_content(content)
         })?;
+        report.evaluate_providers(resident_provider);
+        report.require_single_primary();
+        let plan = report.into_application_plan()?;
+        let primary = plan.primary().ok_or_else(|| {
+            LiveError::Conflict("executable resident plan lost its primary layer".to_owned())
+        })?;
+        let wasm = primary.content.clone();
         let queued = Arc::new(AtomicUsize::new(0));
         let processed = Arc::new(AtomicUsize::new(0));
         let actor = ResidentHoloActor::compile(kappa, &self.engine, &wasm, processed.clone())?;
@@ -360,7 +370,13 @@ impl HoloExecutor {
     pub fn execute(&self, bytes: &[u8], inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
         let kappa = format!("blake3:{}", blake3::hash(bytes));
         inspect_bytes(&kappa, "local.holo", bytes)?;
-        let layer = extract_primary_layer(&kappa, bytes, |_| Ok(None))?;
+        let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
+        report.evaluate_providers(direct_provider);
+        report.require_single_primary();
+        let plan = report.into_application_plan()?;
+        let layer = plan.primary().ok_or_else(|| {
+            LiveError::Conflict("executable direct plan lost its primary layer".to_owned())
+        })?;
         match layer.kind {
             LayerKind::WasmCodemodule => {
                 let resident_bytes = layer.content.len();
@@ -397,121 +413,55 @@ fn not_resident(kappa: &str) -> LiveError {
     ))
 }
 
-/// Extract the wasm payload of an archive that is exactly one primary wasm
-/// layer. Anything else is an honest capability error naming the unsupported
-/// layer kinds.
-fn extract_primary_wasm<F>(kappa: &str, bytes: &[u8], resolve: F) -> Result<Vec<u8>>
-where
-    F: FnOnce(&str) -> Result<Option<Vec<u8>>>,
-{
-    let layer = extract_primary_layer(kappa, bytes, resolve)?;
-    if layer.kind != LayerKind::WasmCodemodule {
-        return Err(LiveError::Capability(format!(
-            "holo.load for {kappa} supports resident wasm layers only; primary layer is {}",
-            layer_kind_name(layer.kind)
-        )));
+fn resident_provider(context: ProviderContext<'_>) -> ProviderAvailability {
+    if context.layer_count != 1 || !context.primary {
+        return ProviderAvailability::Unavailable {
+            reason: "resident multi-layer lifecycle is not connected yet".to_owned(),
+        };
     }
-    Ok(layer.content)
-}
-
-struct ResolvedPrimaryLayer {
-    kind: LayerKind,
-    entry: String,
-    aux: String,
-    content: Vec<u8>,
-}
-
-fn extract_primary_layer<F>(kappa: &str, bytes: &[u8], resolve: F) -> Result<ResolvedPrimaryLayer>
-where
-    F: FnOnce(&str) -> Result<Option<Vec<u8>>>,
-{
-    let loader =
-        HoloLoader::from_bytes(bytes).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-    let plan = loader
-        .into_plan()
-        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-    let manifest_bytes = plan.app_manifest().ok_or_else(|| {
-        LiveError::Capability(format!(
-            "execution for {kappa} requires an application manifest with a primary layer"
-        ))
-    })?;
-    let manifest = AppManifest::decode(manifest_bytes).map_err(|error| {
-        LiveError::InvalidHolo(format!("decode application manifest of {kappa}: {error:?}"))
-    })?;
-    if manifest.primary.is_none() {
-        let services = manifest
-            .layers
-            .iter()
-            .filter(|layer| layer.kind == LayerKind::InferenceModel)
-            .map(|layer| format!("{} ({})", layer.entry, layer.aux))
-            .collect::<Vec<_>>();
-        if !services.is_empty() {
-            return Err(LiveError::Capability(format!(
-                "execution for {kappa} declares inference-model services [{}], but no inference provider is connected to hologram run",
-                services.join(", ")
-            )));
+    if context.kind == LayerKind::WasmCodemodule {
+        ProviderAvailability::Available {
+            provider: "wasmtime-resident".to_owned(),
+        }
+    } else {
+        ProviderAvailability::Unavailable {
+            reason: format!(
+                "resident execution currently supports wasm, not {}",
+                layer_kind_name(context.kind)
+            ),
         }
     }
-    if manifest.layers.len() != 1 {
-        return Err(LiveError::Capability(format!(
-            "execution for {kappa} requires exactly one layer; the archive declares {} layers",
-            manifest.layers.len()
-        )));
-    }
-    if manifest.primary != Some(0) {
-        let kinds = manifest
-            .layers
-            .iter()
-            .map(|layer| layer_kind_name(layer.kind))
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(LiveError::Capability(format!(
-            "execution for {kappa} requires layer zero to be the archive's primary layer; declared layer kinds: {kinds}"
-        )));
-    }
-    let primary = &manifest.layers[0];
-    let content = primary.content;
-    let blobs = plan
-        .content_blobs()
-        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-    if let Some((_, blob)) = blobs.iter().find(|(label, _)| *label == content.as_bytes()) {
-        return Ok(ResolvedPrimaryLayer {
-            kind: primary.kind,
-            entry: primary.entry.clone(),
-            aux: primary.aux.clone(),
-            content: blob.to_vec(),
-        });
-    }
-    let content_kappa = std::str::from_utf8(content.as_bytes()).map_err(|_| {
-        LiveError::InvalidHolo(format!(
-            "primary layer of {kappa} has a malformed content kappa"
-        ))
-    })?;
-    let blob = resolve(content_kappa)?.ok_or_else(|| {
-        LiveError::NotFound(format!(
-            "primary layer content {content_kappa} for {kappa} is not embedded or cached; import a fat archive containing it first"
-        ))
-    })?;
-    if address_bytes(&blob) != content {
-        return Err(LiveError::InvalidHolo(format!(
-            "resolved primary layer content {content_kappa} does not match its kappa"
-        )));
-    }
-    Ok(ResolvedPrimaryLayer {
-        kind: primary.kind,
-        entry: primary.entry.clone(),
-        aux: primary.aux.clone(),
-        content: blob,
-    })
 }
 
-const fn layer_kind_name(kind: LayerKind) -> &'static str {
-    match kind {
-        LayerKind::WasmCodemodule => "wasm",
-        LayerKind::TensorPlan => "tensor",
-        LayerKind::RootfsImage => "rootfs",
-        LayerKind::View => "view",
-        LayerKind::InferenceModel => "inference-model",
+fn direct_provider(context: ProviderContext<'_>) -> ProviderAvailability {
+    if context.layer_count != 1 || !context.primary {
+        return ProviderAvailability::Unavailable {
+            reason: if context.kind == LayerKind::InferenceModel {
+                format!(
+                    "inference provider for service {} ({}) is not connected to hologram run",
+                    context.entry, context.aux
+                )
+            } else {
+                "direct multi-layer lifecycle is not connected yet".to_owned()
+            },
+        };
+    }
+    match context.kind {
+        LayerKind::WasmCodemodule => ProviderAvailability::Available {
+            provider: "wasmtime-direct".to_owned(),
+        },
+        LayerKind::RootfsImage if holo_python::is_python_rootfs(context.content) => {
+            ProviderAvailability::Available {
+                provider: "python-oci-direct".to_owned(),
+            }
+        }
+        kind => ProviderAvailability::Unavailable {
+            reason: format!(
+                "direct execution has no provider for {} layer entry {}",
+                layer_kind_name(kind),
+                context.entry
+            ),
+        },
     }
 }
 
@@ -678,8 +628,43 @@ mod tests {
             .execute(&compiled.bytes, Vec::new())
             .expect_err("thin local execution needs a content store");
         assert_eq!(error.code(), "LIVE_NOT_FOUND");
+        assert!(error.to_string().contains("cannot resolve"), "{error}");
         assert!(
-            error.to_string().contains("not embedded or cached"),
+            error.to_string().contains("required capabilities"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn missing_non_primary_content_blocks_primary_provider_execution() {
+        let capabilities = b"capabilities";
+        let malformed_wasm = b"this is not a wasm module";
+        let missing_view = b"missing view";
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![
+                Layer::wasm(address_bytes(malformed_wasm), "run"),
+                Layer::view(address_bytes(missing_view), "portable"),
+            ],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
+        writer.add_content_blob(address_bytes(malformed_wasm).as_bytes(), malformed_wasm);
+        let bytes = writer.finish().expect("partial archive");
+
+        let error = HoloExecutor::default()
+            .execute(&bytes, Vec::new())
+            .expect_err("missing secondary layer must fail before compiling primary wasm");
+
+        assert_eq!(error.code(), "LIVE_NOT_FOUND");
+        assert!(error.to_string().contains("layer 1"), "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains(&address_bytes(missing_view).to_string()),
             "{error}"
         );
     }
@@ -737,6 +722,7 @@ mod tests {
         };
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(&[]).as_bytes(), []);
         writer.add_content_blob(address_bytes(bundle).as_bytes(), bundle);
         let bytes = writer.finish().expect("model archive");
 

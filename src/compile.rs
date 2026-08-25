@@ -1,7 +1,7 @@
+use crate::application_plan::HoloIdentity;
 use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
-use crate::protocol::HoloIdentity;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
 use hologram::space::{address_bytes, AppManifest, Layer, Realization};

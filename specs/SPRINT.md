@@ -108,39 +108,48 @@ also passed.
 
 ### Slice 2 — `ApplicationPlan` and closure resolution
 
-- [ ] Add runtime-owned identity, resolved-object, resolved-layer, blocker, and
+- [x] Add runtime-owned identity, resolved-object, resolved-layer, blocker, and
   `ApplicationPlan` types outside the CLI and transport modules.
-- [ ] Decode and validate the canonical `AppManifest` exactly once per planning
+- [x] Decode and validate the canonical `AppManifest` exactly once per planning
   attempt.
-- [ ] Preserve every layer's manifest position, closed kind, content κ,
+- [x] Preserve every layer's manifest position, closed kind, content κ,
   entrypoint, auxiliary value, and primary status.
-- [ ] Resolve the capability-set object and every non-child layer before any
+- [x] Resolve the capability-set object and every non-child layer before any
   provider preparation begins.
-- [ ] Record resolution source as `embedded` or `local_store`; reserve a typed
+- [x] Record resolution source as `embedded` or `local_store`; reserve a typed
   extension point for configured registry/peer resolvers without adding network
   access now.
-- [ ] Deduplicate equal κ payloads while retaining all logical layer edges.
-- [ ] Re-hash every resolved payload and reject mismatches.
-- [ ] Add explicit root-plan limits for layer count, resolved object count, and
+- [x] Deduplicate equal κ payloads while retaining all logical layer edges.
+- [x] Re-hash every resolved payload and reject mismatches.
+- [x] Add explicit root-plan limits for layer count, resolved object count, and
   cumulative bytes. Record child depth limits in ADR 010 but enforce them when
   M2 adds recursive resolution.
-- [ ] Return blockers that name the missing κ, referring manifest edge/layer,
+- [x] Return blockers that name the missing κ, referring manifest edge/layer,
   unavailable provider, unsupported child closure, or exceeded limit.
-- [ ] Keep `HoloDirectory` out of execution decisions; it may only be attached
+- [x] Keep `HoloDirectory` out of execution decisions; it may only be attached
   to the report after its existing verification succeeds.
-- [ ] Add unit fixtures for multi-layer order, duplicate κ references, missing
+- [x] Add unit fixtures for multi-layer order, duplicate κ references, missing
   non-primary content, forged cached bytes, thin-cache resolution, no-primary
   service applications, and declared child references.
 
 Slice 2 acceptance:
 
-- [ ] No provider starts until every required non-child object resolves and
+- [x] No provider starts until every required non-child object resolves and
   verifies.
-- [ ] A missing non-primary layer prevents execution and identifies both the κ
+- [x] A missing non-primary layer prevents execution and identifies both the κ
   and layer position.
-- [ ] Fat and cache-resolved thin variants produce equivalent logical plans.
-- [ ] Planning an unsupported provider succeeds as an explanation with
+- [x] Fat and cache-resolved thin variants produce equivalent logical plans.
+- [x] Planning an unsupported provider succeeds as an explanation with
   `runnable = false`; strict execution returns the corresponding typed error.
+
+Slice 2 evidence (2026-08-25): planner fixtures cover multi-layer ordering,
+shared-κ deduplication, required-capability resolution, embedded/local-store
+sources, thin/fat equivalence, forged local bytes, missing secondary content,
+root limits, service-only applications, and child blockers. An execution test
+uses malformed primary Wasm plus missing layer 1 and receives the layer-1
+`LIVE_NOT_FOUND`, proving provider compilation did not begin. `just verify`
+passed formatting, file-size, check, 126 unit tests, 7 BDD scenarios, Clippy,
+release build, and smoke; the Astro documentation build also passed.
 
 ### Slice 3 — `hologram holo plan`
 

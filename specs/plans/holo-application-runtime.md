@@ -18,7 +18,7 @@ This is the living implementation plan for turning `.holo` archives into complet
 - [x] Keep the canonical `AppManifest` as application identity and execution truth.
 - [x] Keep the application-directory extension a verified projection, never a second manifest.
 - [x] Keep physical archive identity distinct from canonical application identity.
-- [ ] Resolve content by κ; do not make filenames or catalog metadata authoritative.
+- [x] Resolve content by κ; do not make filenames or catalog metadata authoritative.
 - [ ] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
 - [ ] Boot ordered layers transactionally and unwind partial starts in reverse order.
 - [ ] Keep execution providers behind typed boundaries so Wasm, views, tensors, and root filesystems do not leak engine details into the archive loader.
@@ -100,19 +100,19 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### `ApplicationPlan`
 
-- [ ] Add a runtime-owned `ApplicationPlan` decoded from the canonical `AppManifest`.
-- [ ] Preserve manifest layer order and primary-layer position in the plan.
-- [ ] Represent each resolved layer with its position, kind, content κ, entrypoint, kind-specific auxiliary value, bytes, and resolution source.
-- [ ] Distinguish embedded, local-store, and future synchronized resolution sources.
-- [ ] Resolve and validate the required capability-set object before preparing providers.
-- [ ] Resolve every layer payload before any layer starts, rather than resolving only the primary Wasm layer.
+- [x] Add a runtime-owned `ApplicationPlan` decoded from the canonical `AppManifest`.
+- [x] Preserve manifest layer order and primary-layer position in the plan.
+- [x] Represent each resolved layer with its position, kind, content κ, entrypoint, kind-specific auxiliary value, bytes, and resolution source.
+- [x] Distinguish embedded, local-store, and future synchronized resolution sources.
+- [x] Resolve and validate the required capability-set object before preparing providers.
+- [x] Resolve every layer payload before any layer starts, rather than resolving only the primary Wasm layer.
 - [ ] Resolve child application and delegated-capability references recursively.
 - [ ] Detect child-application cycles.
 - [ ] Apply explicit maximum closure depth, object count, and cumulative resolved-byte limits.
-- [ ] Deduplicate equal κ references while retaining every logical edge and layer position.
-- [ ] Reject a declared embedded κ whose bytes do not re-hash to that κ.
-- [ ] Reject unresolved closure members with an error that names the missing κ and referring manifest edge.
-- [ ] Keep the application directory out of planning decisions except as an already-verified inspection index.
+- [x] Deduplicate equal κ references while retaining every logical edge and layer position.
+- [x] Reject a declared embedded κ whose bytes do not re-hash to that κ.
+- [x] Reject unresolved closure members with an error that names the missing κ and referring manifest edge.
+- [x] Keep the application directory out of planning decisions except as an already-verified inspection index.
 
 ### Provider interface
 
@@ -142,16 +142,16 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] Add `hologram holo plan <PATH|KAPPA>` for a read-only explanation of identities, resolution sources, layer order, providers, capabilities, children, and blockers.
 - [ ] Make `holo plan` useful when execution is unsupported; inspection must not require a provider.
 - [ ] Add equivalent native API and JSON/HTTP representations without exposing engine-specific internals.
-- [ ] Keep `hologram run <PATH|KAPPA>` output compatible while routing both direct and resident preparation through `ApplicationPlan`.
+- [x] Keep `hologram run <PATH|KAPPA>` output compatible while routing both direct and resident preparation through `ApplicationPlan`.
 
 ### M1 acceptance criteria
 
-- [ ] The existing one-layer Wasm direct and resident scenarios pass through `ApplicationPlan` with no behavior regression.
-- [ ] A multi-layer manifest is fully resolved before returning the expected unsupported-provider error.
-- [ ] A missing non-primary layer prevents all layer starts.
+- [x] The existing one-layer Wasm direct and resident scenarios pass through `ApplicationPlan` with no behavior regression.
+- [x] A multi-layer manifest is fully resolved before returning the expected unsupported-provider error.
+- [x] A missing non-primary layer prevents all layer starts.
 - [ ] A synthetic provider failure proves reverse-order rollback.
 - [ ] A cyclic child graph fails deterministically without recursion overflow.
-- [ ] Fat and thin variants produce equivalent logical plans when the local store contains the required content.
+- [x] Fat and thin variants produce equivalent logical plans when the local store contains the required content.
 - [ ] Unit, BDD, API round-trip, docs, Clippy, release build, and smoke gates pass.
 - [ ] ADR 004 and ADR 007 are amended if implementation details refine their accepted decisions.
 
@@ -468,7 +468,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Implement M0 `hologram app init` as a small standalone commit.
 - [x] Draft the M1 provider and lifecycle ADR before runtime refactoring.
 - [x] Add `application_kappa` to compile and inspection results.
-- [ ] Introduce the read-only `ApplicationPlan` and full non-child layer resolution.
+- [x] Introduce the read-only `ApplicationPlan` and full non-child layer resolution.
 - [ ] Add `hologram holo plan` over local paths and catalog κ values.
 - [ ] Route existing direct and resident Wasm execution through the plan.
 - [ ] Add synthetic-provider rollback tests.

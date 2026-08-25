@@ -2,6 +2,8 @@ use crate::error::{ApiError, LiveError};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+pub use crate::application_plan::HoloIdentity;
+
 pub const PROTOCOL_VERSION: u16 = 1;
 
 pub mod operation {
@@ -151,20 +153,6 @@ pub struct HoloDirectory {
     pub layers: Vec<HoloLayer>,
     pub children: Vec<HoloChild>,
     pub blobs: Vec<HoloBlob>,
-}
-
-/// The three deliberately distinct identities of a compiled application.
-///
-/// `archive_kappa` addresses the complete physical file, while
-/// `application_kappa` addresses the canonical application manifest and is
-/// therefore stable across fat and thin packaging. The archive fingerprint is
-/// the integrity value recorded in the `.holo` footer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct HoloIdentity {
-    pub archive_kappa: String,
-    pub archive_fingerprint: String,
-    pub application_kappa: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

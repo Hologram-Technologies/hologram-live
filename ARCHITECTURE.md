@@ -65,4 +65,8 @@ The current content store is a simple content-addressed file store suitable for 
 
 ## `.holo`
 
-The pinned upstream Hologram archive reader/writer and space manifest types create and validate real v3 `.holo` archives. `hologram compile` builds fat archives containing a canonical application manifest and κ-addressed layer blobs. The stable build still excludes compute backends; a future engine module will supply persistent execution.
+The pinned upstream Hologram archive reader/writer and space manifest types create and validate real v3 `.holo` archives. `hologram compile` builds fat archives containing a canonical application manifest and κ-addressed layer blobs. Archives whose primary layer is Wasm execute in-process through wasmtime: `holo load` keeps the compiled module resident under a supervised actor and `holo run` invokes it per input. `tensor` and `rootfs` layers remain without a compute backend and return typed capability errors; see `specs/adrs/004-holo-wasm-runtime.md`.
+
+## Inference engine boundary
+
+The daemon never executes model weights in-process. Chat and model management call an `InferenceEngine` selected by `[inference].engine` in `live.toml`: `echo` (local fallback that repeats the user message), `weightc` (spawns `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact directory), or `ollama` (proxies `POST /api/generate` on an Ollama-compatible endpoint). Imported artifacts are copied under `data_dir/models/<digest>/` and recorded in the content-addressed object store with `kind = "model"`. The daemon renders conversation history as a plain `role: content` transcript; engines apply their own chat templates. An unconfigured engine or model returns `LIVE_CAPABILITY_MISSING` rather than simulating a response.

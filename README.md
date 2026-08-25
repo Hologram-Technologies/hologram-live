@@ -7,7 +7,7 @@ Hologram Live is a local-first module host for the Hologram ecosystem. This repo
 - **Hologram Server** — the standalone `hologram` binary, containing the CLI and background service.
 - **Hologram Desktop** — a Tauri application that bundles `hologram` as a managed sidecar.
 
-The current desktop experience provides a Console dashboard, multi-thread Echo Chat with archiving, content-addressed Files, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Echo Chat is deliberately a demo module: it saves each user message and repeats it as the assistant response. Model inference is not implemented yet.
+The current desktop experience provides a Console dashboard, multi-thread Chat with archiving, content-addressed Files, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Chat routes through a configurable inference engine: the default `echo` engine repeats your message, while `weightc` (one-shot CLI over imported `.wcpu` artifacts) and Ollama-compatible HTTP endpoints serve real model completions.
 
 ## Quick start
 
@@ -78,7 +78,26 @@ hologram --json chat send <conversation-id> "Hello, Hologram"
 hologram --json history show <conversation-id>
 ```
 
-`chat send` records the user message and echoed assistant response as one persisted exchange. Threads retain separate histories and can be resumed from the desktop app.
+`chat send` records the user message and the assistant response as one persisted exchange. Threads retain separate histories and can be resumed from the desktop app.
+
+The response comes from the inference engine selected in `live.toml`:
+
+```toml
+[inference]
+engine = "echo"            # echo | weightc | ollama
+default_model = ""         # blake3:... of an imported model (weightc) or a model tag (ollama)
+weightc_path = "weightc"
+ollama_endpoint = "http://127.0.0.1:11434"
+request_timeout_secs = 300
+```
+
+The default `echo` engine repeats the user message; it needs no model and no external process. The `weightc` engine shells out to `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact, and the `ollama` engine proxies `POST /api/generate` on the configured endpoint. Models are managed with:
+
+```bash
+hologram models import ./tinyllama.wcpu
+hologram models list
+hologram models remove blake3:...
+```
 
 Threads can be archived instead of deleted. Archived threads keep their messages and their `updated_at_millis`, but drop out of the default listing:
 
@@ -91,7 +110,7 @@ hologram --json history unarchive <conversation-id>
 
 In the desktop app, hovering a thread reveals an archive button, and archived threads collapse into an `ARCHIVED` group at the bottom of the thread list.
 
-Existing schema-v1 configurations that used the original default modules are migrated automatically to enable Echo Chat. Custom module selections remain unchanged. The desktop also recovers safely when an older background service is still running by restarting onto its bundled sidecar before retrying a `chat.send` capability miss.
+Existing schema-v1 configurations that used the original default modules are migrated automatically to enable Chat and the inference module. Custom module selections remain unchanged. The desktop also recovers safely when an older background service is still running by restarting onto its bundled sidecar before retrying a `chat.send` capability miss.
 
 ### Files
 
@@ -115,7 +134,58 @@ hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
 
-The stable build creates and validates real v3 `.holo` archives. It does not advertise `.holo` execution because no compute backend is enabled.
+The stable build creates and validates real v3 `.holo` archives. Archives whose primary layer is Wasm execute in-process through wasmtime, with resident load/run/unload sessions:
+
+```bash
+hologram compile ./my-app/hologram.json -o ./my-app.holo
+hologram holo import ./my-app.holo
+hologram holo load blake3:...
+hologram run blake3:... --input ./payload.bin
+hologram holo resident
+hologram holo unload blake3:...
+```
+
+`holo load` compiles the Wasm layer once and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Archives whose primary layer is a tensor or rootfs still return a typed `LIVE_CAPABILITY_MISSING` error. The guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
+
+### Inference compatibility APIs
+
+The daemon exposes non-streaming OpenAI- and Ollama-compatible HTTP surfaces over the configured inference engine:
+
+```bash
+curl http://127.0.0.1:11435/v1/models
+curl -X POST http://127.0.0.1:11435/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"model":"echo","messages":[{"role":"user","content":"Hello"}]}'
+curl -X POST http://127.0.0.1:11435/api/generate \
+  -H 'content-type: application/json' \
+  -d '{"model":"echo","prompt":"Hello","stream":false}'
+curl http://127.0.0.1:11435/api/tags
+```
+
+Requests with `stream: true` are rejected with a typed error; token streaming requires engine support and is future work. Both surfaces sit behind the same bearer-token seam as every other module route.
+
+### Third-party plugin modules
+
+Beyond the built-in catalogue, the daemon hosts dynamic third-party modules as supervised subprocesses. Plugins are an explicit, sha256-pinned allowlist in `live.toml` — nothing is scanned or loaded implicitly:
+
+```toml
+[plugins]
+enabled = true
+
+[[plugins.modules]]
+id = "com.example.weather"
+path = "/usr/local/bin/weather-plugin"
+sha256 = "<64 hex chars>"
+```
+
+Each plugin speaks a small gRPC contract (`hologram.live.plugin.v1.PluginHost`: describe/invoke/ping) over a Unix socket the daemon provides, runs under a supervised actor with a bounded mailbox and bounded restart, and receives a scrubbed environment. Its operations join the capability manifest and are reachable through the native client:
+
+```bash
+hologram plugins list
+hologram plugins call com.example.weather weather.current '{"city":"Berlin"}'
+```
+
+Plugins have no host resource access in v1 — no store, config, or network mediation — and no HTTP routes; they are pure compute over JSON payloads. Wrapping plugin executables in microVMs is the documented hardening path. See `specs/adrs/005-subprocess-plugin-boundary.md`.
 
 ## Built-in modules
 
@@ -126,9 +196,12 @@ Trusted modules are statically linked and registered in the `builtin_modules!` c
 | `dev.hologram.live.system` | Health, capabilities, and module discovery |
 | `dev.hologram.live.kappa-registry` | Local content-addressed registry provider |
 | `dev.hologram.live.files` | File upload, listing, renaming, and download |
-| `dev.hologram.live.holo` | `.holo` import, inspection, verification, and cataloguing |
+| `dev.hologram.live.holo` | `.holo` import, inspection, verification, cataloguing, and resident Wasm execution |
 | `dev.hologram.live.history` | Durable conversations and messages |
-| `dev.hologram.live.chat` | Conversation-backed echo demo |
+| `dev.hologram.live.chat` | Conversation-backed chat over the configured inference engine |
+| `dev.hologram.live.inference` | Model import, listing, and removal for the engine boundary |
+| `dev.hologram.live.openai-compat` | Non-streaming OpenAI-compatible `/v1` inference API |
+| `dev.hologram.live.ollama-compat` | Non-streaming Ollama-compatible `/api` inference API |
 | `dev.hologram.live.control-plane` | Minimal node inventory and heartbeats |
 
 Each module declares its stable ID, dependencies, operation IDs, HTTP routes, and OpenAPI contribution. Operators can enable a subset with `modules.enabled` in `live.toml`. Executable module behavior remains compiled Rust rather than configuration-defined code.
@@ -199,7 +272,7 @@ Run the complete server verification path with:
 just verify
 ```
 
-That includes formatting, source-size policy, checks, unit tests, Clippy, public-boundary BDD scenarios, a release build, and an isolated end-to-end smoke test. The smoke test covers legacy configuration migration, module discovery, file storage and renaming, `.holo` operations, Echo Chat persistence, OpenAPI generation, and shutdown.
+That includes formatting, source-size policy, checks, unit tests, Clippy, public-boundary BDD scenarios, a release build, and an isolated end-to-end smoke test. The smoke test covers legacy configuration migration, module discovery, file storage and renaming, `.holo` operations including resident Wasm execution, chat persistence through the default echo engine, model listing, the OpenAI/Ollama compatibility endpoints, OpenAPI generation, and shutdown.
 
 Useful development commands:
 
@@ -219,14 +292,10 @@ cargo install cargo-watch --locked
 
 The default build does not yet provide:
 
-- model or inference execution behind Chat;
-- `.holo` execution or resident compute sessions;
-- OpenAI- or Ollama-compatible inference APIs;
-- dynamic third-party modules;
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), and Wasm-layer `.holo` archives execute resident; token streaming, `tensor`/`rootfs` layer execution, and resident inference sessions (`weightc enter`) remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

@@ -72,6 +72,7 @@ pub fn request_for_operation(value: &str) -> Result<RpcRequest> {
             include_archived: false,
         }),
         operation::NODES_LIST => Ok(RpcRequest::NodesList),
+        operation::MODEL_LIST => Ok(RpcRequest::ModelList),
         _ => Err(LiveError::Protocol(format!(
             "route explanation requires a parameter-free known operation; got {value}"
         ))),

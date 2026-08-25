@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hologram.live.plugin.v1;
+
+// Subprocess plugin contract v1. The daemon spawns an allowlisted executable,
+// hands it a Unix domain socket path via HOLOGRAM_PLUGIN_SOCKET, and the
+// plugin serves this gRPC service there. Payloads are opaque JSON; plugins
+// receive no host capabilities (no store, config, or network mediation).
+service PluginHost {
+  rpc Describe(DescribeRequest) returns (PluginDescriptor);
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message DescribeRequest {}
+message PingRequest {}
+message PingResponse { uint32 protocol_version = 1; }
+
+enum PluginOperationKind {
+  PLUGIN_OPERATION_KIND_UNSPECIFIED = 0;
+  PLUGIN_OPERATION_KIND_READ = 1;
+  PLUGIN_OPERATION_KIND_MUTATION = 2;
+  PLUGIN_OPERATION_KIND_STREAM = 3;
+}
+
+message PluginOperation {
+  string id = 1;
+  PluginOperationKind kind = 2;
+}
+
+message PluginDescriptor {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  repeated PluginOperation operations = 4;
+  // Minimum hologram.live protocol version the plugin requires.
+  uint32 min_protocol = 5;
+}
+
+message InvokeRequest {
+  string operation = 1;
+  // JSON payload; owned entirely by the plugin.
+  bytes payload = 2;
+}
+
+message InvokeResponse {
+  // JSON result. Empty when error_code is set.
+  bytes result = 1;
+  // Typed error (e.g. LIVE_NOT_FOUND) or a plugin-defined code; empty on success.
+  string error_code = 2;
+  string error_message = 3;
+}

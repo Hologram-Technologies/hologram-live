@@ -34,8 +34,13 @@ pub mod operation {
     pub const HISTORY_DELETE: &str = "history.delete";
     pub const HISTORY_ARCHIVE: &str = "history.archive";
     pub const CHAT_SEND: &str = "chat.send";
+    pub const MODEL_LIST: &str = "model.list";
+    pub const MODEL_IMPORT: &str = "model.import";
+    pub const MODEL_REMOVE: &str = "model.remove";
     pub const NODES_LIST: &str = "nodes.list";
     pub const NODES_HEARTBEAT: &str = "nodes.heartbeat";
+    pub const PLUGIN_LIST: &str = "plugin.list";
+    pub const PLUGIN_CALL: &str = "plugin.call";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -105,6 +110,49 @@ pub struct HoloSection {
     pub length: u64,
 }
 
+/// One ordered application layer in the queryable `.holo` directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloLayer {
+    pub position: u32,
+    pub kind: String,
+    pub content_kappa: String,
+    pub entry: String,
+    pub architecture: Option<String>,
+    pub surface: Option<String>,
+    pub engine: Option<String>,
+}
+
+/// One composed child application and its attenuated capability set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloChild {
+    pub position: u32,
+    pub application_kappa: String,
+    pub capabilities_kappa: String,
+}
+
+/// One content-addressed blob physically embedded in a fat `.holo`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloBlob {
+    pub kappa: String,
+    pub byte_length: u64,
+}
+
+/// A normalized, versioned projection of an application manifest and its
+/// physical packaging. Layers refer to blobs by kappa instead of nesting them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloDirectory {
+    pub schema_version: u16,
+    pub primary_layer: Option<u32>,
+    pub requires_kappa: String,
+    pub layers: Vec<HoloLayer>,
+    pub children: Vec<HoloChild>,
+    pub blobs: Vec<HoloBlob>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HoloInspection {
     pub kappa: String,
@@ -114,6 +162,8 @@ pub struct HoloInspection {
     pub archive_fingerprint: String,
     pub footer_verified: bool,
     pub sections: Vec<HoloSection>,
+    pub directory: Option<HoloDirectory>,
+    pub directory_embedded: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -159,6 +209,18 @@ pub struct NodeRecord {
     pub version: String,
     pub operations: Vec<String>,
     pub last_seen_millis: u64,
+}
+
+/// Runtime status of one allowlisted subprocess plugin.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PluginStatus {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub operations: Vec<String>,
+    pub running: bool,
+    pub restart_count: u64,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,9 +307,24 @@ pub enum RpcRequest {
         id: String,
         content: String,
     },
+    ModelList,
+    ModelImport {
+        /// Local path of a `.wcpu` artifact directory readable by the daemon.
+        path: String,
+    },
+    ModelRemove {
+        id: String,
+    },
     NodesList,
     NodeHeartbeat {
         node: NodeRecord,
+    },
+    PluginList,
+    PluginCall {
+        plugin_id: String,
+        operation: String,
+        /// JSON payload forwarded verbatim to the plugin.
+        payload: String,
     },
 }
 
@@ -283,8 +360,13 @@ impl RpcRequest {
             Self::HistoryDelete { .. } => operation::HISTORY_DELETE,
             Self::HistoryArchive { .. } => operation::HISTORY_ARCHIVE,
             Self::ChatSend { .. } => operation::CHAT_SEND,
+            Self::ModelList => operation::MODEL_LIST,
+            Self::ModelImport { .. } => operation::MODEL_IMPORT,
+            Self::ModelRemove { .. } => operation::MODEL_REMOVE,
             Self::NodesList => operation::NODES_LIST,
             Self::NodeHeartbeat { .. } => operation::NODES_HEARTBEAT,
+            Self::PluginList => operation::PLUGIN_LIST,
+            Self::PluginCall { .. } => operation::PLUGIN_CALL,
         }
     }
 
@@ -304,7 +386,9 @@ impl RpcRequest {
             | Self::HoloResident
             | Self::HistoryList { .. }
             | Self::HistoryGet { .. }
-            | Self::NodesList => OperationKind::Read,
+            | Self::ModelList
+            | Self::NodesList
+            | Self::PluginList => OperationKind::Read,
             Self::HoloRun { .. } => OperationKind::Stream,
             _ => OperationKind::Mutation,
         }
@@ -325,7 +409,12 @@ pub enum RpcResponse {
     HoloRun(HoloRunResult),
     Conversation(Conversation),
     Conversations(Vec<Conversation>),
+    Model(crate::models::ModelInfo),
+    Models(Vec<crate::models::ModelInfo>),
     Nodes(Vec<NodeRecord>),
+    /// Raw JSON result string returned by a plugin invocation.
+    PluginResult(String),
+    Plugins(Vec<PluginStatus>),
     TracingFilter(String),
     Accepted,
     Error(ApiError),

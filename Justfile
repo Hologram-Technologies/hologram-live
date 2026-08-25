@@ -19,6 +19,14 @@ test:
 bdd:
     cargo test --features bdd --test bdd --locked
 
+# Compile and execute the locked NumPy + pandas example in a .holo archive.
+python-holo-demo:
+    ./scripts/check-python-holo-demo.sh
+
+# Compile, verify, and retain the NumPy + pandas .holo artifact.
+python-holo-package output="target/numpy-pandas.holo":
+    ./scripts/check-python-holo-demo.sh --output "{{output}}"
+
 # Keep production source files small enough to review and refactor.
 file-size:
     ./scripts/check-file-size.sh

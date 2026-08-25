@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
 ---
 <DocsLayout title="Getting started" description="Build Hologram Live, initialize its configuration, and start the local service.">
   <h1>Getting started</h1>
@@ -30,8 +31,9 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   </div>
 
   <h2>Exercise <code>.holo</code> support</h2>
+  <p>Start with <code>hologram app init ./my-app</code> for a guided <code>hologram.json</code>, or use <code>--kind wasm --path app.wasm --entry holo_run</code> for a non-interactive scaffold.</p>
   <pre><code>hologram holo fixture fixture.holo
 hologram holo import fixture.holo
 hologram holo list</code></pre>
-  <p>Import returns a content address that can be inspected and verified with <code>hologram holo inspect</code> and <code>hologram holo verify</code>.</p>
+  <p>Import returns a content address that can be inspected and verified with <code>hologram holo inspect</code> and <code>hologram holo verify</code>. See <a href={sitePath('/docs/holo-files')}>the <code>.holo</code> format guide</a> for the binary layout, layer model, identity rules, and application directory.</p>
 </DocsLayout>

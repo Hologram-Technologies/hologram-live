@@ -1,8 +1,8 @@
 use super::{helpers, run, Cli};
 use clap::{Args, Subcommand};
 use hologram_live::error::{LiveError, Result};
-use hologram_live::holo::HoloCatalog;
-use hologram_live::protocol::{RpcRequest, RpcResponse};
+use hologram_live::holo::{inspect_bytes, HoloCatalog};
+use hologram_live::protocol::{HoloInspection, RpcRequest, RpcResponse};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Args)]
@@ -21,10 +21,12 @@ enum HoloCommand {
     },
     List,
     Inspect {
-        kappa: String,
+        /// Catalog kappa, or a local .holo file.
+        reference: String,
     },
     Verify {
-        kappa: String,
+        /// Catalog kappa, or a local .holo file.
+        reference: String,
     },
     Load {
         kappa: String,
@@ -36,6 +38,9 @@ enum HoloCommand {
         kappa: String,
         #[arg(long = "input")]
         inputs: Vec<PathBuf>,
+        /// Render application outputs as raw protocol bytes, UTF-8 text, or JSON.
+        #[arg(long, value_enum, default_value_t = run::RunOutputFormat::Raw)]
+        output_format: run::RunOutputFormat,
     },
     Resident,
     Remove {
@@ -51,8 +56,8 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
             RpcResponse::HoloList(value) => helpers::print(&cli, &value),
             other => helpers::unexpected(other),
         },
-        HoloCommand::Inspect { kappa } => info(&cli, RpcRequest::HoloInspect { kappa }).await,
-        HoloCommand::Verify { kappa } => info(&cli, RpcRequest::HoloVerify { kappa }).await,
+        HoloCommand::Inspect { reference } => inspect(&cli, reference, false).await,
+        HoloCommand::Verify { reference } => inspect(&cli, reference, true).await,
         HoloCommand::Load { kappa } => {
             match helpers::call(&cli, RpcRequest::HoloLoad { kappa }).await? {
                 RpcResponse::HoloResident(value) => helpers::print(&cli, &value),
@@ -62,12 +67,17 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
         HoloCommand::Unload { kappa } => {
             helpers::expect_accepted(helpers::call(&cli, RpcRequest::HoloUnload { kappa }).await?)
         }
-        HoloCommand::Run { kappa, inputs } => {
+        HoloCommand::Run {
+            kappa,
+            inputs,
+            output_format,
+        } => {
             run::run(
                 cli,
                 run::RunArgs {
                     reference: kappa,
                     inputs,
+                    output_format,
                 },
             )
             .await
@@ -121,5 +131,51 @@ async fn info(cli: &Cli, request: RpcRequest) -> Result<()> {
     match helpers::call(cli, request).await? {
         RpcResponse::HoloInspection(value) => helpers::print(cli, &value),
         other => helpers::unexpected(other),
+    }
+}
+
+async fn inspect(cli: &Cli, reference: String, verify: bool) -> Result<()> {
+    if reference.starts_with("blake3:") {
+        let request = if verify {
+            RpcRequest::HoloVerify { kappa: reference }
+        } else {
+            RpcRequest::HoloInspect { kappa: reference }
+        };
+        return info(cli, request).await;
+    }
+
+    let inspection = inspect_local(PathBuf::from(reference)).await?;
+    helpers::print(cli, &inspection)
+}
+
+async fn inspect_local(path: PathBuf) -> Result<HoloInspection> {
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|error| LiveError::io(&path, error))?;
+    let kappa = format!("blake3:{}", blake3::hash(&bytes).to_hex());
+    inspect_bytes(&kappa, &path.to_string_lossy(), &bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn local_file_inspection_returns_its_import_kappa() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("fixture.holo");
+        let bytes = HoloCatalog::fixture().expect("fixture");
+        tokio::fs::write(&path, &bytes)
+            .await
+            .expect("write fixture");
+
+        let inspection = inspect_local(path.clone()).await.expect("inspect");
+
+        assert_eq!(inspection.name, path.to_string_lossy());
+        assert_eq!(
+            inspection.kappa,
+            format!("blake3:{}", blake3::hash(&bytes).to_hex())
+        );
+        assert!(inspection.footer_verified);
     }
 }

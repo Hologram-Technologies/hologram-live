@@ -7,7 +7,7 @@ Hologram Live is a local-first module host for the Hologram ecosystem. This repo
 - **Hologram Server** — the standalone `hologram` binary, containing the CLI and background service.
 - **Hologram Desktop** — a Tauri application that bundles `hologram` as a managed sidecar.
 
-The current desktop experience provides a Console dashboard, multi-thread Echo Chat with archiving, content-addressed Files, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Echo Chat is deliberately a demo module: it saves each user message and repeats it as the assistant response. Model inference is not implemented yet.
+The current desktop experience provides a Console dashboard, multi-thread Chat with archiving, content-addressed Files, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Chat routes through a configurable inference engine: the default `echo` engine repeats your message, while `weightc` (one-shot CLI over imported `.wcpu` artifacts) and Ollama-compatible HTTP endpoints serve real model completions.
 
 ## Quick start
 
@@ -78,7 +78,30 @@ hologram --json chat send <conversation-id> "Hello, Hologram"
 hologram --json history show <conversation-id>
 ```
 
-`chat send` records the user message and echoed assistant response as one persisted exchange. Threads retain separate histories and can be resumed from the desktop app.
+`chat send` records the user message and the assistant response as one persisted exchange. Threads retain separate histories and can be resumed from the desktop app.
+
+The response comes from the inference engine selected in `live.toml`:
+
+```toml
+[inference]
+engine = "echo"            # echo | weightc | ollama
+default_model = ""         # blake3:... of an imported model (weightc) or a model tag (ollama)
+weightc_path = "weightc"
+ollama_endpoint = "http://127.0.0.1:11434"
+request_timeout_secs = 300
+resident_sessions = false  # weightc only: keep one resident enter session per conversation
+max_resident_sessions = 4  # LRU cap on resident sessions
+```
+
+The default `echo` engine repeats the user message; it needs no model and no external process. The `weightc` engine shells out to `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact, and the `ollama` engine proxies `POST /api/generate` on the configured endpoint.
+
+With `resident_sessions = true`, the weightc engine instead keeps a supervised `weightc enter --jsonl` process per conversation, so turns reuse the live KV context instead of replaying a transcript, and only the new message crosses the wire each turn. Sessions are LRU-capped by `max_resident_sessions`; a crashed session is reported as a typed error and lazily respawned (starting fresh context) on the next turn. This mode needs a weightc build with `enter --jsonl` support. Models are managed with:
+
+```bash
+hologram models import ./tinyllama.wcpu
+hologram models list
+hologram models remove blake3:...
+```
 
 Threads can be archived instead of deleted. Archived threads keep their messages and their `updated_at_millis`, but drop out of the default listing:
 
@@ -91,7 +114,7 @@ hologram --json history unarchive <conversation-id>
 
 In the desktop app, hovering a thread reveals an archive button, and archived threads collapse into an `ARCHIVED` group at the bottom of the thread list.
 
-Existing schema-v1 configurations that used the original default modules are migrated automatically to enable Echo Chat. Custom module selections remain unchanged. The desktop also recovers safely when an older background service is still running by restarting onto its bundled sidecar before retrying a `chat.send` capability miss.
+Existing schema-v1 configurations that used the original default modules are migrated automatically to enable Chat and the inference module. Custom module selections remain unchanged. The desktop also recovers safely when an older background service is still running by restarting onto its bundled sidecar before retrying a `chat.send` capability miss.
 
 ### Files
 
@@ -106,16 +129,199 @@ File bytes are addressed by their BLAKE3 content ID. Renaming changes only persi
 
 ### `.holo` archives
 
+Generate a validated source manifest interactively:
+
+```bash
+mkdir my-app
+cd my-app
+hologram app init
+```
+
+The generator prompts for ordered layers, their kind-specific entrypoint or surface information, the primary layer, and an optional capability file. It writes `hologram.json` atomically and prints the commands needed to compile and run it. For scripts and CI, provide the first layer as flags:
+
+```bash
+hologram app init ./my-app \
+  --kind wasm \
+  --path app.wasm \
+  --entry holo_run
+```
+
+Use `--yes` for a minimal `app.wasm`/`_start` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
+
 ```bash
 hologram holo fixture ./fixture.holo
 hologram holo import ./fixture.holo
 hologram holo list
+hologram holo inspect ./application.holo
+hologram holo verify ./application.holo
 hologram holo inspect blake3:...
 hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
 
-The stable build creates and validates real v3 `.holo` archives. It does not advertise `.holo` execution because no compute backend is enabled.
+The stable build creates and validates real v4 `.holo` archives while retaining v2/v3 read compatibility. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ.
+
+```text
+.holo v4
+├─ header + section table
+├─ AppManifest       primary · requires · ordered layers · children
+├─ Extension         verified, queryable application directory
+├─ ContentBlob × N   κ71 · content bytes
+├─ other sections    plans · weights · ports · certificates · metadata
+└─ BLAKE3 footer
+```
+
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider.
+
+See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
+
+Archives whose primary layer is Wasm execute in-process through wasmtime. A self-contained archive can run directly without starting the service:
+
+```bash
+hologram compile ./my-app/hologram.json -o ./my-app.holo
+hologram run ./my-app.holo --input ./payload.bin
+```
+
+For warm, repeated execution, import and load the archive into a resident session:
+
+```bash
+hologram compile ./my-app/hologram.json -o ./my-app.holo
+hologram holo import ./my-app.holo
+hologram holo load blake3:...
+hologram run blake3:... --input ./payload.bin
+hologram holo resident
+hologram holo unload blake3:...
+```
+
+The compiler emits fat archives by default. `--thin` emits the same canonical application manifest without its κ-addressed payloads:
+
+```bash
+hologram compile ./my-app/hologram.json -o ./my-app.holo
+hologram compile ./my-app/hologram.json --thin -o ./my-app.thin.holo
+```
+
+Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
+
+Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view.
+
+#### AI model applications
+
+Hologram Live now reads and writes `.holo` v4 `InferenceModel` layers. A complete model archive produced by `hologram-ai` can be imported and inspected without initializing its engine:
+
+```bash
+hologram --json ai inspect model.holo
+hologram holo import model.holo
+```
+
+The inspection lists each callable service entry, its engine identifier, content κ, and whether the bundle is embedded. Model-source acquisition and R4G1 compilation remain owned by `hologram-ai`; this binary does not yet expose `hologram ai compile` or connect a model session to `hologram ai infer`. Attempting to execute a model-only archive returns `LIVE_CAPABILITY_MISSING` and names the unconnected service rather than simulating inference.
+
+For low-level archive assembly, a source manifest can package an already-built provider bundle:
+
+```json
+{
+  "schema_version": 1,
+  "layers": [{
+    "kind": "inference-model",
+    "path": "model.bundle",
+    "entry": "ai.default",
+    "engine": "uor-r4"
+  }]
+}
+```
+
+`weightc` remains a chat execution provider over imported `.wcpu` directories. Those directories are not placed into `.holo` files until a deterministic single-blob bundle and validation contract is defined. See the [AI model application guide](https://hologram-technologies.github.io/hologram-live/docs/model-apps) and [ADR 009](specs/adrs/009-inference-model-holo-v4.md).
+
+`holo load` resolves the primary layer by κ, compiles a Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Python rootfs archives currently run only as direct local fat files. Inference-model services can be inspected but not invoked through Live yet. Tensors, inference models without a provider, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
+
+#### Python applications
+
+Python is a compiler input, not a fifth `.holo` layer kind. Source-manifest schema v2 can now turn a locked Python project into an architecture-specific `rootfs` layer containing CPython, the application, dependencies, and required Linux libraries. The entrypoint contract is `module:function` where the function accepts and returns `bytes`.
+
+The repository includes a working NumPy + pandas project in `examples/python-numpy-pandas/`. A running Docker-compatible engine is required for this experimental compiler and direct executor:
+
+```console
+$ hologram compile --check examples/python-numpy-pandas/hologram.json
+$ hologram compile examples/python-numpy-pandas/hologram.json \
+    --output numpy-pandas.holo
+$ hologram run numpy-pandas.holo \
+    --input examples/python-numpy-pandas/request.json \
+    --output-format json
+{
+  "columns": [
+    "label",
+    "value"
+  ],
+  "mean": 20.0,
+  "rows": 3,
+  "sum": 60.0
+}
+```
+
+`hologram run` preserves the binary-safe `HoloRunResult` envelope by default. Add `--output-format text` for UTF-8 application output or `--output-format json` for JSON application output. One decoded result prints directly; results from multiple `--input` arguments print in order, with JSON results collected into an array. Invalid text or JSON returns a typed protocol error instead of changing the bytes.
+
+Generate the same schema without hand-writing JSON:
+
+```bash
+hologram app init ./my-python-app \
+  --template python --profile rootfs \
+  --project . --entry my_package:main --lock uv.lock --arch arm64
+```
+
+Compilation stages only `pyproject.toml`, the declared `uv.lock`, and `src/`, then runs `uv sync --locked` in a clean Linux image. It does not read or copy the host `.venv`. Direct execution validates the archive and target architecture, disables networking, mounts the container filesystem read-only, drops Linux capabilities, enables `no-new-privileges`, and applies CPU, memory, PID, temporary-storage, input/output, and 30-second wall-clock limits.
+
+This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. New archives record the exact image ID, so a warm local run skips decompression and `docker image load` only when that trusted ID is already present; a cold machine still restores the image from the archive. Compile once with an optimized release binary and reuse the resulting `.holo`; debug builds spend substantially longer hashing the roughly 100 MiB archive. `just python-holo-demo` builds and uses the release CLI, with a one-time optimized link on the first invocation. Use a digest-pinned value for `source.base` when reproducible builds matter. Portable Python/WASI and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps) and [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md).
+
+The demo writes one JSON document to stdout; progress and failures use stderr:
+
+```bash
+just python-holo-demo | jq .
+just python-holo-demo | jq '.output'
+
+# Retain the verified archive instead of deleting the temporary artifact
+just python-holo-package target/numpy-pandas.holo | jq '{archive, archive_bytes}'
+target/release/hologram --json run target/numpy-pandas.holo \
+  --input examples/python-numpy-pandas/request.json
+```
+
+### Inference compatibility APIs
+
+The daemon exposes non-streaming OpenAI- and Ollama-compatible HTTP surfaces over the configured inference engine:
+
+```bash
+curl http://127.0.0.1:11435/v1/models
+curl -X POST http://127.0.0.1:11435/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"model":"echo","messages":[{"role":"user","content":"Hello"}]}'
+curl -X POST http://127.0.0.1:11435/api/generate \
+  -H 'content-type: application/json' \
+  -d '{"model":"echo","prompt":"Hello","stream":false}'
+curl http://127.0.0.1:11435/api/tags
+```
+
+Requests with `stream: true` are rejected with a typed error; token streaming requires engine support and is future work. Both surfaces sit behind the same bearer-token seam as every other module route.
+
+### Third-party plugin modules
+
+Beyond the built-in catalogue, the daemon hosts dynamic third-party modules as supervised subprocesses. Plugins are an explicit, sha256-pinned allowlist in `live.toml` — nothing is scanned or loaded implicitly:
+
+```toml
+[plugins]
+enabled = true
+
+[[plugins.modules]]
+id = "com.example.weather"
+path = "/usr/local/bin/weather-plugin"
+sha256 = "<64 hex chars>"
+```
+
+Each plugin speaks a small gRPC contract (`hologram.live.plugin.v1.PluginHost`: describe/invoke/ping) over a Unix socket the daemon provides, runs under a supervised actor with a bounded mailbox and bounded restart, and receives a scrubbed environment. Its operations join the capability manifest and are reachable through the native client:
+
+```bash
+hologram plugins list
+hologram plugins call com.example.weather weather.current '{"city":"Berlin"}'
+```
+
+Plugins have no host resource access in v1 — no store, config, or network mediation — and no HTTP routes; they are pure compute over JSON payloads. Wrapping plugin executables in microVMs is the documented hardening path. See `specs/adrs/005-subprocess-plugin-boundary.md`.
 
 ## Built-in modules
 
@@ -126,9 +332,12 @@ Trusted modules are statically linked and registered in the `builtin_modules!` c
 | `dev.hologram.live.system` | Health, capabilities, and module discovery |
 | `dev.hologram.live.kappa-registry` | Local content-addressed registry provider |
 | `dev.hologram.live.files` | File upload, listing, renaming, and download |
-| `dev.hologram.live.holo` | `.holo` import, inspection, verification, and cataloguing |
+| `dev.hologram.live.holo` | `.holo` import, inspection, verification, cataloguing, and resident Wasm execution |
 | `dev.hologram.live.history` | Durable conversations and messages |
-| `dev.hologram.live.chat` | Conversation-backed echo demo |
+| `dev.hologram.live.chat` | Conversation-backed chat over the configured inference engine |
+| `dev.hologram.live.inference` | Model import, listing, and removal for the engine boundary |
+| `dev.hologram.live.openai-compat` | Non-streaming OpenAI-compatible `/v1` inference API |
+| `dev.hologram.live.ollama-compat` | Non-streaming Ollama-compatible `/api` inference API |
 | `dev.hologram.live.control-plane` | Minimal node inventory and heartbeats |
 
 Each module declares its stable ID, dependencies, operation IDs, HTTP routes, and OpenAPI contribution. Operators can enable a subset with `modules.enabled` in `live.toml`. Executable module behavior remains compiled Rust rather than configuration-defined code.
@@ -199,7 +408,7 @@ Run the complete server verification path with:
 just verify
 ```
 
-That includes formatting, source-size policy, checks, unit tests, Clippy, public-boundary BDD scenarios, a release build, and an isolated end-to-end smoke test. The smoke test covers legacy configuration migration, module discovery, file storage and renaming, `.holo` operations, Echo Chat persistence, OpenAPI generation, and shutdown.
+That includes formatting, source-size policy, checks, unit tests, Clippy, public-boundary BDD scenarios, a release build, and an isolated end-to-end smoke test. The smoke test covers legacy configuration migration, module discovery, file storage and renaming, `.holo` operations including resident Wasm execution, chat persistence through the default echo engine, model listing, the OpenAI/Ollama compatibility endpoints, OpenAPI generation, and shutdown.
 
 Useful development commands:
 
@@ -219,14 +428,10 @@ cargo install cargo-watch --locked
 
 The default build does not yet provide:
 
-- model or inference execution behind Chat;
-- `.holo` execution or resident compute sessions;
-- OpenAI- or Ollama-compatible inference APIs;
-- dynamic third-party modules;
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, inference-model provider invocation, resident rootfs execution, portable Python/WASI, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

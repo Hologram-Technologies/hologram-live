@@ -1,0 +1,74 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
+---
+<DocsLayout title="AI model applications" description="Compile, package, inspect, and eventually invoke callable AI model services in .holo v4 archives.">
+  <h1>AI model applications</h1>
+  <p><code>.holo</code> v4 adds <code>InferenceModel</code>, a non-exit-bearing layer for callable AI services. Hologram remains engine-agnostic: the layer identifies an opaque content bundle, a service entry such as <code>ai.default</code>, and the engine that understands the bundle.</p>
+
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Available now</h3><p>Live reads and writes v4, imports and verifies complete model archives, exposes model metadata in the application directory, and provides <code>hologram ai inspect</code>.</p></article>
+    <article class="doc-card"><h3>Next provider milestone</h3><p>Delegate compilation and sessions to <code>hologram-ai</code>, add <code>ai compile</code>/<code>ai infer</code>, then route selected archive services into Chat and compatibility APIs.</p></article>
+  </div>
+
+  <h2>Layer contract</h2>
+  <pre><code>InferenceModel
+├─ content: κ(model bundle)
+├─ entry: ai.default
+├─ engine: uor-r4
+└─ exit semantics: none</code></pre>
+  <p>A model-only archive has <code>primary = null</code>. A broader application may contain Wasm or rootfs as its primary and one or more model services as additional layers. Service entry names are unique within the application.</p>
+
+  <h2>Compile from a model source</h2>
+  <p>The sibling <a href="https://github.com/Hologram-Technologies/hologram-ai"><code>hologram-ai</code></a> project owns the production pipeline: immutable Hugging Face or local source acquisition, <code>uor-r4</code> compilation, R4G1 validation, deterministic bundle construction, and v4 packaging. Its public product is the complete <code>.holo</code>, not a loose R4 work artifact.</p>
+  <pre><code># Intended integrated CLI surface
+hologram ai compile HuggingFaceTB/SmolLM2-135M-Instruct \
+  --revision &lt;full-commit-sha&gt; \
+  --output smollm2.holo</code></pre>
+  <div class="note"><strong>Integration status</strong>The <code>hologram-ai</code> Rust facade implements compilation and inference, but this Live binary does not yet delegate <code>ai compile</code> or <code>ai infer</code> to it. Compile with that project today, then bring the completed archive to Live for verification and inspection.</div>
+
+  <h2>Inspect in Live</h2>
+  <pre><code>hologram --json ai inspect smollm2.holo</code></pre>
+  <pre><code>&#123;
+  "path": "smollm2.holo",
+  "format_version": 4,
+  "archive_fingerprint": "…",
+  "models": [
+    &#123;
+      "entry": "ai.default",
+      "engine": "uor-r4",
+      "content_kappa": "blake3:…",
+      "embedded": true,
+      "byte_length": 123456
+    &#125;
+  ]
+&#125;</code></pre>
+  <p>Inspection verifies the archive footer, canonical manifest, every embedded content κ, and the application-directory projection. It does not initialize the model engine or execute model bytes.</p>
+
+  <h2>Low-level archive assembly</h2>
+  <p>Provider authors that already have one deterministic bundle file can assemble it through the generic compiler:</p>
+  <pre><code>&#123;
+  "schema_version": 1,
+  "layers": [
+    &#123;
+      "kind": "inference-model",
+      "path": "model.bundle",
+      "entry": "ai.default",
+      "engine": "uor-r4"
+    &#125;
+  ]
+&#125;
+
+hologram compile hologram.json --output model.holo</code></pre>
+  <p>This path addresses and packages opaque bytes; it does not claim that arbitrary bytes are a valid R4G1 or weightc model. The selected provider must validate its own bundle before opening a session. Normal <code>uor-r4</code> users should prefer the complete archive produced by <code>hologram-ai</code>.</p>
+
+  <h2>Why weightc is different</h2>
+  <p>Live's existing weightc chat engine runs imported <code>.wcpu</code> artifact directories. A directory is not yet a canonical model bundle: file ordering, path normalization, metadata, and engine compatibility need a deterministic contract before it can become one κ-addressed <code>InferenceModel</code> payload. Live therefore continues to use weightc as a configured chat provider without pretending that its current directory is already a portable <code>.holo</code> model.</p>
+
+  <h2>Execution status</h2>
+  <p>Running a model-only archive currently fails explicitly:</p>
+  <pre><code>hologram: LIVE_CAPABILITY_MISSING: execution for … declares
+inference-model services [ai.default (uor-r4)], but no inference provider
+is connected to hologram run</code></pre>
+  <p>The remaining work is tracked in the <a href={sitePath('/docs/holo-files')}>format guide</a> and repository milestone plan: validate bundles through <code>hologram-ai</code>, connect model sessions, expose compile/infer commands, and then make Chat select a model service from an imported archive.</p>
+</DocsLayout>

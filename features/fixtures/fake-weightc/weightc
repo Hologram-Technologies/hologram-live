@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fake weightc for BDD: `ask` emits a canned one-shot receipt; `enter --jsonl`
+# answers one canned receipt per request line and logs start/turn lines (with
+# its pid) to <artifact>/session.log so scenarios can prove one resident
+# process served every turn.
+if [ "$1" = "ask" ]; then
+  printf '{"response": "one-shot"}\n'
+  exit 0
+fi
+# enter --jsonl <artifact> [sampling flags]
+artifact="$3"
+log="$artifact/session.log"
+printf 'start %s\n' "$$" >> "$log"
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  printf 'turn %s %s\n' "$$" "$line" >> "$log"
+  prompt=$(printf '%s' "$line" | sed -n 's/.*"prompt":"\([^"]*\)".*/\1/p')
+  printf '{"response":"session:%s","generated_tokens":3,"elapsed_ms":7,"tokens_per_second":42.0,"finish_reason":"end_of_sequence"}\n' "$prompt"
+done

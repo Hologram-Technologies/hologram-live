@@ -32,6 +32,26 @@ const OPERATIONS: &[OperationDescriptor] = &[
         kind: OperationKind::Mutation,
         fallback_safe_before_dispatch: false,
     },
+    OperationDescriptor {
+        id: operation::HOLO_LOAD,
+        kind: OperationKind::Mutation,
+        fallback_safe_before_dispatch: false,
+    },
+    OperationDescriptor {
+        id: operation::HOLO_UNLOAD,
+        kind: OperationKind::Mutation,
+        fallback_safe_before_dispatch: false,
+    },
+    OperationDescriptor {
+        id: operation::HOLO_RUN,
+        kind: OperationKind::Stream,
+        fallback_safe_before_dispatch: false,
+    },
+    OperationDescriptor {
+        id: operation::HOLO_RESIDENT,
+        kind: OperationKind::Read,
+        fallback_safe_before_dispatch: true,
+    },
 ];
 
 static DESCRIPTOR: ModuleDescriptor = ModuleDescriptor {

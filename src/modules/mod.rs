@@ -34,6 +34,9 @@ builtin_modules! {
     holo::HoloModule,
     history::HistoryModule,
     chat::ChatModule,
+    inference::InferenceModule,
+    openai_compat::OpenAiCompatModule,
+    ollama_compat::OllamaCompatModule,
     control_plane::ControlPlaneModule,
 }
 

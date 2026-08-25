@@ -65,6 +65,38 @@ impl ObjectStore {
         })
     }
 
+    /// Cache bytes under an already-declared BLAKE3 content address without
+    /// creating user-facing metadata. This is used for payloads unpacked from
+    /// fat `.holo` archives so thin archives can resolve the same kappa later.
+    pub fn cache_addressed(&self, id: &str, bytes: &[u8]) -> Result<()> {
+        let digest = validate_id(id)?;
+        let actual = blake3::hash(bytes).to_hex().to_string();
+        if actual != digest {
+            return Err(LiveError::InvalidHolo(format!(
+                "content blob {id} does not match its bytes"
+            )));
+        }
+        let _guard = self
+            .write_lock
+            .lock()
+            .map_err(|_| LiveError::Conflict("object store lock poisoned".to_owned()))?;
+        let path = self.blob_path(digest);
+        if !path.exists() {
+            atomic_write(&path, bytes)?;
+        }
+        Ok(())
+    }
+
+    pub fn get_cached(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        let digest = validate_id(id)?;
+        let path = self.blob_path(digest);
+        match std::fs::read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(LiveError::io(&path, error)),
+        }
+    }
+
     pub fn metadata(&self, id: &str) -> Result<ObjectMetadata> {
         let digest = validate_id(id)?;
         let path = self.metadata_path(digest);
@@ -244,6 +276,19 @@ mod tests {
             Some("notes.txt")
         );
         assert!(store.rename_file(&original.id, "  ".to_owned()).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn addressed_cache_does_not_create_or_replace_metadata() {
+        let root = std::env::temp_dir().join(format!("hologram-store-cache-{}", now_millis()));
+        let store = ObjectStore::open(&root).expect("open");
+        let id = format!("blake3:{}", blake3::hash(b"layer"));
+
+        store.cache_addressed(&id, b"layer").expect("cache");
+        assert_eq!(store.get_cached(&id).expect("get"), Some(b"layer".to_vec()));
+        assert!(store.metadata(&id).is_err());
+        assert!(store.cache_addressed(&id, b"forged").is_err());
         let _ = std::fs::remove_dir_all(root);
     }
 }

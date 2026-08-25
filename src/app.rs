@@ -1,19 +1,23 @@
 use crate::actor::ActorSystem;
 use crate::audit::{AuditEvent, AuditLog};
 use crate::auth::{Authorizer, LocalAuthorizer, Principal};
+use crate::chat::ChatService;
 use crate::config::AppConfig;
 use crate::error::{ApiError, LiveError, Result};
 use crate::history::HistoryService;
 use crate::holo::{HoloCatalog, HoloRuntime};
+use crate::models::ModelCatalog;
 use crate::module::{ModuleContext, ModuleRegistry};
 use crate::nodes::NodeDirectory;
 use crate::observability::TracingHandle;
+use crate::plugin::PluginRegistry;
 use crate::protocol::{
     CapabilityManifest, HealthResponse, ModuleInfo, RpcRequest, RpcResponse, PROTOCOL_VERSION,
 };
 use crate::registry::{LocalRegistryProvider, RegistryProvider};
 use crate::store::ObjectStore;
 use axum::Router;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -25,7 +29,10 @@ struct AppInner {
     holo_catalog: Arc<HoloCatalog>,
     holo_runtime: Arc<HoloRuntime>,
     history: Arc<HistoryService>,
+    models: Arc<ModelCatalog>,
+    chat: ChatService,
     nodes: Arc<NodeDirectory>,
+    plugins: PluginRegistry,
     _actor_system: ActorSystem,
     audit: AuditLog,
     tracing: TracingHandle,
@@ -52,6 +59,16 @@ impl AppState {
             config.server.actor_mailbox_capacity,
         ));
         let history = Arc::new(HistoryService::open(config.paths.data_dir.join("history"))?);
+        let models = Arc::new(ModelCatalog::open(
+            store.clone(),
+            config.paths.data_dir.join("models"),
+        )?);
+        let engine = crate::inference::engine_from_config(
+            &config.inference,
+            models.clone(),
+            config.server.actor_mailbox_capacity,
+        )?;
+        let chat = ChatService::new(history.clone(), engine);
         let nodes = Arc::new(NodeDirectory::open(
             config.paths.data_dir.join("control-plane/nodes.json"),
         )?);
@@ -69,6 +86,13 @@ impl AppState {
             config.role.as_str()
         );
         let server_id = format!("blake3:{}", blake3::hash(server_seed.as_bytes()).to_hex());
+        let plugins = PluginRegistry::build(
+            &config.plugins,
+            &config.paths.state_dir,
+            config.server.actor_mailbox_capacity,
+            actor_system.root(),
+        )
+        .await?;
         let module_context =
             ModuleContext::new(actor_system.clone(), config.paths.data_dir.clone());
         let state = Self {
@@ -80,7 +104,10 @@ impl AppState {
                 holo_catalog,
                 holo_runtime,
                 history,
+                models,
+                chat,
                 nodes,
+                plugins,
                 _actor_system: actor_system,
                 audit,
                 tracing,
@@ -117,8 +144,20 @@ impl AppState {
         &self.inner.history
     }
 
+    pub fn models(&self) -> &Arc<ModelCatalog> {
+        &self.inner.models
+    }
+
+    pub fn chat(&self) -> &ChatService {
+        &self.inner.chat
+    }
+
     pub fn nodes(&self) -> &Arc<NodeDirectory> {
         &self.inner.nodes
+    }
+
+    pub fn plugins(&self) -> &PluginRegistry {
+        &self.inner.plugins
     }
 
     pub fn audit(&self) -> &AuditLog {
@@ -151,13 +190,17 @@ impl AppState {
     }
 
     pub fn capability_manifest(&self) -> CapabilityManifest {
+        let mut operations = self.inner.modules.operations();
+        operations.extend(self.inner.plugins.operations());
+        let mut modules = self.inner.modules.info();
+        modules.extend(self.inner.plugins.info());
         CapabilityManifest {
             protocol_version: PROTOCOL_VERSION,
             server_version: env!("CARGO_PKG_VERSION").to_owned(),
             server_id: self.inner.server_id.clone(),
             role: self.inner.config.role.as_str().to_owned(),
-            operations: self.inner.modules.operations(),
-            modules: self.inner.modules.info(),
+            operations,
+            modules,
             maximum_message_bytes: self
                 .inner
                 .config
@@ -179,7 +222,10 @@ impl AppState {
     pub async fn dispatch(&self, principal: &Principal, request: RpcRequest) -> RpcResponse {
         let operation = request.operation();
         let kind = request.kind();
-        if !self.inner.modules.supports(operation) {
+        // Plugin-provided operations fall through to the plugin registry when
+        // no builtin module claims them; both native plugin ops
+        // (`plugin.list`, `plugin.call`) are advertised by the system module.
+        if !self.inner.modules.supports(operation) && !self.inner.plugins.supports(operation) {
             return RpcResponse::Error(ApiError::from(&LiveError::Capability(format!(
                 "operation {operation} is not provided by this server"
             ))));
@@ -378,13 +424,27 @@ impl AppState {
                     Err(error) => RpcResponse::Error(ApiError::from(&error)),
                 }
             }
-            RpcRequest::ChatSend { id, content } => {
-                let history = self.inner.history.clone();
-                let echoed = content.clone();
+            RpcRequest::ChatSend { id, content } => RpcResponse::from_result(
+                self.inner.chat.send(&id, content).await,
+                RpcResponse::Conversation,
+            ),
+            RpcRequest::ModelList => {
+                let models = self.inner.models.clone();
+                RpcResponse::from_result(blocking(move || models.list()).await, RpcResponse::Models)
+            }
+            RpcRequest::ModelImport { path } => {
+                let models = self.inner.models.clone();
                 RpcResponse::from_result(
-                    blocking(move || history.append_exchange(&id, content, echoed)).await,
-                    RpcResponse::Conversation,
+                    blocking(move || models.import(&PathBuf::from(path))).await,
+                    RpcResponse::Model,
                 )
+            }
+            RpcRequest::ModelRemove { id } => {
+                let models = self.inner.models.clone();
+                match blocking(move || models.remove(&id)).await {
+                    Ok(()) => RpcResponse::Accepted,
+                    Err(error) => RpcResponse::Error(ApiError::from(&error)),
+                }
             }
             RpcRequest::NodesList => {
                 let nodes = self.inner.nodes.clone();
@@ -397,6 +457,18 @@ impl AppState {
                     Err(error) => RpcResponse::Error(ApiError::from(&error)),
                 }
             }
+            RpcRequest::PluginList => RpcResponse::Plugins(self.inner.plugins.list().await),
+            RpcRequest::PluginCall {
+                plugin_id,
+                operation,
+                payload,
+            } => RpcResponse::from_result(
+                self.inner
+                    .plugins
+                    .invoke(&plugin_id, &operation, &payload)
+                    .await,
+                RpcResponse::PluginResult,
+            ),
         }
     }
 }
@@ -425,11 +497,14 @@ fn resource_for(request: &RpcRequest) -> Option<String> {
         | RpcRequest::HistoryGet { id }
         | RpcRequest::HistoryAppend { id, .. }
         | RpcRequest::HistoryDelete { id }
-        | RpcRequest::ChatSend { id, .. } => Some(id.clone()),
+        | RpcRequest::ChatSend { id, .. }
+        | RpcRequest::ModelRemove { id } => Some(id.clone()),
+        RpcRequest::ModelImport { path } => Some(path.clone()),
         RpcRequest::RegistryPut { filename, .. } | RpcRequest::FilesPut { filename, .. } => {
             filename.clone()
         }
         RpcRequest::NodeHeartbeat { node } => Some(node.node_id.clone()),
+        RpcRequest::PluginCall { plugin_id, .. } => Some(plugin_id.clone()),
         _ => None,
     }
 }

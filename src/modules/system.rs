@@ -36,6 +36,16 @@ const OPERATIONS: &[OperationDescriptor] = &[
         kind: OperationKind::Mutation,
         fallback_safe_before_dispatch: false,
     },
+    OperationDescriptor {
+        id: operation::PLUGIN_LIST,
+        kind: OperationKind::Read,
+        fallback_safe_before_dispatch: true,
+    },
+    OperationDescriptor {
+        id: operation::PLUGIN_CALL,
+        kind: OperationKind::Mutation,
+        fallback_safe_before_dispatch: false,
+    },
 ];
 
 static DESCRIPTOR: ModuleDescriptor = ModuleDescriptor {

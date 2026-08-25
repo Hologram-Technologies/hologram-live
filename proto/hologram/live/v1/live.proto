@@ -17,6 +17,8 @@ message HistoryListRequest { bool include_archived = 1; }
 message HistoryArchiveRequest { string id = 1; bool archived = 2; }
 message ChatSendRequest { string id = 1; string content = 2; }
 message FileRenameRequest { string id = 1; string filename = 2; }
+message ModelImportRequest { string path = 1; }
+message PluginCallRequest { string plugin_id = 1; string operation = 2; string payload = 3; }
 message ObjectPutRequest {
   string kind = 1;
   string media_type = 2;
@@ -57,6 +59,11 @@ message RpcRequest {
     ChatSendRequest chat_send = 29;
     FileRenameRequest files_rename = 30;
     HistoryArchiveRequest history_archive = 31;
+    Empty model_list = 32;
+    ModelImportRequest model_import = 33;
+    IdRequest model_remove = 34;
+    PluginCallRequest plugin_call = 35;
+    Empty plugin_list = 36;
   }
 }
 
@@ -110,6 +117,29 @@ message ObjectMetadata {
 message ObjectContent { ObjectMetadata metadata = 1; bytes content = 2; }
 
 message HoloSection { string kind = 1; uint64 offset = 2; uint64 length = 3; }
+message HoloLayer {
+  uint32 position = 1;
+  string kind = 2;
+  string content_kappa = 3;
+  string entry = 4;
+  optional string architecture = 5;
+  optional string surface = 6;
+  optional string engine = 7;
+}
+message HoloChild {
+  uint32 position = 1;
+  string application_kappa = 2;
+  string capabilities_kappa = 3;
+}
+message HoloBlob { string kappa = 1; uint64 byte_length = 2; }
+message HoloDirectory {
+  uint32 schema_version = 1;
+  optional uint32 primary_layer = 2;
+  string requires_kappa = 3;
+  repeated HoloLayer layers = 4;
+  repeated HoloChild children = 5;
+  repeated HoloBlob blobs = 6;
+}
 message HoloInspection {
   string kappa = 1;
   string name = 2;
@@ -118,6 +148,8 @@ message HoloInspection {
   string archive_fingerprint = 5;
   bool footer_verified = 6;
   repeated HoloSection sections = 7;
+  HoloDirectory directory = 8;
+  bool directory_embedded = 9;
 }
 message ResidentHolo {
   string kappa = 1;
@@ -151,6 +183,26 @@ message NodeRecord {
   uint64 last_seen_millis = 4;
 }
 
+message ModelInfo {
+  string id = 1;
+  string name = 2;
+  string engine = 3;
+  string source = 4;
+  uint64 size = 5;
+  uint64 created_at_millis = 6;
+}
+
+message PluginStatus {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  repeated string operations = 4;
+  bool running = 5;
+  uint64 restart_count = 6;
+  optional string last_error = 7;
+}
+message PluginResult { string json = 1; }
+
 message ApiError { string code = 1; string message = 2; }
 message ModuleList { repeated ModuleInfo items = 1; }
 message ObjectList { repeated ObjectMetadata items = 1; }
@@ -158,6 +210,8 @@ message HoloInspectionList { repeated HoloInspection items = 1; }
 message ResidentHoloList { repeated ResidentHolo items = 1; }
 message ConversationList { repeated Conversation items = 1; }
 message NodeList { repeated NodeRecord items = 1; }
+message ModelList { repeated ModelInfo items = 1; }
+message PluginList { repeated PluginStatus items = 1; }
 message TracingFilter { string filter = 1; }
 
 message RpcResponse {
@@ -178,5 +232,9 @@ message RpcResponse {
     ApiError error = 14;
     ObjectMetadata object = 15;
     ObjectContent object_content = 16;
+    ModelInfo model = 17;
+    ModelList models = 18;
+    PluginResult plugin_result = 19;
+    PluginList plugins = 20;
   }
 }

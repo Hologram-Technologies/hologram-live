@@ -1,18 +1,20 @@
 use crate::error::{LiveError, Result};
+use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
+use crate::holo_python::{self, PythonRootfsSource};
 use hologram::archive::HoloWriter;
 use hologram::space::{address_bytes, AppManifest, Layer, Realization};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const MANIFEST_SCHEMA_VERSION: u16 = 1;
+const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 2;
 
 /// Source manifest accepted by `hologram compile`.
 ///
 /// Paths are resolved relative to the manifest file. The resulting archive is
-/// a self-contained Hologram v3 application: every layer and the declared
+/// a self-contained Hologram v4 application: every layer and the declared
 /// capability set are embedded under their canonical kappa labels.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileManifest {
     #[serde(default = "default_schema_version")]
@@ -24,47 +26,86 @@ pub struct CompileManifest {
     pub layers: Vec<CompileLayer>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileLayer {
     pub kind: CompileLayerKind,
-    pub path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<CompileSource>,
     #[serde(default)]
     pub entry: Option<String>,
     #[serde(default)]
     pub arch: Option<String>,
     #[serde(default)]
     pub surface: Option<String>,
+    #[serde(default)]
+    pub engine: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CompileLayerKind {
     Wasm,
     Tensor,
     Rootfs,
     View,
+    InferenceModel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "language", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum CompileSource {
+    Python(PythonRootfsSource),
 }
 
 pub struct CompiledHolo {
     pub bytes: Vec<u8>,
     pub layer_count: usize,
+    pub packaging: HoloPackaging,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoloPackaging {
+    Fat,
+    Thin,
 }
 
 pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
+    compile_manifest_with(path, HoloPackaging::Fat)
+}
+
+pub fn check_manifest(path: &Path) -> Result<CompileManifest> {
     let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
-    let specification: CompileManifest = serde_json::from_slice(&source).map_err(|error| {
-        LiveError::Config(format!(
-            "parse compile manifest {}: {error}",
-            path.display()
-        ))
-    })?;
-    if specification.schema_version != MANIFEST_SCHEMA_VERSION {
-        return Err(LiveError::Config(format!(
-            "unsupported compile manifest schema {}; expected {MANIFEST_SCHEMA_VERSION}",
-            specification.schema_version
-        )));
+    let specification = parse_compile_manifest(path, &source)?;
+    validate_compile_manifest(&specification)?;
+    let root = path.parent().unwrap_or_else(|| Path::new("."));
+    let _ = read_relative(root, specification.requires.as_deref())?;
+    for layer in &specification.layers {
+        match (&layer.path, &layer.source) {
+            (Some(path), None) => {
+                let _ = read_required(root, path)?;
+            }
+            (None, Some(CompileSource::Python(source))) => {
+                let arch = required_field(layer, "arch", layer.arch.as_deref())?;
+                holo_python::check_source(root, source, arch)?;
+            }
+            _ => {
+                return Err(layer_config_error(
+                    layer,
+                    "exactly one of path or source is required",
+                ));
+            }
+        }
     }
+    Ok(specification)
+}
+
+pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<CompiledHolo> {
+    let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
+    let specification = parse_compile_manifest(path, &source)?;
+    validate_compile_manifest(&specification)?;
 
     let root = path.parent().unwrap_or_else(|| Path::new("."));
     let requires_bytes = read_relative(root, specification.requires.as_deref())?;
@@ -74,7 +115,7 @@ pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
 
     let mut layers = Vec::with_capacity(specification.layers.len());
     for source_layer in &specification.layers {
-        let content = read_required(root, &source_layer.path)?;
+        let content = compile_layer_content(root, source_layer)?;
         let kappa = address_bytes(&content);
         blobs.insert(kappa.as_bytes().to_vec(), content);
         layers.push(build_layer(source_layer, kappa)?);
@@ -91,16 +132,67 @@ pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
     })?;
 
     let layer_count = manifest.layers.len();
+    let embedded = match packaging {
+        HoloPackaging::Fat => blobs
+            .iter()
+            .map(|(kappa, content)| (kappa.as_slice(), content.as_slice()))
+            .collect::<Vec<_>>(),
+        HoloPackaging::Thin => Vec::new(),
+    };
+    let directory = holo_directory::derive(&manifest, embedded.iter().copied())?;
     let mut writer = HoloWriter::new();
     writer.set_app_manifest(manifest.canonicalize());
     writer.set_metadata(source);
-    for (kappa, content) in blobs {
-        writer.add_content_blob(kappa, content);
+    writer.add_extension(DIRECTORY_EXTENSION_KEY, holo_directory::encode(&directory)?);
+    if packaging == HoloPackaging::Fat {
+        for (kappa, content) in blobs {
+            writer.add_content_blob(kappa, content);
+        }
     }
     let bytes = writer
         .finish()
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-    Ok(CompiledHolo { bytes, layer_count })
+    Ok(CompiledHolo {
+        bytes,
+        layer_count,
+        packaging,
+    })
+}
+
+pub fn parse_compile_manifest(path: &Path, source: &[u8]) -> Result<CompileManifest> {
+    serde_json::from_slice(source).map_err(|error| {
+        LiveError::Config(format!(
+            "parse compile manifest {}: {error}",
+            path.display()
+        ))
+    })
+}
+
+pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> {
+    if !matches!(
+        specification.schema_version,
+        1 | CURRENT_MANIFEST_SCHEMA_VERSION
+    ) {
+        return Err(LiveError::Config(format!(
+            "unsupported compile manifest schema {}; expected 1 or {CURRENT_MANIFEST_SCHEMA_VERSION}",
+            specification.schema_version
+        )));
+    }
+    let mut layers = Vec::with_capacity(specification.layers.len());
+    for source_layer in &specification.layers {
+        validate_layer_source(specification.schema_version, source_layer)?;
+        layers.push(build_layer(source_layer, address_bytes(&[]))?);
+    }
+    let manifest = AppManifest {
+        primary: specification.primary,
+        requires: address_bytes(&[]),
+        layers,
+        children: Vec::new(),
+    };
+    manifest
+        .validate()
+        .map_err(|error| LiveError::Config(format!("invalid application manifest: {error:?}")))?;
+    Ok(())
 }
 
 fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> Result<Layer> {
@@ -108,30 +200,39 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
         CompileLayerKind::Wasm => {
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             Ok(Layer::wasm(
                 kappa,
-                source.entry.as_deref().unwrap_or("_start"),
+                effective_entry(source).unwrap_or("_start"),
             ))
         }
         CompileLayerKind::Tensor => {
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             Ok(Layer::tensor(
                 kappa,
-                source.entry.as_deref().unwrap_or("session"),
+                effective_entry(source).unwrap_or("session"),
             ))
         }
         CompileLayerKind::Rootfs => {
             reject_aux(source, "surface", source.surface.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             let arch = required_field(source, "arch", source.arch.as_deref())?;
+            let arch = if matches!(source.source.as_ref(), Some(CompileSource::Python(_))) {
+                holo_python::canonical_arch(arch)?
+            } else {
+                arch
+            };
             Ok(Layer::rootfs(
                 kappa,
-                source.entry.as_deref().unwrap_or("boot"),
+                effective_entry(source).unwrap_or("boot"),
                 arch,
             ))
         }
         CompileLayerKind::View => {
             reject_aux(source, "arch", source.arch.as_deref())?;
+            reject_aux(source, "engine", source.engine.as_deref())?;
             if source.entry.is_some() {
                 return Err(layer_config_error(
                     source,
@@ -140,6 +241,13 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             }
             let surface = required_field(source, "surface", source.surface.as_deref())?;
             Ok(Layer::view(kappa, surface))
+        }
+        CompileLayerKind::InferenceModel => {
+            reject_aux(source, "arch", source.arch.as_deref())?;
+            reject_aux(source, "surface", source.surface.as_deref())?;
+            let entry = required_field(source, "entry", source.entry.as_deref())?;
+            let engine = required_field(source, "engine", source.engine.as_deref())?;
+            Ok(Layer::inference_model(kappa, entry, engine))
         }
     }
 }
@@ -151,6 +259,56 @@ fn read_relative(root: &Path, path: Option<&Path>) -> Result<Vec<u8>> {
 fn read_required(root: &Path, path: &Path) -> Result<Vec<u8>> {
     let resolved = root.join(path);
     std::fs::read(&resolved).map_err(|error| LiveError::io(&resolved, error))
+}
+
+fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<Vec<u8>> {
+    match (&layer.path, &layer.source) {
+        (Some(path), None) => read_required(root, path),
+        (None, Some(CompileSource::Python(source))) => {
+            let arch = required_field(layer, "arch", layer.arch.as_deref())?;
+            holo_python::compile(root, source, arch)
+        }
+        _ => Err(layer_config_error(
+            layer,
+            "exactly one of path or source is required",
+        )),
+    }
+}
+
+fn validate_layer_source(schema_version: u16, layer: &CompileLayer) -> Result<()> {
+    match (&layer.path, &layer.source) {
+        (Some(path), None) if !path.as_os_str().is_empty() => Ok(()),
+        (None, Some(_)) if schema_version == 1 => Err(layer_config_error(
+            layer,
+            "source recipes require schema_version 2",
+        )),
+        (None, Some(CompileSource::Python(source))) => {
+            if !matches!(layer.kind, CompileLayerKind::Rootfs) {
+                return Err(layer_config_error(
+                    layer,
+                    "Python rootfs sources require kind rootfs",
+                ));
+            }
+            if layer.entry.is_some() {
+                return Err(layer_config_error(
+                    layer,
+                    "Python source entry belongs inside source",
+                ));
+            }
+            holo_python::validate_source(source, layer.arch.as_deref())
+        }
+        _ => Err(layer_config_error(
+            layer,
+            "exactly one of path or source is required",
+        )),
+    }
+}
+
+fn effective_entry(layer: &CompileLayer) -> Option<&str> {
+    layer.entry.as_deref().or(match layer.source.as_ref() {
+        Some(CompileSource::Python(source)) => Some(source.entry.as_str()),
+        None => None,
+    })
 }
 
 fn required_field<'a>(
@@ -176,9 +334,19 @@ fn reject_aux(layer: &CompileLayer, field: &str, value: Option<&str>) -> Result<
 fn layer_config_error(layer: &CompileLayer, message: &str) -> LiveError {
     LiveError::Config(format!(
         "compile layer {} ({}): {message}",
-        layer.path.display(),
+        layer_name(layer),
         kind(layer)
     ))
+}
+
+fn layer_name(layer: &CompileLayer) -> String {
+    layer.path.as_ref().map_or_else(
+        || match layer.source.as_ref() {
+            Some(CompileSource::Python(source)) => source.project.display().to_string(),
+            None => "<missing>".to_owned(),
+        },
+        |path| path.display().to_string(),
+    )
 }
 
 const fn kind(layer: &CompileLayer) -> &'static str {
@@ -187,11 +355,12 @@ const fn kind(layer: &CompileLayer) -> &'static str {
         CompileLayerKind::Tensor => "tensor",
         CompileLayerKind::Rootfs => "rootfs",
         CompileLayerKind::View => "view",
+        CompileLayerKind::InferenceModel => "inference-model",
     }
 }
 
 const fn default_schema_version() -> u16 {
-    MANIFEST_SCHEMA_VERSION
+    1
 }
 
 #[cfg(test)]
@@ -223,5 +392,161 @@ mod tests {
             .sections
             .iter()
             .any(|section| section.kind == "ContentBlob"));
+        assert!(inspection.directory_embedded);
+        let directory = inspection.directory.expect("application directory");
+        assert_eq!(directory.schema_version, 1);
+        assert_eq!(directory.layers.len(), 1);
+        assert_eq!(directory.layers[0].kind, "view");
+        assert_eq!(directory.layers[0].surface.as_deref(), Some("portable"));
+        assert_eq!(directory.blobs.len(), 2);
+    }
+
+    #[test]
+    fn fat_and_thin_packages_share_the_same_application_manifest() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("view.html"), "<h1>Hello</h1>").expect("view");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "layers": [{"kind":"view","path":"view.html","surface":"portable"}]
+            }"#,
+        )
+        .expect("manifest");
+
+        let fat = compile_manifest_with(&manifest_path, HoloPackaging::Fat).expect("fat");
+        let thin = compile_manifest_with(&manifest_path, HoloPackaging::Thin).expect("thin");
+        assert_eq!(fat.packaging, HoloPackaging::Fat);
+        assert_eq!(thin.packaging, HoloPackaging::Thin);
+
+        let fat_loader = hologram::archive::HoloLoader::from_bytes(&fat.bytes).expect("fat loader");
+        let thin_loader =
+            hologram::archive::HoloLoader::from_bytes(&thin.bytes).expect("thin loader");
+        let fat_plan = fat_loader.into_plan().expect("fat plan");
+        let thin_plan = thin_loader.into_plan().expect("thin plan");
+        assert_eq!(fat_plan.app_manifest(), thin_plan.app_manifest());
+        assert_eq!(fat_plan.content_blobs().expect("fat blobs").len(), 2);
+        assert!(thin_plan.content_blobs().expect("thin blobs").is_empty());
+
+        let inspection = inspect_bytes("thin", "hello.holo", &thin.bytes).expect("inspect thin");
+        assert!(inspection.directory_embedded);
+        assert!(inspection.directory.expect("directory").blobs.is_empty());
+    }
+
+    #[test]
+    fn schema_two_accepts_a_python_rootfs_source() {
+        let manifest: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 2,
+                "primary": 0,
+                "layers": [{
+                    "kind": "rootfs",
+                    "source": {
+                        "language": "python",
+                        "project": ".",
+                        "entry": "analytics:main",
+                        "lock": "uv.lock",
+                        "profile": "rootfs",
+                        "base": "python:3.12-slim"
+                    },
+                    "arch": "arm64"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        validate_compile_manifest(&manifest).expect("validate");
+        assert!(manifest.layers[0].path.is_none());
+        assert!(matches!(
+            manifest.layers[0].source,
+            Some(CompileSource::Python(_))
+        ));
+    }
+
+    #[test]
+    fn schema_one_rejects_source_recipes() {
+        let manifest: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "layers": [{
+                    "kind": "rootfs",
+                    "source": {
+                        "language": "python",
+                        "project": ".",
+                        "entry": "analytics:main",
+                        "lock": "uv.lock",
+                        "profile": "rootfs"
+                    },
+                    "arch": "arm64"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        let error = validate_compile_manifest(&manifest).expect_err("schema mismatch");
+        assert!(error.to_string().contains("schema_version 2"), "{error}");
+    }
+
+    #[test]
+    fn packages_a_precompiled_inference_bundle_as_a_v4_model_layer() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            directory.path().join("model.bundle"),
+            b"deterministic R4 bundle",
+        )
+        .expect("bundle");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "layers": [{
+                    "kind": "inference-model",
+                    "path": "model.bundle",
+                    "entry": "ai.default",
+                    "engine": "uor-r4"
+                }]
+            }"#,
+        )
+        .expect("manifest");
+
+        let compiled = compile_manifest(&manifest_path).expect("compile model archive");
+        let inspection = inspect_bytes("model", "model.holo", &compiled.bytes).expect("inspect");
+        assert_eq!(inspection.format_version, 4);
+        let directory = inspection.directory.expect("application directory");
+        assert_eq!(directory.primary_layer, None);
+        assert_eq!(directory.layers[0].kind, "inference-model");
+        assert_eq!(directory.layers[0].entry, "ai.default");
+        assert_eq!(directory.layers[0].engine.as_deref(), Some("uor-r4"));
+        assert_eq!(directory.blobs.len(), 2);
+    }
+
+    #[test]
+    fn inference_model_layers_require_an_entry_and_engine() {
+        let missing_engine: CompileManifest = serde_json::from_str(
+            r#"{
+                "layers": [{
+                    "kind": "inference-model",
+                    "path": "model.bundle",
+                    "entry": "ai.default"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        let error = validate_compile_manifest(&missing_engine).expect_err("engine is required");
+        assert!(error.to_string().contains("require engine"), "{error}");
+
+        let missing_entry: CompileManifest = serde_json::from_str(
+            r#"{
+                "layers": [{
+                    "kind": "inference-model",
+                    "path": "model.bundle",
+                    "engine": "uor-r4"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        let error = validate_compile_manifest(&missing_entry).expect_err("entry is required");
+        assert!(error.to_string().contains("require entry"), "{error}");
     }
 }

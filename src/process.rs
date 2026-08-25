@@ -97,6 +97,26 @@ pub async fn ensure_daemon(config: &AppConfig, config_path: &Path) -> Result<()>
     Ok(())
 }
 
+/// Wait until the listener is closed and the daemon that owned it has
+/// released its process-ownership files. The listener can close before the
+/// server task finishes flushing telemetry and drops [`DaemonGuard`], so a
+/// restart that only watches the port can race the retiring process on Linux.
+pub async fn wait_stopped(config: &AppConfig, previous_pid: Option<u32>) -> Result<()> {
+    for _ in 0..50 {
+        let listener_closed = !is_ready(config).await;
+        let owner_released =
+            previous_pid.is_none_or(|pid| read_pid(config).ok().is_none_or(|owner| owner != pid));
+        if listener_closed && owner_released {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let owner = previous_pid.map_or_else(String::new, |pid| format!(" pid {pid}"));
+    Err(LiveError::Transport(format!(
+        "daemon{owner} did not stop and release ownership within 5 seconds"
+    )))
+}
+
 pub fn log_path(config: &AppConfig) -> PathBuf {
     config.paths.state_dir.join("hologram.log")
 }
@@ -220,5 +240,31 @@ mod tests {
         assert!(!diagnostics.contains("old failure"));
         assert!(diagnostics.contains("current failure"));
         std::fs::remove_file(path).expect("remove test log");
+    }
+
+    #[tokio::test]
+    async fn stopped_wait_includes_daemon_guard_release() {
+        let root = std::env::temp_dir().join(format!(
+            "hologram-daemon-stop-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::create_dir_all(&root).expect("create test state directory");
+        let pid_path = root.join("hologram.pid");
+        std::fs::write(&pid_path, b"4242").expect("write pid");
+
+        let mut config = AppConfig::default();
+        config.paths.state_dir.clone_from(&root);
+        config.server.listen = "127.0.0.1:0".to_owned();
+        let remover = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            std::fs::remove_file(pid_path).expect("release ownership");
+        });
+
+        wait_stopped(&config, Some(4242))
+            .await
+            .expect("observe stopped daemon");
+        remover.await.expect("join remover");
+        std::fs::remove_dir_all(root).expect("remove test state directory");
     }
 }

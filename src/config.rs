@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 const CURRENT_SCHEMA_VERSION: u32 = 2;
 const CHAT_MODULE_ID: &str = "dev.hologram.live.chat";
+const INFERENCE_MODULE_ID: &str = "dev.hologram.live.inference";
 const V1_DEFAULT_MODULES: &[&str] = &[
     "dev.hologram.live.system",
     "dev.hologram.live.kappa-registry",
@@ -52,6 +53,8 @@ pub struct AppConfig {
     pub telemetry: TelemetryConfig,
     pub modules: ModulesConfig,
     pub update: UpdateConfig,
+    pub inference: InferenceConfig,
+    pub plugins: PluginsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +126,46 @@ pub struct UpdateConfig {
     pub channel: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct InferenceConfig {
+    /// echo | weightc | ollama
+    pub engine: String,
+    /// `blake3:...` of an imported model (weightc) or a model tag (ollama).
+    pub default_model: String,
+    pub weightc_path: String,
+    pub ollama_endpoint: String,
+    pub request_timeout_secs: u64,
+    /// Keep `weightc enter --jsonl` sessions resident per conversation.
+    /// Only meaningful for the weightc engine.
+    pub resident_sessions: bool,
+    /// Maximum concurrently resident weightc sessions; the least recently
+    /// used session is evicted beyond this bound.
+    pub max_resident_sessions: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PluginsConfig {
+    /// Master switch for subprocess plugin modules. Defaults to off.
+    pub enabled: bool,
+    /// Explicit allowlist of plugin executables. There is no directory
+    /// scanning: only entries listed here with a pinned sha256 are spawned.
+    pub modules: Vec<PluginModuleConfig>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PluginModuleConfig {
+    /// Stable module id the plugin must declare in its `Describe` handshake.
+    /// Must not collide with a builtin module id.
+    pub id: String,
+    /// Executable spawned by the daemon. No shell is involved.
+    pub path: PathBuf,
+    /// Lowercase hex sha256 of the executable, verified before every spawn.
+    pub sha256: String,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -136,6 +179,8 @@ impl Default for AppConfig {
             telemetry: TelemetryConfig::default(),
             modules: ModulesConfig::default(),
             update: UpdateConfig::default(),
+            inference: InferenceConfig::default(),
+            plugins: PluginsConfig::default(),
         }
     }
 }
@@ -220,6 +265,20 @@ impl Default for UpdateConfig {
         Self {
             manifest_url: None,
             channel: "stable".to_owned(),
+        }
+    }
+}
+
+impl Default for InferenceConfig {
+    fn default() -> Self {
+        Self {
+            engine: "echo".to_owned(),
+            default_model: String::new(),
+            weightc_path: "weightc".to_owned(),
+            ollama_endpoint: "http://127.0.0.1:11434".to_owned(),
+            request_timeout_secs: 300,
+            resident_sessions: false,
+            max_resident_sessions: 4,
         }
     }
 }
@@ -326,6 +385,30 @@ impl AppConfig {
         if let Some(endpoint) = &self.telemetry.endpoint {
             validate_endpoint(endpoint, false)?;
         }
+        match self.inference.engine.as_str() {
+            "echo" | "weightc" | "ollama" => {}
+            other => {
+                return Err(LiveError::Config(format!(
+                    "unsupported inference.engine {other:?}; expected echo, weightc, or ollama"
+                )))
+            }
+        }
+        if self.inference.weightc_path.trim().is_empty() {
+            return Err(LiveError::Config(
+                "inference.weightc_path must not be empty".to_owned(),
+            ));
+        }
+        validate_endpoint(&self.inference.ollama_endpoint, false)?;
+        if self.inference.request_timeout_secs == 0 {
+            return Err(LiveError::Config(
+                "inference.request_timeout_secs must be greater than zero".to_owned(),
+            ));
+        }
+        if self.inference.max_resident_sessions == 0 {
+            return Err(LiveError::Config(
+                "inference.max_resident_sessions must be greater than zero".to_owned(),
+            ));
+        }
         if self.telemetry.service_name.trim().is_empty() {
             return Err(LiveError::Config(
                 "telemetry.service_name must not be empty".to_owned(),
@@ -335,6 +418,45 @@ impl AppConfig {
             return Err(LiveError::Config(
                 "telemetry.export_timeout_secs must be greater than zero".to_owned(),
             ));
+        }
+        self.validate_plugins()?;
+        Ok(())
+    }
+
+    fn validate_plugins(&self) -> Result<()> {
+        let builtin_ids = crate::modules::default_builtin_ids();
+        let mut seen = std::collections::BTreeSet::new();
+        for module in &self.plugins.modules {
+            if module.id.trim().is_empty() {
+                return Err(LiveError::Config(
+                    "plugins.modules entries must declare a non-empty id".to_owned(),
+                ));
+            }
+            if builtin_ids.iter().any(|id| id == &module.id) {
+                return Err(LiveError::Config(format!(
+                    "plugin id {} collides with a builtin module id",
+                    module.id
+                )));
+            }
+            if !seen.insert(module.id.clone()) {
+                return Err(LiveError::Config(format!(
+                    "duplicate plugin id {}",
+                    module.id
+                )));
+            }
+            if module.path.as_os_str().is_empty() {
+                return Err(LiveError::Config(format!(
+                    "plugin {} must declare a non-empty path",
+                    module.id
+                )));
+            }
+            let sha256 = &module.sha256;
+            if sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err(LiveError::Config(format!(
+                    "plugin {} sha256 must be 64 hex characters",
+                    module.id
+                )));
+            }
         }
         Ok(())
     }
@@ -349,6 +471,7 @@ impl AppConfig {
             1 => {
                 if is_v1_default_module_set(&self.modules.enabled) {
                     self.modules.enabled.push(CHAT_MODULE_ID.to_owned());
+                    self.modules.enabled.push(INFERENCE_MODULE_ID.to_owned());
                 }
                 self.schema_version = CURRENT_SCHEMA_VERSION;
                 Ok(true)
@@ -393,6 +516,9 @@ impl AppConfig {
         self.paths.data_dir = expand_home(&self.paths.data_dir);
         self.paths.state_dir = expand_home(&self.paths.state_dir);
         self.paths.cache_dir = expand_home(&self.paths.cache_dir);
+        for module in &mut self.plugins.modules {
+            module.path = expand_home(&module.path);
+        }
     }
 }
 
@@ -469,9 +595,45 @@ mod tests {
 
         assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
         assert!(loaded.modules.enabled.iter().any(|id| id == CHAT_MODULE_ID));
+        assert!(loaded
+            .modules
+            .enabled
+            .iter()
+            .any(|id| id == INFERENCE_MODULE_ID));
         let persisted = std::fs::read_to_string(path).expect("read migrated config");
         assert!(persisted.contains("schema_version = 2"));
         assert!(persisted.contains(CHAT_MODULE_ID));
+    }
+
+    #[test]
+    fn inference_defaults_to_the_local_echo_engine() {
+        let config = AppConfig::default();
+        assert_eq!(config.inference.engine, "echo");
+        assert!(config.inference.default_model.is_empty());
+        assert_eq!(config.inference.weightc_path, "weightc");
+        assert_eq!(config.inference.ollama_endpoint, "http://127.0.0.1:11434");
+        assert_eq!(config.inference.request_timeout_secs, 300);
+        assert!(!config.inference.resident_sessions);
+        assert_eq!(config.inference.max_resident_sessions, 4);
+        config.validate().expect("default config validates");
+    }
+
+    #[test]
+    fn zero_max_resident_sessions_is_rejected() {
+        let mut config = AppConfig::default();
+        config.inference.max_resident_sessions = 0;
+        let error = config.validate().expect_err("must fail");
+        assert!(
+            error.to_string().contains("max_resident_sessions"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn unknown_inference_engine_is_rejected() {
+        let mut config = AppConfig::default();
+        config.inference.engine = "surprise".to_owned();
+        assert!(config.validate().is_err());
     }
 
     #[test]
@@ -497,5 +659,71 @@ mod tests {
 
         assert!(!config.migrate().expect("already current"));
         assert!(!config.modules.enabled.iter().any(|id| id == CHAT_MODULE_ID));
+    }
+
+    #[test]
+    fn plugins_default_to_disabled_with_an_empty_allowlist() {
+        let config = AppConfig::default();
+        assert!(!config.plugins.enabled);
+        assert!(config.plugins.modules.is_empty());
+        config.validate().expect("default config validates");
+
+        // Configs written before the plugins section existed still parse. The
+        // plugins section serializes last, so truncating it reproduces a
+        // pre-plugin config file.
+        let source = toml::to_string_pretty(&config).expect("encode default config");
+        let (source, _) = source
+            .split_once("\n[plugins]")
+            .expect("plugins section is serialized");
+        let reparsed: AppConfig = toml::from_str(source).expect("parse without plugins section");
+        assert!(!reparsed.plugins.enabled);
+    }
+
+    #[test]
+    fn plugin_entries_require_a_well_formed_sha256() {
+        let mut config = plugin_config();
+        config.plugins.modules[0].sha256 = "not-hex".to_owned();
+        let error = config.validate().expect_err("must fail");
+        assert!(error.to_string().contains("64 hex"), "{error}");
+
+        let mut config = plugin_config();
+        config.plugins.modules[0].sha256 = "ab".repeat(32).to_uppercase();
+        config.validate().expect("uppercase hex is accepted");
+    }
+
+    #[test]
+    fn plugin_ids_must_be_unique_and_not_shadow_builtins() {
+        let mut config = plugin_config();
+        let duplicate = config.plugins.modules[0].clone();
+        config.plugins.modules.push(duplicate);
+        let error = config.validate().expect_err("duplicate id must fail");
+        assert!(error.to_string().contains("duplicate plugin id"), "{error}");
+
+        let mut config = plugin_config();
+        config.plugins.modules[0].id = "dev.hologram.live.system".to_owned();
+        let error = config.validate().expect_err("builtin id must fail");
+        assert!(error.to_string().contains("builtin module id"), "{error}");
+    }
+
+    #[test]
+    fn plugin_entries_require_an_id_and_a_path() {
+        let mut config = plugin_config();
+        config.plugins.modules[0].id = " ".to_owned();
+        assert!(config.validate().is_err());
+
+        let mut config = plugin_config();
+        config.plugins.modules[0].path = PathBuf::new();
+        assert!(config.validate().is_err());
+    }
+
+    fn plugin_config() -> AppConfig {
+        let mut config = AppConfig::default();
+        config.plugins.enabled = true;
+        config.plugins.modules.push(PluginModuleConfig {
+            id: "com.example.echo".to_owned(),
+            path: PathBuf::from("/opt/plugins/echo"),
+            sha256: "ab".repeat(32),
+        });
+        config
     }
 }

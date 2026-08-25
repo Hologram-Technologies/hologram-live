@@ -1,0 +1,169 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
+---
+<DocsLayout title="Python applications" description="Package a locked Python project and its dependencies as an executable rootfs layer in a .holo application.">
+  <h1>Python applications</h1>
+  <p>Hologram can compile a locked Python project into an architecture-specific <code>RootfsImage</code>, embed it in a fat <code>.holo</code> archive, and execute its <code>main(request: bytes) -&gt; bytes</code> function. Python remains a compiler input rather than a layer kind, so the canonical <code>.holo</code> model stays unchanged.</p>
+
+  <div class="note"><strong>Experimental local provider</strong>The workflow on this page works today and is intended for demos and trusted local applications. Compilation and direct execution require a running Docker-compatible engine. Execution uses a locked-down OCI container, not the planned hardware-backed microVM provider, and resident or thin-archive Python execution is not supported yet.</div>
+
+  <h2>What is supported</h2>
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Rootfs profile · available</h3><p>Packages CPython, the application, locked Linux dependencies, compiled extensions, and shared libraries into a compressed OCI image carried by a <code>rootfs</code> layer.</p></article>
+    <article class="doc-card"><h3>Portable WASI · planned</h3><p>A future profile will package CPython and compatible dependencies as a WebAssembly component. Hologram does not silently fall back to host Python or claim that ordinary native wheels are WASI binaries.</p></article>
+  </div>
+
+  <h2>Requirements and contract</h2>
+  <ul>
+    <li>A <code>pyproject.toml</code>, a committed <code>uv.lock</code>, and a <code>src/</code> package layout.</li>
+    <li>Python 3.12 for the current generated image and a Docker-compatible engine with Linux container support.</li>
+    <li>An entrypoint written as <code>module.path:function</code>. It receives one byte string and must return one byte string.</li>
+    <li>A target architecture of <code>arm64</code> or <code>x86_64</code>. <code>host</code> resolves to the current machine for portable examples; direct execution requires the resolved architecture to match the host.</li>
+  </ul>
+  <p>The compiler stages only <code>pyproject.toml</code>, the declared lock file, <code>src/</code>, and its generated launcher. It rejects absolute paths, paths escaping the manifest directory, and symlinks. The host <code>.venv</code>, Git metadata, caches, credentials, and undeclared files do not enter the image.</p>
+
+  <h2>Worked example: NumPy + pandas</h2>
+  <p>The repository contains the complete project under <code>examples/python-numpy-pandas/</code>. It uses the rootfs profile because NumPy contains native extensions and pandas requires NumPy. The <a href="https://numpy.org/install/">NumPy installation guide</a> recommends binary distributions when available, and the <a href="https://pandas.pydata.org/docs/getting_started/install.html#dependencies">pandas dependency guide</a> lists NumPy as required.</p>
+
+  <h3>1. Create and lock the project</h3>
+  <pre><code>uv init --app numpy-pandas-holo
+cd numpy-pandas-holo
+uv add numpy pandas
+uv lock
+uv tree</code></pre>
+  <p><a href="https://docs.astral.sh/uv/guides/projects/"><code>uv add</code></a> records the dependencies in <code>pyproject.toml</code>; <code>uv.lock</code> records the exact resolved closure. Commit both files.</p>
+  <pre><code>numpy-pandas-holo/
+├─ pyproject.toml
+├─ uv.lock
+├─ request.json
+├─ src/numpy_pandas_holo/__init__.py
+└─ hologram.json</code></pre>
+
+  <h3>2. Implement <code>main(request: bytes) -&gt; bytes</code></h3>
+  <pre><code># src/numpy_pandas_holo/__init__.py
+import json
+
+import numpy as np
+import pandas as pd
+
+
+def main(request: bytes) -&gt; bytes:
+    payload = json.loads(request)
+    frame = pd.DataFrame(payload["rows"])
+    values = frame["value"].to_numpy(dtype=np.float64)
+    result = &#123;
+        "columns": frame.columns.tolist(),
+        "mean": float(np.mean(values)),
+        "rows": int(frame.shape[0]),
+        "sum": float(np.sum(values)),
+    &#125;
+    return json.dumps(result, separators=(",", ":"), sort_keys=True).encode()</code></pre>
+  <p>The generated launcher imports the declared function, reads one request from standard input, calls it once, and writes the returned bytes to standard output. Import failures, exceptions, and non-byte return values fail the invocation.</p>
+
+  <h3>3. Generate the manifest</h3>
+  <pre><code>hologram app init . \
+  --template python \
+  --profile rootfs \
+  --project . \
+  --entry numpy_pandas_holo:main \
+  --lock uv.lock \
+  --arch arm64</code></pre>
+  <p>Use <code>x86_64</code> on an Intel/AMD host. The command writes source-manifest schema v2:</p>
+  <pre><code>&#123;
+  "schema_version": 2,
+  "primary": 0,
+  "layers": [
+    &#123;
+      "kind": "rootfs",
+      "source": &#123;
+        "language": "python",
+        "project": ".",
+        "entry": "numpy_pandas_holo:main",
+        "lock": "uv.lock",
+        "profile": "rootfs",
+        "base": "python:3.12-slim"
+      &#125;,
+      "arch": "arm64"
+    &#125;
+  ]
+&#125;</code></pre>
+  <p>The convenience default is <code>python:3.12-slim</code>. Tags are mutable; replace it with the registry's <code>repository@sha256:digest</code> form when reproducibility matters. Hologram validates that value but does not yet resolve or record a tag's digest automatically.</p>
+
+  <h3>4. Validate without building</h3>
+  <pre><code>hologram --json compile hologram.json --check</code></pre>
+  <pre><code>&#123;
+  "manifest": "hologram.json",
+  "layer_count": 1,
+  "schema_version": 2,
+  "valid": true
+&#125;</code></pre>
+  <p>This parses the schema, validates the primary layer and entrypoint, and verifies that <code>pyproject.toml</code>, <code>uv.lock</code>, and <code>src/</code> exist. It does not contact the container engine or write an archive.</p>
+
+  <h3>5. Compile a self-contained archive</h3>
+  <pre><code>hologram --json compile hologram.json \
+  --output numpy-pandas.holo</code></pre>
+  <p>The compiler builds a clean Linux image for the selected architecture, installs the pinned <code>uv</code> build tool, runs <code>uv sync --locked --no-dev --no-editable</code>, adds the generated launcher, saves the OCI image, compresses it with Zstandard, and embeds it as a content-addressed rootfs blob. The resulting archive contains the source manifest as metadata and the canonical runtime manifest as its application identity.</p>
+
+  <h3>6. Execute the <code>.holo</code></h3>
+  <pre><code>hologram run numpy-pandas.holo --input request.json \
+  --output-format json</code></pre>
+  <pre><code>&#123;
+  "columns": ["label", "value"],
+  "mean": 20.0,
+  "rows": 3,
+  "sum": 60.0
+&#125;</code></pre>
+  <p>The runtime protocol remains binary-safe, but the CLI can decode a known application contract at the edge. Use <code>--output-format text</code> for UTF-8 or <code>--output-format json</code> for JSON. The default <code>raw</code> format retains the full result envelope, including κ, timing, resident size, and output byte arrays.</p>
+  <p>Hologram ensures the verified image is available, then starts its generated entrypoint for each input with networking disabled, a read-only root filesystem, all Linux capabilities dropped, <code>no-new-privileges</code>, one CPU, 1 GiB of memory, 64 PIDs, and a 64 MiB temporary filesystem. Inputs and outputs are limited to 16 MiB and execution to 30 seconds. No project directory is mounted into the container.</p>
+  <p>Bundle schema v2 records the exact Docker image ID. When that same ID is already present under the content-derived local tag, Hologram skips decompressing and loading the embedded image. A missing or mismatched image takes the cold path and is restored from the archive before execution. This preserves the self-contained archive guarantee without trusting a mutable local tag.</p>
+  <p>From the repository root, <code>just python-holo-demo</code> builds the optimized release CLI and repeats this complete check against the committed example. The first invocation pays the one-time Rust release link; later invocations reuse that binary. Prefer the release CLI for large fat archives because debug-mode verification and hashing are substantially slower.</p>
+  <p>The check writes exactly one versioned JSON document to standard output and sends build progress or failures to standard error, so it composes directly with <code>jq</code>:</p>
+  <pre><code>just python-holo-demo | jq .
+just python-holo-demo | jq '.output'
+
+# Compile, execute, verify, and retain the archive
+just python-holo-package target/numpy-pandas.holo \
+  | jq '&#123;archive, archive_bytes&#125;'
+
+# Run that same self-contained file again
+target/release/hologram --json run target/numpy-pandas.holo \
+  --input examples/python-numpy-pandas/request.json
+
+# Or print only the decoded application result
+target/release/hologram run target/numpy-pandas.holo \
+  --input examples/python-numpy-pandas/request.json \
+  --output-format json</code></pre>
+
+  <h2>Local versus <code>mvm</code></h2>
+  <p>The available provider is local OCI execution. The repository's planned <code>mvm</code> boundary currently lives in <code>hologram-sandbox</code>: its hardware-backed backend requires KVM on Linux x86_64, while its guest understands the existing Hologram graph execution protocol rather than this Python OCI/rootfs envelope. It therefore cannot run this archive today, and an Apple Silicon development host cannot use that KVM backend directly.</p>
+  <p>The intended provider boundary keeps the archive stable: <code>local</code> restores or reuses the OCI image on the current machine, while a future <code>mvm</code> provider will place the same verified rootfs content behind a Linux microVM guest and warm-instance pool. Moving execution to <code>mvm</code> improves isolation and can improve warm throughput, but it does not remove the cold dependency/image build performed by <code>hologram compile</code>.</p>
+
+  <h3>What is inside?</h3>
+  <pre><code>numpy-pandas.holo
+├─ AppManifest
+│  └─ primary: RootfsImage · arm64 · κ(image bundle)
+├─ Extension: application-directory/v1
+├─ Metadata: schema-v2 source recipe
+├─ ContentBlob: κ(image bundle)
+│  ├─ Python OCI provider metadata
+│  └─ Zstandard-compressed OCI image archive
+│     ├─ CPython 3.12
+│     ├─ numpy-pandas-holo
+│     ├─ NumPy and compiled extensions
+│     ├─ pandas and transitive dependencies
+│     ├─ required Linux shared libraries
+│     └─ generated Hologram launcher
+└─ BLAKE3 footer</code></pre>
+
+  <h2>Current boundaries</h2>
+  <ul>
+    <li>Only direct execution of a self-contained fat archive is supported. <code>holo load</code> remains Wasm-only.</li>
+    <li>The provider requires a local Docker-compatible engine and leaves its content-derived, image-ID-verified image in the engine cache.</li>
+    <li>Container isolation is useful for a local demo, but this provider is not advertised as an untrusted or multi-tenant security boundary.</li>
+    <li>Base digest resolution, byte-for-byte reproducible OCI output, build provenance, SBOMs, signatures, and the microVM provider remain milestone work.</li>
+    <li>The portable WebAssembly Component Model/WASI profile is still planned; the current Wasm runtime accepts Hologram's core-Wasm guest contract v1.</li>
+  </ul>
+
+  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider decision, and remaining milestone checklist.</p>
+</DocsLayout>

@@ -1,0 +1,154 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
+---
+<DocsLayout title=".holo files" description="The physical layout, logical layers, identity model, packaging profiles, and verification rules of Hologram v4 application archives.">
+  <h1><code>.holo</code> files</h1>
+  <p>A <code>.holo</code> file is Hologram's native executable and application archive. Version 4 represents a Wasm program, tensor plan, root filesystem, view, callable inference model, or a composed application containing several of those layers. Readers retain v2/v3 compatibility.</p>
+
+  <div class="note"><strong>Sections are not layers</strong>The physical file has a header and section table. Logical application layers live inside the canonical <code>AppManifest</code> section and point to content by κ. A layer does not receive a second physical header of its own.</div>
+
+  <h2>Two views of one archive</h2>
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Physical view</h3><p>Header, section-table entries, payload sections, and the verified footer. This view lets the loader find byte ranges safely.</p></article>
+    <article class="doc-card"><h3>Application view</h3><p>Requirements, ordered layers, child applications, and κ references. This view defines what the application means.</p></article>
+  </div>
+
+  <pre><code>.holo v4
+├─ header                         magic · version · flags · section count
+├─ section table                 kind · offset · length, repeated
+├─ AppManifest section           primary · requires · layers · children
+├─ Extension section             verified application directory
+├─ Metadata section              source compile manifest, when present
+├─ ContentBlob section × N       κ71 · content bytes
+├─ other execution sections      plans · weights · ports · certificates · …
+└─ footer                         32-byte BLAKE3 fingerprint</code></pre>
+
+  <h2>Physical binary layout</h2>
+  <p>All integer fields are little-endian. The header is followed immediately by <code>section_count</code> fixed-width entries. Offsets are absolute byte offsets from the beginning of the file.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>4 bytes</td><td><code>magic</code></td><td>ASCII <code>HOLO</code>.</td></tr>
+      <tr><td><code>4</code></td><td>2 bytes</td><td><code>format_version</code></td><td>Current writers emit version <code>4</code>; readers accept versions 2–4.</td></tr>
+      <tr><td><code>6</code></td><td>2 bytes</td><td><code>flags</code></td><td>Reserved format flags.</td></tr>
+      <tr><td><code>8</code></td><td>2 bytes</td><td><code>section_count</code></td><td>Number of section-table entries.</td></tr>
+      <tr><td><code>10</code></td><td>24 bytes each</td><td><code>section[]</code></td><td><code>kind:u8</code>, seven padding bytes, <code>offset:u64</code>, and <code>length:u64</code>.</td></tr>
+      <tr><td>After table</td><td>Variable</td><td>Payloads</td><td>Section bytes in table order.</td></tr>
+      <tr><td>Final 32 bytes</td><td>32 bytes</td><td>Fingerprint</td><td>BLAKE3 over every preceding archive byte.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Section kinds</h3>
+  <p>The section kind is a closed numeric discriminant. New meanings require an additive format change; producer-specific metadata belongs in repeatable <code>Extension</code> sections.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Kind</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>KernelCalls</code></td><td>Compiled tensor operations.</td></tr>
+      <tr><td>2</td><td><code>Schedule</code></td><td>Tensor execution schedule.</td></tr>
+      <tr><td>3</td><td><code>Weights</code></td><td>Encoded tensor weights.</td></tr>
+      <tr><td>4–5</td><td><code>ShapeRegistry</code>, <code>DTypeRegistry</code></td><td>Tensor shape and data-type registries.</td></tr>
+      <tr><td>6–8</td><td><code>Certificates</code>, <code>Trace</code>, <code>Metadata</code></td><td>Verification, trace, and producer metadata.</td></tr>
+      <tr><td>9–11</td><td><code>Inputs</code>, <code>Outputs</code>, <code>Constants</code></td><td>Typed execution ports and constant values.</td></tr>
+      <tr><td>12–13</td><td><code>ExecPlan</code>, <code>WarmStart</code></td><td>Parallel execution levels and warm-start material.</td></tr>
+      <tr><td>14</td><td><code>Extension</code></td><td>Keyed, producer-defined bytes. Repeatable.</td></tr>
+      <tr><td>15</td><td><code>AppManifest</code></td><td>Canonical application structure.</td></tr>
+      <tr><td>16</td><td><code>ContentBlob</code></td><td>A 71-byte κ label followed by its content bytes. Repeatable.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>The application manifest</h2>
+  <p><code>AppManifest</code> is an IRI-tagged canonical realization. Its embedded κ operands make application closure discoverable without giving human names authority over identity.</p>
+  <pre><code>AppManifest
+├─ primary: 0                    layer whose exit code is the app exit code
+├─ requires: κ                   requested CapabilitySet
+├─ layer[0]: wasm · κ · holo_run
+├─ layer[1]: tensor · κ · session
+├─ layer[2]: rootfs · κ · boot · arm64
+├─ layer[3]: view · κ · portable
+├─ layer[4]: inference-model · κ · ai.default · uor-r4
+└─ child[0]: application κ · delegated capabilities κ</code></pre>
+
+  <h3>Layer kinds</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Source kind</th><th>Manifest kind</th><th>Descriptor</th><th>Hologram Live today</th></tr></thead>
+    <tbody>
+      <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and entrypoint; portable.</td><td>Executes in-process when it is the single primary layer.</td></tr>
+      <tr><td><code>tensor</code></td><td><code>TensorPlan</code></td><td>Content κ and session entrypoint; no app exit code.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
+      <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Directly executes experimental Python OCI bundles; other providers remain explicit.</td></tr>
+      <tr><td><code>view</code></td><td><code>View</code></td><td>Content κ and target surface; no app exit code.</td><td>Packages and inspects; the desktop does not attach it yet.</td></tr>
+      <tr><td><code>inference-model</code></td><td><code>InferenceModel</code></td><td>Content κ, unique callable entry, and engine identifier; no app exit code.</td><td>Imports, verifies, packages, and inspects; provider invocation remains explicit.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Manifest order is initialization order. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>; a model-only archive uses <code>primary = null</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
+
+  <h3>Source languages do not add layer kinds</h3>
+  <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
+  <p>This keeps the canonical layer model stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-aware rootfs compiler and <a href={sitePath('/docs/model-apps')}>AI model applications</a> for the v4 service layer.</p>
+
+  <h2>Queryable application directory</h2>
+  <p>New Hologram Live archives carry the extension <code>https://hologram.foundation/extension/application-directory/v1</code>. Its deterministic JSON is a normalized projection of the manifest and physical packaging:</p>
+  <pre><code>&#123;
+  "schema_version": 1,
+  "primary_layer": 0,
+  "requires_kappa": "blake3:…",
+  "layers": [
+    &#123;
+      "position": 0,
+      "kind": "wasm",
+      "content_kappa": "blake3:…",
+      "entry": "holo_run",
+      "architecture": null,
+      "surface": null,
+      "engine": null
+    &#125;
+  ],
+  "children": [],
+  "blobs": [&#123; "kappa": "blake3:…", "byte_length": 842 &#125;]
+&#125;</code></pre>
+  <p>The directory is a read model, not a second source of truth. During import and inspection, Live decodes the canonical manifest, hashes every embedded blob, derives this directory again, and rejects disagreement. Legacy archives without the extension remain valid; Live derives the same view and reports <code>directory_embedded: false</code>. Model rows use the optional <code>engine</code> field.</p>
+
+  <h2>Identity and verification</h2>
+  <ul>
+    <li><strong>Layer identity:</strong> each layer refers to content by its κ label.</li>
+    <li><strong>Application identity:</strong> the canonical <code>AppManifest</code> κ is unchanged when packaging changes between fat and thin.</li>
+    <li><strong>Archive fingerprint:</strong> the footer authenticates the physical archive bytes before it.</li>
+    <li><strong>Live object ID:</strong> importing stores the complete file under a BLAKE3 content ID. Because that hash includes the footer, it is distinct from the footer fingerprint.</li>
+  </ul>
+  <p>Live rejects a bad footer, truncated or out-of-bounds payloads when accessed, an invalid manifest, duplicate blob labels, a blob whose κ does not match its bytes, duplicate application directories, unknown directory schema versions, and a directory that disagrees with the manifest.</p>
+
+  <h2>Fat and thin packaging</h2>
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Fat</h3><p>The manifest and referenced blobs travel together. It is self-contained and suited to distribution, air-gapped transfer, and first install.</p></article>
+    <article class="doc-card"><h3>Thin</h3><p>The manifest travels without payload blobs. The runtime resolves the same κ references from a content store or sync source.</p></article>
+  </div>
+  <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives by default and <code>--thin</code> emits the same canonical manifest without content blobs. Importing a fat archive caches its verified payloads by κ, so catalog-backed resident execution can later resolve a thin archive. Direct file execution requires a self-contained fat archive.</div>
+
+  <h2>Build, inspect, and run</h2>
+  <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
+  <div class="note"><strong>Two source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Both produce the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
+  <pre><code>&#123;
+  "schema_version": 1,
+  "primary": 0,
+  "requires": "capabilities.json",
+  "layers": [
+    &#123; "kind": "wasm", "path": "app.wasm", "entry": "holo_run" &#125;,
+    &#123; "kind": "view", "path": "ui/index.html", "surface": "portable" &#125;
+  ]
+&#125;
+
+hologram compile hologram.json --output application.holo
+hologram run application.holo --input payload.bin
+hologram compile hologram.json --thin --output application.thin.holo
+hologram holo import application.holo
+hologram --json holo inspect ./application.holo
+hologram holo verify ./application.holo
+hologram --json holo inspect blake3:…
+hologram holo verify blake3:…
+hologram holo load blake3:…
+hologram run blake3:… --input payload.bin
+hologram holo unload blake3:…</code></pre>
+
+  <h2>Design provenance</h2>
+  <p>The one-format principle, ordered layers, capability-attenuated child applications, view surfaces, and fat/thin identity model come from the original <a href="https://github.com/Hologram-Technologies/hologram/blob/94ecb886811115491a77c8229e494965bea03fc2/specs/refactor/03-holo-format.md?plain=1#L19">Hologram v3 application-container design</a>. Hologram Live's verified directory is an additive use of v3's extension seam.</p>
+</DocsLayout>

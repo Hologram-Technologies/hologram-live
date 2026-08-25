@@ -17,11 +17,13 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `utoipa`                                     | OpenAPI generation for the JSON API                               |
 | `scalar_api_reference`                       | self-hosted interactive OpenAPI reference                         |
 | `blake3`                                     | content addressing and update integrity                           |
-| `uor-hologram` (`archive`, `space`)          | canonical `.holo` archives and application manifests              |
+| `uor-hologram` (`archive`, `space`)          | canonical v2–v4 `.holo` archives and application manifests        |
+| `wasmtime`                                   | in-process Wasm execution for resident `.holo` archives           |
+| `sha2`                                       | sha256 pinning of third-party plugin executables                  |
 | Tauri (`apps/desktop`)                       | desktop shell and managed `hologram` sidecar                      |
 | Cucumber (development only)                  | executable Gherkin public-boundary scenarios                      |
 
-The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary.
+The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary. Third-party plugin modules run as separate subprocesses speaking gRPC over a Unix socket rather than as loaded native code.
 
 Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the daemon's Cargo dependency graph.
 

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "primary": 0,
+  "layers": [
+    {
+      "kind": "wasm",
+      "path": "transform.wat",
+      "entry": "holo_run"
+    }
+  ]
+}

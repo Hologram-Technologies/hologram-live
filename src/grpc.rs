@@ -1,10 +1,12 @@
 use crate::app::AppState;
 use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
+use crate::models::ModelInfo;
 use crate::protocol::{
-    CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloInspection,
-    HoloRunResult, HoloSection, ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata,
-    OperationInfo, OperationKind, ResidentHolo, RpcRequest, RpcResponse,
+    CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloBlob, HoloChild,
+    HoloDirectory, HoloInspection, HoloLayer, HoloRunResult, HoloSection, ModuleInfo, NodeRecord,
+    ObjectContent, ObjectMetadata, OperationInfo, OperationKind, PluginStatus, ResidentHolo,
+    RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -190,8 +192,21 @@ impl From<RpcRequest> for pb::RpcRequest {
             RpcRequest::ChatSend { id, content } => {
                 Wire::ChatSend(pb::ChatSendRequest { id, content })
             }
+            RpcRequest::ModelList => Wire::ModelList(empty()),
+            RpcRequest::ModelImport { path } => Wire::ModelImport(pb::ModelImportRequest { path }),
+            RpcRequest::ModelRemove { id } => Wire::ModelRemove(pb::IdRequest { id }),
             RpcRequest::NodesList => Wire::NodesList(empty()),
             RpcRequest::NodeHeartbeat { node } => Wire::NodeHeartbeat(node.into()),
+            RpcRequest::PluginList => Wire::PluginList(empty()),
+            RpcRequest::PluginCall {
+                plugin_id,
+                operation,
+                payload,
+            } => Wire::PluginCall(pb::PluginCallRequest {
+                plugin_id,
+                operation,
+                payload,
+            }),
         };
         Self {
             request: Some(request),
@@ -269,8 +284,17 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
                 id: value.id,
                 content: value.content,
             }),
+            Wire::ModelList(_) => Ok(Self::ModelList),
+            Wire::ModelImport(value) => Ok(Self::ModelImport { path: value.path }),
+            Wire::ModelRemove(value) => Ok(Self::ModelRemove { id: value.id }),
             Wire::NodesList(_) => Ok(Self::NodesList),
             Wire::NodeHeartbeat(value) => Ok(Self::NodeHeartbeat { node: value.into() }),
+            Wire::PluginList(_) => Ok(Self::PluginList),
+            Wire::PluginCall(value) => Ok(Self::PluginCall {
+                plugin_id: value.plugin_id,
+                operation: value.operation,
+                payload: value.payload,
+            }),
         }
     }
 }
@@ -301,7 +325,15 @@ impl From<RpcResponse> for pb::RpcResponse {
             RpcResponse::Conversations(items) => Wire::Conversations(pb::ConversationList {
                 items: items.into_iter().map(Into::into).collect(),
             }),
+            RpcResponse::Model(value) => Wire::Model(value.into()),
+            RpcResponse::Models(items) => Wire::Models(pb::ModelList {
+                items: items.into_iter().map(Into::into).collect(),
+            }),
             RpcResponse::Nodes(items) => Wire::Nodes(pb::NodeList {
+                items: items.into_iter().map(Into::into).collect(),
+            }),
+            RpcResponse::PluginResult(json) => Wire::PluginResult(pb::PluginResult { json }),
+            RpcResponse::Plugins(items) => Wire::Plugins(pb::PluginList {
                 items: items.into_iter().map(Into::into).collect(),
             }),
             RpcResponse::TracingFilter(filter) => Wire::TracingFilter(pb::TracingFilter { filter }),
@@ -353,7 +385,15 @@ impl TryFrom<pb::RpcResponse> for RpcResponse {
             Wire::Conversations(value) => Ok(Self::Conversations(
                 value.items.into_iter().map(Into::into).collect(),
             )),
+            Wire::Model(value) => Ok(Self::Model(value.into())),
+            Wire::Models(value) => Ok(Self::Models(
+                value.items.into_iter().map(Into::into).collect(),
+            )),
             Wire::Nodes(value) => Ok(Self::Nodes(
+                value.items.into_iter().map(Into::into).collect(),
+            )),
+            Wire::PluginResult(value) => Ok(Self::PluginResult(value.json)),
+            Wire::Plugins(value) => Ok(Self::Plugins(
                 value.items.into_iter().map(Into::into).collect(),
             )),
             Wire::TracingFilter(value) => Ok(Self::TracingFilter(value.filter)),
@@ -568,6 +608,100 @@ impl From<pb::HoloSection> for HoloSection {
     }
 }
 
+impl From<HoloLayer> for pb::HoloLayer {
+    fn from(value: HoloLayer) -> Self {
+        Self {
+            position: value.position,
+            kind: value.kind,
+            content_kappa: value.content_kappa,
+            entry: value.entry,
+            architecture: value.architecture,
+            surface: value.surface,
+            engine: value.engine,
+        }
+    }
+}
+
+impl From<pb::HoloLayer> for HoloLayer {
+    fn from(value: pb::HoloLayer) -> Self {
+        Self {
+            position: value.position,
+            kind: value.kind,
+            content_kappa: value.content_kappa,
+            entry: value.entry,
+            architecture: value.architecture,
+            surface: value.surface,
+            engine: value.engine,
+        }
+    }
+}
+
+impl From<HoloChild> for pb::HoloChild {
+    fn from(value: HoloChild) -> Self {
+        Self {
+            position: value.position,
+            application_kappa: value.application_kappa,
+            capabilities_kappa: value.capabilities_kappa,
+        }
+    }
+}
+
+impl From<pb::HoloChild> for HoloChild {
+    fn from(value: pb::HoloChild) -> Self {
+        Self {
+            position: value.position,
+            application_kappa: value.application_kappa,
+            capabilities_kappa: value.capabilities_kappa,
+        }
+    }
+}
+
+impl From<HoloBlob> for pb::HoloBlob {
+    fn from(value: HoloBlob) -> Self {
+        Self {
+            kappa: value.kappa,
+            byte_length: value.byte_length,
+        }
+    }
+}
+
+impl From<pb::HoloBlob> for HoloBlob {
+    fn from(value: pb::HoloBlob) -> Self {
+        Self {
+            kappa: value.kappa,
+            byte_length: value.byte_length,
+        }
+    }
+}
+
+impl From<HoloDirectory> for pb::HoloDirectory {
+    fn from(value: HoloDirectory) -> Self {
+        Self {
+            schema_version: u32::from(value.schema_version),
+            primary_layer: value.primary_layer,
+            requires_kappa: value.requires_kappa,
+            layers: value.layers.into_iter().map(Into::into).collect(),
+            children: value.children.into_iter().map(Into::into).collect(),
+            blobs: value.blobs.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<pb::HoloDirectory> for HoloDirectory {
+    type Error = LiveError;
+
+    fn try_from(value: pb::HoloDirectory) -> Result<Self> {
+        Ok(Self {
+            schema_version: narrow(value.schema_version, "directory schema_version")?,
+            primary_layer: value.primary_layer,
+            requires_kappa: value.requires_kappa,
+            layers: value.layers.into_iter().map(Into::into).collect(),
+            children: value.children.into_iter().map(Into::into).collect(),
+            blobs: value.blobs.into_iter().map(Into::into).collect(),
+        })
+    }
+}
+
 impl From<HoloInspection> for pb::HoloInspection {
     fn from(value: HoloInspection) -> Self {
         Self {
@@ -578,6 +712,8 @@ impl From<HoloInspection> for pb::HoloInspection {
             archive_fingerprint: value.archive_fingerprint,
             footer_verified: value.footer_verified,
             sections: value.sections.into_iter().map(Into::into).collect(),
+            directory: value.directory.map(Into::into),
+            directory_embedded: value.directory_embedded,
         }
     }
 }
@@ -594,6 +730,8 @@ impl TryFrom<pb::HoloInspection> for HoloInspection {
             archive_fingerprint: value.archive_fingerprint,
             footer_verified: value.footer_verified,
             sections: value.sections.into_iter().map(Into::into).collect(),
+            directory: value.directory.map(TryInto::try_into).transpose()?,
+            directory_embedded: value.directory_embedded,
         })
     }
 }
@@ -718,6 +856,60 @@ impl From<pb::NodeRecord> for NodeRecord {
     }
 }
 
+impl From<ModelInfo> for pb::ModelInfo {
+    fn from(value: ModelInfo) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            engine: value.engine,
+            source: value.source,
+            size: value.size,
+            created_at_millis: value.created_at_millis,
+        }
+    }
+}
+
+impl From<pb::ModelInfo> for ModelInfo {
+    fn from(value: pb::ModelInfo) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            engine: value.engine,
+            source: value.source,
+            size: value.size,
+            created_at_millis: value.created_at_millis,
+        }
+    }
+}
+
+impl From<PluginStatus> for pb::PluginStatus {
+    fn from(value: PluginStatus) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            version: value.version,
+            operations: value.operations,
+            running: value.running,
+            restart_count: value.restart_count,
+            last_error: value.last_error,
+        }
+    }
+}
+
+impl From<pb::PluginStatus> for PluginStatus {
+    fn from(value: pb::PluginStatus) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            version: value.version,
+            operations: value.operations,
+            running: value.running,
+            restart_count: value.restart_count,
+            last_error: value.last_error,
+        }
+    }
+}
+
 impl From<ApiError> for pb::ApiError {
     fn from(value: ApiError) -> Self {
         Self {
@@ -817,6 +1009,56 @@ mod tests {
             decoded,
             RpcResponse::ObjectContent(ObjectContent { metadata, bytes })
                 if metadata.filename.as_deref() == Some("hello.txt") && bytes == b"hello"
+        ));
+    }
+
+    #[test]
+    fn holo_directory_round_trip_preserves_normalized_rows() {
+        let response = RpcResponse::HoloInspection(HoloInspection {
+            kappa: "blake3:archive".to_owned(),
+            name: "app.holo".to_owned(),
+            format_version: 4,
+            byte_length: 128,
+            archive_fingerprint: "fingerprint".to_owned(),
+            footer_verified: true,
+            sections: vec![HoloSection {
+                kind: "AppManifest".to_owned(),
+                offset: 32,
+                length: 64,
+            }],
+            directory: Some(HoloDirectory {
+                schema_version: 1,
+                primary_layer: None,
+                requires_kappa: "blake3:capabilities".to_owned(),
+                layers: vec![HoloLayer {
+                    position: 0,
+                    kind: "inference-model".to_owned(),
+                    content_kappa: "blake3:model".to_owned(),
+                    entry: "ai.default".to_owned(),
+                    architecture: None,
+                    surface: None,
+                    engine: Some("uor-r4".to_owned()),
+                }],
+                children: Vec::new(),
+                blobs: vec![HoloBlob {
+                    kappa: "blake3:model".to_owned(),
+                    byte_length: 42,
+                }],
+            }),
+            directory_embedded: true,
+        });
+
+        let decoded =
+            RpcResponse::try_from(pb::RpcResponse::from(response)).expect("decode response");
+        assert!(matches!(
+            decoded,
+            RpcResponse::HoloInspection(HoloInspection {
+                directory: Some(HoloDirectory { layers, blobs, .. }),
+                directory_embedded: true,
+                ..
+            }) if layers[0].content_kappa == "blake3:model"
+                && layers[0].engine.as_deref() == Some("uor-r4")
+                && blobs[0].byte_length == 42
         ));
     }
 }

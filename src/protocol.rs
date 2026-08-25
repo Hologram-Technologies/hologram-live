@@ -137,6 +137,16 @@ pub struct HoloChild {
     pub position: u32,
     pub application_kappa: String,
     pub capabilities_kappa: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_application_kappa: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires_kappa: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application_resolution_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities_resolution_source: Option<String>,
 }
 
 /// One content-addressed blob physically embedded in a fat `.holo`.
@@ -279,6 +289,17 @@ impl HoloPlan {
                 position: child.position,
                 application_kappa: child.application_kappa.clone(),
                 capabilities_kappa: child.capabilities_kappa.clone(),
+                parent_application_kappa: Some(child.parent_application_kappa.clone()),
+                depth: Some(child.depth),
+                requires_kappa: child.requires_kappa.clone(),
+                application_resolution_source: child
+                    .application_resolution_source
+                    .as_ref()
+                    .map(resolution_source_name),
+                capabilities_resolution_source: child
+                    .capabilities_resolution_source
+                    .as_ref()
+                    .map(resolution_source_name),
             })
             .collect();
         let blockers = report

@@ -10,7 +10,7 @@
   content-addressed request and admit it only under an explicit trusted grant
 - Exit signal: insufficient authority returns `LIVE_AUTHORIZATION_DENIED` before
   provider preparation, while child grants can only attenuate parent authority
-- Current focus: Slice 3 child grant attenuation
+- Current focus: Slice 3 child lifecycle ownership
 
 This is the short-lived execution tracker. Durable requirements remain in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
@@ -253,12 +253,13 @@ build, and release smoke; the Astro documentation build also passes.
 - [x] Enforce total depth, application count, object count, and byte limits over
   the complete tree.
 - [x] Detect cycles by application κ and return a deterministic path diagnostic.
-- [ ] Require parent effective grant to admit each delegated child grant.
-- [ ] Require the delegated grant to admit the child's requested capabilities.
-- [ ] Reject amplification before preparing the child or any later provider.
+- [x] Require parent effective grant to admit each delegated child grant.
+- [x] Require the delegated grant to admit the child's requested capabilities.
+- [x] Reject amplification before preparing the child or any later provider.
 - [ ] Define manifest-order child startup, reverse-order rollback/stop, and exit
   propagation in an ADR amendment.
-- [ ] Remove the M1 child blocker only when the complete child plan is admitted.
+- [x] Replace the M1 closure blocker with a lifecycle blocker only after the
+  complete child plan is resolved; runtime admission runs before that blocker.
 
 Slice 3 compiler evidence (2026-08-25): schema-v3 `children` entries pair a
 verified, self-contained child `.holo` archive with a canonical delegated
@@ -266,8 +267,8 @@ capability document. Compilation embeds each child's canonical manifest and
 verified closure in fat parents, emits the same canonical parent application κ
 for thin parents, and reports the child count through human and JSON CLI paths.
 The interactive generator and paired `--child` / `--child-capabilities` flags
-write the same source model. Child execution remains explicitly blocked pending
-attenuation and lifecycle work. That compiler increment passed formatting,
+write the same source model. At that increment, child execution remained
+explicitly blocked pending attenuation and lifecycle work. It passed formatting,
 source-size and product-boundary gates, all-target checks, 137 library tests,
 21 CLI tests, Clippy with warnings denied, all 9 BDD scenarios / 80 steps, the
 optimized release build, release smoke, and the Astro documentation build.
@@ -280,9 +281,24 @@ application instances. One budget covers application depth/count, aggregate
 layers, unique objects, and resolved bytes. Cycle detection returns the full κ
 path before resolving a repeated ancestor. Unit coverage proves nested closure,
 compiled-parent integration, shared-object deduplication, depth/application
-limits, and deterministic cycle paths. Child execution stays blocked so grant
-attenuation remains the next task. Full verification passes formatting,
+limits, and deterministic cycle paths. At that increment, child execution
+stayed blocked pending grant attenuation. Full verification passes formatting,
 source-size and product-boundary gates, all-target checks, 140 library tests,
+21 CLI tests, Clippy with warnings denied, all 9 BDD scenarios / 80 steps, the
+optimized release build, and release smoke; the 13-page Astro documentation
+build also passes.
+
+Slice 3 attenuation evidence (2026-08-25): strict plans retain typed delegated
+and requested capability objects for every logical child edge. Runtime
+admission walks those edges in parent-before-child order, requires the trusted
+parent grant to admit the delegation, and requires the delegation to admit the
+child request. Nested children receive only their parent's admitted delegation.
+Amplification and under-granted requests return `LIVE_AUTHORIZATION_DENIED`;
+synthetic-provider tests prove both failures, and the successful attenuation
+path's lifecycle blocker, occur before root provider preparation. JSON/gRPC
+plan rows expose parent/depth, delegated κ, requested κ, and resolution sources
+without exposing capability bytes. Full verification passes formatting,
+source-size and product-boundary gates, all-target checks, 143 library tests,
 21 CLI tests, Clippy with warnings denied, all 9 BDD scenarios / 80 steps, the
 optimized release build, and release smoke; the 13-page Astro documentation
 build also passes.
@@ -290,7 +306,7 @@ build also passes.
 Slice 3 acceptance:
 
 - [ ] Narrow child delegation starts and stops with its parent.
-- [ ] Amplification and under-granted child requests fail deterministically
+- [x] Amplification and under-granted child requests fail deterministically
   before child provider preparation.
 - [x] Cyclic and over-limit graphs fail without recursion overflow.
 
@@ -310,8 +326,8 @@ Slice 3 acceptance:
 
 - [ ] Requested, granted, delegated, and enforced capabilities are distinct in
   code, errors, JSON, and documentation.
-- [ ] No archive-controlled byte string becomes authority.
-- [ ] No provider prepares before closure resolution and authorization finish.
+- [x] No archive-controlled byte string becomes authority.
+- [x] No provider prepares before closure resolution and authorization finish.
 - [ ] Capability behavior is deterministic across fat and cache-resolved thin
   archives.
 - [ ] `cargo fmt`, source-size gate, check, full tests, Clippy, BDD, optimized

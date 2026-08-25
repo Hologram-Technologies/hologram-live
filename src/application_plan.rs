@@ -1,5 +1,7 @@
 use crate::error::{LiveError, Result};
-use crate::holo_capability::RequestedCapabilities;
+use crate::holo_capability::{
+    authorize_child_delegation, DelegatedCapabilities, EffectiveGrant, RequestedCapabilities,
+};
 use crate::util::hex;
 use hologram::archive::HoloLoader;
 use hologram::space::{address_bytes, AppManifest, LayerKind, Realization};
@@ -180,7 +182,7 @@ pub enum PlanBlocker {
         entry: String,
         reason: String,
     },
-    ChildClosureUnsupported {
+    ChildLifecycleUnsupported {
         position: u32,
         application_kappa: String,
         capabilities_kappa: String,
@@ -211,7 +213,7 @@ impl PlanBlocker {
             Self::ContentMismatch { .. } => "content_mismatch",
             Self::InvalidCapabilitySet { .. } => "invalid_capability_set",
             Self::ProviderUnavailable { .. } => "provider_unavailable",
-            Self::ChildClosureUnsupported { .. } => "child_closure_unsupported",
+            Self::ChildLifecycleUnsupported { .. } => "child_lifecycle_unsupported",
             Self::InvalidChildManifest { .. } => "invalid_child_manifest",
             Self::ChildCycle { .. } => "child_cycle",
             Self::LimitExceeded { .. } => "limit_exceeded",
@@ -228,7 +230,7 @@ impl PlanBlocker {
             | Self::ChildCycle { .. }
             | Self::LimitExceeded { .. } => "LIVE_HOLO_INVALID",
             Self::ProviderUnavailable { .. }
-            | Self::ChildClosureUnsupported { .. }
+            | Self::ChildLifecycleUnsupported { .. }
             | Self::ExecutionShapeUnsupported { .. } => "LIVE_CAPABILITY_MISSING",
         }
     }
@@ -257,12 +259,12 @@ impl PlanBlocker {
             } => format!(
                 "application {application_kappa} layer {position} ({kind}, entry {entry}) has no available provider: {reason}"
             ),
-            Self::ChildClosureUnsupported {
+            Self::ChildLifecycleUnsupported {
                 position,
                 application_kappa: child,
                 capabilities_kappa,
             } => format!(
-                "application {application_kappa} child {position} references application {child} with delegated capabilities {capabilities_kappa}; child closure execution is deferred until capability attenuation is implemented"
+                "application {application_kappa} child {position} references application {child} with delegated capabilities {capabilities_kappa}; the closure is resolved but child lifecycle execution is not connected"
             ),
             Self::InvalidChildManifest {
                 kappa,
@@ -325,7 +327,29 @@ pub struct ApplicationPlanReport {
     pub max_depth: usize,
     pub limits: PlanLimits,
     requested_capabilities: Option<RequestedCapabilities>,
+    child_admissions: Vec<PendingChildAdmission>,
     manifest: AppManifest,
+}
+
+struct PendingChildAdmission {
+    position: u32,
+    parent_application_index: usize,
+    parent_application_kappa: String,
+    application_index: usize,
+    application_kappa: String,
+    delegated_capabilities: DelegatedCapabilities,
+    requested_capabilities: Option<RequestedCapabilities>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedChild {
+    pub position: u32,
+    pub parent_application_index: usize,
+    pub parent_application_kappa: String,
+    pub application_index: usize,
+    pub application_kappa: String,
+    pub delegated_capabilities: DelegatedCapabilities,
+    pub requested_capabilities: RequestedCapabilities,
 }
 
 impl ApplicationPlanReport {
@@ -383,7 +407,11 @@ impl ApplicationPlanReport {
     }
 
     pub fn into_application_plan(self) -> Result<ApplicationPlan> {
-        if let Some(blocker) = self.blockers.into_iter().next() {
+        if let Some(blocker) = self
+            .blockers
+            .into_iter()
+            .find(|blocker| !matches!(blocker, PlanBlocker::ChildLifecycleUnsupported { .. }))
+        {
             return Err(blocker.into_error(&self.identity.application_kappa));
         }
         let requested_capabilities = self.requested_capabilities.ok_or_else(|| {
@@ -421,12 +449,32 @@ impl ApplicationPlanReport {
                 provider,
             });
         }
+        let children = self
+            .child_admissions
+            .into_iter()
+            .map(|child| {
+                Ok(ResolvedChild {
+                    position: child.position,
+                    parent_application_index: child.parent_application_index,
+                    parent_application_kappa: child.parent_application_kappa,
+                    application_index: child.application_index,
+                    application_kappa: child.application_kappa,
+                    delegated_capabilities: child.delegated_capabilities,
+                    requested_capabilities: child.requested_capabilities.ok_or_else(|| {
+                        LiveError::Conflict(
+                            "planner lost decoded child requested capabilities".to_owned(),
+                        )
+                    })?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(ApplicationPlan {
             identity: self.identity,
             primary_layer: self.primary_layer,
             requires_kappa: self.requires_kappa,
             requested_capabilities,
             layers,
+            children,
             objects: self.objects,
             manifest: self.manifest,
         })
@@ -439,6 +487,7 @@ pub struct ApplicationPlan {
     pub requires_kappa: String,
     pub requested_capabilities: RequestedCapabilities,
     pub layers: Vec<ResolvedLayer>,
+    pub children: Vec<ResolvedChild>,
     pub objects: BTreeMap<String, ResolvedObject>,
     manifest: AppManifest,
 }
@@ -451,6 +500,7 @@ impl std::fmt::Debug for ApplicationPlan {
             .field("primary_layer", &self.primary_layer)
             .field("requires_kappa", &self.requires_kappa)
             .field("layers", &self.layers)
+            .field("children", &self.children)
             .field("objects", &self.objects)
             .finish_non_exhaustive()
     }
@@ -464,6 +514,49 @@ impl ApplicationPlan {
 
     pub fn verified_manifest(&self) -> &AppManifest {
         &self.manifest
+    }
+
+    pub fn authorize_capability_tree(&self, effective_grant: &EffectiveGrant) -> Result<()> {
+        effective_grant.authorize(
+            &self.identity.application_kappa,
+            &self.requested_capabilities,
+        )?;
+        let mut grants = HashMap::from([(
+            0usize,
+            (
+                self.identity.application_kappa.as_str(),
+                effective_grant.kappa.as_str(),
+                effective_grant.capabilities.as_ref(),
+            ),
+        )]);
+        for child in &self.children {
+            let (parent_application, parent_grant_kappa, parent_grant) = grants
+                .get(&child.parent_application_index)
+                .copied()
+                .ok_or_else(|| {
+                    LiveError::Conflict(format!(
+                        "planner lost parent application {} for child {}",
+                        child.parent_application_kappa, child.application_kappa
+                    ))
+                })?;
+            authorize_child_delegation(
+                parent_application,
+                parent_grant_kappa,
+                parent_grant,
+                &child.application_kappa,
+                &child.delegated_capabilities,
+                &child.requested_capabilities,
+            )?;
+            grants.insert(
+                child.application_index,
+                (
+                    child.application_kappa.as_str(),
+                    child.delegated_capabilities.kappa.as_str(),
+                    child.delegated_capabilities.capabilities.as_ref(),
+                ),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -581,6 +674,8 @@ where
 }
 
 struct PendingApplication {
+    application_index: usize,
+    admission_index: Option<usize>,
     application_kappa: String,
     manifest: AppManifest,
     depth: usize,
@@ -669,12 +764,15 @@ where
         LiveError::InvalidHolo(format!("decode canonical application manifest: {error:?}"))
     })?;
     let mut pending = VecDeque::from([PendingApplication {
+        application_index: 0,
+        admission_index: None,
         application_kappa: root_application_kappa.clone(),
         manifest: root_plan_manifest,
         depth: 0,
         path: vec![root_application_kappa.clone()],
     }]);
     let mut children = Vec::new();
+    let mut child_admissions: Vec<PendingChildAdmission> = Vec::new();
     let mut requested_capabilities = None;
     let mut application_count = 1usize;
     let mut max_depth = 0usize;
@@ -716,7 +814,11 @@ where
                 Ok(capabilities) if application.depth == 0 => {
                     requested_capabilities = Some(capabilities);
                 }
-                Ok(_) => {}
+                Ok(capabilities) => {
+                    if let Some(index) = application.admission_index {
+                        child_admissions[index].requested_capabilities = Some(capabilities);
+                    }
+                }
                 Err(error) => closure.blockers.push(PlanBlocker::InvalidCapabilitySet {
                     kappa: object.kappa,
                     reason: error.to_string(),
@@ -796,21 +898,24 @@ where
                 }
                 continue;
             }
+            let child_application_index = application_count;
             application_count = application_count.saturating_add(1);
             max_depth = max_depth.max(child_depth);
 
             let delegated = closure.resolve(&capabilities_kappa, capabilities_edge)?;
-            if let Some(object) = &delegated {
+            let delegated = delegated.and_then(|object| {
                 children[child_index].capabilities_resolution_source = Some(object.source.clone());
-                if let Err(error) =
-                    RequestedCapabilities::decode(&object.kappa, object.bytes.clone())
-                {
-                    closure.blockers.push(PlanBlocker::InvalidCapabilitySet {
-                        kappa: object.kappa.clone(),
-                        reason: error.to_string(),
-                    });
+                match DelegatedCapabilities::decode(&object.kappa, object.bytes.clone()) {
+                    Ok(capabilities) => Some(capabilities),
+                    Err(error) => {
+                        closure.blockers.push(PlanBlocker::InvalidCapabilitySet {
+                            kappa: object.kappa.clone(),
+                            reason: error.to_string(),
+                        });
+                        None
+                    }
                 }
-            }
+            });
             let child_object = closure.resolve(&child_kappa, application_edge.clone())?;
             let Some(child_object) = child_object else {
                 continue;
@@ -829,9 +934,23 @@ where
             };
             children[child_index].requires_kappa = Some(child_manifest.requires.to_string());
             children[child_index].layer_count = Some(child_manifest.layers.len());
+            let admission_index = delegated.map(|delegated_capabilities| {
+                child_admissions.push(PendingChildAdmission {
+                    position,
+                    parent_application_index: application.application_index,
+                    parent_application_kappa: application.application_kappa.clone(),
+                    application_index: child_application_index,
+                    application_kappa: child_object.kappa.clone(),
+                    delegated_capabilities,
+                    requested_capabilities: None,
+                });
+                child_admissions.len() - 1
+            });
             let mut path = application.path.clone();
             path.push(child_object.kappa.clone());
             pending.push_back(PendingApplication {
+                application_index: child_application_index,
+                admission_index,
                 application_kappa: child_object.kappa,
                 manifest: child_manifest,
                 depth: child_depth,
@@ -845,7 +964,7 @@ where
 
     if closure.blockers.is_empty() {
         closure.blockers.extend(children.iter().map(|child| {
-            PlanBlocker::ChildClosureUnsupported {
+            PlanBlocker::ChildLifecycleUnsupported {
                 position: child.position,
                 application_kappa: child.application_kappa.clone(),
                 capabilities_kappa: child.capabilities_kappa.clone(),
@@ -875,6 +994,7 @@ where
         max_depth,
         limits,
         requested_capabilities,
+        child_admissions,
         manifest,
     })
 }
@@ -1202,7 +1322,7 @@ mod tests {
     }
 
     #[test]
-    fn child_references_are_visible_blockers_until_attenuation_lands() {
+    fn child_references_are_visible_blockers_and_strict_admission_edges() {
         let capabilities = test_capabilities();
         let layer = b"parent wasm";
         let child_layer = b"child wasm";
@@ -1252,20 +1372,17 @@ mod tests {
         assert_eq!(report.children[0].layer_count, Some(1));
         assert!(report.blockers.iter().any(|blocker| matches!(
             blocker,
-            PlanBlocker::ChildClosureUnsupported {
+            PlanBlocker::ChildLifecycleUnsupported {
                 position: 0,
                 application_kappa,
                 capabilities_kappa: delegated,
             } if application_kappa == &child_kappa.to_string()
                 && delegated == &capabilities_kappa.to_string()
         )));
-        assert_eq!(
-            report
-                .into_application_plan()
-                .expect_err("child blocker")
-                .code(),
-            "LIVE_CAPABILITY_MISSING"
-        );
+        let plan = report.into_application_plan().expect("strict child plan");
+        assert_eq!(plan.children.len(), 1);
+        plan.authorize_capability_tree(&EffectiveGrant::local_baseline())
+            .expect("empty child attenuation");
     }
 
     #[test]
@@ -1312,7 +1429,7 @@ mod tests {
             ],
         );
 
-        let report =
+        let mut report =
             explain_application(&archive, PlanLimits::default(), |_| Ok(None)).expect("closure");
         assert_eq!(report.application_count, 3);
         assert_eq!(report.max_depth, 2);
@@ -1330,7 +1447,12 @@ mod tests {
         assert!(report
             .blockers
             .iter()
-            .all(|blocker| matches!(blocker, PlanBlocker::ChildClosureUnsupported { .. })));
+            .all(|blocker| matches!(blocker, PlanBlocker::ChildLifecycleUnsupported { .. })));
+        report.evaluate_providers(available);
+        let plan = report.into_application_plan().expect("nested strict plan");
+        assert_eq!(plan.children.len(), 2);
+        plan.authorize_capability_tree(&EffectiveGrant::local_baseline())
+            .expect("nested empty attenuation");
     }
 
     #[test]

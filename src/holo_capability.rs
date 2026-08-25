@@ -107,6 +107,33 @@ impl RequestedCapabilities {
     }
 }
 
+/// Capability authority named by a parent-to-child application edge.
+///
+/// Archive bytes only become authority after the runtime proves this set is an
+/// attenuation of the parent's already trusted effective grant.
+#[derive(Debug, Clone)]
+pub struct DelegatedCapabilities {
+    pub kappa: String,
+    pub canonical: Arc<[u8]>,
+    pub capabilities: Arc<Capabilities>,
+}
+
+impl DelegatedCapabilities {
+    pub fn decode(kappa: &str, bytes: Arc<[u8]>) -> Result<Self> {
+        if hologram::space::address_bytes(&bytes) != kappa {
+            return Err(LiveError::InvalidHolo(format!(
+                "delegated CapabilitySet bytes do not match declared κ {kappa}"
+            )));
+        }
+        let capabilities = Arc::new(decode_canonical(&bytes)?);
+        Ok(Self {
+            kappa: kappa.to_owned(),
+            canonical: bytes,
+            capabilities,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GrantSource {
     LocalBaseline,
@@ -197,6 +224,62 @@ impl EffectiveGrant {
             source,
         })
     }
+}
+
+pub fn authorize_child_delegation(
+    parent_application_kappa: &str,
+    parent_grant_kappa: &str,
+    parent_grant: &Capabilities,
+    child_application_kappa: &str,
+    delegated: &DelegatedCapabilities,
+    request: &RequestedCapabilities,
+) -> Result<()> {
+    if !parent_grant.admits(&delegated.capabilities) {
+        tracing::warn!(
+            parent_application_kappa,
+            child_application_kappa,
+            parent_grant_kappa,
+            delegated_capabilities_kappa = %delegated.kappa,
+            capability_decision = "deny",
+            capability_relation = "delegation",
+            "denied child capability amplification"
+        );
+        return Err(LiveError::Authorization(format!(
+            "application {parent_application_kappa} delegates capabilities {} ({}) to child {child_application_kappa}, which is not admitted by parent grant {parent_grant_kappa} ({})",
+            delegated.kappa,
+            summary(&delegated.capabilities),
+            summary(parent_grant)
+        )));
+    }
+    if !delegated.capabilities.admits(&request.capabilities) {
+        tracing::warn!(
+            parent_application_kappa,
+            child_application_kappa,
+            delegated_capabilities_kappa = %delegated.kappa,
+            requested_capabilities_kappa = %request.kappa,
+            capability_decision = "deny",
+            capability_relation = "child_request",
+            "denied under-granted child capability request"
+        );
+        return Err(LiveError::Authorization(format!(
+            "child application {child_application_kappa} requests capabilities {} ({}) not admitted by delegated grant {} ({}) from parent {parent_application_kappa}",
+            request.kappa,
+            summary(&request.capabilities),
+            delegated.kappa,
+            summary(&delegated.capabilities)
+        )));
+    }
+    tracing::info!(
+        parent_application_kappa,
+        child_application_kappa,
+        parent_grant_kappa,
+        delegated_capabilities_kappa = %delegated.kappa,
+        requested_capabilities_kappa = %request.kappa,
+        capability_decision = "allow",
+        capability_relation = "child_attenuation",
+        "authorized child capability attenuation"
+    );
+    Ok(())
 }
 
 fn summary(capabilities: &Capabilities) -> String {

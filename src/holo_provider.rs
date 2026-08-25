@@ -303,10 +303,14 @@ pub async fn prepare_and_start_with_grant(
     registry: &ProviderRegistry,
     effective_grant: &EffectiveGrant,
 ) -> Result<RunningApplication> {
-    effective_grant.authorize(
-        &plan.identity.application_kappa,
-        &plan.requested_capabilities,
-    )?;
+    plan.authorize_capability_tree(effective_grant)?;
+    if !plan.children.is_empty() {
+        return Err(LiveError::Capability(format!(
+            "application {} has {} admitted child application(s), but child lifecycle execution is not connected",
+            plan.identity.application_kappa,
+            plan.children.len()
+        )));
+    }
     let primary_layer = plan.primary_layer.ok_or_else(|| {
         LiveError::Capability(format!(
             "application {} has no primary exit-bearing layer",
@@ -589,6 +593,70 @@ mod tests {
         report.into_application_plan().expect("strict plan")
     }
 
+    fn plan_with_child(
+        registry: &ProviderRegistry,
+        root_request: &[u8],
+        delegated: &[u8],
+        child_request: &[u8],
+    ) -> ApplicationPlan {
+        let root_layer = b"root wasm";
+        let child_layer = b"child wasm";
+        let child_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(child_request),
+            layers: vec![Layer::wasm(address_bytes(child_layer), "child")],
+            children: Vec::new(),
+        };
+        let child_manifest_bytes = child_manifest.canonicalize();
+        let child_kappa = address_bytes(&child_manifest_bytes);
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(root_request),
+            layers: vec![Layer::wasm(address_bytes(root_layer), "root")],
+            children: vec![(child_kappa, address_bytes(delegated))],
+        };
+        let mut blobs = std::collections::BTreeMap::new();
+        for bytes in [
+            root_request,
+            delegated,
+            child_request,
+            root_layer,
+            child_layer,
+            child_manifest_bytes.as_slice(),
+        ] {
+            blobs.insert(address_bytes(bytes).to_string(), bytes);
+        }
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        for (kappa, bytes) in blobs {
+            writer.add_content_blob(kappa.as_bytes(), bytes);
+        }
+        let bytes = writer.finish().expect("child archive");
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("child plan");
+        registry.evaluate(&mut report);
+        report.into_application_plan().expect("strict child plan")
+    }
+
+    fn network_capabilities() -> Vec<u8> {
+        crate::holo_capability::compile_source(
+            std::path::Path::new("network.json"),
+            br#"{"network_fetch":true}"#,
+        )
+        .expect("network capabilities")
+    }
+
+    fn network_grant() -> EffectiveGrant {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("grant.json");
+        std::fs::write(&path, br#"{"network_fetch":true}"#).expect("grant");
+        EffectiveGrant::from_development_file(
+            &path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("development grant")
+    }
+
     #[tokio::test]
     async fn lifecycle_follows_manifest_order_and_stops_in_reverse() {
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -646,6 +714,69 @@ mod tests {
             .expect("baseline must deny network authority");
 
         assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(take(&events).is_empty(), "provider prepare must not run");
+    }
+
+    #[tokio::test]
+    async fn child_amplification_is_denied_before_provider_preparation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events.clone(), None, None, None);
+        let network = network_capabilities();
+        let plan = plan_with_child(
+            &registry,
+            test_capabilities(),
+            &network,
+            test_capabilities(),
+        );
+
+        let error = prepare_and_start(&plan, &registry)
+            .await
+            .err()
+            .expect("empty parent grant cannot delegate network");
+
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("not admitted by parent grant"));
+        assert!(take(&events).is_empty(), "provider prepare must not run");
+    }
+
+    #[tokio::test]
+    async fn under_granted_child_request_is_denied_before_provider_preparation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events.clone(), None, None, None);
+        let network = network_capabilities();
+        let plan = plan_with_child(
+            &registry,
+            test_capabilities(),
+            test_capabilities(),
+            &network,
+        );
+
+        let error = prepare_and_start_with_grant(&plan, &registry, &network_grant())
+            .await
+            .err()
+            .expect("empty delegation cannot admit child network request");
+
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error
+            .to_string()
+            .contains("not admitted by delegated grant"));
+        assert!(take(&events).is_empty(), "provider prepare must not run");
+    }
+
+    #[tokio::test]
+    async fn admitted_child_stops_at_lifecycle_boundary_before_provider_preparation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events.clone(), None, None, None);
+        let network = network_capabilities();
+        let plan = plan_with_child(&registry, test_capabilities(), &network, &network);
+
+        let error = prepare_and_start_with_grant(&plan, &registry, &network_grant())
+            .await
+            .err()
+            .expect("child lifecycle remains disconnected");
+
+        assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
+        assert!(error.to_string().contains("admitted child application"));
         assert!(take(&events).is_empty(), "provider prepare must not run");
     }
 

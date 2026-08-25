@@ -856,7 +856,7 @@ mod tests {
         assert!(closure
             .blockers
             .iter()
-            .all(|blocker| matches!(blocker, PlanBlocker::ChildClosureUnsupported { .. })));
+            .all(|blocker| matches!(blocker, PlanBlocker::ChildLifecycleUnsupported { .. })));
 
         let thin_plan = HoloLoader::from_bytes(&thin.bytes)
             .expect("thin archive")

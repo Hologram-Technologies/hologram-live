@@ -21,6 +21,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
   <h2>Application capabilities</h2>
   <p>A <code>.holo</code> archive contains an untrusted capability request, never its own authority. Live requires canonical upstream <code>CapabilitySet</code> bytes and admits the decoded request against a host-supplied effective grant before provider preparation. The default local grant has no storage roots, channels, or network flags. Insufficient authority returns <code>LIVE_AUTHORIZATION_DENIED</code>.</p>
+  <p>A child edge's delegated capability object is also untrusted until admitted. Live requires the parent grant to admit that delegation and the delegation to admit the child's requested set. The same rule is applied transitively to nested children. Amplification and under-granted requests return <code>LIVE_AUTHORIZATION_DENIED</code> before the root or any child provider prepares.</p>
   <p><code>--development-grant</code> is restricted to direct local files. Resident development grants come only from trusted service configuration and require a loopback listener; remote callers cannot submit a grant. Capability decision traces contain identities, counts, scalar limits, and allow/deny outcomes, not raw documents or secrets. Successful raw run results carry only the request κ, grant κ, trusted-source label, and decision.</p>
 
   <h2>Tracing privacy</h2>

@@ -79,6 +79,11 @@ where
                 })?,
                 application_kappa: application.to_string(),
                 capabilities_kappa: capabilities.to_string(),
+                parent_application_kappa: None,
+                depth: None,
+                requires_kappa: None,
+                application_resolution_source: None,
+                capabilities_resolution_source: None,
             })
         })
         .collect::<Result<Vec<_>>>()?;

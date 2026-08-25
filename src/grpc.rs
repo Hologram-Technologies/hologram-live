@@ -647,6 +647,11 @@ impl From<HoloChild> for pb::HoloChild {
             position: value.position,
             application_kappa: value.application_kappa,
             capabilities_kappa: value.capabilities_kappa,
+            parent_application_kappa: value.parent_application_kappa,
+            depth: value.depth,
+            requires_kappa: value.requires_kappa,
+            application_resolution_source: value.application_resolution_source,
+            capabilities_resolution_source: value.capabilities_resolution_source,
         }
     }
 }
@@ -657,6 +662,11 @@ impl From<pb::HoloChild> for HoloChild {
             position: value.position,
             application_kappa: value.application_kappa,
             capabilities_kappa: value.capabilities_kappa,
+            parent_application_kappa: value.parent_application_kappa,
+            depth: value.depth,
+            requires_kappa: value.requires_kappa,
+            application_resolution_source: value.application_resolution_source,
+            capabilities_resolution_source: value.capabilities_resolution_source,
         }
     }
 }

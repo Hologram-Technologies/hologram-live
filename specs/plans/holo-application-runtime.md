@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M2, child grant attenuation and admission
+- Next delivery: M2, child lifecycle ownership and execution
 - Next runtime milestone: M2, admit and execute child application trees
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -189,8 +189,8 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 - [x] Add source-manifest syntax for child application references and delegated capability documents.
 - [x] Resolve child applications through the same κ closure resolver as layers.
-- [ ] Enforce that every delegated child grant is a subset of the parent’s effective grant.
-- [ ] Reject capability amplification before starting the child.
+- [x] Enforce that every delegated child grant is a subset of the parent’s effective grant.
+- [x] Reject capability amplification before starting the child.
 - [ ] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
 - [x] Apply closure and resource limits across the entire application tree, not independently per child.
 
@@ -203,14 +203,16 @@ omit those payloads while preserving the same canonical parent application κ.
 interactive prompts. Runtime planning now iteratively resolves canonical child
 manifests, delegated and requested capability objects, and nested layers under
 one tree-wide budget. It reports application count and maximum depth through
-the plan API and retains the typed child blocker until grant attenuation and
-lifecycle ownership are implemented.
+the plan API. Strict plans retain distinct delegated and requested capability
+objects for runtime admission. Admission proves parent grant → delegation →
+child request for every edge before provider preparation, then retains a typed
+lifecycle blocker until startup and rollback ownership are implemented.
 
 ### M2 acceptance criteria
 
 - [x] Insufficient grants fail with `LIVE_AUTHORIZATION_DENIED` before any provider starts.
 - [x] Sufficient grants produce the same plan and behavior as the previous Wasm fixture.
-- [ ] Child attenuation succeeds; attempted amplification fails deterministically.
+- [x] Child attenuation succeeds; attempted amplification fails deterministically.
 - [ ] Capability checks are covered by unit, BDD, audit, and native API tests.
 - [x] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
 
@@ -569,4 +571,6 @@ application/DMG builds pass.
 - [x] Route existing direct and resident Wasm execution through the plan.
 - [x] Add synthetic-provider rollback tests.
 - [x] Extend closure resolution to child applications with bounded, iterative κ
-  traversal while retaining the execution blocker until attenuation is fixed.
+  traversal while retaining an execution blocker.
+- [x] Admit parent grant → delegated grant → child request chains before any
+  provider preparation; retain only the child lifecycle blocker.

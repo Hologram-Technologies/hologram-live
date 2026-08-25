@@ -131,6 +131,11 @@ message HoloChild {
   uint32 position = 1;
   string application_kappa = 2;
   string capabilities_kappa = 3;
+  optional string parent_application_kappa = 4;
+  optional uint32 depth = 5;
+  optional string requires_kappa = 6;
+  optional string application_resolution_source = 7;
+  optional string capabilities_resolution_source = 8;
 }
 message HoloBlob { string kappa = 1; uint64 byte_length = 2; }
 message HoloDirectory {

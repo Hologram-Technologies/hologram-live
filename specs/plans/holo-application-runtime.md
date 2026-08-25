@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M2, child lifecycle ownership and execution
-- Next runtime milestone: M2, admit and execute child application trees
+- Next delivery: M2 Slice 4, capability audit, interfaces, and conformance
+- Next runtime milestone: M3, typed application exit and provider contracts
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the current v4 baseline, compatibility requirements, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -19,9 +19,9 @@ This is the living implementation plan for turning `.holo` archives into complet
 - [x] Keep the application-directory extension a verified projection, never a second manifest.
 - [x] Keep physical archive identity distinct from canonical application identity.
 - [x] Resolve content by κ; do not make filenames or catalog metadata authoritative.
-- [ ] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
-- [ ] Boot ordered layers transactionally and unwind partial starts in reverse order.
-- [ ] Keep execution providers behind typed boundaries so Wasm, views, tensors, and root filesystems do not leak engine details into the archive loader.
+- [x] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
+- [x] Boot ordered layers transactionally and unwind partial starts in reverse order.
+- [x] Keep execution providers behind typed boundaries so Wasm, views, tensors, and root filesystems do not leak engine details into the archive loader.
 - [x] Make every interactive workflow available non-interactively for automation and CI.
 
 ## Completed baseline
@@ -179,7 +179,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
   - [x] Direct local execution uses the deny-by-default baseline or an explicit trusted `--development-grant` file.
   - [x] Local service execution uses the baseline or loopback-only `holo.development_grant` host configuration.
   - [x] Remote callers cannot attach self-asserted grants; absent trusted remote authority remains denied.
-  - [ ] Child execution receives only an admitted attenuation of the parent grant.
+  - [x] Child execution receives only an admitted attenuation of the parent grant.
 - [x] Fail before provider preparation unless the effective grant admits the application’s `requires` set.
 - [x] Pass only the effective grant—not the untrusted request—to providers and host interfaces.
 - [x] Add an explicit local-development grant mode without making it the production default.
@@ -191,7 +191,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Resolve child applications through the same κ closure resolver as layers.
 - [x] Enforce that every delegated child grant is a subset of the parent’s effective grant.
 - [x] Reject capability amplification before starting the child.
-- [ ] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
+- [x] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
 - [x] Apply closure and resource limits across the entire application tree, not independently per child.
 
 Compiler evidence (2026-08-25): source-manifest schema v3 accepts child entries
@@ -205,8 +205,11 @@ manifests, delegated and requested capability objects, and nested layers under
 one tree-wide budget. It reports application count and maximum depth through
 the plan API. Strict plans retain distinct delegated and requested capability
 objects for runtime admission. Admission proves parent grant → delegation →
-child request for every edge before provider preparation, then retains a typed
-lifecycle blocker until startup and rollback ownership are implemented.
+child request for every edge before provider preparation. The runtime then
+prepares and starts the tree depth-first in manifest order, passes each child
+only its admitted delegated grant, and rolls back or stops the exact reverse
+order. Only the root primary is invoked; child primaries are lifecycle-managed
+dependencies until an explicit child invocation contract is introduced.
 
 ### M2 acceptance criteria
 
@@ -540,7 +543,7 @@ application/DMG builds pass.
 - [ ] Provider trait async and platform-bound requirements.
 - [ ] View-bundle canonical encoding and surface protocol.
 - [ ] Direct-execution capability grant source and safe defaults.
-- [ ] Child lifecycle and exit propagation.
+- [x] Child lifecycle ownership and the current root-primary-only exit boundary.
 - [ ] TensorPlan payload/port schema and weightc adapter contract.
 - [ ] Rootfs image format, architecture naming, and microVM contract.
 - [ ] Resource-budget schema and default limits.
@@ -571,6 +574,10 @@ application/DMG builds pass.
 - [x] Route existing direct and resident Wasm execution through the plan.
 - [x] Add synthetic-provider rollback tests.
 - [x] Extend closure resolution to child applications with bounded, iterative κ
-  traversal while retaining an execution blocker.
+  traversal.
 - [x] Admit parent grant → delegated grant → child request chains before any
-  provider preparation; retain only the child lifecycle blocker.
+  provider preparation.
+- [x] Prepare and start the admitted child tree in depth-first manifest order,
+  invoke only the root primary, and roll back or stop in exact reverse order.
+- [ ] Complete M2 capability audit records, interface coverage, and conformance
+  tests.

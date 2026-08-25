@@ -139,6 +139,7 @@ pub enum GrantSource {
     LocalBaseline,
     DirectDevelopmentFile,
     ServiceDevelopmentFile,
+    ChildDelegation,
 }
 
 impl GrantSource {
@@ -147,6 +148,7 @@ impl GrantSource {
             Self::LocalBaseline => "local_baseline",
             Self::DirectDevelopmentFile => "direct_development_file",
             Self::ServiceDevelopmentFile => "service_development_file",
+            Self::ChildDelegation => "child_delegation",
         }
     }
 }
@@ -172,13 +174,25 @@ impl EffectiveGrant {
     }
 
     pub fn from_development_file(path: &Path, source: GrantSource) -> Result<Self> {
-        if source == GrantSource::LocalBaseline {
+        if matches!(
+            source,
+            GrantSource::LocalBaseline | GrantSource::ChildDelegation
+        ) {
             return Err(LiveError::Config(
                 "a development grant file requires a development grant source".to_owned(),
             ));
         }
         let bytes = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
         Self::from_canonical(compile_source(path, &bytes)?, source)
+    }
+
+    pub fn from_delegation(delegated: &DelegatedCapabilities) -> Self {
+        Self {
+            kappa: delegated.kappa.clone(),
+            canonical: delegated.canonical.clone(),
+            capabilities: delegated.capabilities.clone(),
+            source: GrantSource::ChildDelegation,
+        }
     }
 
     pub fn authorize(

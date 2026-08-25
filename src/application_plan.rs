@@ -177,15 +177,11 @@ pub enum PlanBlocker {
         reason: String,
     },
     ProviderUnavailable {
+        application_kappa: String,
         position: u32,
         kind: String,
         entry: String,
         reason: String,
-    },
-    ChildLifecycleUnsupported {
-        position: u32,
-        application_kappa: String,
-        capabilities_kappa: String,
     },
     InvalidChildManifest {
         kappa: String,
@@ -213,7 +209,6 @@ impl PlanBlocker {
             Self::ContentMismatch { .. } => "content_mismatch",
             Self::InvalidCapabilitySet { .. } => "invalid_capability_set",
             Self::ProviderUnavailable { .. } => "provider_unavailable",
-            Self::ChildLifecycleUnsupported { .. } => "child_lifecycle_unsupported",
             Self::InvalidChildManifest { .. } => "invalid_child_manifest",
             Self::ChildCycle { .. } => "child_cycle",
             Self::LimitExceeded { .. } => "limit_exceeded",
@@ -229,9 +224,9 @@ impl PlanBlocker {
             | Self::InvalidChildManifest { .. }
             | Self::ChildCycle { .. }
             | Self::LimitExceeded { .. } => "LIVE_HOLO_INVALID",
-            Self::ProviderUnavailable { .. }
-            | Self::ChildLifecycleUnsupported { .. }
-            | Self::ExecutionShapeUnsupported { .. } => "LIVE_CAPABILITY_MISSING",
+            Self::ProviderUnavailable { .. } | Self::ExecutionShapeUnsupported { .. } => {
+                "LIVE_CAPABILITY_MISSING"
+            }
         }
     }
 
@@ -252,19 +247,13 @@ impl PlanBlocker {
                 "application {application_kappa} required capability object {kappa} is not a canonical CapabilitySet: {reason}"
             ),
             Self::ProviderUnavailable {
+                application_kappa: provider_application,
                 position,
                 kind,
                 entry,
                 reason,
             } => format!(
-                "application {application_kappa} layer {position} ({kind}, entry {entry}) has no available provider: {reason}"
-            ),
-            Self::ChildLifecycleUnsupported {
-                position,
-                application_kappa: child,
-                capabilities_kappa,
-            } => format!(
-                "application {application_kappa} child {position} references application {child} with delegated capabilities {capabilities_kappa}; the closure is resolved but child lifecycle execution is not connected"
+                "application {provider_application} layer {position} ({kind}, entry {entry}) has no available provider while planning root {application_kappa}: {reason}"
             ),
             Self::InvalidChildManifest {
                 kappa,
@@ -303,6 +292,7 @@ impl PlanBlocker {
 }
 
 pub struct ProviderContext<'a> {
+    pub application_kappa: &'a str,
     pub position: u32,
     pub kind: LayerKind,
     pub entry: &'a str,
@@ -339,6 +329,8 @@ struct PendingChildAdmission {
     application_kappa: String,
     delegated_capabilities: DelegatedCapabilities,
     requested_capabilities: Option<RequestedCapabilities>,
+    primary_layer: Option<u32>,
+    layers: Vec<PlannedLayer>,
 }
 
 #[derive(Debug, Clone)]
@@ -350,6 +342,8 @@ pub struct ResolvedChild {
     pub application_kappa: String,
     pub delegated_capabilities: DelegatedCapabilities,
     pub requested_capabilities: RequestedCapabilities,
+    pub primary_layer: Option<u32>,
+    pub layers: Vec<ResolvedLayer>,
 }
 
 impl ApplicationPlanReport {
@@ -357,29 +351,21 @@ impl ApplicationPlanReport {
     where
         F: FnMut(ProviderContext<'_>) -> ProviderAvailability,
     {
-        let layer_count = self.layers.len();
-        for layer in &mut self.layers {
-            let Some(object) = self.objects.get(&layer.content_kappa) else {
-                continue;
-            };
-            let availability = evaluate(ProviderContext {
-                position: layer.position,
-                kind: layer.kind,
-                entry: &layer.entry,
-                aux: &layer.aux,
-                primary: layer.primary,
-                layer_count,
-                content: &object.bytes,
-            });
-            if let ProviderAvailability::Unavailable { reason } = &availability {
-                self.blockers.push(PlanBlocker::ProviderUnavailable {
-                    position: layer.position,
-                    kind: layer_kind_name(layer.kind).to_owned(),
-                    entry: layer.entry.clone(),
-                    reason: reason.clone(),
-                });
-            }
-            layer.provider = availability;
+        evaluate_layer_set(
+            &self.identity.application_kappa,
+            &mut self.layers,
+            &self.objects,
+            &mut self.blockers,
+            &mut evaluate,
+        );
+        for child in &mut self.child_admissions {
+            evaluate_layer_set(
+                &child.application_kappa,
+                &mut child.layers,
+                &self.objects,
+                &mut self.blockers,
+                &mut evaluate,
+            );
         }
     }
 
@@ -404,67 +390,42 @@ impl ApplicationPlanReport {
                 .layers
                 .iter()
                 .all(|layer| matches!(layer.provider, ProviderAvailability::Available { .. }))
+            && self.child_admissions.iter().all(|child| {
+                child
+                    .layers
+                    .iter()
+                    .all(|layer| matches!(layer.provider, ProviderAvailability::Available { .. }))
+            })
     }
 
     pub fn into_application_plan(self) -> Result<ApplicationPlan> {
-        if let Some(blocker) = self
-            .blockers
-            .into_iter()
-            .find(|blocker| !matches!(blocker, PlanBlocker::ChildLifecycleUnsupported { .. }))
-        {
+        if let Some(blocker) = self.blockers.into_iter().next() {
             return Err(blocker.into_error(&self.identity.application_kappa));
         }
         let requested_capabilities = self.requested_capabilities.ok_or_else(|| {
             LiveError::Conflict("planner lost decoded requested capabilities".to_owned())
         })?;
-        let mut layers = Vec::with_capacity(self.layers.len());
-        for layer in self.layers {
-            let object = self.objects.get(&layer.content_kappa).ok_or_else(|| {
-                LiveError::Conflict(format!(
-                    "planner lost resolved content {} for layer {}",
-                    layer.content_kappa, layer.position
-                ))
-            })?;
-            let provider = match layer.provider {
-                ProviderAvailability::Available { provider } => provider,
-                ProviderAvailability::Unchecked => {
-                    return Err(LiveError::Capability(format!(
-                        "provider availability was not evaluated for application {} layer {}",
-                        self.identity.application_kappa, layer.position
-                    )));
-                }
-                ProviderAvailability::Unavailable { reason } => {
-                    return Err(LiveError::Capability(reason));
-                }
-            };
-            layers.push(ResolvedLayer {
-                position: layer.position,
-                kind: layer.kind,
-                content_kappa: layer.content_kappa,
-                entry: layer.entry,
-                aux: layer.aux,
-                primary: layer.primary,
-                content: object.bytes.clone(),
-                resolution_source: object.source.clone(),
-                provider,
-            });
-        }
+        let layers = strict_layers(&self.identity.application_kappa, self.layers, &self.objects)?;
         let children = self
             .child_admissions
             .into_iter()
             .map(|child| {
+                let application_kappa = child.application_kappa;
+                let layers = strict_layers(&application_kappa, child.layers, &self.objects)?;
                 Ok(ResolvedChild {
                     position: child.position,
                     parent_application_index: child.parent_application_index,
                     parent_application_kappa: child.parent_application_kappa,
                     application_index: child.application_index,
-                    application_kappa: child.application_kappa,
+                    application_kappa,
                     delegated_capabilities: child.delegated_capabilities,
                     requested_capabilities: child.requested_capabilities.ok_or_else(|| {
                         LiveError::Conflict(
                             "planner lost decoded child requested capabilities".to_owned(),
                         )
                     })?,
+                    primary_layer: child.primary_layer,
+                    layers,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -479,6 +440,84 @@ impl ApplicationPlanReport {
             manifest: self.manifest,
         })
     }
+}
+
+fn evaluate_layer_set<F>(
+    application_kappa: &str,
+    layers: &mut [PlannedLayer],
+    objects: &BTreeMap<String, ResolvedObject>,
+    blockers: &mut Vec<PlanBlocker>,
+    evaluate: &mut F,
+) where
+    F: FnMut(ProviderContext<'_>) -> ProviderAvailability,
+{
+    let layer_count = layers.len();
+    for layer in layers {
+        let Some(object) = objects.get(&layer.content_kappa) else {
+            continue;
+        };
+        let availability = evaluate(ProviderContext {
+            application_kappa,
+            position: layer.position,
+            kind: layer.kind,
+            entry: &layer.entry,
+            aux: &layer.aux,
+            primary: layer.primary,
+            layer_count,
+            content: &object.bytes,
+        });
+        if let ProviderAvailability::Unavailable { reason } = &availability {
+            blockers.push(PlanBlocker::ProviderUnavailable {
+                application_kappa: application_kappa.to_owned(),
+                position: layer.position,
+                kind: layer_kind_name(layer.kind).to_owned(),
+                entry: layer.entry.clone(),
+                reason: reason.clone(),
+            });
+        }
+        layer.provider = availability;
+    }
+}
+
+fn strict_layers(
+    application_kappa: &str,
+    layers: Vec<PlannedLayer>,
+    objects: &BTreeMap<String, ResolvedObject>,
+) -> Result<Vec<ResolvedLayer>> {
+    layers
+        .into_iter()
+        .map(|layer| {
+            let object = objects.get(&layer.content_kappa).ok_or_else(|| {
+                LiveError::Conflict(format!(
+                    "planner lost resolved content {} for application {application_kappa} layer {}",
+                    layer.content_kappa, layer.position
+                ))
+            })?;
+            let provider = match layer.provider {
+                ProviderAvailability::Available { provider } => provider,
+                ProviderAvailability::Unchecked => {
+                    return Err(LiveError::Capability(format!(
+                        "provider availability was not evaluated for application {application_kappa} layer {}",
+                        layer.position
+                    )));
+                }
+                ProviderAvailability::Unavailable { reason } => {
+                    return Err(LiveError::Capability(reason));
+                }
+            };
+            Ok(ResolvedLayer {
+                position: layer.position,
+                kind: layer.kind,
+                content_kappa: layer.content_kappa,
+                entry: layer.entry,
+                aux: layer.aux,
+                primary: layer.primary,
+                content: object.bytes.clone(),
+                resolution_source: object.source.clone(),
+                provider,
+            })
+        })
+        .collect()
 }
 
 pub struct ApplicationPlan {
@@ -517,46 +556,39 @@ impl ApplicationPlan {
     }
 
     pub fn authorize_capability_tree(&self, effective_grant: &EffectiveGrant) -> Result<()> {
+        self.admitted_grants(effective_grant).map(|_| ())
+    }
+
+    pub fn admitted_grants(
+        &self,
+        effective_grant: &EffectiveGrant,
+    ) -> Result<HashMap<usize, EffectiveGrant>> {
         effective_grant.authorize(
             &self.identity.application_kappa,
             &self.requested_capabilities,
         )?;
-        let mut grants = HashMap::from([(
-            0usize,
-            (
-                self.identity.application_kappa.as_str(),
-                effective_grant.kappa.as_str(),
-                effective_grant.capabilities.as_ref(),
-            ),
-        )]);
+        let mut grants = HashMap::from([(0usize, effective_grant.clone())]);
         for child in &self.children {
-            let (parent_application, parent_grant_kappa, parent_grant) = grants
-                .get(&child.parent_application_index)
-                .copied()
-                .ok_or_else(|| {
-                    LiveError::Conflict(format!(
-                        "planner lost parent application {} for child {}",
-                        child.parent_application_kappa, child.application_kappa
-                    ))
-                })?;
+            let parent_grant = grants.get(&child.parent_application_index).ok_or_else(|| {
+                LiveError::Conflict(format!(
+                    "planner lost parent application {} for child {}",
+                    child.parent_application_kappa, child.application_kappa
+                ))
+            })?;
             authorize_child_delegation(
-                parent_application,
-                parent_grant_kappa,
-                parent_grant,
+                &child.parent_application_kappa,
+                &parent_grant.kappa,
+                &parent_grant.capabilities,
                 &child.application_kappa,
                 &child.delegated_capabilities,
                 &child.requested_capabilities,
             )?;
             grants.insert(
                 child.application_index,
-                (
-                    child.application_kappa.as_str(),
-                    child.delegated_capabilities.kappa.as_str(),
-                    child.delegated_capabilities.capabilities.as_ref(),
-                ),
+                EffectiveGrant::from_delegation(&child.delegated_capabilities),
             );
         }
-        Ok(())
+        Ok(grants)
     }
 }
 
@@ -682,6 +714,24 @@ struct PendingApplication {
     path: Vec<String>,
 }
 
+fn planned_layers(manifest: &AppManifest) -> Vec<PlannedLayer> {
+    manifest
+        .layers
+        .iter()
+        .enumerate()
+        .map(|(position, layer)| PlannedLayer {
+            position: position.try_into().unwrap_or(u32::MAX),
+            kind: layer.kind,
+            content_kappa: layer.content.to_string(),
+            entry: layer.entry.clone(),
+            aux: layer.aux.clone(),
+            primary: manifest.primary == u32::try_from(position).ok(),
+            resolution_source: None,
+            provider: ProviderAvailability::Unchecked,
+        })
+        .collect()
+}
+
 pub fn explain_application<F>(
     archive_bytes: &[u8],
     limits: PlanLimits,
@@ -720,21 +770,7 @@ where
         "planning holo application"
     );
 
-    let layers = manifest
-        .layers
-        .iter()
-        .enumerate()
-        .map(|(position, layer)| PlannedLayer {
-            position: position.try_into().unwrap_or(u32::MAX),
-            kind: layer.kind,
-            content_kappa: layer.content.to_string(),
-            entry: layer.entry.clone(),
-            aux: layer.aux.clone(),
-            primary: manifest.primary == u32::try_from(position).ok(),
-            resolution_source: None,
-            provider: ProviderAvailability::Unchecked,
-        })
-        .collect::<Vec<_>>();
+    let layers = planned_layers(&manifest);
 
     let embedded = archive
         .content_blobs()
@@ -790,6 +826,10 @@ where
     }
 
     while let Some(application) = pending.pop_front() {
+        if let Some(index) = application.admission_index {
+            child_admissions[index].primary_layer = application.manifest.primary;
+            child_admissions[index].layers = planned_layers(&application.manifest);
+        }
         total_layers = total_layers.saturating_add(application.manifest.layers.len());
         if total_layers > limits.max_layers {
             closure.blockers.push(PlanBlocker::LimitExceeded {
@@ -943,6 +983,8 @@ where
                     application_kappa: child_object.kappa.clone(),
                     delegated_capabilities,
                     requested_capabilities: None,
+                    primary_layer: None,
+                    layers: Vec::new(),
                 });
                 child_admissions.len() - 1
             });
@@ -962,22 +1004,20 @@ where
         }
     }
 
-    if closure.blockers.is_empty() {
-        closure.blockers.extend(children.iter().map(|child| {
-            PlanBlocker::ChildLifecycleUnsupported {
-                position: child.position,
-                application_kappa: child.application_kappa.clone(),
-                capabilities_kappa: child.capabilities_kappa.clone(),
-            }
-        }));
-    }
-
     let mut layers = layers;
     for layer in &mut layers {
         layer.resolution_source = closure
             .objects
             .get(&layer.content_kappa)
             .map(|object| object.source.clone());
+    }
+    for child in &mut child_admissions {
+        for layer in &mut child.layers {
+            layer.resolution_source = closure
+                .objects
+                .get(&layer.content_kappa)
+                .map(|object| object.source.clone());
+        }
     }
     Ok(ApplicationPlanReport {
         identity,
@@ -1322,7 +1362,7 @@ mod tests {
     }
 
     #[test]
-    fn child_references_are_visible_blockers_and_strict_admission_edges() {
+    fn child_references_resolve_into_strict_admission_edges() {
         let capabilities = test_capabilities();
         let layer = b"parent wasm";
         let child_layer = b"child wasm";
@@ -1370,15 +1410,8 @@ mod tests {
             Some(capabilities_kappa_string.as_str())
         );
         assert_eq!(report.children[0].layer_count, Some(1));
-        assert!(report.blockers.iter().any(|blocker| matches!(
-            blocker,
-            PlanBlocker::ChildLifecycleUnsupported {
-                position: 0,
-                application_kappa,
-                capabilities_kappa: delegated,
-            } if application_kappa == &child_kappa.to_string()
-                && delegated == &capabilities_kappa.to_string()
-        )));
+        assert!(report.blockers.is_empty());
+        assert!(report.runnable());
         let plan = report.into_application_plan().expect("strict child plan");
         assert_eq!(plan.children.len(), 1);
         plan.authorize_capability_tree(&EffectiveGrant::local_baseline())
@@ -1444,11 +1477,10 @@ mod tests {
         );
         assert_eq!(report.referenced_object_count, 6);
         assert_eq!(report.objects.len(), 6);
-        assert!(report
-            .blockers
-            .iter()
-            .all(|blocker| matches!(blocker, PlanBlocker::ChildLifecycleUnsupported { .. })));
+        assert!(report.blockers.is_empty());
+        assert!(!report.runnable());
         report.evaluate_providers(available);
+        assert!(report.runnable());
         let plan = report.into_application_plan().expect("nested strict plan");
         assert_eq!(plan.children.len(), 2);
         plan.authorize_capability_tree(&EffectiveGrant::local_baseline())

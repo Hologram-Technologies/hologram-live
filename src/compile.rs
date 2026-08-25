@@ -544,7 +544,7 @@ const fn default_schema_version() -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application_plan::{explain_application, PlanBlocker, PlanLimits};
+    use crate::application_plan::{explain_application, PlanLimits};
     use crate::holo::inspect_bytes;
     use crate::holo_capability;
 
@@ -853,10 +853,7 @@ mod tests {
             .expect("resolve compiled child closure");
         assert_eq!(closure.application_count, 2);
         assert_eq!(closure.max_depth, 1);
-        assert!(closure
-            .blockers
-            .iter()
-            .all(|blocker| matches!(blocker, PlanBlocker::ChildLifecycleUnsupported { .. })));
+        assert!(closure.blockers.is_empty());
 
         let thin_plan = HoloLoader::from_bytes(&thin.bytes)
             .expect("thin archive")

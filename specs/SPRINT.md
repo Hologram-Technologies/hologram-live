@@ -10,7 +10,7 @@
   content-addressed request and admit it only under an explicit trusted grant
 - Exit signal: insufficient authority returns `LIVE_AUTHORIZATION_DENIED` before
   provider preparation, while child grants can only attenuate parent authority
-- Current focus: Slice 3 child lifecycle ownership
+- Current focus: Slice 4 capability audit, interfaces, and conformance
 
 This is the short-lived execution tracker. Durable requirements remain in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
@@ -256,10 +256,10 @@ build, and release smoke; the Astro documentation build also passes.
 - [x] Require parent effective grant to admit each delegated child grant.
 - [x] Require the delegated grant to admit the child's requested capabilities.
 - [x] Reject amplification before preparing the child or any later provider.
-- [ ] Define manifest-order child startup, reverse-order rollback/stop, and exit
+- [x] Define manifest-order child startup, reverse-order rollback/stop, and exit
   propagation in an ADR amendment.
-- [x] Replace the M1 closure blocker with a lifecycle blocker only after the
-  complete child plan is resolved; runtime admission runs before that blocker.
+- [x] Remove the temporary child lifecycle blocker after the complete child
+  plan is resolved, admitted, and connected to provider startup.
 
 Slice 3 compiler evidence (2026-08-25): schema-v3 `children` entries pair a
 verified, self-contained child `.holo` archive with a canonical delegated
@@ -294,8 +294,8 @@ admission walks those edges in parent-before-child order, requires the trusted
 parent grant to admit the delegation, and requires the delegation to admit the
 child request. Nested children receive only their parent's admitted delegation.
 Amplification and under-granted requests return `LIVE_AUTHORIZATION_DENIED`;
-synthetic-provider tests prove both failures, and the successful attenuation
-path's lifecycle blocker, occur before root provider preparation. JSON/gRPC
+synthetic-provider tests prove both failures occur before root provider
+preparation; the then-temporary lifecycle blocker also followed admission. JSON/gRPC
 plan rows expose parent/depth, delegated κ, requested κ, and resolution sources
 without exposing capability bytes. Full verification passes formatting,
 source-size and product-boundary gates, all-target checks, 143 library tests,
@@ -303,9 +303,24 @@ source-size and product-boundary gates, all-target checks, 143 library tests,
 optimized release build, and release smoke; the 13-page Astro documentation
 build also passes.
 
+Slice 3 lifecycle evidence (2026-08-25): strict plans retain every child's
+resolved layers and the runtime derives a depth-first, manifest-order lifecycle
+across the complete logical application tree. Each provider context names the
+logical application κ and receives only that application's admitted grant.
+Prepare and start share one deterministic order; normal stop and failure
+rollback use its exact reverse. Only the root primary is invoked, while child
+primaries share the parent's transactional lifetime. Status aggregates root and
+child layers. Synthetic-provider coverage proves nested and sibling ordering,
+root-only invocation despite colliding local layer positions, child grant
+attenuation, child prepare/start rollback, reverse stop, and aggregate status.
+Full verification passes formatting, source-size and product-boundary gates,
+all-target checks, 146 library tests, 21 CLI tests, Clippy with warnings denied,
+all 9 BDD scenarios / 80 steps, the optimized release build, release smoke, and
+the 13-page Astro documentation build.
+
 Slice 3 acceptance:
 
-- [ ] Narrow child delegation starts and stops with its parent.
+- [x] Narrow child delegation starts and stops with its parent.
 - [x] Amplification and under-granted child requests fail deterministically
   before child provider preparation.
 - [x] Cyclic and over-limit graphs fail without recursion overflow.

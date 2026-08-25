@@ -1,9 +1,18 @@
+use crate::actor::ActorSystem;
 use crate::error::{LiveError, Result};
+use crate::holo_wasm::{ResidentHoloActor, Run};
 use crate::protocol::{HoloInspection, HoloRunResult, HoloSection, ResidentHolo};
 use crate::store::ObjectStore;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
-use std::sync::Arc;
+use hologram::space::{AppManifest, LayerKind};
+use kameo::actor::{ActorRef, Spawn};
+use kameo::error::SendError;
+use kameo::mailbox;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use wasmtime::Engine;
 
 const HOLO_MEDIA_TYPE: &str = "application/vnd.hologram.holo";
 
@@ -12,8 +21,10 @@ const HOLO_MEDIA_TYPE: &str = "application/vnd.hologram.holo";
 /// The default Hologram Live build intentionally depends only on the archive
 /// surface of the pinned Hologram revision. The pinned upstream x86 CPU runtime
 /// currently compiles AVX-512 intrinsics that require unstable Rust APIs; Live
-/// refuses to hide that behind `RUSTC_BOOTSTRAP`. Runtime execution remains an
-/// explicit capability seam until the upstream stable-toolchain issue is fixed.
+/// refuses to hide that behind `RUSTC_BOOTSTRAP`. Execution of primary wasm
+/// layers runs in-process through wasmtime instead (see [`HoloRuntime`] and
+/// `crate::holo_wasm`); tensor and rootfs layers remain explicit capability
+/// seams until the upstream stable-toolchain issue is fixed.
 pub struct HoloCatalog {
     store: Arc<ObjectStore>,
 }
@@ -120,42 +131,220 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
     })
 }
 
-/// Execution-provider seam retained by the module API.
+/// In-process execution provider for `.holo` archives.
 ///
-/// The stable v1 default advertises archive operations only, so these methods
-/// are never selected by capability-aware clients. Direct callers still get a
-/// typed, honest `LIVE_CAPABILITY_MISSING` error instead of a silent fallback.
+/// v1 executes archives containing exactly one primary wasm layer
+/// (see `crate::holo_wasm` for the guest contract); tensor, rootfs, and view
+/// layers remain typed `LIVE_CAPABILITY_MISSING` seams. Loading a kappa
+/// spawns a resident `ResidentHoloActor` under the runtime's own supervision
+/// root; `run` messages it, `unload` stops it.
+///
+/// The runtime spawns its own `ActorSystem` lazily on first load: the
+/// daemon's root supervisor is created after `HoloRuntime` in
+/// `AppState::build`, so the handle cannot be threaded through the
+/// constructor without changing `app.rs`.
 pub struct HoloRuntime {
-    _catalog: Arc<HoloCatalog>,
+    catalog: Arc<HoloCatalog>,
+    mailbox_capacity: usize,
+    engine: Engine,
+    actors: OnceLock<ActorSystem>,
+    resident: Mutex<HashMap<String, ResidentEntry>>,
+}
+
+/// Cloning is cheap: the actor reference and counters are shared handles.
+#[derive(Clone)]
+struct ResidentEntry {
+    actor: ActorRef<ResidentHoloActor>,
+    input_count: usize,
+    output_count: usize,
+    resident_bytes: usize,
+    queued: Arc<AtomicUsize>,
+    processed: Arc<AtomicUsize>,
+}
+
+impl ResidentEntry {
+    fn record(&self, kappa: &str) -> ResidentHolo {
+        ResidentHolo {
+            kappa: kappa.to_owned(),
+            input_count: self.input_count,
+            output_count: self.output_count,
+            resident_bytes: self.resident_bytes,
+            queued: self.queued.load(Ordering::Relaxed),
+            processed: self.processed.load(Ordering::Relaxed),
+        }
+    }
 }
 
 impl HoloRuntime {
-    pub fn new(catalog: Arc<HoloCatalog>, _mailbox_capacity: usize) -> Self {
-        Self { _catalog: catalog }
+    pub fn new(catalog: Arc<HoloCatalog>, mailbox_capacity: usize) -> Self {
+        Self {
+            catalog,
+            mailbox_capacity: mailbox_capacity.max(1),
+            engine: Engine::default(),
+            actors: OnceLock::new(),
+            resident: Mutex::new(HashMap::new()),
+        }
     }
 
     pub async fn load(&self, kappa: &str) -> Result<ResidentHolo> {
-        Err(runtime_unavailable(kappa))
+        if let Some(record) = self.resident_record(kappa)? {
+            return Ok(record);
+        }
+        let bytes = self.catalog.bytes(kappa)?;
+        let wasm = extract_primary_wasm(kappa, &bytes)?;
+        let queued = Arc::new(AtomicUsize::new(0));
+        let processed = Arc::new(AtomicUsize::new(0));
+        let actor = ResidentHoloActor::compile(kappa, &self.engine, &wasm, processed.clone())?;
+        let actor = ResidentHoloActor::spawn_link_with_mailbox(
+            self.actors.get_or_init(ActorSystem::start).root(),
+            actor,
+            mailbox::bounded(self.mailbox_capacity),
+        )
+        .await;
+        // The v1 manifest carries no I/O arity, so the contract's
+        // one-output-per-input shape is reported as 1/1.
+        let entry = ResidentEntry {
+            actor,
+            input_count: 1,
+            output_count: 1,
+            resident_bytes: wasm.len(),
+            queued,
+            processed,
+        };
+        let mut resident = self.lock_resident()?;
+        Ok(match resident.entry(kappa.to_owned()) {
+            std::collections::hash_map::Entry::Occupied(existing) => existing.get().record(kappa),
+            std::collections::hash_map::Entry::Vacant(slot) => slot.insert(entry).record(kappa),
+        })
     }
 
     pub async fn unload(&self, kappa: &str) -> Result<()> {
-        Err(runtime_unavailable(kappa))
+        let entry = self
+            .lock_resident()?
+            .remove(kappa)
+            .ok_or_else(|| not_resident(kappa))?;
+        let _ = entry.actor.stop_gracefully().await;
+        entry.actor.wait_for_shutdown().await;
+        Ok(())
     }
 
-    pub async fn run(&self, kappa: &str, _inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
-        Err(runtime_unavailable(kappa))
+    pub async fn run(&self, kappa: &str, inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
+        let entry = self.entry(kappa)?.ok_or_else(|| not_resident(kappa))?;
+        entry.queued.fetch_add(1, Ordering::Relaxed);
+        let reply = entry.actor.ask(Run { inputs }).await;
+        entry.queued.fetch_sub(1, Ordering::Relaxed);
+        let outcome = match reply {
+            Ok(outcome) => outcome,
+            Err(SendError::HandlerError(error)) => return Err(error),
+            Err(error) => {
+                return Err(LiveError::Conflict(format!(
+                    "resident holo {kappa} is unavailable: {error}"
+                )));
+            }
+        };
+        Ok(HoloRunResult {
+            kappa: kappa.to_owned(),
+            outputs: outcome.outputs,
+            elapsed_micros: outcome.elapsed_micros,
+            resident_bytes: entry.resident_bytes,
+        })
     }
 
     pub async fn list(&self) -> Result<Vec<ResidentHolo>> {
-        Ok(Vec::new())
+        Ok(self
+            .lock_resident()?
+            .iter()
+            .map(|(kappa, entry)| entry.record(kappa))
+            .collect())
+    }
+
+    fn resident_record(&self, kappa: &str) -> Result<Option<ResidentHolo>> {
+        Ok(self
+            .lock_resident()?
+            .get(kappa)
+            .map(|entry| entry.record(kappa)))
+    }
+
+    fn entry(&self, kappa: &str) -> Result<Option<ResidentEntry>> {
+        Ok(self.lock_resident()?.get(kappa).cloned())
+    }
+
+    fn lock_resident(&self) -> Result<std::sync::MutexGuard<'_, HashMap<String, ResidentEntry>>> {
+        self.resident
+            .lock()
+            .map_err(|_| LiveError::Conflict("resident holo registry lock poisoned".to_owned()))
     }
 }
 
-fn runtime_unavailable(kappa: &str) -> LiveError {
-    LiveError::Capability(format!(
-        ".holo execution for {kappa} is not compiled into the stable v1 build; \
-         import, inspect, and verify are available"
+fn not_resident(kappa: &str) -> LiveError {
+    LiveError::NotFound(format!(
+        "{kappa} is not loaded as a resident holo; run `hologram holo load {kappa}` first"
     ))
+}
+
+/// Extract the wasm payload of an archive that is exactly one primary wasm
+/// layer. Anything else is an honest capability error naming the unsupported
+/// layer kinds.
+fn extract_primary_wasm(kappa: &str, bytes: &[u8]) -> Result<Vec<u8>> {
+    let loader =
+        HoloLoader::from_bytes(bytes).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let plan = loader
+        .into_plan()
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let manifest_bytes = plan.app_manifest().ok_or_else(|| {
+        LiveError::Capability(format!(
+            "holo.load for {kappa} requires an application manifest with a primary wasm layer"
+        ))
+    })?;
+    let manifest = AppManifest::decode(manifest_bytes).map_err(|error| {
+        LiveError::InvalidHolo(format!("decode application manifest of {kappa}: {error:?}"))
+    })?;
+    let unsupported: Vec<&'static str> = manifest
+        .layers
+        .iter()
+        .filter(|layer| layer.kind != LayerKind::WasmCodemodule)
+        .map(|layer| layer_kind_name(layer.kind))
+        .collect();
+    if !unsupported.is_empty() {
+        return Err(LiveError::Capability(format!(
+            "holo.load for {kappa} supports wasm layers only; the archive contains unsupported \
+             layer kinds: {}",
+            unsupported.join(", ")
+        )));
+    }
+    if manifest.layers.len() != 1 {
+        return Err(LiveError::Capability(format!(
+            "holo.load for {kappa} requires exactly one wasm layer; the archive declares {} layers",
+            manifest.layers.len()
+        )));
+    }
+    if manifest.primary != Some(0) {
+        return Err(LiveError::Capability(format!(
+            "holo.load for {kappa} requires the wasm layer to be the archive's primary layer"
+        )));
+    }
+    let content = manifest.layers[0].content;
+    let blobs = plan
+        .content_blobs()
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let (_, blob) = blobs
+        .iter()
+        .find(|(label, _)| *label == content.as_bytes())
+        .ok_or_else(|| {
+            LiveError::InvalidHolo(format!(
+                "wasm layer content of {kappa} is not embedded in the archive"
+            ))
+        })?;
+    Ok(blob.to_vec())
+}
+
+const fn layer_kind_name(kind: LayerKind) -> &'static str {
+    match kind {
+        LayerKind::WasmCodemodule => "wasm",
+        LayerKind::TensorPlan => "tensor",
+        LayerKind::RootfsImage => "rootfs",
+        LayerKind::View => "view",
+    }
 }
 
 #[cfg(test)]
@@ -171,15 +360,75 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execution_fails_with_typed_capability_error() {
-        let temporary =
-            std::env::temp_dir().join(format!("hologram-live-holo-test-{}", std::process::id()));
-        let store = Arc::new(ObjectStore::open(temporary).expect("store"));
-        let runtime = HoloRuntime::new(Arc::new(HoloCatalog::new(store)), 1);
+    async fn run_before_load_is_a_typed_not_found() {
+        let runtime = test_runtime("run-before-load");
         let error = runtime
             .run("blake3:test", Vec::new())
             .await
             .expect_err("must fail");
+        assert_eq!(error.code(), "LIVE_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn load_run_unload_round_trip_against_the_wasm_fixture() {
+        let runtime = test_runtime("round-trip");
+        let kappa = import_fixture(&runtime, "wasm-app");
+        let record = runtime.load(&kappa).await.expect("load");
+        assert_eq!(record.kappa, kappa);
+        assert_eq!(record.input_count, 1);
+        assert_eq!(record.output_count, 1);
+        assert!(record.resident_bytes > 0);
+
+        let result = runtime
+            .run(&kappa, vec![b"hello hologram".to_vec()])
+            .await
+            .expect("run");
+        assert_eq!(result.outputs, vec![b"HELLO HOLOGRAM".to_vec()]);
+
+        let resident = runtime.list().await.expect("list");
+        assert_eq!(resident.len(), 1);
+        assert_eq!(resident[0].processed, 1);
+
+        runtime.unload(&kappa).await.expect("unload");
+        assert!(runtime.list().await.expect("list").is_empty());
+        let error = runtime
+            .run(&kappa, Vec::new())
+            .await
+            .expect_err("must fail");
+        assert_eq!(error.code(), "LIVE_NOT_FOUND");
+        let error = runtime.unload(&kappa).await.expect_err("must fail");
+        assert_eq!(error.code(), "LIVE_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn load_rejects_a_view_only_archive() {
+        let runtime = test_runtime("wrong-kind");
+        let kappa = import_fixture(&runtime, "view-app");
+        let error = runtime.load(&kappa).await.expect_err("must fail");
         assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
+        assert!(error.to_string().contains("view"), "{error}");
+    }
+
+    fn test_runtime(name: &str) -> HoloRuntime {
+        let temporary = std::env::temp_dir().join(format!(
+            "hologram-live-holo-test-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temporary);
+        let store = Arc::new(ObjectStore::open(temporary).expect("store"));
+        HoloRuntime::new(Arc::new(HoloCatalog::new(store)), 8)
+    }
+
+    fn import_fixture(runtime: &HoloRuntime, fixture: &str) -> String {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures")
+            .join(fixture)
+            .join("hologram.json");
+        let compiled = crate::compile::compile_manifest(&manifest).expect("compile fixture");
+        runtime
+            .catalog
+            .import(format!("{fixture}.holo"), compiled.bytes)
+            .expect("import fixture")
+            .kappa
     }
 }

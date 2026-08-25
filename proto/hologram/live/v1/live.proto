@@ -64,6 +64,7 @@ message RpcRequest {
     IdRequest model_remove = 34;
     PluginCallRequest plugin_call = 35;
     Empty plugin_list = 36;
+    IdRequest holo_plan = 37;
   }
 }
 
@@ -152,6 +153,55 @@ message HoloInspection {
   bool directory_embedded = 9;
   optional string application_kappa = 10;
 }
+message HoloPlanObject {
+  string kappa = 1;
+  optional string resolution_source = 2;
+  optional uint64 byte_length = 3;
+}
+message HoloPlanProvider {
+  string status = 1;
+  optional string name = 2;
+  optional string reason = 3;
+}
+message HoloPlanLayer {
+  uint32 position = 1;
+  string kind = 2;
+  string content_kappa = 3;
+  string entry = 4;
+  optional string architecture = 5;
+  optional string surface = 6;
+  optional string engine = 7;
+  bool primary = 8;
+  optional string resolution_source = 9;
+  optional uint64 byte_length = 10;
+  HoloPlanProvider provider = 11;
+}
+message HoloPlanLimits {
+  uint64 max_layers = 1;
+  uint64 max_objects = 2;
+  uint64 max_resolved_bytes = 3;
+}
+message HoloPlanBlocker {
+  string kind = 1;
+  string error_code = 2;
+  string message = 3;
+}
+message HoloPlan {
+  string archive_kappa = 1;
+  string archive_fingerprint = 2;
+  string application_kappa = 3;
+  string execution_target = 4;
+  string packaging = 5;
+  optional uint32 primary_layer = 6;
+  HoloPlanObject capabilities = 7;
+  repeated HoloPlanLayer layers = 8;
+  repeated HoloChild children = 9;
+  uint64 resolved_object_count = 10;
+  uint64 resolved_bytes = 11;
+  HoloPlanLimits limits = 12;
+  bool runnable = 13;
+  repeated HoloPlanBlocker blockers = 14;
+}
 message ResidentHolo {
   string kappa = 1;
   uint64 input_count = 2;
@@ -237,5 +287,6 @@ message RpcResponse {
     ModelList models = 18;
     PluginResult plugin_result = 19;
     PluginList plugins = 20;
+    HoloPlan holo_plan = 21;
   }
 }

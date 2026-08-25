@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
-use crate::protocol::{operation, HoloInspection, OperationKind};
+use crate::protocol::{operation, HoloInspection, HoloPlan, OperationKind};
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -19,6 +19,11 @@ const OPERATIONS: &[OperationDescriptor] = &[
     },
     OperationDescriptor {
         id: operation::HOLO_INSPECT,
+        kind: OperationKind::Read,
+        fallback_safe_before_dispatch: true,
+    },
+    OperationDescriptor {
+        id: operation::HOLO_PLAN,
         kind: OperationKind::Read,
         fallback_safe_before_dispatch: true,
     },
@@ -73,6 +78,7 @@ impl LiveModule for HoloModule {
         Router::new()
             .route("/api/v1/holo", get(list_holo))
             .route("/api/v1/holo/{kappa}", get(inspect_holo))
+            .route("/api/v1/holo/{kappa}/plan", get(plan_holo))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {
@@ -82,8 +88,8 @@ impl LiveModule for HoloModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_holo, inspect_holo),
-    components(schemas(HoloInspection)),
+    paths(list_holo, inspect_holo, plan_holo),
+    components(schemas(HoloInspection, HoloPlan)),
     tags((name = "holo", description = "Hologram application archives"))
 )]
 struct HoloApiDoc;
@@ -122,4 +128,21 @@ pub async fn inspect_holo(
             crate::error::LiveError::Conflict(format!("join .holo inspect: {error}"))
         })??;
     Ok(Json(inspection))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/holo/{kappa}/plan",
+    params(("kappa" = String, Path)),
+    responses((status = 200, body = HoloPlan))
+)]
+pub async fn plan_holo(
+    State(state): State<AppState>,
+    Path(kappa): Path<String>,
+) -> Result<Json<HoloPlan>, HttpError> {
+    let catalog = state.holo_catalog().clone();
+    let plan = tokio::task::spawn_blocking(move || catalog.plan(&kappa))
+        .await
+        .map_err(|error| crate::error::LiveError::Conflict(format!("join .holo plan: {error}")))??;
+    Ok(Json(plan))
 }

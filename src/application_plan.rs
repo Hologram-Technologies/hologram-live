@@ -141,46 +141,76 @@ pub enum PlanBlocker {
 }
 
 impl PlanBlocker {
-    fn into_error(self, application_kappa: &str) -> LiveError {
+    pub const fn kind(&self) -> &'static str {
         match self {
-            Self::MissingObject { kappa, edge } => LiveError::NotFound(format!(
+            Self::MissingObject { .. } => "missing_object",
+            Self::ContentMismatch { .. } => "content_mismatch",
+            Self::ProviderUnavailable { .. } => "provider_unavailable",
+            Self::ChildClosureUnsupported { .. } => "child_closure_unsupported",
+            Self::LimitExceeded { .. } => "limit_exceeded",
+            Self::ExecutionShapeUnsupported { .. } => "execution_shape_unsupported",
+        }
+    }
+
+    pub const fn error_code(&self) -> &'static str {
+        match self {
+            Self::MissingObject { .. } => "LIVE_NOT_FOUND",
+            Self::ContentMismatch { .. } | Self::LimitExceeded { .. } => "LIVE_HOLO_INVALID",
+            Self::ProviderUnavailable { .. }
+            | Self::ChildClosureUnsupported { .. }
+            | Self::ExecutionShapeUnsupported { .. } => "LIVE_CAPABILITY_MISSING",
+        }
+    }
+
+    pub fn message(&self, application_kappa: &str) -> String {
+        match self {
+            Self::MissingObject { kappa, edge } => format!(
                 "application {application_kappa} cannot resolve {kappa} referenced by {edge} from embedded content or the local store"
-            )),
+            ),
             Self::ContentMismatch {
                 kappa,
                 edge,
                 source,
-            } => LiveError::InvalidHolo(format!(
+            } => format!(
                 "application {application_kappa} resolved {kappa} for {edge} from {} but the bytes do not match the declared kappa",
-                resolution_source_name(&source)
-            )),
+                resolution_source_name(source)
+            ),
             Self::ProviderUnavailable {
                 position,
                 kind,
                 entry,
                 reason,
-            } => LiveError::Capability(format!(
+            } => format!(
                 "application {application_kappa} layer {position} ({kind}, entry {entry}) has no available provider: {reason}"
-            )),
+            ),
             Self::ChildClosureUnsupported {
                 position,
                 application_kappa: child,
                 capabilities_kappa,
-            } => LiveError::Capability(format!(
+            } => format!(
                 "application {application_kappa} child {position} references application {child} with delegated capabilities {capabilities_kappa}; child closure execution is deferred until capability attenuation is implemented"
-            )),
+            ),
             Self::LimitExceeded {
                 limit,
                 maximum,
                 actual,
                 edge,
-            } => LiveError::InvalidHolo(format!(
+            } => format!(
                 "application {application_kappa} exceeds planning limit {limit}: maximum {maximum}, actual {actual}{}",
-                edge.map_or_else(String::new, |edge| format!(" while resolving {edge}"))
-            )),
-            Self::ExecutionShapeUnsupported { reason } => LiveError::Capability(format!(
+                edge.as_ref().map_or_else(String::new, |edge| format!(" while resolving {edge}"))
+            ),
+            Self::ExecutionShapeUnsupported { reason } => format!(
                 "application {application_kappa} cannot execute with the current lifecycle: {reason}"
-            )),
+            ),
+        }
+    }
+
+    fn into_error(self, application_kappa: &str) -> LiveError {
+        let message = self.message(application_kappa);
+        match self.error_code() {
+            "LIVE_NOT_FOUND" => LiveError::NotFound(message),
+            "LIVE_HOLO_INVALID" => LiveError::InvalidHolo(message),
+            _ => LiveError::Capability(message),
         }
     }
 }
@@ -204,6 +234,9 @@ pub struct ApplicationPlanReport {
     pub objects: BTreeMap<String, ResolvedObject>,
     pub blockers: Vec<PlanBlocker>,
     pub resolved_bytes: u64,
+    pub referenced_object_count: usize,
+    pub embedded_object_count: usize,
+    pub limits: PlanLimits,
     manifest: AppManifest,
 }
 
@@ -464,6 +497,10 @@ where
             Ok((kappa.to_owned(), bytes))
         })
         .collect::<Result<HashMap<_, _>>>()?;
+    let embedded_object_count = requests
+        .iter()
+        .filter(|request| embedded.contains_key(&request.kappa))
+        .count();
 
     let mut objects = BTreeMap::new();
     let mut resolved_bytes = 0u64;
@@ -531,6 +568,9 @@ where
         objects,
         blockers,
         resolved_bytes,
+        referenced_object_count: requests.len(),
+        embedded_object_count,
+        limits,
         manifest,
     })
 }

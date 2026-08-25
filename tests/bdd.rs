@@ -14,6 +14,7 @@ struct BddWorld {
     sent_message: Option<String>,
     kappa: Option<String>,
     run_result: Option<serde_json::Value>,
+    plan_result: Option<serde_json::Value>,
     plugin_list: Option<serde_json::Value>,
     model_id: Option<String>,
 }
@@ -118,6 +119,57 @@ fn import_archive(world: &mut BddWorld) {
     let record: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("parse import output");
     world.kappa = Some(record["kappa"].as_str().expect("kappa").to_owned());
+}
+
+#[when("I plan the compiled archive directly")]
+fn plan_local_archive(world: &mut BddWorld) {
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("holo")
+        .arg("plan")
+        .arg(world.output_path.as_ref().expect("compiled archive"))
+        .output()
+        .expect("plan local archive");
+    assert!(
+        output.status.success(),
+        "local holo plan failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    world.plan_result = Some(serde_json::from_slice(&output.stdout).expect("parse plan output"));
+}
+
+#[when("I plan the imported archive")]
+fn plan_imported_archive(world: &mut BddWorld) {
+    let kappa = world.kappa.clone().expect("kappa");
+    let output = run_cli(world, &["--json", "holo", "plan", &kappa]);
+    assert!(
+        output.status.success(),
+        "resident holo plan failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    world.plan_result = Some(serde_json::from_slice(&output.stdout).expect("parse plan output"));
+}
+
+#[then("the direct plan is runnable without exposing payload bytes")]
+fn direct_plan_is_payload_free(world: &mut BddWorld) {
+    let plan = world.plan_result.as_ref().expect("plan result");
+    assert_eq!(plan["execution_target"], "direct");
+    assert_eq!(plan["packaging"], "fat");
+    assert_eq!(plan["runnable"], true);
+    assert_eq!(plan["layers"][0]["provider"]["status"], "available");
+    assert!(plan["layers"][0].get("content").is_none());
+    assert!(plan["layers"][0].get("bytes").is_none());
+}
+
+#[then("the resident plan identifies the imported archive")]
+fn resident_plan_identifies_archive(world: &mut BddWorld) {
+    let plan = world.plan_result.as_ref().expect("plan result");
+    assert_eq!(plan["execution_target"], "resident");
+    assert_eq!(
+        plan["archive_kappa"].as_str(),
+        Some(world.kappa.as_deref().expect("kappa"))
+    );
+    assert_eq!(plan["runnable"], true);
 }
 
 #[when("I load the archive")]

@@ -6,7 +6,7 @@ use crate::error::{LiveError, Result};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python;
 use crate::holo_wasm::{self, ResidentHoloActor, Run};
-use crate::protocol::{HoloInspection, HoloRunResult, HoloSection, ResidentHolo};
+use crate::protocol::{HoloInspection, HoloPlan, HoloRunResult, HoloSection, ResidentHolo};
 use crate::store::ObjectStore;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
@@ -88,6 +88,26 @@ impl HoloCatalog {
             )));
         }
         self.inspect(kappa)
+    }
+
+    pub fn plan(&self, kappa: &str) -> Result<HoloPlan> {
+        let metadata = self.store.metadata(kappa)?;
+        if metadata.kind != "holo" {
+            return Err(LiveError::InvalidHolo(format!(
+                "object {kappa} is not cataloged as a .holo archive"
+            )));
+        }
+        if !self.store.verify(kappa)? {
+            return Err(LiveError::InvalidHolo(format!(
+                "content address verification failed for {kappa}"
+            )));
+        }
+        let bytes = self.store.get(kappa)?;
+        let mut report = explain_application(&bytes, PlanLimits::default(), |content| {
+            self.resolve_content(content)
+        })?;
+        report.evaluate_providers(resident_provider);
+        Ok(HoloPlan::from_report(&report, "resident"))
     }
 
     pub fn bytes(&self, kappa: &str) -> Result<Vec<u8>> {
@@ -199,6 +219,12 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
         directory,
         directory_embedded,
     })
+}
+
+pub fn plan_bytes(bytes: &[u8]) -> Result<HoloPlan> {
+    let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
+    report.evaluate_providers(direct_provider);
+    Ok(HoloPlan::from_report(&report, "direct"))
 }
 
 /// In-process execution provider for `.holo` archives.
@@ -690,6 +716,20 @@ mod tests {
             .expect("import thin")
             .kappa;
 
+        let plan = runtime.catalog.plan(&thin_kappa).expect("plan thin");
+        assert_eq!(plan.packaging, "thin");
+        assert_eq!(plan.execution_target, "resident");
+        assert_eq!(
+            plan.capabilities.resolution_source.as_deref(),
+            Some("local_store")
+        );
+        assert_eq!(
+            plan.layers[0].resolution_source.as_deref(),
+            Some("local_store")
+        );
+        assert_eq!(plan.layers[0].provider.status, "available");
+        assert!(plan.runnable);
+
         runtime.load(&thin_kappa).await.expect("load thin");
         let result = runtime
             .run(&thin_kappa, vec![b"resolved".to_vec()])
@@ -726,12 +766,61 @@ mod tests {
         writer.add_content_blob(address_bytes(bundle).as_bytes(), bundle);
         let bytes = writer.finish().expect("model archive");
 
+        let plan = plan_bytes(&bytes).expect("model plan remains inspectable");
+        assert!(!plan.runnable);
+        assert_eq!(plan.layers[0].kind, "inference-model");
+        assert_eq!(plan.layers[0].provider.status, "unavailable");
+        assert!(plan
+            .blockers
+            .iter()
+            .any(|blocker| blocker.kind == "provider_unavailable"
+                && blocker.error_code == "LIVE_CAPABILITY_MISSING"));
+
         let error = HoloExecutor::default()
             .execute(&bytes, Vec::new())
             .expect_err("model provider is not connected");
         assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
         assert!(error.to_string().contains("ai.default (uor-r4)"), "{error}");
         assert!(error.to_string().contains("inference provider"), "{error}");
+    }
+
+    #[test]
+    fn unsupported_layer_kinds_remain_visible_in_a_blocked_plan() {
+        let capabilities = b"capabilities";
+        let payloads: [&[u8]; 4] = [b"view", b"tensor", b"rootfs", b"model"];
+        let manifest = AppManifest {
+            primary: Some(2),
+            requires: address_bytes(capabilities),
+            layers: vec![
+                Layer::view(address_bytes(payloads[0]), "portable"),
+                Layer::tensor(address_bytes(payloads[1]), "session"),
+                Layer::rootfs(address_bytes(payloads[2]), "boot", "aarch64"),
+                Layer::inference_model(address_bytes(payloads[3]), "ai.default", "uor-r4"),
+            ],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
+        for payload in payloads {
+            writer.add_content_blob(address_bytes(payload).as_bytes(), payload);
+        }
+        let bytes = writer.finish().expect("multi-provider archive");
+
+        let plan = plan_bytes(&bytes).expect("unsupported providers are explanatory");
+
+        assert!(!plan.runnable);
+        assert_eq!(
+            plan.layers
+                .iter()
+                .map(|layer| layer.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec!["view", "tensor", "rootfs", "inference-model"]
+        );
+        assert!(plan
+            .layers
+            .iter()
+            .all(|layer| layer.provider.status == "unavailable"));
     }
 
     fn test_runtime(name: &str) -> HoloRuntime {

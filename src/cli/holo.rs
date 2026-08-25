@@ -1,7 +1,7 @@
 use super::{helpers, run, Cli};
 use clap::{Args, Subcommand};
 use hologram_live::error::{LiveError, Result};
-use hologram_live::holo::{inspect_bytes, HoloCatalog};
+use hologram_live::holo::{inspect_bytes, plan_bytes, HoloCatalog};
 use hologram_live::protocol::{HoloInspection, RpcRequest, RpcResponse};
 use std::path::PathBuf;
 
@@ -21,6 +21,10 @@ enum HoloCommand {
     },
     List,
     Inspect {
+        /// Catalog kappa, or a local .holo file.
+        reference: String,
+    },
+    Plan {
         /// Catalog kappa, or a local .holo file.
         reference: String,
     },
@@ -57,6 +61,7 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
             other => helpers::unexpected(other),
         },
         HoloCommand::Inspect { reference } => inspect(&cli, reference, false).await,
+        HoloCommand::Plan { reference } => plan(&cli, reference).await,
         HoloCommand::Verify { reference } => inspect(&cli, reference, true).await,
         HoloCommand::Load { kappa } => {
             match helpers::call(&cli, RpcRequest::HoloLoad { kappa }).await? {
@@ -165,6 +170,21 @@ async fn inspect(cli: &Cli, reference: String, verify: bool) -> Result<()> {
 
     let inspection = inspect_local(PathBuf::from(reference)).await?;
     helpers::print(cli, &inspection)
+}
+
+async fn plan(cli: &Cli, reference: String) -> Result<()> {
+    if reference.starts_with("blake3:") {
+        return match helpers::call(cli, RpcRequest::HoloPlan { kappa: reference }).await? {
+            RpcResponse::HoloPlan(value) => helpers::print(cli, &value),
+            other => helpers::unexpected(other),
+        };
+    }
+
+    let path = PathBuf::from(reference);
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|error| LiveError::io(&path, error))?;
+    helpers::print(cli, &plan_bytes(&bytes)?)
 }
 
 async fn inspect_local(path: PathBuf) -> Result<HoloInspection> {

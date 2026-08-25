@@ -153,26 +153,36 @@ release build, and smoke; the Astro documentation build also passed.
 
 ### Slice 3 — `hologram holo plan`
 
-- [ ] Add read-only `holo.plan` operation metadata and routing semantics.
-- [ ] Add request/response types to the native protocol and Protobuf schema.
-- [ ] Add `hologram holo plan <PATH|KAPPA>` with the same local-path/catalog-ID
+- [x] Add read-only `holo.plan` operation metadata and routing semantics.
+- [x] Add request/response types to the native protocol and Protobuf schema.
+- [x] Add `hologram holo plan <PATH|KAPPA>` with the same local-path/catalog-ID
   selection used by `holo inspect` and `hologram run`.
-- [ ] Add an HTTP/OpenAPI plan representation for cataloged applications.
-- [ ] Report identities, packaging, capability κ, ordered layers, resolution
+- [x] Add an HTTP/OpenAPI plan representation for cataloged applications.
+- [x] Report identities, packaging, capability κ, ordered layers, resolution
   sources, provider availability, child references, limits, `runnable`, and
   stable typed blockers without exposing payload bytes or engine internals.
-- [ ] Ensure global `--json` emits one jq-safe document for runnable and blocked
+- [x] Ensure global `--json` emits one jq-safe document for runnable and blocked
   plans; command/protocol errors retain the global typed JSON error contract.
-- [ ] Add protocol round-trip, CLI, HTTP, OpenAPI, and BDD coverage.
+- [x] Add protocol round-trip, CLI, HTTP, OpenAPI, and BDD coverage.
 
 Slice 3 acceptance:
 
-- [ ] A local fat Wasm file plans without starting the service.
-- [ ] A cataloged thin archive reports local-cache resolution accurately.
-- [ ] View, Tensor, rootfs, and inference-model layers can be inspected in a
+- [x] A local fat Wasm file plans without starting the service.
+- [x] A cataloged thin archive reports local-cache resolution accurately.
+- [x] View, Tensor, rootfs, and inference-model layers can be inspected in a
   plan even when their provider is unavailable.
-- [ ] The plan operation is advertised by module discovery and route
+- [x] The plan operation is advertised by module discovery and route
   explanation.
+
+Slice 3 evidence (2026-08-25): local-path and catalog-κ BDD steps validate the
+payload-free JSON contract without starting providers; unit tests cover blocked
+View/Tensor/rootfs/inference-model reports and cataloged thin archives resolving
+both capabilities and layers from `local_store`. Native/Protobuf round trips,
+module/OpenAPI assertions, route explanation, the catalog HTTP endpoint, and
+release-smoke `jq` checks pass. `just verify` passed formatting, file-size,
+check, 127 unit tests, 7 BDD scenarios / 59 steps, Clippy, optimized build, and
+release smoke; the final added provider-matrix test brings the unit total to
+128 and passed with Clippy. The Astro documentation build also passed.
 
 ### Slice 4 — Provider lifecycle and Wasm migration
 
@@ -212,16 +222,16 @@ Slice 4 acceptance:
 
 ## Sprint-wide completion gates
 
-- [ ] Public planning behavior has BDD coverage.
+- [x] Public planning behavior has BDD coverage.
 - [ ] Unit and negative tests cover resolution, identity, limits, provider
   ordering, rollback, and idempotency.
-- [ ] Native protocol, gRPC, JSON/HTTP, CLI, module discovery, and route
+- [x] Native protocol, gRPC, JSON/HTTP, CLI, module discovery, and route
   explanation agree.
-- [ ] Errors name the application identity, layer position/provider, and κ
+- [x] Errors name the application identity, layer position/provider, and κ
   involved.
-- [ ] README, website docs, architecture, actual capabilities, ADRs, and the
+- [x] README, website docs, architecture, actual capabilities, ADRs, and the
   durable runtime plan are current.
-- [ ] `cargo fmt`, source-size gate, `cargo check`, full tests, Clippy, BDD,
+- [x] `cargo fmt`, source-size gate, `cargo check`, full tests, Clippy, BDD,
   optimized build, and release smoke test pass.
 - [ ] Completed durable items are checked in
   `plans/holo-application-runtime.md`; unfinished discoveries remain here with
@@ -235,16 +245,16 @@ Use the next ID, include concrete evidence, and choose one disposition:
 **Later** (durable backlog). Do not expand sprint scope merely because an item
 was discovered.
 
-- [ ] `DISC-001` — **Now** — Top-level application identity is missing from
+- [x] `DISC-001` — **Now** — Top-level application identity is missing from
   `HoloInspection` and compile reports. Evidence: `src/protocol.rs` and
   `src/cli/compile.rs`. Routed to Slice 1 / M1 identity model.
 - [ ] `DISC-002` — **Now** — `extract_primary_layer` resolves only one layer and
   requires primary position zero. Evidence: `src/holo.rs`. Routed to Slices 2
   and 4 / M1 planning and lifecycle.
-- [ ] `DISC-003` — **Now** — There is no `holo.plan` operation in protocol,
+- [x] `DISC-003` — **Now** — There is no `holo.plan` operation in protocol,
   Protobuf, HTTP, module discovery, or CLI. Routed to Slice 3 / M1 planning
   interface.
-- [ ] `DISC-004` — **Now** — ADR 007 still describes new archives as v3 even
+- [x] `DISC-004` — **Now** — ADR 007 still describes new archives as v3 even
   though ADR 009 and the implementation use v4 writes with v2/v3 reads. Routed
   to Slice 1 documentation reconciliation.
 - [ ] `DISC-005` — **Now** — The experimental Python OCI direct executor sits

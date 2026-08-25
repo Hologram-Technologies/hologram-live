@@ -165,8 +165,10 @@ hologram holo fixture ./fixture.holo
 hologram holo import ./fixture.holo
 hologram holo list
 hologram holo inspect ./application.holo
+hologram holo plan ./application.holo
 hologram holo verify ./application.holo
 hologram holo inspect blake3:...
+hologram holo plan blake3:...
 hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
@@ -230,6 +232,18 @@ inspection adds `application_kappa` when an application manifest is present.
 Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
 
 Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the physical `kappa`, canonical `application_kappa`, footer fingerprint, ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view, and pre-application structural archives report no application κ.
+
+Use `holo plan` to explain whether an application can run before starting any provider. Local paths plan without the service; imported κ values plan against the local content cache. The payload-free report includes all three identities, fat/thin/hybrid packaging, the capability object, ordered layers, resolution sources, provider availability, planning limits, and stable typed blockers:
+
+```bash
+hologram --json holo plan ./application.holo |
+  jq '{application_kappa, packaging, runnable, layers, blockers}'
+
+hologram --json holo plan blake3:... |
+  jq '{execution_target, resolved_object_count, resolved_bytes, runnable}'
+```
+
+An unsupported layer is still a successful plan: `runnable` is `false` and `blockers` explains the unavailable provider with a `kind`, `error_code`, and message. Malformed archives, missing catalog objects, and transport failures retain the normal typed JSON error contract.
 
 #### AI model applications
 

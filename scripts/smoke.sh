@@ -84,6 +84,7 @@ curl -fsS "http://127.0.0.1:$PORT/docs/scalar.js" >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json modules list >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json modules graph >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json route system.health >/dev/null
+HOME="$HOME_DIR" json_output "$BIN" --json route holo.plan | jq -e '.operation == "holo.plan"' >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json registry list >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json nodes list >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json nodes heartbeat smoke-node >/dev/null
@@ -149,6 +150,15 @@ printf '%s\n' "$INSPECTION" | jq -e --arg application_kappa "$(printf '%s\n' "$C
   (.kappa | startswith("blake3:")) and
   .application_kappa == $application_kappa
 ' >/dev/null
+DIRECT_PLAN=$(HOME="$HOME_DIR" json_output "$BIN" --json holo plan "$TMP/wasm-app.holo")
+printf '%s\n' "$DIRECT_PLAN" | jq -e '
+  .execution_target == "direct" and
+  .packaging == "fat" and
+  .runnable == true and
+  .layers[0].provider.status == "available" and
+  (.layers[0] | has("content") | not) and
+  (.layers[0] | has("bytes") | not)
+' >/dev/null
 WASM_IMPORT=$(HOME="$HOME_DIR" json_output "$BIN" --json holo import "$TMP/wasm-app.holo")
 WASM_KAPPA=$(printf '%s\n' "$WASM_IMPORT" | jq -er '.kappa')
 if [ -z "$WASM_KAPPA" ]; then
@@ -156,6 +166,14 @@ if [ -z "$WASM_KAPPA" ]; then
   echo "$WASM_IMPORT" >&2
   exit 1
 fi
+RESIDENT_PLAN=$(HOME="$HOME_DIR" json_output "$BIN" --json holo plan "$WASM_KAPPA")
+printf '%s\n' "$RESIDENT_PLAN" | jq -e --arg kappa "$WASM_KAPPA" '
+  .archive_kappa == $kappa and
+  .execution_target == "resident" and
+  .runnable == true
+' >/dev/null
+curl -fsS "http://127.0.0.1:$PORT/api/v1/holo/$WASM_KAPPA/plan" |
+  jq -e --arg kappa "$WASM_KAPPA" '.archive_kappa == $kappa and .runnable == true' >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json holo load "$WASM_KAPPA" >/dev/null
 printf 'hello hologram' >"$TMP/holo-input.txt"
 RUN=$(HOME="$HOME_DIR" json_output "$BIN" --json run "$WASM_KAPPA" --input "$TMP/holo-input.txt")

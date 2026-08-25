@@ -123,6 +123,15 @@ hologram --json holo inspect application.holo |
   <p>Catalog lookup, import, verification, resident records, and run results identify a particular physical archive with <code>kappa</code>. Planning and manifest-graph diagnostics use <code>application_kappa</code>. Existing <code>kappa</code> fields keep their physical meaning.</p>
   <p>Live rejects a bad footer, truncated or out-of-bounds payloads when accessed, an invalid manifest, duplicate blob labels, a blob whose κ does not match its bytes, duplicate application directories, unknown directory schema versions, and a directory that disagrees with the manifest.</p>
 
+  <h2>Explain an execution plan</h2>
+  <p><code>holo plan</code> resolves and verifies the complete non-child application closure without starting a provider. Give it a local path for a service-free direct plan, or an imported archive κ for a resident plan that may resolve thin payloads from the local content cache.</p>
+  <pre><code>hologram --json holo plan ./application.holo |
+  jq '&#123;application_kappa, packaging, runnable, layers, blockers&#125;'
+
+hologram --json holo plan blake3:… |
+  jq '&#123;execution_target, resolved_object_count, resolved_bytes, runnable&#125;'</code></pre>
+  <p>The report is deliberately payload-free. It contains the archive and application identities, <code>fat</code>/<code>thin</code>/<code>hybrid</code> packaging, capability κ, ordered layer descriptors, <code>embedded</code> or <code>local_store</code> resolution sources, provider status, child references, and planning limits. Unsupported View, Tensor, rootfs, or inference-model execution still returns a successful explanation with <code>runnable: false</code>; each blocker has a stable <code>kind</code>, typed <code>error_code</code>, and human message. Invalid files and missing catalog IDs remain command errors.</p>
+
   <h2>Fat and thin packaging</h2>
   <div class="doc-grid">
     <article class="doc-card"><h3>Fat</h3><p>The manifest and referenced blobs travel together. It is self-contained and suited to distribution, air-gapped transfer, and first install.</p></article>
@@ -148,8 +157,10 @@ hologram run application.holo --input payload.bin
 hologram compile hologram.json --thin --output application.thin.holo
 hologram holo import application.holo
 hologram --json holo inspect ./application.holo
+hologram --json holo plan ./application.holo
 hologram holo verify ./application.holo
 hologram --json holo inspect blake3:…
+hologram --json holo plan blake3:…
 hologram holo verify blake3:…
 hologram holo load blake3:…
 hologram run blake3:… --input payload.bin

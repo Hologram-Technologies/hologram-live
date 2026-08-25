@@ -84,6 +84,9 @@ pub fn request_for_operation(value: &str) -> Result<RpcRequest> {
         operation::REGISTRY_LIST => Ok(RpcRequest::RegistryList),
         operation::FILES_LIST => Ok(RpcRequest::FilesList),
         operation::HOLO_LIST => Ok(RpcRequest::HoloList),
+        operation::HOLO_PLAN => Ok(RpcRequest::HoloPlan {
+            kappa: "blake3:route-explanation".to_owned(),
+        }),
         operation::HOLO_RESIDENT => Ok(RpcRequest::HoloResident),
         operation::HISTORY_LIST => Ok(RpcRequest::HistoryList {
             include_archived: false,

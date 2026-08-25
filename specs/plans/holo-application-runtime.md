@@ -139,9 +139,9 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Planning interface
 
-- [ ] Add `hologram holo plan <PATH|KAPPA>` for a read-only explanation of identities, resolution sources, layer order, providers, capabilities, children, and blockers.
-- [ ] Make `holo plan` useful when execution is unsupported; inspection must not require a provider.
-- [ ] Add equivalent native API and JSON/HTTP representations without exposing engine-specific internals.
+- [x] Add `hologram holo plan <PATH|KAPPA>` for a read-only explanation of identities, resolution sources, layer order, providers, capabilities, children, and blockers.
+- [x] Make `holo plan` useful when execution is unsupported; inspection must not require a provider.
+- [x] Add equivalent native API and JSON/HTTP representations without exposing engine-specific internals.
 - [x] Keep `hologram run <PATH|KAPPA>` output compatible while routing both direct and resident preparation through `ApplicationPlan`.
 
 ### M1 acceptance criteria
@@ -469,7 +469,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Draft the M1 provider and lifecycle ADR before runtime refactoring.
 - [x] Add `application_kappa` to compile and inspection results.
 - [x] Introduce the read-only `ApplicationPlan` and full non-child layer resolution.
-- [ ] Add `hologram holo plan` over local paths and catalog κ values.
-- [ ] Route existing direct and resident Wasm execution through the plan.
+- [x] Add `hologram holo plan` over local paths and catalog κ values.
+- [x] Route existing direct and resident Wasm execution through the plan.
 - [ ] Add synthetic-provider rollback tests.
 - [ ] Extend closure resolution to child applications after M2 grant semantics are fixed.

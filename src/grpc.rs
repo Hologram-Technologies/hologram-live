@@ -4,9 +4,10 @@ use crate::error::{ApiError, LiveError, Result};
 use crate::models::ModelInfo;
 use crate::protocol::{
     CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloBlob, HoloChild,
-    HoloDirectory, HoloInspection, HoloLayer, HoloRunResult, HoloSection, ModuleInfo, NodeRecord,
-    ObjectContent, ObjectMetadata, OperationInfo, OperationKind, PluginStatus, ResidentHolo,
-    RpcRequest, RpcResponse,
+    HoloDirectory, HoloInspection, HoloLayer, HoloPlan, HoloPlanBlocker, HoloPlanLayer,
+    HoloPlanLimits, HoloPlanObject, HoloPlanProvider, HoloRunResult, HoloSection, ModuleInfo,
+    NodeRecord, ObjectContent, ObjectMetadata, OperationInfo, OperationKind, PluginStatus,
+    ResidentHolo, RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -167,6 +168,7 @@ impl From<RpcRequest> for pb::RpcRequest {
             }),
             RpcRequest::HoloList => Wire::HoloList(empty()),
             RpcRequest::HoloInspect { kappa } => Wire::HoloInspect(pb::IdRequest { id: kappa }),
+            RpcRequest::HoloPlan { kappa } => Wire::HoloPlan(pb::IdRequest { id: kappa }),
             RpcRequest::HoloVerify { kappa } => Wire::HoloVerify(pb::IdRequest { id: kappa }),
             RpcRequest::HoloRemove { kappa } => Wire::HoloRemove(pb::IdRequest { id: kappa }),
             RpcRequest::HoloLoad { kappa } => Wire::HoloLoad(pb::IdRequest { id: kappa }),
@@ -256,6 +258,7 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
             }),
             Wire::HoloList(_) => Ok(Self::HoloList),
             Wire::HoloInspect(value) => Ok(Self::HoloInspect { kappa: value.id }),
+            Wire::HoloPlan(value) => Ok(Self::HoloPlan { kappa: value.id }),
             Wire::HoloVerify(value) => Ok(Self::HoloVerify { kappa: value.id }),
             Wire::HoloRemove(value) => Ok(Self::HoloRemove { kappa: value.id }),
             Wire::HoloLoad(value) => Ok(Self::HoloLoad { kappa: value.id }),
@@ -314,6 +317,7 @@ impl From<RpcResponse> for pb::RpcResponse {
             RpcResponse::Object(value) => Wire::Object(value.into()),
             RpcResponse::ObjectContent(value) => Wire::ObjectContent(value.into()),
             RpcResponse::HoloInspection(value) => Wire::HoloInspection(value.into()),
+            RpcResponse::HoloPlan(value) => Wire::HoloPlan(value.into()),
             RpcResponse::HoloList(items) => Wire::HoloList(pb::HoloInspectionList {
                 items: items.into_iter().map(Into::into).collect(),
             }),
@@ -366,6 +370,7 @@ impl TryFrom<pb::RpcResponse> for RpcResponse {
             Wire::Object(value) => Ok(Self::Object(value.into())),
             Wire::ObjectContent(value) => Ok(Self::ObjectContent(value.try_into()?)),
             Wire::HoloInspection(value) => Ok(Self::HoloInspection(value.try_into()?)),
+            Wire::HoloPlan(value) => Ok(Self::HoloPlan(value.try_into()?)),
             Wire::HoloList(value) => Ok(Self::HoloList(
                 value
                     .items
@@ -738,6 +743,185 @@ impl TryFrom<pb::HoloInspection> for HoloInspection {
     }
 }
 
+impl From<HoloPlanObject> for pb::HoloPlanObject {
+    fn from(value: HoloPlanObject) -> Self {
+        Self {
+            kappa: value.kappa,
+            resolution_source: value.resolution_source,
+            byte_length: value.byte_length,
+        }
+    }
+}
+
+impl From<pb::HoloPlanObject> for HoloPlanObject {
+    fn from(value: pb::HoloPlanObject) -> Self {
+        Self {
+            kappa: value.kappa,
+            resolution_source: value.resolution_source,
+            byte_length: value.byte_length,
+        }
+    }
+}
+
+impl From<HoloPlanProvider> for pb::HoloPlanProvider {
+    fn from(value: HoloPlanProvider) -> Self {
+        Self {
+            status: value.status,
+            name: value.name,
+            reason: value.reason,
+        }
+    }
+}
+
+impl From<pb::HoloPlanProvider> for HoloPlanProvider {
+    fn from(value: pb::HoloPlanProvider) -> Self {
+        Self {
+            status: value.status,
+            name: value.name,
+            reason: value.reason,
+        }
+    }
+}
+
+impl From<HoloPlanLayer> for pb::HoloPlanLayer {
+    fn from(value: HoloPlanLayer) -> Self {
+        Self {
+            position: value.position,
+            kind: value.kind,
+            content_kappa: value.content_kappa,
+            entry: value.entry,
+            architecture: value.architecture,
+            surface: value.surface,
+            engine: value.engine,
+            primary: value.primary,
+            resolution_source: value.resolution_source,
+            byte_length: value.byte_length,
+            provider: Some(value.provider.into()),
+        }
+    }
+}
+
+impl TryFrom<pb::HoloPlanLayer> for HoloPlanLayer {
+    type Error = LiveError;
+
+    fn try_from(value: pb::HoloPlanLayer) -> Result<Self> {
+        Ok(Self {
+            position: value.position,
+            kind: value.kind,
+            content_kappa: value.content_kappa,
+            entry: value.entry,
+            architecture: value.architecture,
+            surface: value.surface,
+            engine: value.engine,
+            primary: value.primary,
+            resolution_source: value.resolution_source,
+            byte_length: value.byte_length,
+            provider: value
+                .provider
+                .ok_or_else(|| {
+                    LiveError::Protocol("gRPC holo plan layer has no provider status".to_owned())
+                })?
+                .into(),
+        })
+    }
+}
+
+impl From<HoloPlanLimits> for pb::HoloPlanLimits {
+    fn from(value: HoloPlanLimits) -> Self {
+        Self {
+            max_layers: value.max_layers,
+            max_objects: value.max_objects,
+            max_resolved_bytes: value.max_resolved_bytes,
+        }
+    }
+}
+
+impl From<pb::HoloPlanLimits> for HoloPlanLimits {
+    fn from(value: pb::HoloPlanLimits) -> Self {
+        Self {
+            max_layers: value.max_layers,
+            max_objects: value.max_objects,
+            max_resolved_bytes: value.max_resolved_bytes,
+        }
+    }
+}
+
+impl From<HoloPlanBlocker> for pb::HoloPlanBlocker {
+    fn from(value: HoloPlanBlocker) -> Self {
+        Self {
+            kind: value.kind,
+            error_code: value.error_code,
+            message: value.message,
+        }
+    }
+}
+
+impl From<pb::HoloPlanBlocker> for HoloPlanBlocker {
+    fn from(value: pb::HoloPlanBlocker) -> Self {
+        Self {
+            kind: value.kind,
+            error_code: value.error_code,
+            message: value.message,
+        }
+    }
+}
+
+impl From<HoloPlan> for pb::HoloPlan {
+    fn from(value: HoloPlan) -> Self {
+        Self {
+            archive_kappa: value.archive_kappa,
+            archive_fingerprint: value.archive_fingerprint,
+            application_kappa: value.application_kappa,
+            execution_target: value.execution_target,
+            packaging: value.packaging,
+            primary_layer: value.primary_layer,
+            capabilities: Some(value.capabilities.into()),
+            layers: value.layers.into_iter().map(Into::into).collect(),
+            children: value.children.into_iter().map(Into::into).collect(),
+            resolved_object_count: value.resolved_object_count,
+            resolved_bytes: value.resolved_bytes,
+            limits: Some(value.limits.into()),
+            runnable: value.runnable,
+            blockers: value.blockers.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<pb::HoloPlan> for HoloPlan {
+    type Error = LiveError;
+
+    fn try_from(value: pb::HoloPlan) -> Result<Self> {
+        Ok(Self {
+            archive_kappa: value.archive_kappa,
+            archive_fingerprint: value.archive_fingerprint,
+            application_kappa: value.application_kappa,
+            execution_target: value.execution_target,
+            packaging: value.packaging,
+            primary_layer: value.primary_layer,
+            capabilities: value
+                .capabilities
+                .ok_or_else(|| {
+                    LiveError::Protocol("gRPC holo plan has no capabilities object".to_owned())
+                })?
+                .into(),
+            layers: value
+                .layers
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_>>()?,
+            children: value.children.into_iter().map(Into::into).collect(),
+            resolved_object_count: value.resolved_object_count,
+            resolved_bytes: value.resolved_bytes,
+            limits: value
+                .limits
+                .ok_or_else(|| LiveError::Protocol("gRPC holo plan has no limits".to_owned()))?
+                .into(),
+            runnable: value.runnable,
+            blockers: value.blockers.into_iter().map(Into::into).collect(),
+        })
+    }
+}
+
 impl From<ResidentHolo> for pb::ResidentHolo {
     fn from(value: ResidentHolo) -> Self {
         Self {
@@ -978,6 +1162,35 @@ mod tests {
             RpcRequest::FilesRename { id, filename }
                 if id == "blake3:file" && filename == "notes.txt"
         ));
+
+        let request = RpcRequest::HoloPlan {
+            kappa: "blake3:archive".to_owned(),
+        };
+        let decoded = RpcRequest::try_from(pb::RpcRequest::from(request)).expect("decode plan");
+        assert!(matches!(
+            decoded,
+            RpcRequest::HoloPlan { kappa } if kappa == "blake3:archive"
+        ));
+    }
+
+    #[test]
+    fn holo_plan_round_trip_preserves_explanation_without_payloads() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures/wasm-app/hologram.json");
+        let compiled = crate::compile::compile_manifest(&manifest).expect("compile fixture");
+        let plan = crate::holo::plan_bytes(&compiled.bytes).expect("plan fixture");
+
+        let decoded =
+            RpcResponse::try_from(pb::RpcResponse::from(RpcResponse::HoloPlan(plan.clone())))
+                .expect("decode plan response");
+
+        let RpcResponse::HoloPlan(decoded_plan) = decoded else {
+            panic!("unexpected plan response")
+        };
+        assert_eq!(decoded_plan, plan.clone());
+        let json = serde_json::to_value(plan).expect("serialize plan");
+        assert!(json["layers"][0].get("content").is_none());
+        assert!(json["layers"][0].get("bytes").is_none());
     }
 
     #[test]

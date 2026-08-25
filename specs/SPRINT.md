@@ -81,8 +81,8 @@ request admitted by grant
 
 ### Interruption — Desktop watched application projects
 
-- [x] Add/remove and persist local source directories containing
-  `hologram.json` in the Tauri shell.
+- [x] Add/remove local source directories containing `hologram.json` through
+  the Tauri adapter and persist them with the reusable watch engine.
 - [x] Recursively watch and debounce relevant file changes without writing
   build output into the source directory.
 - [x] Compile and import through the existing CLI/service boundaries; retain
@@ -93,6 +93,13 @@ request admitted by grant
   real `.holo` catalog listing, and verified inspection detail.
 - [x] Add focused watcher tests, frontend/desktop builds, documentation, and
   full verification evidence.
+- [x] Extract watch persistence, event filtering, debounce, and build-state
+  orchestration from `src-tauri` into the Tauri-independent
+  `hologram-application-watch` workspace crate; retain only path authorization,
+  fixed sidecar invocation, and UI events in the desktop adapter.
+- [x] Make server build, install, CI, and release commands select the root
+  `hologram-live` package and `hologram` binary explicitly so hosted builds do
+  not depend on Tauri or Node.js.
 
 Acceptance:
 
@@ -115,6 +122,16 @@ tests, ANSI-diagnostic coverage, desktop Clippy, production frontend/Tauri
 builds, the 13-page documentation build, and full repository verification all
 pass (135 library tests, 15 CLI tests, 9 BDD scenarios / 80 steps, optimized
 build, and release smoke).
+
+Boundary follow-up (2026-08-25): `apps/desktop/src-tauri/src/holo_watch.rs` is
+now a thin adapter over `crates/hologram-application-watch`. The extracted
+crate's five tests include a real debounced register/build/persist/remove cycle;
+the server and desktop workspaces compile independently, and server recipes and
+release workflows explicitly build `--package hologram-live --bin hologram`.
+The server's declared MSRV is corrected from 1.88 to Wasmtime 46's actual Rust
+1.94 floor, while development and release jobs consistently install 1.97.1.
+The new product-boundary gate rejects Tauri or application-watch dependencies
+in the resolved standalone-server graph.
 
 ### Slice 1 — Canonical capability source
 

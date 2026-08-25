@@ -21,6 +21,24 @@ The kernel owns configuration, module dependency resolution, lifecycle, request 
 
 Business capabilities live in modules.
 
+## Source and deployment boundary
+
+The root `hologram-live` package is the standalone server and CLI. Desktop
+source does not contain or link a second server implementation:
+
+```text
+src/                                  server, CLI, protocol, and runtime
+crates/hologram-application-watch/    reusable watch/debounce engine
+apps/desktop/src-tauri/               native permissions and sidecar adapter
+apps/desktop/src/                     webview frontend
+```
+
+`cargo build --release --locked --package hologram-live --bin hologram` is the
+server release and future cloud-image boundary. It does not build Tauri,
+WebKit, Node.js, or the frontend. The desktop preparation step copies that root
+binary into an ignored Tauri packaging directory; the copy is an artifact, not
+server source.
+
 ## Modules
 
 Modules are trusted Rust implementations compiled into the binary for v1. Each module declares:
@@ -57,7 +75,7 @@ Kameo provides process-local actors with bounded mailboxes, actor links, and sup
 
 ## Desktop
 
-The Tauri application in `apps/desktop` bundles and controls the `hologram` executable as a sidecar. Its commands expose narrow lifecycle, workspace, and archive operations rather than arbitrary shell execution. Module discovery follows `LiveClient` routing, so the configured authority may be the local service or a future cloud endpoint. Local application development is deliberately desktop-owned: the native picker grants the Tauri shell access to a selected directory containing `hologram.json`; a persistent recursive watcher debounces changes, compiles into the app cache, and imports through the existing CLI/catalog boundary. The webview lists and inspects the resulting archives only through `holo list` and `holo inspect`, while the service never receives ambient host-filesystem authority. Successful changed builds replace the prior watched catalog variant, failed builds preserve the last good archive, and removing a watch leaves its final immutable archive. The desktop build remains isolated from the server crate.
+The Tauri application in `apps/desktop` bundles and controls the `hologram` executable as a sidecar. Its commands expose narrow lifecycle, workspace, and archive operations rather than arbitrary shell execution. Module discovery follows `LiveClient` routing, so the configured authority may be the local service or a future cloud endpoint. Local application path authorization is deliberately desktop-owned: the native picker grants the adapter access to a selected directory containing `hologram.json`. The Tauri-independent `hologram-application-watch` crate owns persistent registrations, recursive event filtering, debounce, and build-state transitions; the adapter supplies desktop configuration/cache paths, fixed compile/import calls, and UI events. The webview lists and inspects resulting archives only through `holo list` and `holo inspect`, while the service never receives ambient host-filesystem authority. Successful changed builds replace the prior watched catalog variant, failed builds preserve the last good archive, and removing a watch leaves its final immutable archive. The desktop build remains isolated from the server crate.
 
 ## Storage
 

@@ -39,7 +39,7 @@ just desktop-build
 ### Standalone server
 
 ```bash
-cargo build --release --locked
+cargo build --release --locked --package hologram-live --bin hologram
 ./target/release/hologram init
 ./target/release/hologram start
 ./target/release/hologram status
@@ -486,6 +486,25 @@ browser/API ───── JSON/HTTP ───────┘    config · auth
 
 The kernel owns configuration, lifecycle, capability-aware routing, authenticated dispatch, tracing, audit, update coordination, and actor supervision primitives. Product behavior belongs to modules. Kameo actors are used only for long-lived mutable state or bounded background work; ordinary request handlers remain ordinary Rust code.
 
+The source tree enforces the product boundary:
+
+```text
+src/                                  standalone server, CLI, and shared protocol/runtime
+crates/hologram-application-watch/    Tauri-independent local development engine
+apps/desktop/src-tauri/               thin native shell and sidecar adapter only
+apps/desktop/src/                     webview frontend
+```
+
+The desktop never owns a second server implementation. Its preparation script
+builds the root `hologram-live` package explicitly and copies the resulting
+`hologram` executable into Tauri's ignored sidecar staging directory. The
+application-watch crate owns reusable persistence and debounce behavior outside
+`src-tauri`; the desktop adapter supplies user-approved paths, fixed
+compile/import commands, and UI events. A cloud server build therefore needs
+only Rust and the root package—no Tauri, WebKit, Node.js, or desktop source.
+The `product-boundary` verification gate inspects the resolved Cargo graph and
+fails if Tauri or the application-watch crate enters the standalone server.
+
 ## Releases
 
 Server and desktop versions advance independently and create separate GitHub Releases:
@@ -514,7 +533,7 @@ This builds the release binary and installs `hologram` into `~/.local/bin`. Set 
 
 ## Development
 
-The crate declares Rust 1.88 as its minimum supported version. `rust-toolchain.toml` currently pins Rust 1.97.1 for repository development. The desktop and documentation projects also require Node.js and npm; `just` is used for the common project recipes.
+The server crate declares Rust 1.94 as its minimum supported version, matching Wasmtime 46's compiler floor. `rust-toolchain.toml` currently pins Rust 1.97.1 for repository development and release CI. The desktop and documentation projects also require Node.js and npm; `just` is used for the common project recipes.
 
 Run the complete server verification path with:
 

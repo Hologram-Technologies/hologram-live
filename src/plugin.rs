@@ -57,7 +57,7 @@ pub mod pb {
 pub const SOCKET_ENV: &str = "HOLOGRAM_PLUGIN_SOCKET";
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
-const INVOKE_TIMEOUT: Duration = Duration::from_secs(120);
+const INVOKE_TIMEOUT: Duration = Duration::from_mins(2);
 const CONNECT_ATTEMPTS: u32 = 50;
 const CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const MAX_RESTARTS: u32 = 3;

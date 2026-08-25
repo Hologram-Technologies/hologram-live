@@ -20,11 +20,12 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `uor-hologram` (`archive`, `space`)          | canonical v2–v4 `.holo` archives and application manifests        |
 | `wasmtime`                                   | in-process Wasm execution for resident `.holo` archives           |
 | `sha2`                                       | sha256 pinning of third-party plugin executables                  |
+| `notify` (`hologram-application-watch`)      | portable source-project filesystem observation and debounce       |
 | Tauri (`apps/desktop`)                       | desktop shell and managed `hologram` sidecar                      |
 | Cucumber (development only)                  | executable Gherkin public-boundary scenarios                      |
 
 The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary. Third-party plugin modules run as separate subprocesses speaking gRPC over a Unix socket rather than as loaded native code.
 
-Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the daemon's Cargo dependency graph.
+Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the server's Cargo dependency graph. The small `hologram-application-watch` workspace crate is Tauri-independent and injected into the desktop adapter; the standalone `hologram-live` server package does not depend on it.
 
 Kappa Registry remains an external service/project. Hologram Live integrates it through the registry provider boundary rather than adding its workspace crates to this dependency graph.

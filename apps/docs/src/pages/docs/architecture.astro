@@ -30,7 +30,15 @@ browser ─────── JSON + HTTP ───────┘</code></pre>
   <p>The native client negotiates operation capabilities before choosing a local or remote target. Resources remain attached to the authority that created them, and mutations do not silently retry after an ambiguous transport failure.</p>
 
   <h2>Desktop</h2>
-  <p>The Tauri application bundles <code>hologram</code> as a sidecar. The webview receives only narrow lifecycle and status commands—not a general-purpose shell.</p>
+  <p>The Tauri application bundles <code>hologram</code> as a sidecar. The webview receives only narrow lifecycle and status commands—not a general-purpose shell. There is no server implementation under <code>src-tauri</code>.</p>
+
+  <h2>Repository and deployment boundary</h2>
+  <pre><code>src/                                  standalone server + CLI
+crates/hologram-application-watch/    reusable watch/debounce engine
+apps/desktop/src-tauri/               native adapter only
+apps/desktop/src/                     webview frontend</code></pre>
+  <p>The root <code>hologram-live</code> package is the deployable server product. <code>cargo build --release --locked --package hologram-live --bin hologram</code> builds it without compiling Tauri, WebKit, or the desktop frontend. Server release tags use that exact package and binary selection for Linux, macOS, and Windows artifacts.</p>
+  <p>The application-watch engine is a small Tauri-independent workspace crate. It owns registration persistence, filesystem event filtering, debounce workers, and build state; a host injects paths, compile/import behavior, and change notification. The desktop adapter provides user-approved local paths and fixed sidecar commands. A future hosted development control plane can reuse the engine with a different storage/build adapter without importing desktop dependencies or receiving ambient access to a user's workstation.</p>
 
   <h2>Identity and permissions</h2>
   <p>The protocol already authenticates bearer credentials and authorizes stable operation IDs. The identity module will add signup, login, refresh, logout, principal, grant, and revocation operations. Fine-grained policy belongs in the shared authorizer at dispatch—not in individual HTTP handlers—so local and cloud enforcement cannot diverge.</p>

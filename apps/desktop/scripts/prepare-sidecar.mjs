@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repository = resolve(desktop, "../..");
 const release = process.argv.includes("--release");
-const cargoArgs = ["build", "--locked", "--bin", "hologram"];
+const cargoArgs = ["build", "--locked", "--package", "hologram-live", "--bin", "hologram"];
 if (release) cargoArgs.push("--release");
 execFileSync("cargo", cargoArgs, { cwd: repository, stdio: "inherit" });
 

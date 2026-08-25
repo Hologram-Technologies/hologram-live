@@ -8,14 +8,15 @@ import { sitePath } from '../../lib/site';
 
   <h2>Prerequisites</h2>
   <ul>
-    <li>Rust 1.88 or newer with Cargo.</li>
+    <li>Rust 1.94 or newer with Cargo. Repository development and release CI use the pinned Rust 1.97.1 toolchain.</li>
     <li><code>just</code> for the repository development recipes.</li>
     <li>Node.js only when building the Astro docs or Tauri desktop frontend.</li>
   </ul>
 
   <h2>Build and initialize</h2>
-  <pre><code>cargo build --release --locked
+  <pre><code>cargo build --release --locked --package hologram-live --bin hologram
 ./target/release/hologram init</code></pre>
+  <p>This selects the standalone server package explicitly. It does not build the Tauri application or require Node.js, WebKit, or desktop tooling, which is the same boundary used by server release artifacts and future cloud images.</p>
   <p>The generated configuration lives at <code>~/.config/hologram/live.toml</code> on every supported platform. Unknown fields are rejected instead of silently ignored.</p>
 
   <h2>Start the service</h2>

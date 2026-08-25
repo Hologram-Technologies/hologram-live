@@ -284,8 +284,11 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
   compiling, ready, and failed states with actionable diagnostics.
 - [x] Add an Applications view that lists real cataloged `.holo` archives and
   renders their verified inspection metadata, directory, layers, and sections.
-- [x] Keep watched-project compilation local to the desktop shell; remote
-  authorities and archive contents cannot request arbitrary host directories.
+- [x] Keep watched-project path authorization local to the desktop adapter;
+  remote authorities and archive contents cannot request arbitrary host
+  directories. Keep reusable registration, persistence, filtering, debounce,
+  and build-state orchestration in a Tauri-independent workspace crate outside
+  `src-tauri`.
 
 Watched-project acceptance:
 
@@ -307,9 +310,22 @@ while retaining that last good κ; restoring valid source recovered Ready; and
 a source edit after removing the watch did not rebuild or delete the final
 archive. The implementation persists registrations in the Tauri application
 configuration, stores generated archives in its cache, ignores dependency/build
-trees, and exposes only fixed compile/import/list/inspect commands. Four desktop
-unit tests, Clippy with warnings denied, production frontend and packaged Tauri
-builds, the Astro site build, and the complete repository verification pass.
+trees, and exposes only fixed compile/import/list/inspect commands. Five watch
+engine tests and the desktop adapter test, Clippy with warnings denied,
+production frontend and packaged Tauri builds, the Astro site build, and the
+complete repository verification pass.
+
+Architecture follow-up (2026-08-25): the watcher engine moved to
+`crates/hologram-application-watch`; the Tauri file now only resolves desktop
+configuration/cache paths, invokes fixed sidecar commands, and emits UI events.
+The extracted engine has five focused tests, including a complete debounced
+register/build/persist/remove cycle. Server builds and releases explicitly
+select the root `hologram-live` package and `hologram` binary, preserving a
+Tauri- and Node-independent cloud deployment boundary. The server manifest now
+declares Rust 1.94, the actual floor imposed by Wasmtime 46, and release jobs
+install the repository's pinned Rust 1.97.1 toolchain consistently. A permanent
+product-boundary gate inspects the resolved server graph and rejects Tauri or
+application-watch dependencies.
 
 ### Source transformations
 

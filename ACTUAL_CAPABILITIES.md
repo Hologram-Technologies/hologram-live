@@ -38,7 +38,10 @@ This document is deliberately strict about what the current stable build does an
   user-selected application-directory watches, debounces recursive changes,
   compiles/imports outside the source tree, and lists/inspects the resulting
   verified `.holo` archives through the real catalog boundary while preserving
-  the last good archive after a failed build.
+  the last good archive after a failed build. The persistence, filtering,
+  debounce, and build-state engine is a Tauri-independent workspace crate;
+  `src-tauri` retains only native path authority, fixed sidecar calls, and UI
+  event delivery.
 - Responsive Astro documentation website.
 
 ## Present as an extension seam, not implemented by the default module set

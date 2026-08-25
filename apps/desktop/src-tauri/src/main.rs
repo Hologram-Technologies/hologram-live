@@ -255,8 +255,8 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(holo_watch::HoloWatchState::default())
         .setup(|app| {
+            holo_watch::initialize(app)?;
             let open = MenuItem::with_id(app, "open", "Open Hologram", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
             let status = MenuItem::with_id(
@@ -308,7 +308,6 @@ fn main() {
             }
             tray.build(app)?;
             let handle = app.handle().clone();
-            holo_watch::restore(&handle);
             tauri::async_runtime::spawn(async move {
                 let running = run_hologram(&handle, &["status"]).await.is_ok();
                 update_menu_bar(&handle, running);

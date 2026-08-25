@@ -8,7 +8,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <h2>Run in development</h2>
   <pre><code>just tauri
 # equivalent to: cd apps/desktop &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
-  <p>The preparation script builds the repository's <code>hologram</code> binary and copies it to Tauri's target-specific sidecar location before the desktop shell starts.</p>
+  <p>The preparation script explicitly builds the root <code>hologram-live</code> package's <code>hologram</code> binary and copies it to Tauri's ignored, target-specific sidecar staging location before the desktop shell starts. The server source remains outside <code>src-tauri</code>.</p>
 
   <h2>Build a release bundle</h2>
   <pre><code>just tauri build</code></pre>
@@ -24,7 +24,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
     <li>Choose <strong>Stop watching</strong> when the development loop is finished. The final immutable catalog archive remains available until it is explicitly removed.</li>
   </ol>
   <div class="note"><strong>Safe failure behavior</strong>A failed compile changes the watch to <strong>Failed</strong> and shows the compiler diagnostic, but it does not discard the last successful archive. Fixing the source triggers another build and returns the watch to <strong>Ready</strong>.</div>
-  <p>Watch registrations are stored in the desktop application's configuration and restored after restart. Generated archives live under the desktop cache, never inside the selected project, which prevents output-triggered rebuild loops. Common dependency and build trees such as <code>.git</code>, <code>.venv</code>, <code>node_modules</code>, <code>target</code>, and <code>__pycache__</code> are ignored.</p>
+  <p>Watch registrations are stored in the desktop application's configuration and restored after restart. Generated archives live under the desktop cache, never inside the selected project, which prevents output-triggered rebuild loops. Common dependency and build trees such as <code>.git</code>, <code>.venv</code>, <code>node_modules</code>, <code>target</code>, and <code>__pycache__</code> are ignored. The reusable registry, persistence, filtering, and debounce implementation lives in <code>crates/hologram-application-watch</code>; <code>src-tauri</code> only supplies desktop paths, fixed sidecar operations, and UI event delivery.</p>
 
   <h2>Command boundary</h2>
   <p>The webview can invoke these narrow application commands:</p>
@@ -49,5 +49,5 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
     <li><code>holo_catalog_inspect</code></li>
   </ul>
   <div class="note"><strong>No arbitrary shell bridge</strong>Each command maps to one fixed sidecar argument, keeping the browser-facing authority narrow.</div>
-  <p><code>modules_list</code> reads Hologram's negotiated module manifest. The chat view creates and switches among durable conversation threads, then sends messages through the enabled chat module. The files view uses native open/save dialogs, uploads and renames files, lists content-addressed metadata, and downloads the stored bytes. The Applications view keeps host-directory selection and watching in the trusted Tauri shell, invokes only the fixed compile/import/list/inspect operations, and gives the webview structured results rather than a general filesystem or shell API. Because the sidecar uses the normal Hologram configuration, the service-backed surfaces can target a local service or a future authenticated cloud endpoint; host directory watching remains local-only.</p>
+  <p><code>modules_list</code> reads Hologram's negotiated module manifest. The chat view creates and switches among durable conversation threads, then sends messages through the enabled chat module. The files view uses native open/save dialogs, uploads and renames files, lists content-addressed metadata, and downloads the stored bytes. The Applications view keeps host-directory selection in the trusted Tauri adapter, invokes only the fixed compile/import/list/inspect operations, and gives the webview structured results rather than a general filesystem or shell API. Because the sidecar uses the normal Hologram configuration, the service-backed surfaces can target a local service or a future authenticated cloud endpoint; workstation directory authorization remains local-only.</p>
 </DocsLayout>

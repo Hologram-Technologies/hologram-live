@@ -1,6 +1,12 @@
+use crate::application_plan::{
+    layer_kind_name, ApplicationPlanReport, ProviderAvailability, ResolutionSource,
+};
 use crate::error::{ApiError, LiveError};
+use hologram::space::LayerKind;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+pub use crate::application_plan::HoloIdentity;
 
 pub const PROTOCOL_VERSION: u16 = 1;
 
@@ -21,6 +27,7 @@ pub mod operation {
     pub const HOLO_IMPORT: &str = "holo.import";
     pub const HOLO_LIST: &str = "holo.list";
     pub const HOLO_INSPECT: &str = "holo.inspect";
+    pub const HOLO_PLAN: &str = "holo.plan";
     pub const HOLO_VERIFY: &str = "holo.verify";
     pub const HOLO_REMOVE: &str = "holo.remove";
     pub const HOLO_LOAD: &str = "holo.load";
@@ -155,7 +162,12 @@ pub struct HoloDirectory {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HoloInspection {
+    /// Physical archive object kappa (BLAKE3 of the complete file).
     pub kappa: String,
+    /// Canonical application-manifest kappa, absent for structural archives
+    /// that do not contain an application manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application_kappa: Option<String>,
     pub name: String,
     pub format_version: u16,
     pub byte_length: u64,
@@ -166,9 +178,189 @@ pub struct HoloInspection {
     pub directory_embedded: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HoloPlanObject {
+    pub kappa: String,
+    pub resolution_source: Option<String>,
+    pub byte_length: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HoloPlanProvider {
+    pub status: String,
+    pub name: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HoloPlanLayer {
+    pub position: u32,
+    pub kind: String,
+    pub content_kappa: String,
+    pub entry: String,
+    pub architecture: Option<String>,
+    pub surface: Option<String>,
+    pub engine: Option<String>,
+    pub primary: bool,
+    pub resolution_source: Option<String>,
+    pub byte_length: Option<u64>,
+    pub provider: HoloPlanProvider,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HoloPlanLimits {
+    pub max_layers: u64,
+    pub max_objects: u64,
+    pub max_resolved_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HoloPlanBlocker {
+    pub kind: String,
+    pub error_code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HoloPlan {
+    pub archive_kappa: String,
+    pub archive_fingerprint: String,
+    pub application_kappa: String,
+    pub execution_target: String,
+    pub packaging: String,
+    pub primary_layer: Option<u32>,
+    pub capabilities: HoloPlanObject,
+    pub layers: Vec<HoloPlanLayer>,
+    pub children: Vec<HoloChild>,
+    pub resolved_object_count: u64,
+    pub resolved_bytes: u64,
+    pub limits: HoloPlanLimits,
+    pub runnable: bool,
+    pub blockers: Vec<HoloPlanBlocker>,
+}
+
+impl HoloPlan {
+    pub fn from_report(report: &ApplicationPlanReport, execution_target: &str) -> Self {
+        let layers = report
+            .layers
+            .iter()
+            .map(|layer| {
+                let object = report.objects.get(&layer.content_kappa);
+                let (architecture, surface, engine) = match layer.kind {
+                    LayerKind::RootfsImage => (Some(layer.aux.clone()), None, None),
+                    LayerKind::View => (None, Some(layer.aux.clone()), None),
+                    LayerKind::InferenceModel => (None, None, Some(layer.aux.clone())),
+                    LayerKind::WasmCodemodule | LayerKind::TensorPlan => (None, None, None),
+                };
+                HoloPlanLayer {
+                    position: layer.position,
+                    kind: layer_kind_name(layer.kind).to_owned(),
+                    content_kappa: layer.content_kappa.clone(),
+                    entry: layer.entry.clone(),
+                    architecture,
+                    surface,
+                    engine,
+                    primary: layer.primary,
+                    resolution_source: layer.resolution_source.as_ref().map(resolution_source_name),
+                    byte_length: object
+                        .map(|object| object.bytes.len().try_into().unwrap_or(u64::MAX)),
+                    provider: provider_report(&layer.provider),
+                }
+            })
+            .collect();
+        let children = report
+            .children
+            .iter()
+            .map(|child| HoloChild {
+                position: child.position,
+                application_kappa: child.application_kappa.clone(),
+                capabilities_kappa: child.capabilities_kappa.clone(),
+            })
+            .collect();
+        let blockers = report
+            .blockers
+            .iter()
+            .map(|blocker| HoloPlanBlocker {
+                kind: blocker.kind().to_owned(),
+                error_code: blocker.error_code().to_owned(),
+                message: blocker.message(&report.identity.application_kappa),
+            })
+            .collect();
+        Self {
+            archive_kappa: report.identity.archive_kappa.clone(),
+            archive_fingerprint: report.identity.archive_fingerprint.clone(),
+            application_kappa: report.identity.application_kappa.clone(),
+            execution_target: execution_target.to_owned(),
+            packaging: packaging(report),
+            primary_layer: report.primary_layer,
+            capabilities: plan_object(report, &report.requires_kappa),
+            layers,
+            children,
+            resolved_object_count: report.objects.len().try_into().unwrap_or(u64::MAX),
+            resolved_bytes: report.resolved_bytes,
+            limits: HoloPlanLimits {
+                max_layers: report.limits.max_layers.try_into().unwrap_or(u64::MAX),
+                max_objects: report.limits.max_objects.try_into().unwrap_or(u64::MAX),
+                max_resolved_bytes: report.limits.max_resolved_bytes,
+            },
+            runnable: report.runnable(),
+            blockers,
+        }
+    }
+}
+
+fn plan_object(report: &ApplicationPlanReport, kappa: &str) -> HoloPlanObject {
+    let object = report.objects.get(kappa);
+    HoloPlanObject {
+        kappa: kappa.to_owned(),
+        resolution_source: object.map(|object| resolution_source_name(&object.source)),
+        byte_length: object.map(|object| object.bytes.len().try_into().unwrap_or(u64::MAX)),
+    }
+}
+
+fn provider_report(provider: &ProviderAvailability) -> HoloPlanProvider {
+    match provider {
+        ProviderAvailability::Unchecked => HoloPlanProvider {
+            status: "unchecked".to_owned(),
+            name: None,
+            reason: None,
+        },
+        ProviderAvailability::Available { provider } => HoloPlanProvider {
+            status: "available".to_owned(),
+            name: Some(provider.clone()),
+            reason: None,
+        },
+        ProviderAvailability::Unavailable { reason } => HoloPlanProvider {
+            status: "unavailable".to_owned(),
+            name: None,
+            reason: Some(reason.clone()),
+        },
+    }
+}
+
+fn packaging(report: &ApplicationPlanReport) -> String {
+    if report.embedded_object_count == 0 {
+        "thin"
+    } else if report.embedded_object_count >= report.referenced_object_count {
+        "fat"
+    } else {
+        "hybrid"
+    }
+    .to_owned()
+}
+
+fn resolution_source_name(source: &ResolutionSource) -> String {
+    match source {
+        ResolutionSource::Embedded => "embedded".to_owned(),
+        ResolutionSource::LocalStore => "local_store".to_owned(),
+        ResolutionSource::ConfiguredResolver(name) => format!("configured:{name}"),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ResidentHolo {
     pub kappa: String,
+    pub state: String,
     pub input_count: usize,
     pub output_count: usize,
     pub resident_bytes: usize,
@@ -264,6 +456,9 @@ pub enum RpcRequest {
     HoloInspect {
         kappa: String,
     },
+    HoloPlan {
+        kappa: String,
+    },
     HoloVerify {
         kappa: String,
     },
@@ -347,6 +542,7 @@ impl RpcRequest {
             Self::HoloImport { .. } => operation::HOLO_IMPORT,
             Self::HoloList => operation::HOLO_LIST,
             Self::HoloInspect { .. } => operation::HOLO_INSPECT,
+            Self::HoloPlan { .. } => operation::HOLO_PLAN,
             Self::HoloVerify { .. } => operation::HOLO_VERIFY,
             Self::HoloRemove { .. } => operation::HOLO_REMOVE,
             Self::HoloLoad { .. } => operation::HOLO_LOAD,
@@ -382,6 +578,7 @@ impl RpcRequest {
             | Self::FilesGet { .. }
             | Self::HoloList
             | Self::HoloInspect { .. }
+            | Self::HoloPlan { .. }
             | Self::HoloVerify { .. }
             | Self::HoloResident
             | Self::HistoryList { .. }
@@ -404,6 +601,7 @@ pub enum RpcResponse {
     Object(ObjectMetadata),
     ObjectContent(ObjectContent),
     HoloInspection(HoloInspection),
+    HoloPlan(HoloPlan),
     HoloList(Vec<HoloInspection>),
     HoloResident(Vec<ResidentHolo>),
     HoloRun(HoloRunResult),

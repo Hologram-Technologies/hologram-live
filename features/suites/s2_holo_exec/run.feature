@@ -11,7 +11,9 @@ Feature: Resident .holo wasm execution
     Given a fresh Hologram home
     And an initialized configuration on a test port
     When I import the compiled archive
-    And I load the archive
+    And I plan the imported archive
+    Then the resident plan identifies the imported archive
+    When I load the archive
     And I run the archive with input "hello hologram"
     Then the run output is "HELLO HOLOGRAM"
     And the archive appears in the resident list

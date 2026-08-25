@@ -26,7 +26,10 @@ struct CompileReport {
     output: PathBuf,
     layer_count: usize,
     byte_length: u64,
+    archive_kappa: String,
     archive_fingerprint: String,
+    application_kappa: String,
+    capabilities_kappa: String,
     packaging: &'static str,
 }
 
@@ -35,6 +38,7 @@ struct CheckReport {
     manifest: PathBuf,
     layer_count: usize,
     schema_version: u16,
+    capabilities_kappa: String,
     valid: bool,
 }
 
@@ -53,8 +57,9 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
             &cli,
             &CheckReport {
                 manifest: args.manifest,
-                layer_count: checked.layers.len(),
-                schema_version: checked.schema_version,
+                layer_count: checked.specification.layers.len(),
+                schema_version: checked.specification.schema_version,
+                capabilities_kappa: checked.capabilities_kappa,
                 valid: true,
             },
         );
@@ -71,7 +76,11 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
     let output = args
         .output
         .unwrap_or_else(|| args.manifest.with_extension("holo"));
-    let inspection = inspect_bytes("local", &output.to_string_lossy(), &compiled.bytes)?;
+    let inspection = inspect_bytes(
+        &compiled.identity.archive_kappa,
+        &output.to_string_lossy(),
+        &compiled.bytes,
+    )?;
     tokio::fs::write(&output, &compiled.bytes)
         .await
         .map_err(|error| LiveError::io(&output, error))?;
@@ -81,7 +90,10 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
             output,
             layer_count: compiled.layer_count,
             byte_length: inspection.byte_length,
-            archive_fingerprint: inspection.archive_fingerprint,
+            archive_kappa: compiled.identity.archive_kappa,
+            archive_fingerprint: compiled.identity.archive_fingerprint,
+            application_kappa: compiled.identity.application_kappa,
+            capabilities_kappa: compiled.capabilities_kappa,
             packaging: match compiled.packaging {
                 HoloPackaging::Fat => "fat",
                 HoloPackaging::Thin => "thin",

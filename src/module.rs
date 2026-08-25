@@ -221,6 +221,7 @@ mod tests {
         let config = crate::config::ModulesConfig::default();
         let registry = ModuleRegistry::build(&config.enabled).expect("resolve");
         assert!(registry.supports(crate::protocol::operation::HOLO_INSPECT));
+        assert!(registry.supports(crate::protocol::operation::HOLO_PLAN));
         assert!(registry.supports(crate::protocol::operation::HOLO_RUN));
     }
 
@@ -235,6 +236,10 @@ mod tests {
         assert!(document.paths.paths.contains_key("/api/v1/objects"));
         assert!(document.paths.paths.contains_key("/api/v1/objects/{id}"));
         assert!(document.paths.paths.contains_key("/api/v1/holo/{kappa}"));
+        assert!(document
+            .paths
+            .paths
+            .contains_key("/api/v1/holo/{kappa}/plan"));
         assert!(document.paths.paths.contains_key("/api/v1/chat/{id}"));
         assert!(document.paths.paths.contains_key("/api/v1/models"));
         assert!(document.paths.paths.contains_key("/api/v1/history/{id}"));

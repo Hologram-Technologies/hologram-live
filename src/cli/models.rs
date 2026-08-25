@@ -35,8 +35,9 @@ pub async fn run(cli: Cli, args: ModelsArgs) -> Result<()> {
                 other => helpers::unexpected(other),
             }
         }
-        ModelsCommand::Remove { id } => {
-            helpers::expect_accepted(helpers::call(&cli, RpcRequest::ModelRemove { id }).await?)
-        }
+        ModelsCommand::Remove { id } => helpers::expect_accepted(
+            &cli,
+            helpers::call(&cli, RpcRequest::ModelRemove { id }).await?,
+        ),
     }
 }

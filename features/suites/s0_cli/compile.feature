@@ -15,5 +15,7 @@ Feature: Compile Hologram applications
     Then the generated manifest is valid
     When I compile the application
     Then the compile command succeeds
+    When I plan the compiled archive directly
+    Then the direct plan is runnable without exposing payload bytes
     When I run the compiled archive directly with input "hello generator"
     Then the run output is "HELLO GENERATOR"

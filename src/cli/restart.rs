@@ -10,7 +10,13 @@ pub async fn run(cli: Cli) -> Result<()> {
     let previous_pid = process::read_pid(&config).ok();
     let _ = client.call(RpcRequest::Shutdown).await;
     process::wait_stopped(&config, previous_pid).await?;
-    process::start_daemon(&config, &path).await?;
-    println!("hologram daemon restarted");
-    Ok(())
+    let pid = process::start_daemon(&config, &path).await?;
+    if cli.json {
+        helpers::print(
+            &cli,
+            &serde_json::json!({ "status": "restarted", "pid": pid }),
+        )
+    } else {
+        helpers::message(&cli, "restarted", "hologram daemon restarted")
+    }
 }

@@ -1,4 +1,4 @@
-use super::Cli;
+use super::{helpers, Cli};
 use clap::Args;
 use hologram_live::error::{LiveError, Result};
 use hologram_live::module::ModuleRegistry;
@@ -21,7 +21,14 @@ pub async fn run(cli: Cli, args: OpenapiArgs) -> Result<()> {
         tokio::fs::write(&path, json)
             .await
             .map_err(|error| LiveError::io(&path, error))?;
-        println!("wrote {}", path.display());
+        if cli.json {
+            helpers::print(
+                &cli,
+                &serde_json::json!({ "status": "written", "output": path }),
+            )?;
+        } else {
+            println!("wrote {}", path.display());
+        }
     } else {
         println!("{json}");
     }

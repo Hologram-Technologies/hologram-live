@@ -77,6 +77,7 @@ pub fn init(tracing: &TracingConfig, telemetry: &TelemetryConfig) -> Result<Trac
                 .with(filter_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
                         .json()
                         .with_target(tracing.include_target)
                         .with_thread_ids(tracing.include_thread_ids),
@@ -87,6 +88,7 @@ pub fn init(tracing: &TracingConfig, telemetry: &TelemetryConfig) -> Result<Trac
                 .with(filter_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
                         .compact()
                         .with_target(tracing.include_target)
                         .with_thread_ids(tracing.include_thread_ids),
@@ -97,6 +99,7 @@ pub fn init(tracing: &TracingConfig, telemetry: &TelemetryConfig) -> Result<Trac
                 .with(filter_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
                         .pretty()
                         .with_target(tracing.include_target)
                         .with_thread_ids(tracing.include_thread_ids),
@@ -110,6 +113,7 @@ pub fn init(tracing: &TracingConfig, telemetry: &TelemetryConfig) -> Result<Trac
                 .with(filter_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
                         .json()
                         .with_target(tracing.include_target)
                         .with_thread_ids(tracing.include_thread_ids),
@@ -119,6 +123,7 @@ pub fn init(tracing: &TracingConfig, telemetry: &TelemetryConfig) -> Result<Trac
                 .with(filter_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
                         .compact()
                         .with_target(tracing.include_target)
                         .with_thread_ids(tracing.include_thread_ids),
@@ -128,6 +133,7 @@ pub fn init(tracing: &TracingConfig, telemetry: &TelemetryConfig) -> Result<Trac
                 .with(filter_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
                         .pretty()
                         .with_target(tracing.include_target)
                         .with_thread_ids(tracing.include_thread_ids),

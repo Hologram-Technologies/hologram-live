@@ -5,6 +5,7 @@ use hologram_live::error::{LiveError, Result};
 use hologram_live::process;
 use hologram_live::protocol::{self, RpcRequest, RpcResponse};
 use serde::Serialize;
+use serde_json::json;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
@@ -44,9 +45,25 @@ pub fn print<T: Serialize + Debug>(cli: &Cli, value: &T) -> Result<()> {
     Ok(())
 }
 
-pub fn expect_accepted(response: RpcResponse) -> Result<()> {
+pub fn message(cli: &Cli, status: &str, message: impl Into<String>) -> Result<()> {
+    let message = message.into();
+    if cli.json {
+        print(cli, &json!({ "status": status, "message": message }))
+    } else {
+        println!("{message}");
+        Ok(())
+    }
+}
+
+pub fn expect_accepted(cli: &Cli, response: RpcResponse) -> Result<()> {
     match response {
-        RpcResponse::Accepted => Ok(()),
+        RpcResponse::Accepted => {
+            if cli.json {
+                print(cli, &json!({ "accepted": true }))
+            } else {
+                Ok(())
+            }
+        }
         other => unexpected(other),
     }
 }
@@ -67,6 +84,9 @@ pub fn request_for_operation(value: &str) -> Result<RpcRequest> {
         operation::REGISTRY_LIST => Ok(RpcRequest::RegistryList),
         operation::FILES_LIST => Ok(RpcRequest::FilesList),
         operation::HOLO_LIST => Ok(RpcRequest::HoloList),
+        operation::HOLO_PLAN => Ok(RpcRequest::HoloPlan {
+            kappa: "blake3:route-explanation".to_owned(),
+        }),
         operation::HOLO_RESIDENT => Ok(RpcRequest::HoloResident),
         operation::HISTORY_LIST => Ok(RpcRequest::HistoryList {
             include_archived: false,

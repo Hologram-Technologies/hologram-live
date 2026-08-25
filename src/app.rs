@@ -349,6 +349,13 @@ impl AppState {
                     RpcResponse::HoloInspection,
                 )
             }
+            RpcRequest::HoloPlan { kappa } => {
+                let catalog = self.inner.holo_catalog.clone();
+                RpcResponse::from_result(
+                    blocking(move || catalog.plan(&kappa)).await,
+                    RpcResponse::HoloPlan,
+                )
+            }
             RpcRequest::HoloVerify { kappa } => {
                 let catalog = self.inner.holo_catalog.clone();
                 RpcResponse::from_result(
@@ -486,6 +493,7 @@ where
 fn resource_for(request: &RpcRequest) -> Option<String> {
     match request {
         RpcRequest::HoloInspect { kappa }
+        | RpcRequest::HoloPlan { kappa }
         | RpcRequest::HoloVerify { kappa }
         | RpcRequest::HoloRemove { kappa }
         | RpcRequest::HoloLoad { kappa }

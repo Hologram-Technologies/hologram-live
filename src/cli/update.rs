@@ -21,13 +21,19 @@ pub async fn run(cli: Cli, args: UpdateArgs) -> Result<()> {
     match args.command {
         UpdateCommand::Check => helpers::print(&cli, &update::check(&config).await?),
         UpdateCommand::Apply => {
-            println!("installed hologram {}", update::install(&config).await?);
-            Ok(())
+            let version = update::install(&config).await?;
+            if cli.json {
+                helpers::print(
+                    &cli,
+                    &serde_json::json!({ "status": "installed", "version": version }),
+                )
+            } else {
+                helpers::message(&cli, "installed", format!("installed hologram {version}"))
+            }
         }
         UpdateCommand::Rollback => {
             update::rollback()?;
-            println!("rolled back hologram");
-            Ok(())
+            helpers::message(&cli, "rolled_back", "rolled back hologram")
         }
     }
 }

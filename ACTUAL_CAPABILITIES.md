@@ -12,6 +12,7 @@ This document is deliberately strict about what the current stable build does an
 - File listing, durable renaming, and retrieval over the content-addressed object store.
 - Versioned Protobuf/gRPC native API and client.
 - JSON REST endpoints and Utoipa-generated OpenAPI.
+- A global `--json` CLI contract covering every command result, action acknowledgement, download report, decoded run mode, and typed runtime error so stdout can be consumed consistently with `jq`.
 - Self-hosted Scalar interactive API reference.
 - Local and remote client targets with capability-aware route planning.
 - Bounded Kameo actors with links and supervision.
@@ -19,8 +20,8 @@ This document is deliberately strict about what the current stable build does an
 - Optional OTLP/gRPC trace and RPC-metric export through OpenTelemetry.
 - A separate audit-event boundary.
 - Bearer-token authentication seam for protected routes.
-- First-class `.holo` fixture creation, import, list, inspect, verify, and remove.
-- `.holo` compiler/runtime/execution path: v4 writes with v2/v3 reads, fat or thin packaging, direct service-free execution of self-contained Wasm archives, κ-backed thin payload resolution, and resident load/run/unload sessions over wasmtime.
+- First-class `.holo` fixture creation, import, list, inspect, payload-free plan, verify, and remove through CLI, native gRPC, JSON/HTTP, and OpenAPI surfaces.
+- `.holo` compiler/runtime/execution path: v4 writes with v2/v3 reads, fat or thin packaging, explicit archive object κ / footer fingerprint / canonical application κ reporting, complete pre-provider resolution and re-hashing of capabilities plus all non-child layers with deterministic limits/blockers, explanatory local or catalog-backed plans (including unsupported providers), a closed `LayerKind` provider registry with transactional ordered prepare/start and reverse stop/rollback, multi-layer Wasm execution with nonzero primary positions, direct service-free execution, κ-backed thin payload resolution, and idempotent resident load/unload sessions over supervised Wasmtime actors with lifecycle status.
 - `.holo` v4 inference-model packaging, import, verified application-directory metadata, and metadata-only `hologram ai inspect`.
 - Direct execution of locked Python OCI rootfs archives through the experimental local container provider.
 - Durable local conversation history.

@@ -2,6 +2,7 @@ use super::{helpers, Cli};
 use clap::{Args, Subcommand};
 use hologram_live::error::{LiveError, Result};
 use hologram_live::protocol::{ObjectContent, RpcRequest, RpcResponse};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Args)]
@@ -81,18 +82,40 @@ async fn put(cli: &Cli, path: PathBuf, media_type: String) -> Result<()> {
 
 async fn get(cli: &Cli, id: String, output: Option<PathBuf>) -> Result<()> {
     match helpers::call(cli, RpcRequest::FilesGet { id }).await? {
-        RpcResponse::ObjectContent(object) => write_download(object, output).await,
+        RpcResponse::ObjectContent(object) => write_download(cli, object, output).await,
         other => helpers::unexpected(other),
     }
 }
 
-pub(crate) async fn write_download(object: ObjectContent, output: Option<PathBuf>) -> Result<()> {
+#[derive(Debug, Serialize)]
+struct DownloadReport {
+    id: String,
+    output: PathBuf,
+    byte_length: u64,
+}
+
+pub(crate) async fn write_download(
+    cli: &Cli,
+    object: ObjectContent,
+    output: Option<PathBuf>,
+) -> Result<()> {
     let output = output.unwrap_or_else(|| default_output(&object));
+    let byte_length = object.bytes.len().try_into().unwrap_or(u64::MAX);
     tokio::fs::write(&output, object.bytes)
         .await
         .map_err(|error| LiveError::io(&output, error))?;
-    println!("wrote {}", output.display());
-    Ok(())
+    if cli.json {
+        helpers::print(
+            cli,
+            &DownloadReport {
+                id: object.metadata.id,
+                output,
+                byte_length,
+            },
+        )
+    } else {
+        helpers::message(cli, "written", format!("wrote {}", output.display()))
+    }
 }
 
 fn default_output(object: &ObjectContent) -> PathBuf {

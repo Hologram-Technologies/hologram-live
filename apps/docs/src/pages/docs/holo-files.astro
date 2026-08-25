@@ -73,7 +73,7 @@ import { sitePath } from '../../lib/site';
   <div class="table-wrap"><table>
     <thead><tr><th>Source kind</th><th>Manifest kind</th><th>Descriptor</th><th>Hologram Live today</th></tr></thead>
     <tbody>
-      <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and entrypoint; portable.</td><td>Executes in-process when it is the single primary layer.</td></tr>
+      <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and entrypoint; portable.</td><td>Executes in-process through the ordered provider lifecycle; the primary may be at any layer position.</td></tr>
       <tr><td><code>tensor</code></td><td><code>TensorPlan</code></td><td>Content κ and session entrypoint; no app exit code.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
       <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Directly executes experimental Python OCI bundles; other providers remain explicit.</td></tr>
       <tr><td><code>view</code></td><td><code>View</code></td><td>Content κ and target surface; no app exit code.</td><td>Packages and inspects; the desktop does not attach it yet.</td></tr>
@@ -81,6 +81,23 @@ import { sitePath } from '../../lib/site';
     </tbody>
   </table></div>
   <p>Manifest order is initialization order. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>; a model-only archive uses <code>primary = null</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
+
+  <h3>Capability requests</h3>
+  <p>The <code>requires</code> operand points to an upstream canonical <code>CapabilitySet</code>, not to JSON. Authors may declare the request in a versioned <code>capabilities.json</code>; the compiler validates it and converts it to canonical realization bytes before calculating the κ stored in <code>AppManifest.requires</code>.</p>
+  <pre><code>&#123;
+  "schema_version": 1,
+  "storage_roots": [],
+  "storage_quota_bytes": 0,
+  "network_fetch": false,
+  "network_announce": false,
+  "publish_channels": [],
+  "subscribe_channels": [],
+  "memory_max_bytes": 0,
+  "cpu_time_per_event_ms": 0,
+  "priority_weight": 0
+&#125;</code></pre>
+  <p>κ arrays must be strictly sorted, contain no duplicates, and use canonical <code>blake3:&lt;64 lowercase hex&gt;</code> labels. Unknown fields and schema versions fail during both <code>compile --check</code> and <code>compile</code>, with the source path and invalid field/index in the diagnostic. Omitting <code>requires</code> produces the same canonical empty set as the document above. The upstream budget convention uses <code>0</code> for unbounded; set a nonzero budget to request a finite ceiling.</p>
+  <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Grant admission, provider isolation, and attenuated child authority are tracked separately in M2.</div>
 
   <h3>Source languages do not add layer kinds</h3>
   <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
@@ -111,18 +128,34 @@ import { sitePath } from '../../lib/site';
   <h2>Identity and verification</h2>
   <ul>
     <li><strong>Layer identity:</strong> each layer refers to content by its κ label.</li>
-    <li><strong>Application identity:</strong> the canonical <code>AppManifest</code> κ is unchanged when packaging changes between fat and thin.</li>
-    <li><strong>Archive fingerprint:</strong> the footer authenticates the physical archive bytes before it.</li>
-    <li><strong>Live object ID:</strong> importing stores the complete file under a BLAKE3 content ID. Because that hash includes the footer, it is distinct from the footer fingerprint.</li>
+    <li><strong>Application κ (<code>application_kappa</code>):</strong> <code>address_bytes(AppManifest::canonicalize())</code>. It is unchanged when packaging changes between fat and thin, and absent when an archive has no application manifest.</li>
+    <li><strong>Archive fingerprint (<code>archive_fingerprint</code>):</strong> the footer integrity value for the physical archive layout.</li>
+    <li><strong>Archive object κ (<code>archive_kappa</code> in compile output, existing <code>kappa</code> in inspection):</strong> BLAKE3 over the complete file. It changes between fat and thin and is distinct from the footer fingerprint.</li>
   </ul>
+  <pre><code>hologram --json compile hologram.json --output application.holo |
+  jq '&#123;archive_kappa, archive_fingerprint, application_kappa, capabilities_kappa&#125;'
+
+hologram --json holo inspect application.holo |
+  jq '&#123;kappa, archive_fingerprint, application_kappa&#125;'</code></pre>
+  <p>Catalog lookup, import, verification, resident records, and run results identify a particular physical archive with <code>kappa</code>. Planning and manifest-graph diagnostics use <code>application_kappa</code>. Existing <code>kappa</code> fields keep their physical meaning.</p>
   <p>Live rejects a bad footer, truncated or out-of-bounds payloads when accessed, an invalid manifest, duplicate blob labels, a blob whose κ does not match its bytes, duplicate application directories, unknown directory schema versions, and a directory that disagrees with the manifest.</p>
+
+  <h2>Explain an execution plan</h2>
+  <p><code>holo plan</code> resolves and verifies the complete non-child application closure without starting a provider. Give it a local path for a service-free direct plan, or an imported archive κ for a resident plan that may resolve thin payloads from the local content cache.</p>
+  <pre><code>hologram --json holo plan ./application.holo |
+  jq '&#123;application_kappa, packaging, runnable, layers, blockers&#125;'
+
+hologram --json holo plan blake3:… |
+  jq '&#123;execution_target, resolved_object_count, resolved_bytes, runnable&#125;'</code></pre>
+  <p>The report is deliberately payload-free. It contains the archive and application identities, <code>fat</code>/<code>thin</code>/<code>hybrid</code> packaging, capability κ, ordered layer descriptors, <code>embedded</code> or <code>local_store</code> resolution sources, provider status, child references, and planning limits. Unsupported View, Tensor, rootfs, or inference-model execution still returns a successful explanation with <code>runnable: false</code>; each blocker has a stable <code>kind</code>, typed <code>error_code</code>, and human message. Invalid files and missing catalog IDs remain command errors.</p>
 
   <h2>Fat and thin packaging</h2>
   <div class="doc-grid">
     <article class="doc-card"><h3>Fat</h3><p>The manifest and referenced blobs travel together. It is self-contained and suited to distribution, air-gapped transfer, and first install.</p></article>
     <article class="doc-card"><h3>Thin</h3><p>The manifest travels without payload blobs. The runtime resolves the same κ references from a content store or sync source.</p></article>
   </div>
-  <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives by default and <code>--thin</code> emits the same canonical manifest without content blobs. Importing a fat archive caches its verified payloads by κ, so catalog-backed resident execution can later resolve a thin archive. Direct file execution requires a self-contained fat archive.</div>
+  <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives by default and <code>--thin</code> emits the same canonical manifest without content blobs. Importing a fat archive caches its verified payloads by κ, so catalog-backed resident execution can later resolve a thin archive. Before direct or resident execution starts a provider, Live resolves and re-hashes the required capability object and every non-child layer, deduplicates equal κ references, and applies explicit layer, object, and byte limits. A missing secondary layer therefore blocks primary execution. Direct file execution requires a self-contained fat archive; child references remain blockers until capability attenuation lands.</div>
+  <p>Blocker-free applications use a closed provider registry keyed by the canonical layer kind. Providers are prepared and started in manifest order, while unload and failure rollback stop them in reverse order. The original typed failure remains primary if cleanup also fails. Wasmtime and the experimental Python OCI engine stay behind async native interfaces, so their private handles do not enter the plan or transport schema. Resident records expose lifecycle <code>state</code>, aggregate resident bytes, queue depth, and processed calls; repeated load and unload are safe and idempotent.</p>
 
   <h2>Build, inspect, and run</h2>
   <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
@@ -138,17 +171,20 @@ import { sitePath } from '../../lib/site';
 &#125;
 
 hologram compile hologram.json --output application.holo
+hologram --json compile --check hologram.json | jq '&#123;valid, capabilities_kappa&#125;'
 hologram run application.holo --input payload.bin
 hologram compile hologram.json --thin --output application.thin.holo
 hologram holo import application.holo
 hologram --json holo inspect ./application.holo
+hologram --json holo plan ./application.holo
 hologram holo verify ./application.holo
 hologram --json holo inspect blake3:…
+hologram --json holo plan blake3:…
 hologram holo verify blake3:…
 hologram holo load blake3:…
 hologram run blake3:… --input payload.bin
 hologram holo unload blake3:…</code></pre>
 
   <h2>Design provenance</h2>
-  <p>The one-format principle, ordered layers, capability-attenuated child applications, view surfaces, and fat/thin identity model come from the original <a href="https://github.com/Hologram-Technologies/hologram/blob/94ecb886811115491a77c8229e494965bea03fc2/specs/refactor/03-holo-format.md?plain=1#L19">Hologram v3 application-container design</a>. Hologram Live's verified directory is an additive use of v3's extension seam.</p>
+  <p>The one-format principle, ordered layers, capability-attenuated child applications, view surfaces, and fat/thin identity model come from the original <a href="https://github.com/Hologram-Technologies/hologram/blob/94ecb886811115491a77c8229e494965bea03fc2/specs/refactor/03-holo-format.md?plain=1#L19">Hologram v3 application-container design</a>. Hologram Live's verified directory is an additive use of v3's extension seam. <a href="https://github.com/Hologram-Technologies/hologram-live/blob/main/specs/adrs/010-holo-application-plan-and-provider-lifecycle.md">ADR 010</a> fixes the identity vocabulary used by the runtime and APIs.</p>
 </DocsLayout>

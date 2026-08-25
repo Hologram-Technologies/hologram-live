@@ -5,7 +5,8 @@
 - State: active
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
-- Next delivery: M1, provider and lifecycle ADR
+- Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
+- Next delivery: M1, identity, planning, provider, and lifecycle foundation
 - Next runtime milestone: M1, application planning and provider boundary
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -14,10 +15,10 @@ This is the living implementation plan for turning `.holo` archives into complet
 ## Product principles
 
 - [x] Keep one append-only `.holo` application format; v4 adds `InferenceModel` without renumbering prior layer kinds and retains v2/v3 reads.
-- [ ] Keep the canonical `AppManifest` as application identity and execution truth.
-- [ ] Keep the application-directory extension a verified projection, never a second manifest.
-- [ ] Keep physical archive identity distinct from canonical application identity.
-- [ ] Resolve content by κ; do not make filenames or catalog metadata authoritative.
+- [x] Keep the canonical `AppManifest` as application identity and execution truth.
+- [x] Keep the application-directory extension a verified projection, never a second manifest.
+- [x] Keep physical archive identity distinct from canonical application identity.
+- [x] Resolve content by κ; do not make filenames or catalog metadata authoritative.
 - [ ] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
 - [ ] Boot ordered layers transactionally and unwind partial starts in reverse order.
 - [ ] Keep execution providers behind typed boundaries so Wasm, views, tensors, and root filesystems do not leak engine details into the archive loader.
@@ -92,76 +93,76 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Identity model
 
-- [ ] Introduce an explicit identity record containing archive object κ, archive footer fingerprint, and canonical application-manifest κ.
-- [ ] Add `application_kappa` to inspection and compile reports without renaming the existing physical archive `kappa` field silently.
-- [ ] Prove in tests that fat and thin variants have different archive IDs but the same application κ.
-- [ ] Make logs, errors, resident records, and audit events identify which identity they report.
+- [x] Introduce an explicit identity record containing archive object κ, archive footer fingerprint, and canonical application-manifest κ.
+- [x] Add `application_kappa` to inspection and compile reports without renaming the existing physical archive `kappa` field silently.
+- [x] Prove in tests that fat and thin variants have different archive IDs but the same application κ.
+- [x] Make logs, errors, resident records, and audit events identify which identity they report.
 
 ### `ApplicationPlan`
 
-- [ ] Add a runtime-owned `ApplicationPlan` decoded from the canonical `AppManifest`.
-- [ ] Preserve manifest layer order and primary-layer position in the plan.
-- [ ] Represent each resolved layer with its position, kind, content κ, entrypoint, kind-specific auxiliary value, bytes, and resolution source.
-- [ ] Distinguish embedded, local-store, and future synchronized resolution sources.
-- [ ] Resolve and validate the required capability-set object before preparing providers.
-- [ ] Resolve every layer payload before any layer starts, rather than resolving only the primary Wasm layer.
+- [x] Add a runtime-owned `ApplicationPlan` decoded from the canonical `AppManifest`.
+- [x] Preserve manifest layer order and primary-layer position in the plan.
+- [x] Represent each resolved layer with its position, kind, content κ, entrypoint, kind-specific auxiliary value, bytes, and resolution source.
+- [x] Distinguish embedded, local-store, and future synchronized resolution sources.
+- [x] Resolve and validate the required capability-set object before preparing providers.
+- [x] Resolve every layer payload before any layer starts, rather than resolving only the primary Wasm layer.
 - [ ] Resolve child application and delegated-capability references recursively.
 - [ ] Detect child-application cycles.
 - [ ] Apply explicit maximum closure depth, object count, and cumulative resolved-byte limits.
-- [ ] Deduplicate equal κ references while retaining every logical edge and layer position.
-- [ ] Reject a declared embedded κ whose bytes do not re-hash to that κ.
-- [ ] Reject unresolved closure members with an error that names the missing κ and referring manifest edge.
-- [ ] Keep the application directory out of planning decisions except as an already-verified inspection index.
+- [x] Deduplicate equal κ references while retaining every logical edge and layer position.
+- [x] Reject a declared embedded κ whose bytes do not re-hash to that κ.
+- [x] Reject unresolved closure members with an error that names the missing κ and referring manifest edge.
+- [x] Keep the application directory out of planning decisions except as an already-verified inspection index.
 
 ### Provider interface
 
-- [ ] Define a provider trait keyed by closed `LayerKind` values.
-- [ ] Separate provider `prepare`, `start`, `invoke` or attach, and `stop` phases.
+- [x] Define a provider trait keyed by closed `LayerKind` values.
+- [x] Separate provider `prepare`, `start`, `invoke` or attach, and `stop` phases.
 - [ ] Give providers only the resolved layer, effective capability grant, resource budget, and explicit host interfaces they need.
-- [ ] Make unsupported kinds fail during planning or preparation before any layer starts.
-- [ ] Require providers to report resident bytes, lifecycle state, and typed failure details.
-- [ ] Avoid exposing Wasmtime, weightc, desktop WebView, or microVM types in shared planning APIs.
-- [ ] Decide and document whether provider methods are async and `Send` on each supported platform.
+- [x] Make unsupported kinds fail during planning or preparation before any layer starts.
+- [x] Require providers to report resident bytes, lifecycle state, and typed failure details.
+- [x] Avoid exposing Wasmtime, weightc, desktop WebView, or microVM types in shared planning APIs.
+- [x] Decide and document whether provider methods are async and `Send` on each supported platform.
 
 ### Transactional lifecycle
 
-- [ ] Introduce explicit planned, preparing, running, stopping, stopped, and failed states.
-- [ ] Prepare and start layers in manifest order.
-- [ ] If a layer fails, stop every previously started layer in reverse order.
-- [ ] Stop all layers in reverse order during normal unload.
+- [x] Introduce explicit planned, preparing, running, stopping, stopped, and failed states.
+- [x] Prepare and start layers in manifest order.
+- [x] If a layer fails, stop every previously started layer in reverse order.
+- [x] Stop all layers in reverse order during normal unload.
 - [ ] Route application exit status from the manifest’s primary exit-bearing layer.
 - [ ] Do not invent exit semantics for tensor or view layers.
 - [ ] Define how a non-primary layer failure affects a running application.
-- [ ] Make repeated load and unload requests idempotent where safe.
-- [ ] Preserve bounded mailboxes and backpressure for resident applications.
+- [x] Make repeated load and unload requests idempotent where safe.
+- [x] Preserve bounded mailboxes and backpressure for resident applications.
 - [ ] Emit structured lifecycle traces and audit events for plan, prepare, start, rollback, and stop.
 
 ### Planning interface
 
-- [ ] Add `hologram holo plan <PATH|KAPPA>` for a read-only explanation of identities, resolution sources, layer order, providers, capabilities, children, and blockers.
-- [ ] Make `holo plan` useful when execution is unsupported; inspection must not require a provider.
-- [ ] Add equivalent native API and JSON/HTTP representations without exposing engine-specific internals.
-- [ ] Keep `hologram run <PATH|KAPPA>` output compatible while routing both direct and resident preparation through `ApplicationPlan`.
+- [x] Add `hologram holo plan <PATH|KAPPA>` for a read-only explanation of identities, resolution sources, layer order, providers, capabilities, children, and blockers.
+- [x] Make `holo plan` useful when execution is unsupported; inspection must not require a provider.
+- [x] Add equivalent native API and JSON/HTTP representations without exposing engine-specific internals.
+- [x] Keep `hologram run <PATH|KAPPA>` output compatible while routing both direct and resident preparation through `ApplicationPlan`.
 
 ### M1 acceptance criteria
 
-- [ ] The existing one-layer Wasm direct and resident scenarios pass through `ApplicationPlan` with no behavior regression.
-- [ ] A multi-layer manifest is fully resolved before returning the expected unsupported-provider error.
-- [ ] A missing non-primary layer prevents all layer starts.
-- [ ] A synthetic provider failure proves reverse-order rollback.
+- [x] The existing one-layer Wasm direct and resident scenarios pass through `ApplicationPlan` with no behavior regression.
+- [x] A multi-layer manifest is fully resolved before returning the expected unsupported-provider error.
+- [x] A missing non-primary layer prevents all layer starts.
+- [x] A synthetic provider failure proves reverse-order rollback.
 - [ ] A cyclic child graph fails deterministically without recursion overflow.
-- [ ] Fat and thin variants produce equivalent logical plans when the local store contains the required content.
-- [ ] Unit, BDD, API round-trip, docs, Clippy, release build, and smoke gates pass.
-- [ ] ADR 004 and ADR 007 are amended if implementation details refine their accepted decisions.
+- [x] Fat and thin variants produce equivalent logical plans when the local store contains the required content.
+- [x] Unit, BDD, API round-trip, docs, Clippy, release build, and smoke gates pass.
+- [x] ADR 004 and ADR 007 are amended if implementation details refine their accepted decisions.
 
 ## M2 — Capability enforcement and child attenuation
 
 ### Capability source schema
 
-- [ ] Define the schema accepted by source `capabilities.json` using the upstream canonical `CapabilitySet` realization.
-- [ ] Reject malformed or non-canonical capability input during `compile --check` and `compile`.
-- [ ] Preserve the capability-set κ in `AppManifest.requires`.
-- [ ] Provide clear diagnostics that point to the invalid capability entry and source file.
+- [x] Define the schema accepted by source `capabilities.json` using the upstream canonical `CapabilitySet` realization.
+- [x] Reject malformed or non-canonical capability input during `compile --check` and `compile`.
+- [x] Preserve the capability-set κ in `AppManifest.requires`.
+- [x] Provide clear diagnostics that point to the invalid capability entry and source file.
 
 ### Runtime grants
 
@@ -192,11 +193,11 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### M3.1 Wasm provider migration
 
-- [ ] Move the current Wasmtime implementation behind the provider trait.
-- [ ] Preserve direct and resident execution behavior and typed guest-contract errors.
+- [x] Move the current Wasmtime implementation behind the provider trait.
+- [x] Preserve direct and resident execution behavior and typed guest-contract errors.
 - [ ] Use the manifest entrypoint instead of assuming one hard-coded function where the contract permits it.
-- [ ] Preserve one-output-per-input compatibility until a versioned guest-contract upgrade lands.
-- [ ] Remove the runtime’s “exactly one layer at primary position zero” special case.
+- [x] Preserve one-output-per-input compatibility until a versioned guest-contract upgrade lands.
+- [x] Remove the runtime’s “exactly one layer at primary position zero” special case.
 
 ### M3.1a Component-model and Python/WASI proof
 
@@ -256,7 +257,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### M3 acceptance criteria
 
-- [ ] Wasm remains fully compatible behind the provider boundary.
+- [x] Wasm remains fully compatible behind the provider boundary.
 - [ ] Wasm + View validates ordered multi-layer startup and reverse-order shutdown in the desktop.
 - [ ] Tensor execution uses a real weightc artifact and reports typed ports/results.
 - [ ] Inference-model execution uses a real `hologram-ai` archive and reports typed completions/status.
@@ -465,10 +466,10 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 ## Immediate next slice
 
 - [x] Implement M0 `hologram app init` as a small standalone commit.
-- [ ] Draft the M1 provider and lifecycle ADR before runtime refactoring.
-- [ ] Add `application_kappa` to compile and inspection results.
-- [ ] Introduce the read-only `ApplicationPlan` and full non-child layer resolution.
-- [ ] Add `hologram holo plan` over local paths and catalog κ values.
-- [ ] Route existing direct and resident Wasm execution through the plan.
-- [ ] Add synthetic-provider rollback tests.
+- [x] Draft the M1 provider and lifecycle ADR before runtime refactoring.
+- [x] Add `application_kappa` to compile and inspection results.
+- [x] Introduce the read-only `ApplicationPlan` and full non-child layer resolution.
+- [x] Add `hologram holo plan` over local paths and catalog κ values.
+- [x] Route existing direct and resident Wasm execution through the plan.
+- [x] Add synthetic-provider rollback tests.
 - [ ] Extend closure resolution to child applications after M2 grant semantics are fixed.

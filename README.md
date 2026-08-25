@@ -66,6 +66,18 @@ http://127.0.0.1:11435/openapi.json
 
 `/docs` is the self-hosted Scalar reference; `/openapi.json` is the generated OpenAPI document. Native clients use the versioned Protobuf/gRPC service on the same endpoint.
 
+## Machine-readable CLI output
+
+Global `--json` is supported by every CLI command and may appear before or after the subcommand. A successful command writes one JSON value to stdout, including lifecycle actions, downloads, generated files, accepted mutations, and `run --output-format text`. Diagnostics remain on stderr, while a runtime failure writes a JSON object with `code` and `message` to stdout and exits nonzero. This makes the complete CLI safe to compose with `jq`:
+
+```bash
+hologram status --json | jq -r '.status'
+hologram files get blake3:... --output ./asset.bin --json | jq '.byte_length'
+hologram run application.holo --output-format text --json | jq -r '.[]'
+```
+
+Help and shell-completion text retain Clap's human-readable format.
+
 ## Demo workflows
 
 ### Chat and conversation history
@@ -153,8 +165,10 @@ hologram holo fixture ./fixture.holo
 hologram holo import ./fixture.holo
 hologram holo list
 hologram holo inspect ./application.holo
+hologram holo plan ./application.holo
 hologram holo verify ./application.holo
 hologram holo inspect blake3:...
+hologram holo plan blake3:...
 hologram holo verify blake3:...
 hologram holo remove blake3:...
 ```
@@ -172,6 +186,33 @@ The stable build creates and validates real v4 `.holo` archives while retaining 
 ```
 
 The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider.
+
+Applications request authority with an optional `capabilities.json`. This is a
+human-authored compiler input, not the object embedded in the archive:
+
+```json
+{
+  "schema_version": 1,
+  "storage_roots": [],
+  "storage_quota_bytes": 0,
+  "network_fetch": false,
+  "network_announce": false,
+  "publish_channels": [],
+  "subscribe_channels": [],
+  "memory_max_bytes": 0,
+  "cpu_time_per_event_ms": 0,
+  "priority_weight": 0
+}
+```
+
+Set `"requires": "capabilities.json"` in `hologram.json`. `compile --check`
+validates the version, fields, and canonical sorted κ lists; `compile` converts
+the JSON into the upstream canonical `CapabilitySet` bytes and stores that
+object's κ in `AppManifest.requires`. Omitting `requires` produces the canonical
+empty request. A request describes what an application needs—it is never itself
+a grant. In the upstream capability contract, a scalar budget of `0` means
+unbounded; use a nonzero value to request a finite ceiling. Runtime grant
+enforcement and child attenuation are the active M2 work.
 
 See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
 
@@ -200,9 +241,36 @@ hologram compile ./my-app/hologram.json -o ./my-app.holo
 hologram compile ./my-app/hologram.json --thin -o ./my-app.thin.holo
 ```
 
+With `--json`, compilation reports the three distinct identities directly:
+
+```bash
+hologram --json compile ./my-app/hologram.json -o ./my-app.holo |
+  jq '{archive_kappa, archive_fingerprint, application_kappa, capabilities_kappa}'
+```
+
+`archive_kappa` is the BLAKE3 address of the complete physical file,
+`archive_fingerprint` is the footer integrity value, and
+`application_kappa` addresses the canonical `AppManifest`. Fat and thin files
+have different archive κ values and footer fingerprints but the same
+application κ and `capabilities_kappa`. The existing `kappa` returned by `holo inspect`, catalog,
+resident, and run operations continues to mean the physical archive object;
+inspection adds `application_kappa` when an application manifest is present.
+
 Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
 
-Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view.
+Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the physical `kappa`, canonical `application_kappa`, footer fingerprint, ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view, and pre-application structural archives report no application κ.
+
+Use `holo plan` to explain whether an application can run before starting any provider. Local paths plan without the service; imported κ values plan against the local content cache. The payload-free report includes all three identities, fat/thin/hybrid packaging, the capability object, ordered layers, resolution sources, provider availability, planning limits, and stable typed blockers:
+
+```bash
+hologram --json holo plan ./application.holo |
+  jq '{application_kappa, packaging, runnable, layers, blockers}'
+
+hologram --json holo plan blake3:... |
+  jq '{execution_target, resolved_object_count, resolved_bytes, runnable}'
+```
+
+An unsupported layer is still a successful plan: `runnable` is `false` and `blockers` explains the unavailable provider with a `kind`, `error_code`, and message. Malformed archives, missing catalog objects, and transport failures retain the normal typed JSON error contract.
 
 #### AI model applications
 
@@ -231,7 +299,7 @@ For low-level archive assembly, a source manifest can package an already-built p
 
 `weightc` remains a chat execution provider over imported `.wcpu` directories. Those directories are not placed into `.holo` files until a deterministic single-blob bundle and validation contract is defined. See the [AI model application guide](https://hologram-technologies.github.io/hologram-live/docs/model-apps) and [ADR 009](specs/adrs/009-inference-model-holo-v4.md).
 
-`holo load` resolves the primary layer by κ, compiles a Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Python rootfs archives currently run only as direct local fat files. Inference-model services can be inspected but not invoked through Live yet. Tensors, inference models without a provider, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
+Before direct execution or `holo load` starts a provider, Live builds a runtime-owned application plan from the canonical manifest. It resolves and re-hashes the required capability object and every non-child layer from embedded content or the local κ store, deduplicates shared objects, applies layer/object/byte limits, and rejects missing secondary layers before compiling anything. Child references remain visible blockers until M2 defines capability attenuation. A closed `LayerKind` registry then prepares and starts every supported layer in manifest order, invokes the declared primary layer, and stops or rolls back in reverse order. Wasm layers use Wasmtime behind this boundary and may have a primary position other than zero; resident status reports `state`, aggregate resident bytes, queued calls, and processed calls. Repeated load and unload are idempotent. Python rootfs archives use the same lifecycle through an explicitly experimental, direct-only OCI adapter. Inference-model services can be inspected but not invoked through Live yet. Tensors, inference models without a provider, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md` and the planning/provider contract in `specs/adrs/010-holo-application-plan-and-provider-lifecycle.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
 
 #### Python applications
 

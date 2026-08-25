@@ -1,4 +1,4 @@
-use super::Cli;
+use super::{helpers, Cli};
 use clap::{Args, Subcommand, ValueEnum};
 use hologram_live::compile::{
     validate_compile_manifest, CompileLayer, CompileLayerKind, CompileManifest, CompileSource,
@@ -120,7 +120,7 @@ pub async fn run(cli: Cli, args: AppArgs) -> Result<()> {
                 &mut std::io::stderr().lock(),
             )?;
             if cli.json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
+                helpers::print(&cli, &report)?;
             } else {
                 println!("initialized {}", report.manifest.display());
                 println!("compile: {}", report.compile_command);

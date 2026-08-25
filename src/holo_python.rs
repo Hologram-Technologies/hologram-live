@@ -6,14 +6,21 @@
 //! independent from the current container provider so a microVM can consume
 //! the same logical layer in a later milestone.
 
+use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
+use crate::holo_provider::{
+    LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus, PreparedLayer,
+    ProviderTarget,
+};
+use hologram::space::LayerKind;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -183,25 +190,7 @@ pub fn execute(
 ) -> Result<PythonRunOutcome> {
     let started = Instant::now();
     let (metadata, compressed_image) = decode_bundle(bundle)?;
-    if metadata.entry != layer_entry {
-        return Err(LiveError::InvalidHolo(format!(
-            "Python rootfs entry {} does not match layer entry {layer_entry}",
-            metadata.entry
-        )));
-    }
-    let arch = normalize_arch(layer_arch)?;
-    if metadata.arch != arch {
-        return Err(LiveError::InvalidHolo(format!(
-            "Python rootfs architecture {} does not match layer architecture {arch}",
-            metadata.arch
-        )));
-    }
-    let host = host_arch()?;
-    if arch != host {
-        return Err(LiveError::Capability(format!(
-            "Python rootfs requires {arch}, but this host is {host}; compile for the host architecture"
-        )));
-    }
+    let arch = validate_bundle_metadata(&metadata, layer_entry, layer_arch)?;
     ensure_docker("execute a Python rootfs")?;
     if !cached_image_matches(&metadata)? {
         load_embedded_image(&metadata, compressed_image)?;
@@ -222,6 +211,151 @@ pub fn execute(
         elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
         resident_bytes: bundle.len(),
     })
+}
+
+pub struct PythonRootfsProvider;
+
+#[tonic::async_trait]
+impl LayerProvider for PythonRootfsProvider {
+    fn kind(&self) -> LayerKind {
+        LayerKind::RootfsImage
+    }
+
+    fn name(&self) -> &'static str {
+        "python-oci-direct"
+    }
+
+    fn availability(
+        &self,
+        context: &ProviderContext<'_>,
+        target: ProviderTarget,
+    ) -> Result<(), String> {
+        if target != ProviderTarget::Direct {
+            return Err("Python OCI rootfs execution is direct-only".to_owned());
+        }
+        if !is_python_rootfs(context.content) {
+            return Err(format!(
+                "direct execution has no compatible rootfs provider for entry {}",
+                context.entry
+            ));
+        }
+        Ok(())
+    }
+
+    async fn prepare(&self, context: LayerPrepareContext) -> Result<Arc<dyn PreparedLayer>> {
+        if context.target != ProviderTarget::Direct {
+            return Err(LiveError::Capability(
+                "Python OCI rootfs execution is direct-only".to_owned(),
+            ));
+        }
+        validate_bundle_for_layer(
+            &context.layer.content,
+            &context.layer.entry,
+            &context.layer.aux,
+        )?;
+        Ok(Arc::new(PreparedPythonRootfs {
+            position: context.layer.position,
+            content: context.layer.content,
+            entry: context.layer.entry,
+            arch: context.layer.aux,
+            running: AtomicBool::new(false),
+            processed: AtomicUsize::new(0),
+        }))
+    }
+}
+
+struct PreparedPythonRootfs {
+    position: u32,
+    content: Arc<[u8]>,
+    entry: String,
+    arch: String,
+    running: AtomicBool,
+    processed: AtomicUsize,
+}
+
+#[tonic::async_trait]
+impl PreparedLayer for PreparedPythonRootfs {
+    fn position(&self) -> u32 {
+        self.position
+    }
+
+    async fn start(&self) -> Result<()> {
+        tokio::task::spawn_blocking(|| ensure_docker("execute a Python rootfs"))
+            .await
+            .map_err(|error| {
+                LiveError::Conflict(format!("join Python provider start: {error}"))
+            })??;
+        self.running.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    async fn invoke(&self, inputs: Vec<Vec<u8>>) -> Result<LayerInvocation> {
+        if !self.running.load(Ordering::Acquire) {
+            return Err(LiveError::Conflict(format!(
+                "Python rootfs layer {} is not running",
+                self.position
+            )));
+        }
+        let content = self.content.clone();
+        let entry = self.entry.clone();
+        let arch = self.arch.clone();
+        let outcome =
+            tokio::task::spawn_blocking(move || execute(&content, &entry, &arch, &inputs))
+                .await
+                .map_err(|error| {
+                    LiveError::Conflict(format!("join Python provider invocation: {error}"))
+                })??;
+        self.processed.fetch_add(1, Ordering::Relaxed);
+        Ok(LayerInvocation {
+            outputs: outcome.outputs,
+            elapsed_micros: outcome.elapsed_micros,
+        })
+    }
+
+    async fn stop(&self) -> Result<()> {
+        self.running.store(false, Ordering::Release);
+        Ok(())
+    }
+
+    fn status(&self) -> LayerRuntimeStatus {
+        LayerRuntimeStatus {
+            resident_bytes: self.content.len(),
+            queued: 0,
+            processed: self.processed.load(Ordering::Relaxed),
+        }
+    }
+}
+
+fn validate_bundle_for_layer(bundle: &[u8], layer_entry: &str, layer_arch: &str) -> Result<()> {
+    let (metadata, _) = decode_bundle(bundle)?;
+    validate_bundle_metadata(&metadata, layer_entry, layer_arch).map(|_| ())
+}
+
+fn validate_bundle_metadata(
+    metadata: &BundleMetadata,
+    layer_entry: &str,
+    layer_arch: &str,
+) -> Result<&'static str> {
+    if metadata.entry != layer_entry {
+        return Err(LiveError::InvalidHolo(format!(
+            "Python rootfs entry {} does not match layer entry {layer_entry}",
+            metadata.entry
+        )));
+    }
+    let arch = normalize_arch(layer_arch)?;
+    if metadata.arch != arch {
+        return Err(LiveError::InvalidHolo(format!(
+            "Python rootfs architecture {} does not match layer architecture {arch}",
+            metadata.arch
+        )));
+    }
+    let host = host_arch()?;
+    if arch != host {
+        return Err(LiveError::Capability(format!(
+            "Python rootfs requires {arch}, but this host is {host}; compile for the host architecture"
+        )));
+    }
+    Ok(arch)
 }
 
 pub fn is_python_rootfs(bytes: &[u8]) -> bool {

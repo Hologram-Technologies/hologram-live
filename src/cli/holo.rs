@@ -1,7 +1,7 @@
 use super::{helpers, run, Cli};
 use clap::{Args, Subcommand};
 use hologram_live::error::{LiveError, Result};
-use hologram_live::holo::{inspect_bytes, HoloCatalog};
+use hologram_live::holo::{inspect_bytes, plan_bytes, HoloCatalog};
 use hologram_live::protocol::{HoloInspection, RpcRequest, RpcResponse};
 use std::path::PathBuf;
 
@@ -21,6 +21,10 @@ enum HoloCommand {
     },
     List,
     Inspect {
+        /// Catalog kappa, or a local .holo file.
+        reference: String,
+    },
+    Plan {
         /// Catalog kappa, or a local .holo file.
         reference: String,
     },
@@ -50,13 +54,14 @@ enum HoloCommand {
 
 pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
     match args.command {
-        HoloCommand::Fixture { output } => fixture(output).await,
+        HoloCommand::Fixture { output } => fixture(&cli, output).await,
         HoloCommand::Import { path } => import(&cli, path).await,
         HoloCommand::List => match helpers::call(&cli, RpcRequest::HoloList).await? {
             RpcResponse::HoloList(value) => helpers::print(&cli, &value),
             other => helpers::unexpected(other),
         },
         HoloCommand::Inspect { reference } => inspect(&cli, reference, false).await,
+        HoloCommand::Plan { reference } => plan(&cli, reference).await,
         HoloCommand::Verify { reference } => inspect(&cli, reference, true).await,
         HoloCommand::Load { kappa } => {
             match helpers::call(&cli, RpcRequest::HoloLoad { kappa }).await? {
@@ -64,9 +69,10 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
                 other => helpers::unexpected(other),
             }
         }
-        HoloCommand::Unload { kappa } => {
-            helpers::expect_accepted(helpers::call(&cli, RpcRequest::HoloUnload { kappa }).await?)
-        }
+        HoloCommand::Unload { kappa } => helpers::expect_accepted(
+            &cli,
+            helpers::call(&cli, RpcRequest::HoloUnload { kappa }).await?,
+        ),
         HoloCommand::Run {
             kappa,
             inputs,
@@ -94,23 +100,41 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
                 },
             )
             .await;
-            helpers::expect_accepted(helpers::call(&cli, RpcRequest::HoloRemove { kappa }).await?)
+            helpers::expect_accepted(
+                &cli,
+                helpers::call(&cli, RpcRequest::HoloRemove { kappa }).await?,
+            )
         }
     }
 }
 
-async fn fixture(output: PathBuf) -> Result<()> {
+async fn fixture(cli: &Cli, output: PathBuf) -> Result<()> {
     let bytes = tokio::task::spawn_blocking(HoloCatalog::fixture)
         .await
         .map_err(|error| LiveError::Conflict(format!("fixture task failed: {error}")))??;
-    tokio::fs::write(&output, bytes)
+    let byte_length = bytes.len();
+    tokio::fs::write(&output, &bytes)
         .await
         .map_err(|error| LiveError::io(&output, error))?;
-    println!(
-        "wrote structurally valid .holo fixture to {}",
-        output.display()
-    );
-    Ok(())
+    if cli.json {
+        helpers::print(
+            cli,
+            &serde_json::json!({
+                "status": "written",
+                "output": output,
+                "byte_length": byte_length
+            }),
+        )
+    } else {
+        helpers::message(
+            cli,
+            "written",
+            format!(
+                "wrote structurally valid .holo fixture to {}",
+                output.display()
+            ),
+        )
+    }
 }
 
 async fn import(cli: &Cli, path: PathBuf) -> Result<()> {
@@ -146,6 +170,21 @@ async fn inspect(cli: &Cli, reference: String, verify: bool) -> Result<()> {
 
     let inspection = inspect_local(PathBuf::from(reference)).await?;
     helpers::print(cli, &inspection)
+}
+
+async fn plan(cli: &Cli, reference: String) -> Result<()> {
+    if reference.starts_with("blake3:") {
+        return match helpers::call(cli, RpcRequest::HoloPlan { kappa: reference }).await? {
+            RpcResponse::HoloPlan(value) => helpers::print(cli, &value),
+            other => helpers::unexpected(other),
+        };
+    }
+
+    let path = PathBuf::from(reference);
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|error| LiveError::io(&path, error))?;
+    helpers::print(cli, &plan_bytes(&bytes)?)
 }
 
 async fn inspect_local(path: PathBuf) -> Result<HoloInspection> {

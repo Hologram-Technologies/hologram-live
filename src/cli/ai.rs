@@ -1,5 +1,6 @@
 use super::{helpers, Cli};
 use clap::{Args, Subcommand};
+use hologram::space::address_bytes;
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::inspect_bytes;
 use serde::Serialize;
@@ -21,7 +22,9 @@ enum AiCommand {
 struct AiInspection {
     path: PathBuf,
     format_version: u16,
+    archive_kappa: String,
     archive_fingerprint: String,
+    application_kappa: String,
     models: Vec<AiModel>,
 }
 
@@ -46,7 +49,8 @@ pub async fn run(cli: Cli, args: AiArgs) -> Result<()> {
 }
 
 fn inspect_model_archive(path: &Path, bytes: &[u8]) -> Result<AiInspection> {
-    let inspection = inspect_bytes("local", &path.to_string_lossy(), bytes)?;
+    let archive_kappa = address_bytes(bytes).to_string();
+    let inspection = inspect_bytes(&archive_kappa, &path.to_string_lossy(), bytes)?;
     let directory = inspection.directory.as_ref().ok_or_else(|| {
         LiveError::InvalidHolo(format!("{} has no application manifest", path.display()))
     })?;
@@ -77,7 +81,11 @@ fn inspect_model_archive(path: &Path, bytes: &[u8]) -> Result<AiInspection> {
     Ok(AiInspection {
         path: path.to_path_buf(),
         format_version: inspection.format_version,
+        archive_kappa,
         archive_fingerprint: inspection.archive_fingerprint,
+        application_kappa: inspection.application_kappa.ok_or_else(|| {
+            LiveError::InvalidHolo(format!("{} has no application identity", path.display()))
+        })?,
         models,
     })
 }
@@ -108,6 +116,11 @@ mod tests {
 
         let report = inspect_model_archive(Path::new("model.holo"), &archive).expect("inspect");
         assert_eq!(report.format_version, 4);
+        assert_eq!(report.archive_kappa, address_bytes(&archive).to_string());
+        assert_eq!(
+            report.application_kappa,
+            address_bytes(&manifest.canonicalize()).to_string()
+        );
         assert_eq!(report.models.len(), 1);
         assert_eq!(report.models[0].entry, "ai.default");
         assert_eq!(report.models[0].engine, "uor-r4");

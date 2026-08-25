@@ -11,6 +11,9 @@ pub struct InitArgs {
 
 pub async fn run(cli: Cli, init_args: InitArgs) -> Result<()> {
     let path = AppConfig::initialize(cli.config.as_deref(), init_args.force)?;
-    println!("initialized {}", path.display());
-    Ok(())
+    super::helpers::message(
+        &cli,
+        "initialized",
+        format!("initialized {}", path.display()),
+    )
 }

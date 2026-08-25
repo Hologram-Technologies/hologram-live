@@ -214,11 +214,21 @@ The repository includes a working NumPy + pandas project in `examples/python-num
 $ hologram compile --check examples/python-numpy-pandas/hologram.json
 $ hologram compile examples/python-numpy-pandas/hologram.json \
     --output numpy-pandas.holo
-$ hologram --json run numpy-pandas.holo \
+$ hologram run numpy-pandas.holo \
     --input examples/python-numpy-pandas/request.json \
-    | jq -r '.outputs[0] | implode'
-{"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0}
+    --output-format json
+{
+  "columns": [
+    "label",
+    "value"
+  ],
+  "mean": 20.0,
+  "rows": 3,
+  "sum": 60.0
+}
 ```
+
+`hologram run` preserves the binary-safe `HoloRunResult` envelope by default. Add `--output-format text` for UTF-8 application output or `--output-format json` for JSON application output. One decoded result prints directly; results from multiple `--input` arguments print in order, with JSON results collected into an array. Invalid text or JSON returns a typed protocol error instead of changing the bytes.
 
 Generate the same schema without hand-writing JSON:
 

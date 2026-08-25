@@ -106,9 +106,15 @@ def main(request: bytes) -&gt; bytes:
   <p>The compiler builds a clean Linux image for the selected architecture, installs the pinned <code>uv</code> build tool, runs <code>uv sync --locked --no-dev --no-editable</code>, adds the generated launcher, saves the OCI image, compresses it with Zstandard, and embeds it as a content-addressed rootfs blob. The resulting archive contains the source manifest as metadata and the canonical runtime manifest as its application identity.</p>
 
   <h3>6. Execute the <code>.holo</code></h3>
-  <pre><code>hologram --json run numpy-pandas.holo --input request.json \
-  | jq -r '.outputs[0] | implode'</code></pre>
-  <pre><code>&#123;"columns":["label","value"],"mean":20.0,"rows":3,"sum":60.0&#125;</code></pre>
+  <pre><code>hologram run numpy-pandas.holo --input request.json \
+  --output-format json</code></pre>
+  <pre><code>&#123;
+  "columns": ["label", "value"],
+  "mean": 20.0,
+  "rows": 3,
+  "sum": 60.0
+&#125;</code></pre>
+  <p>The runtime protocol remains binary-safe, but the CLI can decode a known application contract at the edge. Use <code>--output-format text</code> for UTF-8 or <code>--output-format json</code> for JSON. The default <code>raw</code> format retains the full result envelope, including κ, timing, resident size, and output byte arrays.</p>
   <p>Hologram ensures the verified image is available, then starts its generated entrypoint for each input with networking disabled, a read-only root filesystem, all Linux capabilities dropped, <code>no-new-privileges</code>, one CPU, 1 GiB of memory, 64 PIDs, and a 64 MiB temporary filesystem. Inputs and outputs are limited to 16 MiB and execution to 30 seconds. No project directory is mounted into the container.</p>
   <p>Bundle schema v2 records the exact Docker image ID. When that same ID is already present under the content-derived local tag, Hologram skips decompressing and loading the embedded image. A missing or mismatched image takes the cold path and is restored from the archive before execution. This preserves the self-contained archive guarantee without trusting a mutable local tag.</p>
   <p>From the repository root, <code>just python-holo-demo</code> builds the optimized release CLI and repeats this complete check against the committed example. The first invocation pays the one-time Rust release link; later invocations reuse that binary. Prefer the release CLI for large fat archives because debug-mode verification and hashing are substantially slower.</p>
@@ -122,7 +128,12 @@ just python-holo-package target/numpy-pandas.holo \
 
 # Run that same self-contained file again
 target/release/hologram --json run target/numpy-pandas.holo \
-  --input examples/python-numpy-pandas/request.json</code></pre>
+  --input examples/python-numpy-pandas/request.json
+
+# Or print only the decoded application result
+target/release/hologram run target/numpy-pandas.holo \
+  --input examples/python-numpy-pandas/request.json \
+  --output-format json</code></pre>
 
   <h2>Local versus <code>mvm</code></h2>
   <p>The available provider is local OCI execution. The repository's planned <code>mvm</code> boundary currently lives in <code>hologram-sandbox</code>: its hardware-backed backend requires KVM on Linux x86_64, while its guest understands the existing Hologram graph execution protocol rather than this Python OCI/rootfs envelope. It therefore cannot run this archive today, and an Apple Silicon development host cannot use that KVM backend directly.</p>

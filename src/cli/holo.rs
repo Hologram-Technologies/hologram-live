@@ -36,6 +36,9 @@ enum HoloCommand {
         kappa: String,
         #[arg(long = "input")]
         inputs: Vec<PathBuf>,
+        /// Render application outputs as raw protocol bytes, UTF-8 text, or JSON.
+        #[arg(long, value_enum, default_value_t = run::RunOutputFormat::Raw)]
+        output_format: run::RunOutputFormat,
     },
     Resident,
     Remove {
@@ -62,12 +65,17 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
         HoloCommand::Unload { kappa } => {
             helpers::expect_accepted(helpers::call(&cli, RpcRequest::HoloUnload { kappa }).await?)
         }
-        HoloCommand::Run { kappa, inputs } => {
+        HoloCommand::Run {
+            kappa,
+            inputs,
+            output_format,
+        } => {
             run::run(
                 cli,
                 run::RunArgs {
                     reference: kappa,
                     inputs,
+                    output_format,
                 },
             )
             .await

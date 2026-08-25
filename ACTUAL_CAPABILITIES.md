@@ -12,6 +12,7 @@ This document is deliberately strict about what the current stable build does an
 - File listing, durable renaming, and retrieval over the content-addressed object store.
 - Versioned Protobuf/gRPC native API and client.
 - JSON REST endpoints and Utoipa-generated OpenAPI.
+- A global `--json` CLI contract covering every command result, action acknowledgement, download report, decoded run mode, and typed runtime error so stdout can be consumed consistently with `jq`.
 - Self-hosted Scalar interactive API reference.
 - Local and remote client targets with capability-aware route planning.
 - Bounded Kameo actors with links and supervision.

@@ -82,7 +82,7 @@ pub async fn run(cli: Cli, args: HistoryArgs) -> Result<()> {
     match helpers::call(&cli, request).await? {
         RpcResponse::Conversation(value) => helpers::print(&cli, &value),
         RpcResponse::Conversations(value) => helpers::print(&cli, &value),
-        RpcResponse::Accepted => Ok(()),
+        response @ RpcResponse::Accepted => helpers::expect_accepted(&cli, response),
         other => helpers::unexpected(other),
     }
 }

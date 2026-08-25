@@ -5,6 +5,7 @@ use hologram_live::error::{LiveError, Result};
 use hologram_live::process;
 use hologram_live::protocol::{self, RpcRequest, RpcResponse};
 use serde::Serialize;
+use serde_json::json;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
@@ -44,9 +45,25 @@ pub fn print<T: Serialize + Debug>(cli: &Cli, value: &T) -> Result<()> {
     Ok(())
 }
 
-pub fn expect_accepted(response: RpcResponse) -> Result<()> {
+pub fn message(cli: &Cli, status: &str, message: impl Into<String>) -> Result<()> {
+    let message = message.into();
+    if cli.json {
+        print(cli, &json!({ "status": status, "message": message }))
+    } else {
+        println!("{message}");
+        Ok(())
+    }
+}
+
+pub fn expect_accepted(cli: &Cli, response: RpcResponse) -> Result<()> {
     match response {
-        RpcResponse::Accepted => Ok(()),
+        RpcResponse::Accepted => {
+            if cli.json {
+                print(cli, &json!({ "accepted": true }))
+            } else {
+                Ok(())
+            }
+        }
         other => unexpected(other),
     }
 }

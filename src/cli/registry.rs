@@ -62,7 +62,7 @@ pub async fn run(cli: Cli, args: RegistryArgs) -> Result<()> {
         RegistryCommand::Get { id, output } => {
             match helpers::call(&cli, RpcRequest::RegistryGet { id }).await? {
                 RpcResponse::ObjectContent(object) => {
-                    super::files::write_download(object, output).await
+                    super::files::write_download(&cli, object, output).await
                 }
                 other => helpers::unexpected(other),
             }

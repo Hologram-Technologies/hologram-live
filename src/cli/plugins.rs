@@ -44,11 +44,14 @@ pub async fn run(cli: Cli, args: PluginsArgs) -> Result<()> {
         )
         .await?
         {
-            // The result is already a JSON document; print it verbatim so
-            // both `--json` consumers and humans see the same payload.
             RpcResponse::PluginResult(json) => {
-                println!("{json}");
-                Ok(())
+                if cli.json {
+                    let value: serde_json::Value = serde_json::from_str(&json)?;
+                    helpers::print(&cli, &value)
+                } else {
+                    println!("{json}");
+                    Ok(())
+                }
             }
             other => helpers::unexpected(other),
         },

@@ -39,5 +39,8 @@ async fn heartbeat(cli: &Cli, node_id: String) -> Result<()> {
         operations,
         last_seen_millis: util::now_millis(),
     };
-    helpers::expect_accepted(helpers::call(cli, RpcRequest::NodeHeartbeat { node }).await?)
+    helpers::expect_accepted(
+        cli,
+        helpers::call(cli, RpcRequest::NodeHeartbeat { node }).await?,
+    )
 }

@@ -35,6 +35,16 @@ pub fn openapi_document(modules: &ModuleRegistry) -> OpenApiDocument {
 }
 
 pub async fn serve(state: AppState) -> Result<()> {
+    serve_with_ready(state, || Ok(())).await
+}
+
+/// Serve until shutdown, invoking `on_ready` only after the listener has
+/// bound successfully. CLI frontends use this seam to emit an accurate JSON
+/// readiness document without announcing a server that failed to bind.
+pub async fn serve_with_ready<F>(state: AppState, on_ready: F) -> Result<()>
+where
+    F: FnOnce() -> Result<()>,
+{
     let protected = state
         .module_router()
         .layer(middleware::from_fn_with_state(state.clone(), authenticate));
@@ -58,6 +68,7 @@ pub async fn serve(state: AppState) -> Result<()> {
         .map_err(|error| {
             LiveError::Transport(format!("bind {}: {error}", state.config().server.listen))
         })?;
+    on_ready()?;
     tracing::info!(listen = %state.config().server.listen, "hologram server ready");
     let shutdown_state = state.clone();
     let result = axum::serve(listener, router)

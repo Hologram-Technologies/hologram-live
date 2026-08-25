@@ -42,7 +42,7 @@ pub struct Cli {
     #[arg(long, global = true, env = "HOLOGRAM_CONFIG")]
     pub(crate) config: Option<PathBuf>,
 
-    /// Emit machine-readable JSON where supported.
+    /// Emit machine-readable JSON for every command result.
     #[arg(long, global = true)]
     pub(crate) json: bool,
 

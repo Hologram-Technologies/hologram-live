@@ -50,7 +50,7 @@ enum HoloCommand {
 
 pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
     match args.command {
-        HoloCommand::Fixture { output } => fixture(output).await,
+        HoloCommand::Fixture { output } => fixture(&cli, output).await,
         HoloCommand::Import { path } => import(&cli, path).await,
         HoloCommand::List => match helpers::call(&cli, RpcRequest::HoloList).await? {
             RpcResponse::HoloList(value) => helpers::print(&cli, &value),
@@ -64,9 +64,10 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
                 other => helpers::unexpected(other),
             }
         }
-        HoloCommand::Unload { kappa } => {
-            helpers::expect_accepted(helpers::call(&cli, RpcRequest::HoloUnload { kappa }).await?)
-        }
+        HoloCommand::Unload { kappa } => helpers::expect_accepted(
+            &cli,
+            helpers::call(&cli, RpcRequest::HoloUnload { kappa }).await?,
+        ),
         HoloCommand::Run {
             kappa,
             inputs,
@@ -94,23 +95,41 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
                 },
             )
             .await;
-            helpers::expect_accepted(helpers::call(&cli, RpcRequest::HoloRemove { kappa }).await?)
+            helpers::expect_accepted(
+                &cli,
+                helpers::call(&cli, RpcRequest::HoloRemove { kappa }).await?,
+            )
         }
     }
 }
 
-async fn fixture(output: PathBuf) -> Result<()> {
+async fn fixture(cli: &Cli, output: PathBuf) -> Result<()> {
     let bytes = tokio::task::spawn_blocking(HoloCatalog::fixture)
         .await
         .map_err(|error| LiveError::Conflict(format!("fixture task failed: {error}")))??;
-    tokio::fs::write(&output, bytes)
+    let byte_length = bytes.len();
+    tokio::fs::write(&output, &bytes)
         .await
         .map_err(|error| LiveError::io(&output, error))?;
-    println!(
-        "wrote structurally valid .holo fixture to {}",
-        output.display()
-    );
-    Ok(())
+    if cli.json {
+        helpers::print(
+            cli,
+            &serde_json::json!({
+                "status": "written",
+                "output": output,
+                "byte_length": byte_length
+            }),
+        )
+    } else {
+        helpers::message(
+            cli,
+            "written",
+            format!(
+                "wrote structurally valid .holo fixture to {}",
+                output.display()
+            ),
+        )
+    }
 }
 
 async fn import(cli: &Cli, path: PathBuf) -> Result<()> {

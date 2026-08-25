@@ -7,9 +7,13 @@ pub async fn run(cli: Cli) -> Result<()> {
     let (config, _) = helpers::load(&cli)?;
     let client = LiveClient::from_config(&config)?;
     match client.call(RpcRequest::Shutdown).await {
-        Ok(RpcResponse::Accepted) => println!("hologram daemon stopping"),
+        Ok(RpcResponse::Accepted) => {
+            helpers::message(&cli, "stopping", "hologram daemon stopping")?;
+        }
         Ok(other) => return helpers::unexpected(other),
-        Err(LiveError::Transport(_)) => println!("hologram daemon is not running"),
+        Err(LiveError::Transport(_)) => {
+            helpers::message(&cli, "not_running", "hologram daemon is not running")?;
+        }
         Err(error) => return Err(error),
     }
     Ok(())

@@ -74,6 +74,9 @@ fn print_result(cli: &Cli, result: &HoloRunResult, format: RunOutputFormat) -> R
         RunOutputFormat::Raw => helpers::print(cli, result),
         RunOutputFormat::Text => {
             let outputs = decode_text_outputs(&result.outputs)?;
+            if cli.json {
+                return helpers::print(cli, &outputs);
+            }
             let stdout = io::stdout();
             let mut stdout = stdout.lock();
             for output in outputs {

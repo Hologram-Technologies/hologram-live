@@ -21,10 +21,10 @@ pub async fn run(cli: Cli, args: TracingArgs) -> Result<()> {
         TracingCommand::Set { filter } => RpcRequest::TracingSet { filter },
     };
     match helpers::call(&cli, request).await? {
-        RpcResponse::TracingFilter(value) => {
-            println!("{value}");
-            Ok(())
+        RpcResponse::TracingFilter(value) if cli.json => {
+            helpers::print(&cli, &serde_json::json!({ "filter": value }))
         }
+        RpcResponse::TracingFilter(value) => helpers::message(&cli, "ok", value),
         other => helpers::unexpected(other),
     }
 }

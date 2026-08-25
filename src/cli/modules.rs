@@ -23,15 +23,23 @@ pub async fn run(cli: Cli, args: ModulesArgs) -> Result<()> {
     match args.command {
         ModulesCommand::List => helpers::print(&cli, &modules),
         ModulesCommand::Graph => {
+            let mut graph = Vec::new();
             for module in modules {
                 if module.dependencies.is_empty() {
-                    println!("{}", module.id);
+                    graph.push(module.id.clone());
                 }
                 for dependency in module.dependencies {
-                    println!("{dependency} -> {}", module.id);
+                    graph.push(format!("{dependency} -> {}", module.id));
                 }
             }
-            Ok(())
+            if cli.json {
+                helpers::print(&cli, &graph)
+            } else {
+                for line in graph {
+                    println!("{line}");
+                }
+                Ok(())
+            }
         }
     }
 }

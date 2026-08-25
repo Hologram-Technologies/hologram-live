@@ -258,6 +258,7 @@ impl InferenceEngine for WeightcEngine {
     async fn shutdown(&self) {
         let actors = self.sessions.lock().await.drain();
         for actor in &actors {
+            let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, actor.ask(StopSession)).await;
             let _ = actor.stop_gracefully().await;
         }
         for actor in &actors {
@@ -369,6 +370,7 @@ impl SessionTable {
     async fn evict_oldest(&mut self) {
         while let Some(oldest) = self.recency.pop_front() {
             if let Some(actor) = self.actors.remove(&oldest) {
+                let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, actor.ask(StopSession)).await;
                 let _ = actor.stop_gracefully().await;
                 let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, actor.wait_for_shutdown()).await;
                 return;
@@ -428,6 +430,10 @@ pub struct SessionTurn {
     /// Written with the first successful turn only; later turns ignore it.
     pub system: Option<String>,
 }
+
+/// Graceful actor request that kills and reaps the resident child before the
+/// actor itself stops. `kill_on_drop` remains the abrupt-shutdown backstop.
+struct StopSession;
 
 /// Turn result plus session liveness for the engine's session table.
 #[derive(kameo::Reply)]
@@ -658,6 +664,18 @@ impl Message<SessionTurn> for WeightcSessionActor {
                 }
             }
         }
+    }
+}
+
+impl Message<StopSession> for WeightcSessionActor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: StopSession,
+        _context: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.teardown().await;
     }
 }
 

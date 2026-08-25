@@ -233,6 +233,11 @@ message HoloRunResult {
   string effective_grant_kappa = 6;
   string grant_source = 7;
   string authorization = 8;
+  ApplicationCompletion completion = 9;
+}
+message ApplicationCompletion {
+  string kind = 1;
+  optional sint32 code = 2;
 }
 
 message ConversationMessage { string role = 1; string content = 2; uint64 created_at_millis = 3; }

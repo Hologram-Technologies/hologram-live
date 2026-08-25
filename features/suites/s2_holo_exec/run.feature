@@ -28,6 +28,7 @@ Feature: Resident .holo wasm execution
     Then the compile command succeeds
     When I run the compiled archive directly with input "hello file"
     Then the run output is "HELLO FILE"
+    And the run completion is returned without an exit code
     And the run reports allowed authorization from "local_baseline"
     And the capability audit records "allowed" from "local_baseline" for principal "local-cli"
 
@@ -43,6 +44,7 @@ Feature: Resident .holo wasm execution
     And I load the archive
     And I run the archive with input "custom resident"
     Then the run output is "CUSTOM RESIDENT"
+    And the run completion is returned without an exit code
     And I stop the local service
 
   Scenario: capability requests require an explicit sufficient grant
@@ -85,5 +87,6 @@ Feature: Resident .holo wasm execution
     And I load the archive
     And I run the archive over HTTP with input "http evidence"
     Then the run output is "HTTP EVIDENCE"
+    And the run completion is returned without an exit code
     And the run reports allowed authorization from "local_baseline"
     And I stop the local service

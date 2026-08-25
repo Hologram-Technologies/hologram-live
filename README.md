@@ -440,6 +440,14 @@ $ hologram run numpy-pandas.holo \
 
 `hologram run` preserves the binary-safe `HoloRunResult` envelope by default. Add `--output-format text` for UTF-8 application output or `--output-format json` for JSON application output. One decoded result prints directly; results from multiple `--input` arguments print in order, with JSON results collected into an array. Invalid text or JSON returns a typed protocol error instead of changing the bytes.
 
+The raw envelope keeps output and completion distinct. Core-Wasm v1 returns
+`"completion":{"kind":"returned"}` because its callable returned bytes but has
+no process exit code. A provider with a real process status may return
+`"completion":{"kind":"exited","code":0}`. `unknown` appears only when
+decoding an older peer that did not carry completion. Traps, nonzero processes,
+failures remain typed errors rather than successful results with invented
+status values.
+
 Generate the same schema without hand-writing JSON:
 
 ```bash

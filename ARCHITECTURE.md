@@ -100,6 +100,14 @@ Direct and resident providers validate that same declared entry before start
 and create a fresh guest instance per input. V1 returns bytes but carries no
 numeric process exit status, and it links no WASI or ambient host interface.
 
+Provider invocation returns outputs and completion as separate values. The
+root primary alone supplies `returned` or a provider-observed `exited { code }`
+completion; child primaries and non-primary dependencies never compete with it.
+View, Tensor, and InferenceModel layers are non-exit-bearing. Legacy native or
+JSON results decode completion as `unknown`, while new providers must report an
+actual typed outcome. Direct completion is published only after reverse-order
+cleanup succeeds; resident completion ends one call without unloading the app.
+
 ## Inference engine boundary
 
 The daemon never executes model weights in-process. Chat and model management call an `InferenceEngine` selected by `[inference].engine` in `live.toml`: `echo` (local fallback that repeats the user message), `weightc` (spawns `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact directory), or `ollama` (proxies `POST /api/generate` on an Ollama-compatible endpoint). Imported artifacts are copied under `data_dir/models/<digest>/` and recorded in the content-addressed object store with `kind = "model"`. The daemon renders conversation history as a plain `role: content` transcript; engines apply their own chat templates. An unconfigured engine or model returns `LIVE_CAPABILITY_MISSING` rather than simulating a response.

@@ -3,7 +3,8 @@ use crate::auth::Principal;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
 use crate::protocol::{
-    operation, HoloInspection, HoloPlan, HoloRunResult, OperationKind, ResidentHolo,
+    operation, ApplicationCompletion, HoloInspection, HoloPlan, HoloRunResult, OperationKind,
+    ResidentHolo,
 };
 use axum::extract::{Extension, Path, State};
 use axum::routing::{get, post};
@@ -100,7 +101,7 @@ impl LiveModule for HoloModule {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(list_holo, inspect_holo, plan_holo, resident_holo, load_holo, unload_holo, run_holo),
-    components(schemas(HoloInspection, HoloPlan, ResidentHolo, HoloRunResult, HoloRunHttpRequest)),
+    components(schemas(HoloInspection, HoloPlan, ResidentHolo, HoloRunResult, ApplicationCompletion, HoloRunHttpRequest)),
     tags((name = "holo", description = "Hologram application archives"))
 )]
 struct HoloApiDoc;

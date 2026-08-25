@@ -5,11 +5,14 @@ use crate::error::{LiveError, Result};
 use crate::holo_capability::EffectiveGrant;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_provider::{
-    prepare_and_start_with_admitted_grants, ProviderRegistry, ProviderTarget, RunningApplication,
+    prepare_and_start_with_admitted_grants, LayerCompletion, ProviderRegistry, ProviderTarget,
+    RunningApplication,
 };
 use crate::holo_python::PythonRootfsProvider;
 use crate::holo_wasm::WasmProvider;
-use crate::protocol::{HoloInspection, HoloPlan, HoloRunResult, HoloSection, ResidentHolo};
+use crate::protocol::{
+    ApplicationCompletion, HoloInspection, HoloPlan, HoloRunResult, HoloSection, ResidentHolo,
+};
 use crate::store::ObjectStore;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
@@ -379,6 +382,7 @@ impl HoloRuntime {
             outputs: outcome.outputs,
             elapsed_micros: outcome.elapsed_micros,
             resident_bytes: entry.application.status().resident_bytes,
+            completion: public_completion(outcome.completion),
             requested_capabilities_kappa: entry.requested_capabilities_kappa,
             effective_grant_kappa: entry.effective_grant_kappa,
             grant_source: entry.grant_source,
@@ -473,11 +477,19 @@ impl HoloExecutor {
             outputs: outcome.outputs,
             elapsed_micros: outcome.elapsed_micros,
             resident_bytes,
+            completion: public_completion(outcome.completion),
             requested_capabilities_kappa,
             effective_grant_kappa: effective_grant.kappa.clone(),
             grant_source: effective_grant.source.name().to_owned(),
             authorization: "allowed".to_owned(),
         })
+    }
+}
+
+const fn public_completion(completion: LayerCompletion) -> ApplicationCompletion {
+    match completion {
+        LayerCompletion::Returned => ApplicationCompletion::Returned,
+        LayerCompletion::Exited { code } => ApplicationCompletion::Exited { code },
     }
 }
 
@@ -558,6 +570,18 @@ mod tests {
     fn canonical_capabilities() -> &'static [u8] {
         static CAPABILITIES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
         CAPABILITIES.get_or_init(crate::holo_capability::empty_canonical)
+    }
+
+    #[test]
+    fn provider_completion_stays_distinct_from_output_bytes() {
+        assert_eq!(
+            public_completion(LayerCompletion::Returned),
+            ApplicationCompletion::Returned
+        );
+        assert_eq!(
+            public_completion(LayerCompletion::Exited { code: 23 }),
+            ApplicationCompletion::Exited { code: 23 }
+        );
     }
 
     #[test]
@@ -683,6 +707,7 @@ mod tests {
             .await
             .expect("run");
         assert_eq!(result.outputs, vec![b"HELLO HOLOGRAM".to_vec()]);
+        assert_eq!(result.completion, ApplicationCompletion::Returned);
 
         let resident = runtime.list().await.expect("list");
         assert_eq!(resident.len(), 1);
@@ -711,6 +736,7 @@ mod tests {
             .await
             .expect("execute");
         assert_eq!(result.outputs, vec![b"HELLO HOLO".to_vec()]);
+        assert_eq!(result.completion, ApplicationCompletion::Returned);
         assert!(result.resident_bytes > 0);
     }
 
@@ -947,6 +973,7 @@ mod tests {
             .await
             .expect("direct multi-layer run");
         assert_eq!(direct.outputs, vec![b"DIRECT".to_vec()]);
+        assert_eq!(direct.completion, ApplicationCompletion::Returned);
 
         let runtime = test_runtime("multi-layer-primary");
         let kappa = runtime
@@ -963,6 +990,7 @@ mod tests {
             .await
             .expect("resident multi-layer run");
         assert_eq!(resident.outputs, vec![b"RESIDENT".to_vec()]);
+        assert_eq!(resident.completion, ApplicationCompletion::Returned);
         runtime.unload(&kappa).await.expect("unload");
     }
 

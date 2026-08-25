@@ -354,6 +354,13 @@ fn run_reports_authorization(world: &mut BddWorld, source: String) {
     );
 }
 
+#[then("the run completion is returned without an exit code")]
+fn run_completion_is_returned(world: &mut BddWorld) {
+    let result = world.run_result.as_ref().expect("run result");
+    assert_eq!(result["completion"]["kind"], "returned");
+    assert!(result["completion"].get("code").is_none());
+}
+
 #[then(expr = "the capability audit records {string} from {string} for principal {string}")]
 fn capability_audit_records(
     world: &mut BddWorld,

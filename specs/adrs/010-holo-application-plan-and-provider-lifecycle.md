@@ -115,6 +115,40 @@ the whole strict plan has resolved. Unsupported kinds fail before any start.
 The primary exit-bearing layer supplies application exit status; non-exit
 layers do not invent one.
 
+### Completion and exit amendment (M3.1)
+
+Provider invocation returns byte outputs and a separate typed completion. A
+completion is either `returned`, meaning the callable returned successfully but
+has no process status, or `exited { code }`, meaning the provider observed a
+real numeric exit status. Providers may not infer a status from output bytes.
+The import-free core-Wasm v1 provider always reports `returned`; the direct
+Python OCI provider reports `exited { code: 0 }` only after its container
+processes actually succeed. Traps, nonzero provider processes, protocol errors,
+and lifecycle failures remain typed operation errors and do not produce a
+successful completion.
+
+Only the root application's declared primary is invoked, so only its completion
+can become the application-run completion. Child primaries and non-primary
+layers are lifecycle-managed dependencies and never supply a competing exit
+status. Wasm and rootfs are currently exit-bearing roles. View, Tensor, and
+InferenceModel layers are explicitly non-exit-bearing and cannot be selected as
+the runtime primary. A direct run returns completion only if primary invocation
+and reverse-order shutdown both succeed. A resident `returned` or `exited`
+completion ends that request but leaves the admitted application resident.
+
+Prepare or start failure in any dependency fails the application transaction
+and rolls it back. An observed autonomous non-primary failure after startup must
+transition the application to `failed`, fail active or subsequent invocation,
+and trigger reverse-order cleanup; it must not be reinterpreted as primary
+completion. The current connected non-primary providers do not yet expose an
+autonomous failure callback, so that notification mechanism must land with the
+first such provider rather than being simulated.
+
+`HoloRunResult` exposes completion additively as `{ "kind": "returned" }`,
+`{ "kind": "exited", "code": N }`, or `{ "kind": "unknown" }`. `unknown` is
+reserved for decoding legacy JSON or Protobuf results that predate the field.
+New providers must emit `returned` or `exited`; they may not emit `unknown`.
+
 Provider-owned resident handles remain opaque and are stored by the runtime.
 Shared status reports expose lifecycle state, resident bytes, and typed failure
 details. Existing bounded mailboxes and backpressure remain mandatory.

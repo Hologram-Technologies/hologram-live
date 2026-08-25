@@ -51,8 +51,9 @@ accepted decisions stay in [`adrs/`](adrs/).
 - A missing, empty, or wrongly typed declared entry fails with
   `LIVE_PROTOCOL_ERROR` during provider preparation, before any layer starts.
 - V1 does not fabricate a process exit code. A returned byte value is successful
-  completion; a trap is a typed protocol failure. Exit status must be additive
-  and versioned before it appears in public results.
+  completion; a trap is a typed protocol failure. The public result represents
+  completion additively, while any guest-visible numeric exit contract requires
+  an explicitly versioned future ABI.
 - Direct and resident providers must share the same contract parser,
   validation, invocation, limits, and errors.
 
@@ -101,18 +102,33 @@ and the 13-page Astro documentation build.
 
 ## Slice 2 — Typed completion and exit model
 
-- [ ] Add an internal provider completion type that keeps byte outputs distinct
+- [x] Add an internal provider completion type that keeps byte outputs distinct
   from application completion or exit status.
-- [ ] Define which layer kinds are exit-bearing and keep View, Tensor, and
+- [x] Define which layer kinds are exit-bearing and keep View, Tensor, and
   InferenceModel layers explicitly non-exit-bearing.
-- [ ] Define parent behavior when the root primary completes and when a
+- [x] Define parent behavior when the root primary completes and when a
   non-primary lifecycle-managed layer fails after startup.
-- [ ] Preserve core-Wasm v1 semantics as successful completion without a
+- [x] Preserve core-Wasm v1 semantics as successful completion without a
   fabricated numeric process status.
-- [ ] Decide the additive Protobuf/JSON representation for a future explicit
+- [x] Decide the additive Protobuf/JSON representation for a future explicit
   exit status, including legacy decode defaults.
-- [ ] Amend ADR 010 with the primary completion and non-primary failure rules.
-- [ ] Add provider, runtime, native round-trip, HTTP, CLI, and BDD coverage.
+- [x] Amend ADR 010 with the primary completion and non-primary failure rules.
+- [x] Add provider, runtime, native round-trip, HTTP/OpenAPI, CLI, and BDD coverage.
+
+Slice 2 evidence (2026-08-25): provider invocation now carries output bytes and
+`LayerCompletion` independently. Only an exit-bearing root primary can supply
+the application outcome; Wasm reports `Returned`, the Python OCI provider
+reports an exit code only after observing successful child-process exits, and
+View, Tensor, and InferenceModel layers cannot become the application primary.
+The additive public model exposes `returned`, `exited { code }`, and a
+legacy-decode-only `unknown` across native JSON, HTTP/OpenAPI, and
+Protobuf/gRPC. ADR 010 defines direct cleanup, resident-call completion, child
+and non-primary ownership, and the deferred provider-notification mechanism for
+autonomous dependency failure. Full verification passes formatting,
+source-size and product-boundary gates, all-target checks, 154 library tests, 21
+CLI tests, Clippy with warnings denied, all 11 BDD scenarios / 115 steps, the
+optimized release build, release smoke, and the 13-page Astro documentation
+build.
 
 ## Slice 3 — Version negotiation and host-interface design
 
@@ -144,9 +160,10 @@ and the 13-page Astro documentation build.
 
 ## Deferred discoveries
 
-- [ ] `DISC-014` — **Next** — Core-Wasm v1 cannot express a numeric exit status
-  separately from its packed byte-output pointer. Route to Slice 2 and the
-  guest-contract ADR; do not reinterpret output bytes.
+- [x] `DISC-014` — **Resolved in Slice 2** — Core-Wasm v1 reports `returned`
+  separately from byte outputs and does not fabricate a numeric status. The
+  additive public type can carry a real provider-observed exit code; a future
+  guest-visible exit contract remains part of versioned ABI design.
 - [ ] `DISC-015` — **Next** — The canonical manifest has no Wasm ABI-version
   field. Route to Slice 3 and upstream format review; do not encode versioning
   in filenames or entry strings.

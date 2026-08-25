@@ -3,11 +3,11 @@ use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
 use crate::models::ModelInfo;
 use crate::protocol::{
-    CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloBlob, HoloChild,
-    HoloDirectory, HoloInspection, HoloLayer, HoloPlan, HoloPlanBlocker, HoloPlanLayer,
-    HoloPlanLimits, HoloPlanObject, HoloPlanProvider, HoloRunResult, HoloSection, ModuleInfo,
-    NodeRecord, ObjectContent, ObjectMetadata, OperationInfo, OperationKind, PluginStatus,
-    ResidentHolo, RpcRequest, RpcResponse,
+    ApplicationCompletion, CapabilityManifest, Conversation, ConversationMessage, HealthResponse,
+    HoloBlob, HoloChild, HoloDirectory, HoloInspection, HoloLayer, HoloPlan, HoloPlanBlocker,
+    HoloPlanLayer, HoloPlanLimits, HoloPlanObject, HoloPlanProvider, HoloRunResult, HoloSection,
+    ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata, OperationInfo, OperationKind,
+    PluginStatus, ResidentHolo, RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -993,6 +993,7 @@ impl From<HoloRunResult> for pb::HoloRunResult {
             effective_grant_kappa: value.effective_grant_kappa,
             grant_source: value.grant_source,
             authorization: value.authorization,
+            completion: Some(value.completion.into()),
         }
     }
 }
@@ -1006,11 +1007,50 @@ impl TryFrom<pb::HoloRunResult> for HoloRunResult {
             outputs: value.outputs,
             elapsed_micros: value.elapsed_micros,
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
+            completion: value
+                .completion
+                .map(ApplicationCompletion::try_from)
+                .transpose()?
+                .unwrap_or_default(),
             requested_capabilities_kappa: value.requested_capabilities_kappa,
             effective_grant_kappa: value.effective_grant_kappa,
             grant_source: value.grant_source,
             authorization: value.authorization,
         })
+    }
+}
+
+impl From<ApplicationCompletion> for pb::ApplicationCompletion {
+    fn from(value: ApplicationCompletion) -> Self {
+        match value {
+            ApplicationCompletion::Unknown => Self {
+                kind: "unknown".to_owned(),
+                code: None,
+            },
+            ApplicationCompletion::Returned => Self {
+                kind: "returned".to_owned(),
+                code: None,
+            },
+            ApplicationCompletion::Exited { code } => Self {
+                kind: "exited".to_owned(),
+                code: Some(code),
+            },
+        }
+    }
+}
+
+impl TryFrom<pb::ApplicationCompletion> for ApplicationCompletion {
+    type Error = LiveError;
+
+    fn try_from(value: pb::ApplicationCompletion) -> Result<Self> {
+        match (value.kind.as_str(), value.code) {
+            ("" | "unknown", None) => Ok(Self::Unknown),
+            ("returned", None) => Ok(Self::Returned),
+            ("exited", Some(code)) => Ok(Self::Exited { code }),
+            (kind, code) => Err(LiveError::Protocol(format!(
+                "invalid application completion kind {kind:?} with code {code:?}"
+            ))),
+        }
     }
 }
 
@@ -1384,6 +1424,7 @@ mod tests {
             outputs: vec![b"ok".to_vec()],
             elapsed_micros: 7,
             resident_bytes: 42,
+            completion: ApplicationCompletion::Returned,
             requested_capabilities_kappa: "blake3:request".to_owned(),
             effective_grant_kappa: "blake3:grant".to_owned(),
             grant_source: "local_baseline".to_owned(),
@@ -1394,6 +1435,7 @@ mod tests {
         assert_eq!(decoded.effective_grant_kappa, "blake3:grant");
         assert_eq!(decoded.grant_source, "local_baseline");
         assert_eq!(decoded.authorization, "allowed");
+        assert_eq!(decoded.completion, ApplicationCompletion::Returned);
 
         let legacy = HoloRunResult::try_from(pb::HoloRunResult {
             kappa: "blake3:legacy".to_owned(),
@@ -1404,9 +1446,25 @@ mod tests {
             effective_grant_kappa: String::new(),
             grant_source: String::new(),
             authorization: String::new(),
+            completion: None,
         })
         .expect("decode legacy result");
         assert!(legacy.authorization.is_empty());
         assert!(legacy.grant_source.is_empty());
+        assert_eq!(legacy.completion, ApplicationCompletion::Unknown);
+
+        let exited = ApplicationCompletion::try_from(pb::ApplicationCompletion {
+            kind: "exited".to_owned(),
+            code: Some(17),
+        })
+        .expect("explicit exit status");
+        assert_eq!(exited, ApplicationCompletion::Exited { code: 17 });
+
+        let malformed = ApplicationCompletion::try_from(pb::ApplicationCompletion {
+            kind: "returned".to_owned(),
+            code: Some(0),
+        })
+        .expect_err("returned completion cannot carry an exit code");
+        assert_eq!(malformed.code(), "LIVE_PROTOCOL_ERROR");
     }
 }

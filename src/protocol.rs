@@ -409,12 +409,25 @@ pub struct ResidentHolo {
     pub authorization: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ApplicationCompletion {
+    #[default]
+    Unknown,
+    Returned,
+    Exited {
+        code: i32,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HoloRunResult {
     pub kappa: String,
     pub outputs: Vec<Vec<u8>>,
     pub elapsed_micros: u64,
     pub resident_bytes: usize,
+    #[serde(default)]
+    pub completion: ApplicationCompletion,
     #[serde(default)]
     pub requested_capabilities_kappa: String,
     #[serde(default)]
@@ -673,5 +686,29 @@ impl RpcResponse {
             Ok(value) => map(value),
             Err(error) => Self::Error(ApiError::from(&error)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn holo_completion_json_is_typed_and_legacy_results_default_to_unknown() {
+        let legacy: HoloRunResult = serde_json::from_value(serde_json::json!({
+            "kappa": "blake3:legacy",
+            "outputs": [],
+            "elapsed_micros": 0,
+            "resident_bytes": 0
+        }))
+        .expect("decode legacy result");
+        assert_eq!(legacy.completion, ApplicationCompletion::Unknown);
+
+        let returned = serde_json::to_value(ApplicationCompletion::Returned)
+            .expect("serialize returned completion");
+        assert_eq!(returned, serde_json::json!({"kind": "returned"}));
+        let exited = serde_json::to_value(ApplicationCompletion::Exited { code: 9 })
+            .expect("serialize exited completion");
+        assert_eq!(exited, serde_json::json!({"kind": "exited", "code": 9}));
     }
 }

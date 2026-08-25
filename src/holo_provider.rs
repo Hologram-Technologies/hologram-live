@@ -81,9 +81,31 @@ pub struct LayerPrepareContext {
     pub target: ProviderTarget,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerCompletion {
+    Returned,
+    Exited { code: i32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerCompletionRole {
+    ExitBearing,
+    NonExitBearing,
+}
+
+pub const fn layer_completion_role(kind: LayerKind) -> LayerCompletionRole {
+    match kind {
+        LayerKind::WasmCodemodule | LayerKind::RootfsImage => LayerCompletionRole::ExitBearing,
+        LayerKind::TensorPlan | LayerKind::View | LayerKind::InferenceModel => {
+            LayerCompletionRole::NonExitBearing
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayerInvocation {
     pub outputs: Vec<Vec<u8>>,
+    pub completion: LayerCompletion,
     pub elapsed_micros: u64,
 }
 
@@ -327,6 +349,23 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
             plan.identity.application_kappa
         ))
     })?;
+    let primary = plan
+        .layers
+        .iter()
+        .find(|layer| layer.position == primary_layer)
+        .ok_or_else(|| {
+            LiveError::InvalidHolo(format!(
+                "application {} primary layer {primary_layer} is missing",
+                plan.identity.application_kappa
+            ))
+        })?;
+    if layer_completion_role(primary.kind) == LayerCompletionRole::NonExitBearing {
+        return Err(LiveError::Capability(format!(
+            "application {} cannot use non-exit-bearing {} layer {primary_layer} as its primary",
+            plan.identity.application_kappa,
+            layer_kind_name(primary.kind)
+        )));
+    }
     let state = AtomicU8::new(LifecycleState::Preparing.value());
     let application_order = lifecycle_application_order(plan)?;
     let layer_count = plan.layers.len()
@@ -656,6 +695,7 @@ mod tests {
             record(&self.events, format!("invoke:{}", self.entry));
             Ok(LayerInvocation {
                 outputs: inputs,
+                completion: LayerCompletion::Returned,
                 elapsed_micros: 1,
             })
         }
@@ -695,6 +735,7 @@ mod tests {
             record(&self.events, format!("invoke:{}", self.position));
             Ok(LayerInvocation {
                 outputs: inputs,
+                completion: LayerCompletion::Returned,
                 elapsed_micros: 1,
             })
         }
@@ -1239,6 +1280,28 @@ mod tests {
                 "stop:0"
             ]
         );
+    }
+
+    #[test]
+    fn completion_roles_do_not_invent_exit_semantics_for_service_layers() {
+        assert_eq!(
+            layer_completion_role(LayerKind::WasmCodemodule),
+            LayerCompletionRole::ExitBearing
+        );
+        assert_eq!(
+            layer_completion_role(LayerKind::RootfsImage),
+            LayerCompletionRole::ExitBearing
+        );
+        for kind in [
+            LayerKind::TensorPlan,
+            LayerKind::View,
+            LayerKind::InferenceModel,
+        ] {
+            assert_eq!(
+                layer_completion_role(kind),
+                LayerCompletionRole::NonExitBearing
+            );
+        }
     }
 
     fn record(events: &Mutex<Vec<String>>, event: String) {

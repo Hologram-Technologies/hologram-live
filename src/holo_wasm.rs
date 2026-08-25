@@ -32,8 +32,8 @@ use crate::actor::RootSupervisor;
 use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
 use crate::holo_provider::{
-    LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus, PreparedLayer,
-    ProviderTarget,
+    LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
+    PreparedLayer, ProviderTarget,
 };
 use hologram::space::LayerKind;
 use kameo::actor::{ActorRef, Spawn};
@@ -346,6 +346,7 @@ impl PreparedLayer for DirectWasmLayer {
         self.processed.fetch_add(1, Ordering::Relaxed);
         Ok(LayerInvocation {
             outputs,
+            completion: LayerCompletion::Returned,
             elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
         })
     }
@@ -428,6 +429,7 @@ impl PreparedLayer for ResidentWasmLayer {
         };
         Ok(LayerInvocation {
             outputs: outcome.outputs,
+            completion: LayerCompletion::Returned,
             elapsed_micros: outcome.elapsed_micros,
         })
     }

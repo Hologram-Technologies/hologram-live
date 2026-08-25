@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1 Slice 2, typed provider completion and exit semantics
+- Next delivery: M3.1 Slice 3, guest-contract versioning and host-interface design
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -134,9 +134,9 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Prepare and start layers in manifest order.
 - [x] If a layer fails, stop every previously started layer in reverse order.
 - [x] Stop all layers in reverse order during normal unload.
-- [ ] Route application exit status from the manifest’s primary exit-bearing layer.
-- [ ] Do not invent exit semantics for tensor or view layers.
-- [ ] Define how a non-primary layer failure affects a running application.
+- [x] Route typed application completion or provider-observed exit status from the manifest’s primary exit-bearing layer.
+- [x] Do not invent exit semantics for tensor, view, or inference-model layers.
+- [x] Define how an observed non-primary layer failure affects a running application; the autonomous provider notification mechanism lands with the first provider that needs it.
 - [x] Make repeated load and unload requests idempotent where safe.
 - [x] Preserve bounded mailboxes and backpressure for resident applications.
 - [ ] Emit structured lifecycle traces and audit events for plan, prepare, start, rollback, and stop.
@@ -231,8 +231,10 @@ dependencies until an explicit child invocation contract is introduced.
   instances, one-output-per-input behavior, and lack of numeric exit status.
 - [x] Align compiler and app-generator defaults with the executable v1
   `holo_run` compatibility entry while permitting another declared export.
-- [ ] Introduce a typed provider completion model that does not conflate byte
+- [x] Introduce a typed provider completion model that does not conflate byte
   output, successful completion, and a future explicit exit status.
+- [x] Expose `returned`, provider-observed `exited { code }`, and legacy-only
+  `unknown` completion additively through JSON/HTTP and Protobuf/gRPC.
 - [x] Preserve one-output-per-input compatibility until a versioned guest-contract upgrade lands.
 - [x] Remove the runtime’s “exactly one layer at primary position zero” special case.
 
@@ -539,7 +541,7 @@ application/DMG builds pass.
 
 - [ ] Define version negotiation for the core-Wasm guest contract.
 - [ ] Move beyond fixed anonymous one-input/one-output execution with typed, named ports.
-- [ ] Define application exit status separately from byte outputs.
+- [x] Define application completion and exit status separately from byte outputs.
 - [ ] Add structured logs and diagnostics without treating stdout as a protocol.
 - [ ] Define streaming output only after provider cancellation and backpressure are in place.
 - [ ] Define stateful sessions as an explicit API rather than silently changing per-run fresh-instance behavior.
@@ -590,5 +592,8 @@ application/DMG builds pass.
   tests.
 - [x] Define and enforce the M3.1 core-Wasm v1 manifest-entry contract without
   adding host imports or weakening existing archives.
-- [ ] Define typed provider completion and application exit semantics without
+- [x] Define typed provider completion and application exit semantics without
   fabricating a core-Wasm v1 process status.
+- [ ] Decide the canonical guest-contract version negotiation and
+  capability-gated host-interface mapping before implementing Component Model
+  or WASI support.

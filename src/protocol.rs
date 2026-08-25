@@ -360,6 +360,7 @@ fn resolution_source_name(source: &ResolutionSource) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ResidentHolo {
     pub kappa: String,
+    pub state: String,
     pub input_count: usize,
     pub output_count: usize,
     pub resident_bytes: usize,

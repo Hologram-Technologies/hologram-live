@@ -926,6 +926,7 @@ impl From<ResidentHolo> for pb::ResidentHolo {
     fn from(value: ResidentHolo) -> Self {
         Self {
             kappa: value.kappa,
+            state: value.state,
             input_count: value.input_count.try_into().unwrap_or(u64::MAX),
             output_count: value.output_count.try_into().unwrap_or(u64::MAX),
             resident_bytes: value.resident_bytes.try_into().unwrap_or(u64::MAX),
@@ -941,6 +942,11 @@ impl TryFrom<pb::ResidentHolo> for ResidentHolo {
     fn try_from(value: pb::ResidentHolo) -> Result<Self> {
         Ok(Self {
             kappa: value.kappa,
+            state: if value.state.is_empty() {
+                "unknown".to_owned()
+            } else {
+                value.state
+            },
             input_count: narrow(value.input_count, "input_count")?,
             output_count: narrow(value.output_count, "output_count")?,
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
@@ -1297,5 +1303,32 @@ mod tests {
         .expect("decode legacy inspection");
 
         assert!(decoded.application_kappa.is_none());
+    }
+
+    #[test]
+    fn resident_lifecycle_state_round_trips_and_defaults_for_older_peers() {
+        let resident = ResidentHolo {
+            kappa: "blake3:archive".to_owned(),
+            state: "running".to_owned(),
+            input_count: 1,
+            output_count: 1,
+            resident_bytes: 42,
+            queued: 0,
+            processed: 3,
+        };
+        let decoded = ResidentHolo::try_from(pb::ResidentHolo::from(resident)).expect("decode");
+        assert_eq!(decoded.state, "running");
+
+        let legacy = ResidentHolo::try_from(pb::ResidentHolo {
+            kappa: "blake3:legacy".to_owned(),
+            input_count: 1,
+            output_count: 1,
+            resident_bytes: 42,
+            queued: 0,
+            processed: 0,
+            state: String::new(),
+        })
+        .expect("decode legacy resident");
+        assert_eq!(legacy.state, "unknown");
     }
 }

@@ -2,8 +2,9 @@
 
 ## Sprint status
 
-- State: active
+- State: complete
 - Started: 2026-08-25
+- Completed: 2026-08-25
 - Last reviewed: 2026-08-25
 - Durable milestone: [M1 — Canonical application plan and provider boundary](plans/holo-application-runtime.md#m1--canonical-application-plan-and-provider-boundary)
 - Goal: make every `.holo` application explainable and fully resolved before execution, then route the existing Wasm paths through one provider lifecycle
@@ -17,13 +18,12 @@ requirements into the appropriate durable document before closing the sprint.
 
 ## Why this is next
 
-The archive, compiler, inspection, Wasm runtime, experimental Python rootfs
-path, and inference-model metadata are real. Execution still has two structural
-shortcuts in `src/holo.rs`: it resolves only the primary layer, and it requires
-exactly one layer at primary position zero. Direct and resident execution also
-prepare Wasm separately. Connecting View, Tensor, `hologram-ai`, or microVM
-providers before removing those shortcuts would duplicate resolution and
-lifecycle behavior in every backend.
+At sprint start, execution had two structural shortcuts in `src/holo.rs`: it
+resolved only the primary layer and required exactly one layer at primary
+position zero, while direct and resident paths prepared Wasm separately. This
+sprint removed those shortcuts through complete planning and one transactional
+provider lifecycle. View, Tensor, `hologram-ai`, and production microVM
+providers can now extend that boundary without duplicating archive resolution.
 
 The next dependency chain is therefore:
 
@@ -186,44 +186,55 @@ release smoke; the final added provider-matrix test brings the unit total to
 
 ### Slice 4 — Provider lifecycle and Wasm migration
 
-- [ ] Define the closed provider registry keyed by `LayerKind`; absence is a
+- [x] Define the closed provider registry keyed by `LayerKind`; absence is a
   typed availability result, not a fallback implementation.
-- [ ] Separate `prepare`, `start`, `invoke`/attach, and `stop` phases as decided
+- [x] Separate `prepare`, `start`, `invoke`/attach, and `stop` phases as decided
   by ADR 010.
-- [ ] Define planned, preparing, running, stopping, stopped, and failed states.
-- [ ] Start layers in manifest order and stop them in reverse order.
-- [ ] Roll back every previously started layer in reverse order after a later
+- [x] Define planned, preparing, running, stopping, stopped, and failed states.
+- [x] Start layers in manifest order and stop them in reverse order.
+- [x] Roll back every previously started layer in reverse order after a later
   preparation/start failure.
-- [ ] Make repeated load idempotent and define safe repeated-unload behavior.
-- [ ] Require providers to report lifecycle state, resident bytes, and typed
+- [x] Make repeated load idempotent and define safe repeated-unload behavior.
+- [x] Require providers to report lifecycle state, resident bytes, and typed
   failures without leaking Wasmtime or platform UI/microVM types into the
   shared plan.
-- [ ] Move direct and resident Wasmtime paths behind the provider boundary.
-- [ ] Remove the one-layer/primary-zero execution special case.
-- [ ] Preserve the core-Wasm v1 contract, one-output-per-input behavior,
+- [x] Move direct and resident Wasmtime paths behind the provider boundary.
+- [x] Remove the one-layer/primary-zero execution special case.
+- [x] Preserve the core-Wasm v1 contract, one-output-per-input behavior,
   bounded resident mailbox, and existing `HoloRunResult` compatibility.
-- [ ] Preserve the experimental direct Python rootfs demo through a clearly
+- [x] Preserve the experimental direct Python rootfs demo through a clearly
   named compatibility provider/adapter; do not promote it to production.
-- [ ] Add synthetic providers that record call order and fail at every
+- [x] Add synthetic providers that record call order and fail at every
   prepare/start/stop boundary.
-- [ ] Add structured lifecycle traces for plan, prepare, start, rollback, and
+- [x] Add structured lifecycle traces for plan, prepare, start, rollback, and
   stop using the identity vocabulary from Slice 1.
 
 Slice 4 acceptance:
 
-- [ ] Existing direct and resident Wasm BDD scenarios pass through
+- [x] Existing direct and resident Wasm BDD scenarios pass through
   `ApplicationPlan` with no output regression.
-- [ ] A synthetic later-layer failure proves reverse-order rollback.
-- [ ] Normal unload proves reverse-order stopping.
-- [ ] Provider preparation never occurs for a plan with unresolved content or
+- [x] A synthetic later-layer failure proves reverse-order rollback.
+- [x] Normal unload proves reverse-order stopping.
+- [x] Provider preparation never occurs for a plan with unresolved content or
   blockers.
-- [ ] The NumPy/pandas `.holo` demo still executes directly with its documented
+- [x] The NumPy/pandas `.holo` demo still executes directly with its documented
   support warning.
+
+Slice 4 evidence (2026-08-25): the async provider registry and coordinator have
+synthetic prepare/start/stop failure injection, manifest-order startup,
+reverse-order normal stop and rollback, rollback diagnostics, lifecycle states,
+and idempotent stop tests. Direct and resident Wasmtime run behind the same
+boundary; a real two-Wasm-layer archive with primary position 1 executes both
+ways, while the existing missing-secondary fixture still fails before Wasm
+compilation. The native resident response reports lifecycle state additively.
+All 135 unit/bin tests and 7 BDD scenarios / 59 steps pass. The 105.8 MB locked
+NumPy/pandas archive compiled and executed through `python-oci-direct`,
+returning the expected columns, three rows, mean 20, and sum 60.
 
 ## Sprint-wide completion gates
 
 - [x] Public planning behavior has BDD coverage.
-- [ ] Unit and negative tests cover resolution, identity, limits, provider
+- [x] Unit and negative tests cover resolution, identity, limits, provider
   ordering, rollback, and idempotency.
 - [x] Native protocol, gRPC, JSON/HTTP, CLI, module discovery, and route
   explanation agree.
@@ -233,10 +244,10 @@ Slice 4 acceptance:
   durable runtime plan are current.
 - [x] `cargo fmt`, source-size gate, `cargo check`, full tests, Clippy, BDD,
   optimized build, and release smoke test pass.
-- [ ] Completed durable items are checked in
+- [x] Completed durable items are checked in
   `plans/holo-application-runtime.md`; unfinished discoveries remain here with
   an explicit disposition.
-- [ ] Changes land as reviewable commits/PR slices without unrelated files.
+- [x] Changes land as reviewable commits/PR slices without unrelated files.
 
 ## Discovery log
 
@@ -248,7 +259,7 @@ was discovered.
 - [x] `DISC-001` — **Now** — Top-level application identity is missing from
   `HoloInspection` and compile reports. Evidence: `src/protocol.rs` and
   `src/cli/compile.rs`. Routed to Slice 1 / M1 identity model.
-- [ ] `DISC-002` — **Now** — `extract_primary_layer` resolves only one layer and
+- [x] `DISC-002` — **Now** — `extract_primary_layer` resolves only one layer and
   requires primary position zero. Evidence: `src/holo.rs`. Routed to Slices 2
   and 4 / M1 planning and lifecycle.
 - [x] `DISC-003` — **Now** — There is no `holo.plan` operation in protocol,
@@ -257,7 +268,7 @@ was discovered.
 - [x] `DISC-004` — **Now** — ADR 007 still describes new archives as v3 even
   though ADR 009 and the implementation use v4 writes with v2/v3 reads. Routed
   to Slice 1 documentation reconciliation.
-- [ ] `DISC-005` — **Now** — The experimental Python OCI direct executor sits
+- [x] `DISC-005` — **Now** — The experimental Python OCI direct executor sits
   beside the Wasm executor and could regress during provider extraction.
   Evidence: `src/holo.rs` and ADR 008. Routed to Slice 4 compatibility tests.
 - [ ] `DISC-006` — **Next** — Recursive child planning cannot define execution
@@ -266,6 +277,10 @@ was discovered.
 - [ ] `DISC-007` — **Later** — Resolution limits are necessary now, but CPU,
   memory, deadline, cancellation, and concurrency budgets remain M5 and must
   not be implied by this sprint's planner limits.
+- [ ] `DISC-008` — **Next** — Lifecycle traces now carry archive/application
+  identity, phase, layer, and provider fields; durable audit-event emission
+  still needs an audit schema tied to M2 grant decisions. Routed to M2 audit
+  coverage rather than adding authority-free events in M1.
 
 Template for new discoveries:
 

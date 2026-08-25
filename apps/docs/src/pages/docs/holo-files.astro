@@ -73,7 +73,7 @@ import { sitePath } from '../../lib/site';
   <div class="table-wrap"><table>
     <thead><tr><th>Source kind</th><th>Manifest kind</th><th>Descriptor</th><th>Hologram Live today</th></tr></thead>
     <tbody>
-      <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and entrypoint; portable.</td><td>Executes in-process when it is the single primary layer.</td></tr>
+      <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and entrypoint; portable.</td><td>Executes in-process through the ordered provider lifecycle; the primary may be at any layer position.</td></tr>
       <tr><td><code>tensor</code></td><td><code>TensorPlan</code></td><td>Content κ and session entrypoint; no app exit code.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
       <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Directly executes experimental Python OCI bundles; other providers remain explicit.</td></tr>
       <tr><td><code>view</code></td><td><code>View</code></td><td>Content κ and target surface; no app exit code.</td><td>Packages and inspects; the desktop does not attach it yet.</td></tr>
@@ -138,6 +138,7 @@ hologram --json holo plan blake3:… |
     <article class="doc-card"><h3>Thin</h3><p>The manifest travels without payload blobs. The runtime resolves the same κ references from a content store or sync source.</p></article>
   </div>
   <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives by default and <code>--thin</code> emits the same canonical manifest without content blobs. Importing a fat archive caches its verified payloads by κ, so catalog-backed resident execution can later resolve a thin archive. Before direct or resident execution starts a provider, Live resolves and re-hashes the required capability object and every non-child layer, deduplicates equal κ references, and applies explicit layer, object, and byte limits. A missing secondary layer therefore blocks primary execution. Direct file execution requires a self-contained fat archive; child references remain blockers until capability attenuation lands.</div>
+  <p>Blocker-free applications use a closed provider registry keyed by the canonical layer kind. Providers are prepared and started in manifest order, while unload and failure rollback stop them in reverse order. The original typed failure remains primary if cleanup also fails. Wasmtime and the experimental Python OCI engine stay behind async native interfaces, so their private handles do not enter the plan or transport schema. Resident records expose lifecycle <code>state</code>, aggregate resident bytes, queue depth, and processed calls; repeated load and unload are safe and idempotent.</p>
 
   <h2>Build, inspect, and run</h2>
   <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>

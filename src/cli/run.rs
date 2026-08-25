@@ -47,12 +47,7 @@ pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
         let bytes = tokio::fs::read(&local)
             .await
             .map_err(|error| LiveError::io(&local, error))?;
-        let result =
-            tokio::task::spawn_blocking(move || HoloExecutor::default().execute(&bytes, inputs))
-                .await
-                .map_err(|error| {
-                    LiveError::Conflict(format!("local holo execution task failed: {error}"))
-                })??;
+        let result = HoloExecutor::default().execute(&bytes, inputs).await?;
         return print_result(&cli, &result, args.output_format);
     }
     match helpers::call(

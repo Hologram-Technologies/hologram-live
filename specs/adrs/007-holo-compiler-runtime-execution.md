@@ -13,8 +13,8 @@ The archive format separates a canonical application manifest from its physical 
 Hologram Live uses three explicit product layers:
 
 1. The compiler reads `hologram.json`, canonicalizes its `AppManifest`, and emits either a fat or thin v4 archive. Packaging does not change the canonical manifest. Readers continue accepting v2/v3 archives.
-2. The runtime verifies the archive, decodes and validates its manifest, resolves primary-layer content by κ from the archive and then the local content cache, and manages warm resident programs.
-3. The execution provider compiles and invokes the resolved layer. Wasmtime is the first provider and implements the core-Wasm guest contract in `src/holo_wasm.rs`.
+2. The runtime verifies the archive, decodes and validates its manifest, resolves and re-hashes the capability object plus every non-child layer from embedded content and then the local content cache, and produces a strict `ApplicationPlan` before provider work.
+3. A closed registry keyed by `LayerKind` selects async providers. Providers prepare and start in manifest order, invoke the declared primary layer where applicable, and stop or roll back in reverse order. Wasmtime is the first provider and implements the core-Wasm guest contract in `src/holo_wasm.rs`; the direct-only Python OCI adapter remains explicitly experimental.
 
 Importing a fat archive caches its verified `ContentBlob` payloads without creating user-facing registry metadata. A later thin archive can therefore resolve the same κ locally. Direct file execution intentionally accepts only self-contained archives because it has no configured external resolver; catalog-backed resident execution supports thin archives when their content is cached.
 

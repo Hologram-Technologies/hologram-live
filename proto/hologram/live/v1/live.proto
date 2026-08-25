@@ -209,6 +209,7 @@ message ResidentHolo {
   uint64 resident_bytes = 4;
   uint64 queued = 5;
   uint64 processed = 6;
+  string state = 7;
 }
 message HoloRunResult {
   string kappa = 1;

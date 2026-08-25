@@ -180,7 +180,7 @@ RUN=$(HOME="$HOME_DIR" json_output "$BIN" --json run "$WASM_KAPPA" --input "$TMP
 printf '%s\n' "$RUN" | jq -e '.outputs[0] == [72,69,76,76,79,32,72,79,76,79,71,82,65,77]' >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json run "$WASM_KAPPA" --input "$TMP/holo-input.txt" --output-format text >/dev/null
 RESIDENT=$(HOME="$HOME_DIR" json_output "$BIN" --json holo resident)
-printf '%s\n' "$RESIDENT" | jq -e --arg kappa "$WASM_KAPPA" 'any(.[]; .kappa == $kappa)' >/dev/null
+printf '%s\n' "$RESIDENT" | jq -e --arg kappa "$WASM_KAPPA" 'any(.[]; .kappa == $kappa and .state == "running")' >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json holo unload "$WASM_KAPPA" >/dev/null
 THREAD=$(HOME="$HOME_DIR" json_output "$BIN" --json history new smoke)
 THREAD_ID=$(printf '%s\n' "$THREAD" | jq -er '.id')

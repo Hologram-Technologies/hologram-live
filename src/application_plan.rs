@@ -413,6 +413,14 @@ where
         archive_fingerprint,
         application_kappa: address_bytes(&canonical_manifest).to_string(),
     };
+    tracing::info!(
+        application_kappa = %identity.application_kappa,
+        archive_kappa = %identity.archive_kappa,
+        layer_count = manifest.layers.len(),
+        child_count = manifest.children.len(),
+        lifecycle_phase = "plan",
+        "planning holo application"
+    );
 
     let mut blockers = Vec::new();
     if manifest.layers.len() > limits.max_layers {

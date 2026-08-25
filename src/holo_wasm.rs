@@ -19,11 +19,21 @@
 //! still executes against a fresh `Store` and instance, so guests cannot
 //! accumulate state between invocations.
 
+use crate::actor::RootSupervisor;
+use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
+use crate::holo_provider::{
+    LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus, PreparedLayer,
+    ProviderTarget,
+};
+use hologram::space::LayerKind;
+use kameo::actor::{ActorRef, Spawn};
+use kameo::error::SendError;
+use kameo::mailbox;
 use kameo::message::{Context, Message};
 use kameo::Actor;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use wasmtime::{Engine, Instance, Memory, Module, Store, TypedFunc};
 
@@ -98,6 +108,270 @@ pub fn execute(
         outputs,
         elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
     })
+}
+
+pub struct WasmProvider {
+    target: ProviderTarget,
+    engine: Engine,
+    resident_root: Option<ActorRef<RootSupervisor>>,
+    mailbox_capacity: usize,
+}
+
+impl WasmProvider {
+    pub fn direct(engine: Engine) -> Self {
+        Self {
+            target: ProviderTarget::Direct,
+            engine,
+            resident_root: None,
+            mailbox_capacity: 1,
+        }
+    }
+
+    pub fn resident(
+        engine: Engine,
+        root: Option<ActorRef<RootSupervisor>>,
+        mailbox_capacity: usize,
+    ) -> Self {
+        Self {
+            target: ProviderTarget::Resident,
+            engine,
+            resident_root: root,
+            mailbox_capacity: mailbox_capacity.max(1),
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl LayerProvider for WasmProvider {
+    fn kind(&self) -> LayerKind {
+        LayerKind::WasmCodemodule
+    }
+
+    fn name(&self) -> &'static str {
+        match self.target {
+            ProviderTarget::Direct => "wasmtime-direct",
+            ProviderTarget::Resident => "wasmtime-resident",
+        }
+    }
+
+    fn availability(
+        &self,
+        _context: &ProviderContext<'_>,
+        target: ProviderTarget,
+    ) -> Result<(), String> {
+        if target == self.target {
+            Ok(())
+        } else {
+            Err(format!(
+                "{} provider is configured for {}, not {}",
+                self.name(),
+                self.target.name(),
+                target.name()
+            ))
+        }
+    }
+
+    async fn prepare(&self, context: LayerPrepareContext) -> Result<Arc<dyn PreparedLayer>> {
+        if context.target != self.target {
+            return Err(LiveError::Conflict(format!(
+                "provider {} cannot prepare a {} layer",
+                self.name(),
+                context.target.name()
+            )));
+        }
+        let engine = self.engine.clone();
+        let kappa = context.identity.archive_kappa;
+        let position = context.layer.position;
+        let payload = context.layer.content;
+        let resident_bytes = payload.len();
+        match self.target {
+            ProviderTarget::Direct => {
+                let compile_kappa = kappa.clone();
+                let module = tokio::task::spawn_blocking(move || {
+                    compile_module(&engine, &compile_kappa, &payload)
+                })
+                .await
+                .map_err(|error| LiveError::Conflict(format!("join wasm prepare: {error}")))??;
+                Ok(Arc::new(DirectWasmLayer {
+                    position,
+                    kappa,
+                    module,
+                    resident_bytes,
+                    running: AtomicBool::new(false),
+                    processed: AtomicUsize::new(0),
+                }))
+            }
+            ProviderTarget::Resident => {
+                let root = self.resident_root.clone().ok_or_else(|| {
+                    LiveError::Conflict("resident Wasm provider has no actor root".to_owned())
+                })?;
+                let processed = Arc::new(AtomicUsize::new(0));
+                let actor_processed = processed.clone();
+                let compile_kappa = kappa.clone();
+                let actor = tokio::task::spawn_blocking(move || {
+                    ResidentHoloActor::compile(compile_kappa, &engine, &payload, actor_processed)
+                })
+                .await
+                .map_err(|error| {
+                    LiveError::Conflict(format!("join resident wasm prepare: {error}"))
+                })??;
+                Ok(Arc::new(ResidentWasmLayer {
+                    position,
+                    root,
+                    mailbox_capacity: self.mailbox_capacity,
+                    prepared: Mutex::new(Some(actor)),
+                    actor: Mutex::new(None),
+                    resident_bytes,
+                    queued: AtomicUsize::new(0),
+                    processed,
+                }))
+            }
+        }
+    }
+}
+
+struct DirectWasmLayer {
+    position: u32,
+    kappa: String,
+    module: Module,
+    resident_bytes: usize,
+    running: AtomicBool,
+    processed: AtomicUsize,
+}
+
+#[tonic::async_trait]
+impl PreparedLayer for DirectWasmLayer {
+    fn position(&self) -> u32 {
+        self.position
+    }
+
+    async fn start(&self) -> Result<()> {
+        self.running.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    async fn invoke(&self, inputs: Vec<Vec<u8>>) -> Result<LayerInvocation> {
+        if !self.running.load(Ordering::Acquire) {
+            return Err(LiveError::Conflict(format!(
+                "direct Wasm layer {} is not running",
+                self.position
+            )));
+        }
+        let started = Instant::now();
+        let outputs = run_inputs(&self.module, &self.kappa, &inputs)?;
+        self.processed.fetch_add(1, Ordering::Relaxed);
+        Ok(LayerInvocation {
+            outputs,
+            elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        })
+    }
+
+    async fn stop(&self) -> Result<()> {
+        self.running.store(false, Ordering::Release);
+        Ok(())
+    }
+
+    fn status(&self) -> LayerRuntimeStatus {
+        LayerRuntimeStatus {
+            resident_bytes: self.resident_bytes,
+            queued: 0,
+            processed: self.processed.load(Ordering::Relaxed),
+        }
+    }
+}
+
+struct ResidentWasmLayer {
+    position: u32,
+    root: ActorRef<RootSupervisor>,
+    mailbox_capacity: usize,
+    prepared: Mutex<Option<ResidentHoloActor>>,
+    actor: Mutex<Option<ActorRef<ResidentHoloActor>>>,
+    resident_bytes: usize,
+    queued: AtomicUsize,
+    processed: Arc<AtomicUsize>,
+}
+
+#[tonic::async_trait]
+impl PreparedLayer for ResidentWasmLayer {
+    fn position(&self) -> u32 {
+        self.position
+    }
+
+    async fn start(&self) -> Result<()> {
+        if self.lock_actor()?.is_some() {
+            return Ok(());
+        }
+        let prepared = self
+            .prepared
+            .lock()
+            .map_err(|_| LiveError::Conflict("prepared Wasm layer lock poisoned".to_owned()))?
+            .take()
+            .ok_or_else(|| {
+                LiveError::Conflict(format!(
+                    "resident Wasm layer {} has no prepared actor",
+                    self.position
+                ))
+            })?;
+        let actor = ResidentHoloActor::spawn_link_with_mailbox(
+            &self.root,
+            prepared,
+            mailbox::bounded(self.mailbox_capacity),
+        )
+        .await;
+        *self.lock_actor()? = Some(actor);
+        Ok(())
+    }
+
+    async fn invoke(&self, inputs: Vec<Vec<u8>>) -> Result<LayerInvocation> {
+        let actor = self.lock_actor()?.clone().ok_or_else(|| {
+            LiveError::Conflict(format!(
+                "resident Wasm layer {} is not running",
+                self.position
+            ))
+        })?;
+        self.queued.fetch_add(1, Ordering::Relaxed);
+        let reply = actor.ask(Run { inputs }).await;
+        self.queued.fetch_sub(1, Ordering::Relaxed);
+        let outcome = match reply {
+            Ok(outcome) => outcome,
+            Err(SendError::HandlerError(error)) => return Err(error),
+            Err(error) => {
+                return Err(LiveError::Conflict(format!(
+                    "resident Wasm layer {} is unavailable: {error}",
+                    self.position
+                )));
+            }
+        };
+        Ok(LayerInvocation {
+            outputs: outcome.outputs,
+            elapsed_micros: outcome.elapsed_micros,
+        })
+    }
+
+    async fn stop(&self) -> Result<()> {
+        let actor = self.lock_actor()?.take();
+        if let Some(actor) = actor {
+            let _ = actor.stop_gracefully().await;
+            actor.wait_for_shutdown().await;
+        }
+        Ok(())
+    }
+
+    fn status(&self) -> LayerRuntimeStatus {
+        LayerRuntimeStatus {
+            resident_bytes: self.resident_bytes,
+            queued: self.queued.load(Ordering::Relaxed),
+            processed: self.processed.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl ResidentWasmLayer {
+    fn lock_actor(&self) -> Result<std::sync::MutexGuard<'_, Option<ActorRef<ResidentHoloActor>>>> {
+        self.actor
+            .lock()
+            .map_err(|_| LiveError::Conflict("resident Wasm actor lock poisoned".to_owned()))
+    }
 }
 
 fn compile_module(engine: &Engine, kappa: &str, wasm: &[u8]) -> Result<Module> {

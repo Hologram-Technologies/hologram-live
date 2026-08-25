@@ -14,6 +14,7 @@ pub mod grpc;
 pub mod history;
 pub mod holo;
 pub mod holo_directory;
+pub mod holo_provider;
 pub mod holo_python;
 pub mod holo_wasm;
 pub mod inference;

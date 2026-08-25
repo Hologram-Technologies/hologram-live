@@ -51,6 +51,33 @@ pub async fn holo_catalog_inspect(app: AppHandle, kappa: String) -> Result<Strin
 }
 
 #[tauri::command]
+pub async fn holo_catalog_import(app: AppHandle, path: String) -> Result<String, String> {
+    run_hologram(&app, ["--json", "holo", "import", path.as_str()]).await
+}
+
+#[tauri::command]
+pub async fn holo_catalog_run(
+    app: AppHandle,
+    kappa: String,
+    input: String,
+) -> Result<String, String> {
+    run_hologram(&app, ["--json", "holo", "load", kappa.as_str()]).await?;
+    run_hologram(
+        &app,
+        [
+            "--json",
+            "run",
+            kappa.as_str(),
+            "--input-text",
+            input.as_str(),
+            "--output-format",
+            "text",
+        ],
+    )
+    .await
+}
+
+#[tauri::command]
 pub fn holo_watch_list(app: AppHandle) -> Result<Vec<WatchedHoloProject>, String> {
     app.state::<Arc<ApplicationWatchRegistry>>().list()
 }

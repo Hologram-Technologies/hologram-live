@@ -326,6 +326,29 @@ async function addHoloDirectory() {
   }
 }
 
+async function addHoloArchive() {
+  const path = await open({
+    multiple: false,
+    directory: false,
+    title: "Add a .holo application",
+    filters: [{ name: "Hologram applications", extensions: ["holo"] }],
+  });
+  if (path === null) return;
+  setBusy(true);
+  showNotice("Adding the .holo application…", "neutral", true);
+  try {
+    const imported = JSON.parse(await invoke<string>("holo_catalog_import", { path })) as HoloInspection;
+    showView("holo");
+    await refreshHoloWorkspace();
+    await inspectHolo(imported.kappa, true);
+    showNotice("Application added and ready to run.", "success");
+  } catch (error) {
+    showNotice(friendlyError(error), "error", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function removeHoloWatch(project: WatchedHoloProject) {
   setBusy(true);
   try {
@@ -338,17 +361,41 @@ async function removeHoloWatch(project: WatchedHoloProject) {
   }
 }
 
-async function inspectHolo(kappa: string) {
+async function inspectHolo(kappa: string, focusRunner = false) {
   activeHoloKappa = kappa;
   renderHoloArchives(catalogedHolos);
   holoInspector.innerHTML = '<div class="holo-inspector-loading"><div class="loading-row"><span></span><span></span></div></div>';
   try {
     const result = await invoke<string>("holo_catalog_inspect", { kappa });
-    if (activeHoloKappa === kappa) renderHoloInspector(JSON.parse(result) as HoloInspection);
+    if (activeHoloKappa === kappa) {
+      renderHoloInspector(JSON.parse(result) as HoloInspection);
+      if (focusRunner) holoInspector.querySelector<HTMLTextAreaElement>(".holo-run-input")?.focus();
+    }
   } catch (error) {
     if (activeHoloKappa === kappa) {
       holoInspector.innerHTML = `<div class="holo-inspector-empty"><span class="empty-symbol" aria-hidden="true">!</span><strong>Inspection failed</strong><p>${escapeHtml(friendlyError(error))}</p></div>`;
     }
+  }
+}
+
+async function runHolo(kappa: string, input: string) {
+  const output = holoInspector.querySelector<HTMLElement>(".holo-run-output");
+  const button = holoInspector.querySelector<HTMLButtonElement>(".holo-run-submit");
+  if (output === null || button === null) return;
+  button.disabled = true;
+  button.textContent = "Running…";
+  output.hidden = false;
+  output.textContent = "Starting the application…";
+  try {
+    const values = JSON.parse(await invoke<string>("holo_catalog_run", { kappa, input })) as string[];
+    output.textContent = values.length === 0 ? "The application completed without output." : values.join("\n");
+    showNotice("Application completed successfully.", "success");
+  } catch (error) {
+    output.textContent = friendlyError(error);
+    showNotice(friendlyError(error), "error", true);
+  } finally {
+    button.disabled = currentState !== "ready";
+    button.textContent = "Run";
   }
 }
 
@@ -776,6 +823,7 @@ function renderHoloWatches(items: WatchedHoloProject[], unavailable = false) {
         : project.last_compiled_at_millis === undefined
           ? "Waiting for the first build"
           : `Last built ${formatThreadTime(project.last_compiled_at_millis)}`;
+    const runnable = project.status === "ready" && project.archive_kappa !== undefined;
     return `<article class="holo-watch-row">
       <span class="watch-state ${escapeHtml(project.status)}" aria-hidden="true"></span>
       <div class="holo-watch-description">
@@ -783,9 +831,18 @@ function renderHoloWatches(items: WatchedHoloProject[], unavailable = false) {
         <code title="${escapeHtml(project.directory)}">${escapeHtml(project.directory)}</code>
         <p class="${project.status === "failed" ? "watch-error" : ""}">${escapeHtml(detail)}</p>
       </div>
-      <button class="secondary command-button stop-watch" data-index="${index}" type="button">Stop watching</button>
+      <div class="holo-watch-actions">
+        <button class="primary command-button run-watch" data-index="${index}" type="button"${runnable ? "" : " disabled"}>Run</button>
+        <button class="secondary command-button stop-watch" data-index="${index}" type="button">Stop watching</button>
+      </div>
     </article>`;
   }).join("");
+  holoWatches.querySelectorAll<HTMLButtonElement>(".run-watch").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kappa = items[Number(button.dataset.index)].archive_kappa;
+      if (kappa !== undefined) void inspectHolo(kappa, true);
+    });
+  });
   holoWatches.querySelectorAll<HTMLButtonElement>(".stop-watch").forEach((button) => {
     button.addEventListener("click", () => void removeHoloWatch(items[Number(button.dataset.index)]));
   });
@@ -848,7 +905,22 @@ function renderHoloInspector(item: HoloInspection | null) {
     </dl>
     <section class="inspect-section"><h3>Layers</h3><div class="inspect-layers">${layers}</div></section>
     <section class="inspect-section"><h3>Physical sections</h3><ul class="inspect-sections">${sections}</ul></section>
-    <p class="inspect-summary">${directory?.blobs.length ?? 0} embedded blob${directory?.blobs.length === 1 ? "" : "s"} · ${directory?.children.length ?? 0} child application${directory?.children.length === 1 ? "" : "s"}</p>`;
+    <p class="inspect-summary">${directory?.blobs.length ?? 0} embedded blob${directory?.blobs.length === 1 ? "" : "s"} · ${directory?.children.length ?? 0} child application${directory?.children.length === 1 ? "" : "s"}</p>
+    <section class="holo-runner inspect-section">
+      <h3>Run application</h3>
+      <form class="holo-run-form">
+        <label for="holo-run-input">Input</label>
+        <textarea id="holo-run-input" class="holo-run-input" rows="3" placeholder="Enter text passed to the application"></textarea>
+        <button class="primary command-button holo-run-submit" data-when="ready" type="submit">Run</button>
+      </form>
+      <pre class="holo-run-output" aria-live="polite" hidden></pre>
+    </section>`;
+  holoInspector.querySelector<HTMLFormElement>(".holo-run-form")!.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = holoInspector.querySelector<HTMLTextAreaElement>(".holo-run-input")!.value;
+    void runHolo(item.kappa, input);
+  });
+  syncControls();
 }
 
 function beginObjectRename(items: ObjectMetadata[], index: number) {
@@ -1029,6 +1101,7 @@ document.querySelector("#refresh-objects")!.addEventListener("click", () => void
 document.querySelector("#upload-file")!.addEventListener("click", () => void uploadFile());
 document.querySelector("#refresh-holo")!.addEventListener("click", () => void refreshHoloWorkspace());
 document.querySelector("#add-holo-directory")!.addEventListener("click", () => void addHoloDirectory());
+document.querySelector("#add-holo-archive")!.addEventListener("click", () => void addHoloArchive());
 document.querySelector("#new-thread")!.addEventListener("click", startNewThread);
 threadSearch.addEventListener("input", renderThreadList);
 chatForm.addEventListener("submit", (event) => {
@@ -1152,6 +1225,13 @@ const commands: Command[] = [
     hint: "Applications",
     enabled: () => currentState === "ready",
     run: () => void addHoloDirectory(),
+  },
+  {
+    id: "add-holo-archive",
+    label: "Add .holo application",
+    hint: "Applications",
+    enabled: () => currentState === "ready",
+    run: () => void addHoloArchive(),
   },
   { id: "refresh", label: "Refresh everything", hint: "Service", run: () => void refresh() },
   {

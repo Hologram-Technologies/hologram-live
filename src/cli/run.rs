@@ -1,19 +1,24 @@
 use super::{helpers, Cli};
 use clap::{Args, ValueEnum};
+use hologram_live::compile::{compile_manifest_with, HoloPackaging};
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::HoloExecutor;
 use hologram_live::holo_capability::{EffectiveGrant, GrantSource};
 use hologram_live::protocol::{HoloRunResult, RpcRequest, RpcResponse};
 use serde_json::Value;
+use std::ffi::OsStr;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Args)]
 pub struct RunArgs {
-    /// Catalog kappa, or a local self-contained .holo file.
+    /// Project directory, hologram.json, local .holo file, or catalog kappa.
     pub(crate) reference: String,
     #[arg(long = "input")]
     pub(crate) inputs: Vec<PathBuf>,
+    /// Pass a UTF-8 input value without creating a temporary file.
+    #[arg(long = "input-text")]
+    pub(crate) input_texts: Vec<String>,
     /// Render application outputs as raw protocol bytes, UTF-8 text, or JSON.
     #[arg(long, value_enum, default_value_t = RunOutputFormat::Raw)]
     pub(crate) output_format: RunOutputFormat,
@@ -34,7 +39,7 @@ pub(crate) enum RunOutputFormat {
 }
 
 pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
-    let mut inputs = Vec::with_capacity(args.inputs.len());
+    let mut inputs = Vec::with_capacity(args.inputs.len() + args.input_texts.len());
     for path in args.inputs {
         inputs.push(
             tokio::fs::read(&path)
@@ -42,7 +47,20 @@ pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
                 .map_err(|error| LiveError::io(&path, error))?,
         );
     }
+    inputs.extend(args.input_texts.into_iter().map(String::into_bytes));
+
     let local = PathBuf::from(&args.reference);
+    if let Some(manifest) = project_manifest(&local) {
+        let bytes = compile_project(manifest).await?;
+        return execute_local(
+            &cli,
+            bytes,
+            inputs,
+            args.development_grant.as_deref(),
+            args.output_format,
+        )
+        .await;
+    }
     if local.is_file()
         || local
             .extension()
@@ -51,24 +69,14 @@ pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
         let bytes = tokio::fs::read(&local)
             .await
             .map_err(|error| LiveError::io(&local, error))?;
-        let result = match args.development_grant.as_deref() {
-            Some(path) => {
-                let grant = EffectiveGrant::from_development_file(
-                    path,
-                    GrantSource::DirectDevelopmentFile,
-                )?;
-                tracing::warn!(
-                    path = %path.display(),
-                    effective_grant_kappa = %grant.kappa,
-                    "direct holo development grant is enabled"
-                );
-                HoloExecutor::default()
-                    .execute_with_grant(&bytes, inputs, &grant)
-                    .await?
-            }
-            None => HoloExecutor::default().execute(&bytes, inputs).await?,
-        };
-        return print_result(&cli, &result, args.output_format);
+        return execute_local(
+            &cli,
+            bytes,
+            inputs,
+            args.development_grant.as_deref(),
+            args.output_format,
+        )
+        .await;
     }
     if args.development_grant.is_some() {
         return Err(LiveError::Config(
@@ -88,6 +96,46 @@ pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
         RpcResponse::HoloRun(value) => print_result(&cli, &value, args.output_format),
         other => helpers::unexpected(other),
     }
+}
+
+fn project_manifest(reference: &Path) -> Option<PathBuf> {
+    if reference.is_dir() {
+        return Some(reference.join("hologram.json"));
+    }
+    (reference.file_name() == Some(OsStr::new("hologram.json"))).then(|| reference.to_path_buf())
+}
+
+async fn compile_project(manifest: PathBuf) -> Result<Vec<u8>> {
+    let compiled =
+        tokio::task::spawn_blocking(move || compile_manifest_with(&manifest, HoloPackaging::Fat))
+            .await
+            .map_err(|error| LiveError::Conflict(format!("compile task failed: {error}")))??;
+    Ok(compiled.bytes)
+}
+
+async fn execute_local(
+    cli: &Cli,
+    bytes: Vec<u8>,
+    inputs: Vec<Vec<u8>>,
+    development_grant: Option<&Path>,
+    output_format: RunOutputFormat,
+) -> Result<()> {
+    let result = match development_grant {
+        Some(path) => {
+            let grant =
+                EffectiveGrant::from_development_file(path, GrantSource::DirectDevelopmentFile)?;
+            tracing::warn!(
+                path = %path.display(),
+                effective_grant_kappa = %grant.kappa,
+                "direct holo development grant is enabled"
+            );
+            HoloExecutor::default()
+                .execute_with_grant(&bytes, inputs, &grant)
+                .await?
+        }
+        None => HoloExecutor::default().execute(&bytes, inputs).await?,
+    };
+    print_result(cli, &result, output_format)
 }
 
 fn print_result(cli: &Cli, result: &HoloRunResult, format: RunOutputFormat) -> Result<()> {
@@ -189,5 +237,37 @@ mod tests {
             .expect_err("invalid JSON should be rejected")
             .to_string();
         assert!(error.contains("run output 0 is not valid JSON"), "{error}");
+    }
+
+    #[test]
+    fn project_directory_resolves_its_manifest() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        assert_eq!(
+            project_manifest(directory.path()),
+            Some(directory.path().join("hologram.json"))
+        );
+    }
+
+    #[test]
+    fn manifest_file_is_a_project_reference_but_archive_is_not() {
+        assert_eq!(
+            project_manifest(Path::new("example/hologram.json")),
+            Some(PathBuf::from("example/hologram.json"))
+        );
+        assert_eq!(project_manifest(Path::new("example/app.holo")), None);
+    }
+
+    #[tokio::test]
+    async fn source_project_compiles_into_an_executable_archive() {
+        let manifest =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("features/fixtures/wasm-app/hologram.json");
+        let bytes = compile_project(manifest).await.expect("compile project");
+
+        let result = HoloExecutor::default()
+            .execute(&bytes, vec![b"hello project test".to_vec()])
+            .await
+            .expect("execute compiled project");
+
+        assert_eq!(result.outputs, [b"HELLO PROJECT TEST"]);
     }
 }

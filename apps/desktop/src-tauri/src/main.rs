@@ -336,6 +336,8 @@ fn main() {
             object_get,
             holo_watch::holo_catalog_list,
             holo_watch::holo_catalog_inspect,
+            holo_watch::holo_catalog_import,
+            holo_watch::holo_catalog_run,
             holo_watch::holo_watch_list,
             holo_watch::holo_watch_add,
             holo_watch::holo_watch_remove,

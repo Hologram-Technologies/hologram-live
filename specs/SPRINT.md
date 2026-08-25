@@ -100,6 +100,12 @@ request admitted by grant
 - [x] Make server build, install, CI, and release commands select the root
   `hologram-live` package and `hologram` binary explicitly so hosted builds do
   not depend on Tauri or Node.js.
+- [x] Let `hologram run` compile and execute a project directory or its
+  `hologram.json` directly, in addition to local archives and catalog κ values.
+- [x] Add repeated UTF-8 `--input-text` values alongside binary `--input`
+  files so interactive clients do not need temporary payload files.
+- [x] Import existing `.holo` files and run ready watched/catalog applications
+  with text input and visible output from the desktop Applications view.
 
 Acceptance:
 
@@ -110,6 +116,10 @@ Acceptance:
   archive.
 - [x] All list and inspect data comes from `holo list` / `holo inspect`, not a
   frontend reconstruction of archive metadata.
+- [x] CLI project execution uses the same compiler and direct executor as an
+  explicitly compiled fat archive.
+- [x] Desktop execution uses fixed import/load/run sidecar operations and does
+  not expose a general shell bridge to the webview.
 
 Interruption evidence (2026-08-25): the packaged Tauri app selected
 `features/fixtures/wasm-app`, compiled/imported it to a verified v4 catalog row,
@@ -132,6 +142,14 @@ The server's declared MSRV is corrected from 1.88 to Wasmtime 46's actual Rust
 1.94 floor, while development and release jobs consistently install 1.97.1.
 The new product-boundary gate rejects Tauri or application-watch dependencies
 in the resolved standalone-server graph.
+
+Execution follow-up (2026-08-25): `hologram run features/fixtures/wasm-app
+--input-text 'hello project' --output-format text --json` compiled the source
+directory in memory and returned `HELLO PROJECT`; addressing its
+`hologram.json` directly returned `HELLO MANIFEST`. In the packaged Tauri app,
+the catalog inspector accepted `hello desktop`, performed the fixed load/run
+flow, and rendered `HELLO DESKTOP`. The native Applications view also exposes
+the `.holo` picker and ready watched-project Run actions.
 
 ### Slice 1 — Canonical capability source
 

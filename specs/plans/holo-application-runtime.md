@@ -35,6 +35,7 @@ This is the living implementation plan for turning `.holo` archives into complet
 - [x] Cache verified fat-archive payloads by κ without replacing user-facing object metadata.
 - [x] Resolve primary Wasm content for a thin archive from the local κ cache.
 - [x] Execute a self-contained local archive with `hologram run application.holo` without starting the service.
+- [x] Compile and execute a source directory or `hologram.json` in memory with `hologram run <PROJECT>`.
 - [x] Load, run, list, and unload a resident Wasm archive through the service.
 - [x] Return typed errors for invalid archives, missing content, unsupported layer kinds, and unloaded applications.
 - [x] Document the binary layout, logical layer model, fat/thin packaging, and current execution behavior.
@@ -143,6 +144,8 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Make `holo plan` useful when execution is unsupported; inspection must not require a provider.
 - [x] Add equivalent native API and JSON/HTTP representations without exposing engine-specific internals.
 - [x] Keep `hologram run <PATH|KAPPA>` output compatible while routing both direct and resident preparation through `ApplicationPlan`.
+- [x] Accept project directories and `hologram.json` manifests in `hologram run`, with file and UTF-8 text inputs.
+- [x] Expose fixed desktop import/load/run commands and an Applications input/output panel for watched builds and existing archives.
 
 ### M1 acceptance criteria
 

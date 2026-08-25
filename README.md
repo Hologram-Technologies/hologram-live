@@ -75,6 +75,7 @@ Global `--json` is supported by every CLI command and may appear before or after
 ```bash
 hologram status --json | jq -r '.status'
 hologram files get blake3:... --output ./asset.bin --json | jq '.byte_length'
+hologram run ./my-app --input-text 'hello' --output-format text --json | jq -r '.[]'
 hologram run application.holo --output-format text --json | jq -r '.[]'
 ```
 
@@ -183,6 +184,12 @@ imports the successful archive into the normal local catalog, and recursively
 watches the project for later changes. Builds are debounced and written to the
 desktop cache rather than into the source directory.
 
+Choose **Run** on a ready watched project, enter a text input in its inspector,
+and the desktop loads the latest successful archive and displays its output.
+Choose **Add .holo** to import an existing archive through the native file picker;
+catalog archives use the same Run panel. Unsupported providers and denied
+capabilities remain explicit runtime errors.
+
 The Applications list is backed by the same `holo list` and `holo inspect`
 operations shown above, so its archive κ, application κ, layers, capabilities,
 physical sections, and verification state are not reconstructed by the web
@@ -265,9 +272,18 @@ See the [complete `.holo` format guide](https://hologram-technologies.github.io/
 Archives whose primary layer is Wasm execute in-process through wasmtime. A self-contained archive can run directly without starting the service:
 
 ```bash
+# Compile a source directory in memory and run it immediately
+hologram run ./my-app --input-text 'hello' --output-format text
+
+# Or compile once and run the resulting immutable archive
 hologram compile ./my-app/hologram.json -o ./my-app.holo
 hologram run ./my-app.holo --input ./payload.bin
 ```
+
+`hologram run` accepts a project directory, its `hologram.json`, a local
+self-contained `.holo` file, or a catalog κ. Project references are compiled as
+fat archives in memory and are not written or imported. Repeat `--input` for
+binary file inputs or `--input-text` for UTF-8 values.
 
 For warm, repeated execution, import and load the archive into a resident session:
 

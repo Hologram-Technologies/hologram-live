@@ -42,6 +42,9 @@ enum HoloCommand {
         kappa: String,
         #[arg(long = "input")]
         inputs: Vec<PathBuf>,
+        /// Pass a UTF-8 input value without creating a temporary file.
+        #[arg(long = "input-text")]
+        input_texts: Vec<String>,
         /// Render application outputs as raw protocol bytes, UTF-8 text, or JSON.
         #[arg(long, value_enum, default_value_t = run::RunOutputFormat::Raw)]
         output_format: run::RunOutputFormat,
@@ -76,6 +79,7 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
         HoloCommand::Run {
             kappa,
             inputs,
+            input_texts,
             output_format,
         } => {
             run::run(
@@ -83,6 +87,7 @@ pub async fn run(cli: Cli, args: HoloArgs) -> Result<()> {
                 run::RunArgs {
                     reference: kappa,
                     inputs,
+                    input_texts,
                     output_format,
                     development_grant: None,
                 },

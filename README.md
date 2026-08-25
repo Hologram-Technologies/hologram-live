@@ -149,6 +149,8 @@ hologram holo resident
 hologram holo unload blake3:...
 ```
 
+Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect blake3:...` exposes the ordered layers, child applications, required capability set, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older v3 archives without it are still inspected by deriving the same view.
+
 `holo load` compiles the Wasm layer once and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Archives whose primary layer is a tensor or rootfs still return a typed `LIVE_CAPABILITY_MISSING` error. The guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
 
 ### Inference compatibility APIs

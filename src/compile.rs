@@ -1,4 +1,5 @@
 use crate::error::{LiveError, Result};
+use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use hologram::archive::HoloWriter;
 use hologram::space::{address_bytes, AppManifest, Layer, Realization};
 use serde::Deserialize;
@@ -91,9 +92,16 @@ pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
     })?;
 
     let layer_count = manifest.layers.len();
+    let directory = holo_directory::derive(
+        &manifest,
+        blobs
+            .iter()
+            .map(|(kappa, content)| (kappa.as_slice(), content.as_slice())),
+    )?;
     let mut writer = HoloWriter::new();
     writer.set_app_manifest(manifest.canonicalize());
     writer.set_metadata(source);
+    writer.add_extension(DIRECTORY_EXTENSION_KEY, holo_directory::encode(&directory)?);
     for (kappa, content) in blobs {
         writer.add_content_blob(kappa, content);
     }
@@ -223,5 +231,12 @@ mod tests {
             .sections
             .iter()
             .any(|section| section.kind == "ContentBlob"));
+        assert!(inspection.directory_embedded);
+        let directory = inspection.directory.expect("application directory");
+        assert_eq!(directory.schema_version, 1);
+        assert_eq!(directory.layers.len(), 1);
+        assert_eq!(directory.layers[0].kind, "view");
+        assert_eq!(directory.layers[0].surface.as_deref(), Some("portable"));
+        assert_eq!(directory.blobs.len(), 2);
     }
 }

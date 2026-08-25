@@ -205,6 +205,15 @@ fn output_is_self_contained(world: &mut BddWorld) {
         .sections
         .iter()
         .any(|section| section.kind == "ContentBlob"));
+    assert!(inspection.directory_embedded);
+    assert_eq!(
+        inspection
+            .directory
+            .expect("queryable application directory")
+            .layers
+            .len(),
+        1
+    );
 }
 
 #[given("a fresh Hologram home")]

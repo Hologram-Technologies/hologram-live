@@ -110,6 +110,48 @@ pub struct HoloSection {
     pub length: u64,
 }
 
+/// One ordered application layer in the queryable `.holo` directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloLayer {
+    pub position: u32,
+    pub kind: String,
+    pub content_kappa: String,
+    pub entry: String,
+    pub architecture: Option<String>,
+    pub surface: Option<String>,
+}
+
+/// One composed child application and its attenuated capability set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloChild {
+    pub position: u32,
+    pub application_kappa: String,
+    pub capabilities_kappa: String,
+}
+
+/// One content-addressed blob physically embedded in a fat `.holo`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloBlob {
+    pub kappa: String,
+    pub byte_length: u64,
+}
+
+/// A normalized, versioned projection of an application manifest and its
+/// physical packaging. Layers refer to blobs by kappa instead of nesting them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HoloDirectory {
+    pub schema_version: u16,
+    pub primary_layer: Option<u32>,
+    pub requires_kappa: String,
+    pub layers: Vec<HoloLayer>,
+    pub children: Vec<HoloChild>,
+    pub blobs: Vec<HoloBlob>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HoloInspection {
     pub kappa: String,
@@ -119,6 +161,8 @@ pub struct HoloInspection {
     pub archive_fingerprint: String,
     pub footer_verified: bool,
     pub sections: Vec<HoloSection>,
+    pub directory: Option<HoloDirectory>,
+    pub directory_embedded: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

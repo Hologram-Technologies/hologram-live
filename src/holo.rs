@@ -1,5 +1,6 @@
 use crate::actor::ActorSystem;
 use crate::error::{LiveError, Result};
+use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_wasm::{ResidentHoloActor, Run};
 use crate::protocol::{HoloInspection, HoloRunResult, HoloSection, ResidentHolo};
 use crate::store::ObjectStore;
@@ -111,6 +112,45 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
         .into_plan()
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     let format_version = u16::from_le_bytes([bytes[4], bytes[5]]);
+    let extensions = plan
+        .extensions()
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let directory_extensions = extensions
+        .iter()
+        .filter(|(key, _)| *key == DIRECTORY_EXTENSION_KEY)
+        .collect::<Vec<_>>();
+    if directory_extensions.len() > 1 {
+        return Err(LiveError::InvalidHolo(
+            "archive contains more than one application directory".to_owned(),
+        ));
+    }
+    let directory_embedded = !directory_extensions.is_empty();
+    let directory = if let Some(manifest_bytes) = plan.app_manifest() {
+        let manifest = AppManifest::decode(manifest_bytes).map_err(|error| {
+            LiveError::InvalidHolo(format!("decode application manifest: {error:?}"))
+        })?;
+        let blobs = plan
+            .content_blobs()
+            .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+        let derived = holo_directory::derive(&manifest, blobs.iter().copied())?;
+        if let Some((_, bytes)) = directory_extensions.first() {
+            let declared = holo_directory::decode(bytes)?;
+            if declared != derived {
+                return Err(LiveError::InvalidHolo(
+                    "application directory does not match the manifest and embedded blobs"
+                        .to_owned(),
+                ));
+            }
+        }
+        Some(derived)
+    } else {
+        if directory_embedded {
+            return Err(LiveError::InvalidHolo(
+                "application directory requires an application manifest".to_owned(),
+            ));
+        }
+        None
+    };
     let sections = plan
         .sections()
         .iter()
@@ -128,6 +168,8 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
         archive_fingerprint: hex(&fingerprint),
         footer_verified: true,
         sections,
+        directory,
+        directory_embedded,
     })
 }
 
@@ -350,6 +392,7 @@ const fn layer_kind_name(kind: LayerKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hologram::space::{address_bytes, Layer, Realization};
 
     #[test]
     fn fixture_is_a_valid_holo_archive() {
@@ -357,6 +400,87 @@ mod tests {
         let inspection = inspect_bytes("fixture", "fixture.holo", &bytes).expect("inspect");
         assert!(inspection.footer_verified);
         assert_eq!(inspection.format_version, 3);
+        assert!(inspection.directory.is_none());
+        assert!(!inspection.directory_embedded);
+    }
+
+    #[test]
+    fn legacy_application_derives_a_directory_without_requiring_the_extension() {
+        let requires = b"legacy capabilities";
+        let wasm = b"legacy wasm";
+        let manifest = test_manifest(wasm, requires);
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(requires).as_bytes(), requires);
+        writer.add_content_blob(address_bytes(wasm).as_bytes(), wasm);
+
+        let bytes = writer.finish().expect("legacy archive");
+        let inspection = inspect_bytes("legacy", "legacy.holo", &bytes).expect("inspect");
+        let directory = inspection.directory.expect("derived directory");
+
+        assert!(!inspection.directory_embedded);
+        assert_eq!(directory.primary_layer, Some(0));
+        assert_eq!(directory.layers.len(), 1);
+        assert_eq!(directory.layers[0].kind, "wasm");
+        assert_eq!(directory.blobs.len(), 2);
+    }
+
+    #[test]
+    fn inspection_rejects_a_directory_that_disagrees_with_the_manifest() {
+        let requires = b"directory capabilities";
+        let wasm = b"directory wasm";
+        let manifest = test_manifest(wasm, requires);
+        let blobs = [
+            (address_bytes(requires), requires.as_slice()),
+            (address_bytes(wasm), wasm.as_slice()),
+        ];
+        let mut directory = holo_directory::derive(
+            &manifest,
+            blobs
+                .iter()
+                .map(|(kappa, content)| (kappa.as_bytes(), *content)),
+        )
+        .expect("directory");
+        directory.layers[0].entry = "forged".to_owned();
+
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_extension(
+            DIRECTORY_EXTENSION_KEY,
+            holo_directory::encode(&directory).expect("encode directory"),
+        );
+        for (kappa, content) in blobs {
+            writer.add_content_blob(kappa.as_bytes(), content);
+        }
+
+        let error = inspect_bytes(
+            "forged-directory",
+            "forged-directory.holo",
+            &writer.finish().expect("archive"),
+        )
+        .expect_err("directory mismatch must fail");
+        assert_eq!(error.code(), "LIVE_HOLO_INVALID");
+        assert!(error.to_string().contains("does not match"), "{error}");
+    }
+
+    #[test]
+    fn inspection_rejects_a_content_blob_with_a_forged_kappa() {
+        let requires = b"forged capabilities";
+        let wasm = b"expected wasm";
+        let manifest = test_manifest(wasm, requires);
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(requires).as_bytes(), requires);
+        writer.add_content_blob(address_bytes(wasm).as_bytes(), b"different wasm");
+
+        let error = inspect_bytes(
+            "forged-blob",
+            "forged-blob.holo",
+            &writer.finish().expect("archive"),
+        )
+        .expect_err("forged content address must fail");
+        assert_eq!(error.code(), "LIVE_HOLO_INVALID");
+        assert!(error.to_string().contains("does not match its bytes"));
     }
 
     #[tokio::test]
@@ -430,5 +554,14 @@ mod tests {
             .import(format!("{fixture}.holo"), compiled.bytes)
             .expect("import fixture")
             .kappa
+    }
+
+    fn test_manifest(wasm: &[u8], requires: &[u8]) -> AppManifest {
+        AppManifest {
+            primary: Some(0),
+            requires: address_bytes(requires),
+            layers: vec![Layer::wasm(address_bytes(wasm), "holo_run")],
+            children: Vec::new(),
+        }
     }
 }

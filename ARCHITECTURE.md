@@ -65,7 +65,7 @@ The current content store is a simple content-addressed file store suitable for 
 
 ## `.holo`
 
-The pinned upstream Hologram archive reader/writer and space manifest types create and validate real v3 `.holo` archives. `hologram compile` builds fat archives containing a canonical application manifest and κ-addressed layer blobs. Archives whose primary layer is Wasm execute in-process through wasmtime: `holo load` keeps the compiled module resident under a supervised actor and `holo run` invokes it per input. `tensor` and `rootfs` layers remain without a compute backend and return typed capability errors; see `specs/adrs/004-holo-wasm-runtime.md`.
+The pinned upstream Hologram archive reader/writer and space manifest types create and validate real v3 `.holo` archives. `hologram compile` builds fat archives containing a canonical application manifest and κ-addressed layer blobs. New archives also carry a versioned application-directory extension: a deterministic, normalized projection of requirements, ordered layers, children, and embedded blobs. Inspection re-derives this directory from the canonical manifest and content bytes, so it is queryable metadata rather than a second source of truth; legacy v3 archives remain readable. Archives whose primary layer is Wasm execute in-process through wasmtime: `holo load` keeps the compiled module resident under a supervised actor and `holo run` invokes it per input. `tensor` and `rootfs` layers remain without a compute backend and return typed capability errors; see `specs/adrs/004-holo-wasm-runtime.md` and `specs/adrs/006-holo-application-directory.md`.
 
 ## Inference engine boundary
 

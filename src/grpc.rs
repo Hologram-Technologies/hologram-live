@@ -3,9 +3,10 @@ use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
 use crate::models::ModelInfo;
 use crate::protocol::{
-    CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloInspection,
-    HoloRunResult, HoloSection, ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata,
-    OperationInfo, OperationKind, PluginStatus, ResidentHolo, RpcRequest, RpcResponse,
+    CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloBlob, HoloChild,
+    HoloDirectory, HoloInspection, HoloLayer, HoloRunResult, HoloSection, ModuleInfo, NodeRecord,
+    ObjectContent, ObjectMetadata, OperationInfo, OperationKind, PluginStatus, ResidentHolo,
+    RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -607,6 +608,98 @@ impl From<pb::HoloSection> for HoloSection {
     }
 }
 
+impl From<HoloLayer> for pb::HoloLayer {
+    fn from(value: HoloLayer) -> Self {
+        Self {
+            position: value.position,
+            kind: value.kind,
+            content_kappa: value.content_kappa,
+            entry: value.entry,
+            architecture: value.architecture,
+            surface: value.surface,
+        }
+    }
+}
+
+impl From<pb::HoloLayer> for HoloLayer {
+    fn from(value: pb::HoloLayer) -> Self {
+        Self {
+            position: value.position,
+            kind: value.kind,
+            content_kappa: value.content_kappa,
+            entry: value.entry,
+            architecture: value.architecture,
+            surface: value.surface,
+        }
+    }
+}
+
+impl From<HoloChild> for pb::HoloChild {
+    fn from(value: HoloChild) -> Self {
+        Self {
+            position: value.position,
+            application_kappa: value.application_kappa,
+            capabilities_kappa: value.capabilities_kappa,
+        }
+    }
+}
+
+impl From<pb::HoloChild> for HoloChild {
+    fn from(value: pb::HoloChild) -> Self {
+        Self {
+            position: value.position,
+            application_kappa: value.application_kappa,
+            capabilities_kappa: value.capabilities_kappa,
+        }
+    }
+}
+
+impl From<HoloBlob> for pb::HoloBlob {
+    fn from(value: HoloBlob) -> Self {
+        Self {
+            kappa: value.kappa,
+            byte_length: value.byte_length,
+        }
+    }
+}
+
+impl From<pb::HoloBlob> for HoloBlob {
+    fn from(value: pb::HoloBlob) -> Self {
+        Self {
+            kappa: value.kappa,
+            byte_length: value.byte_length,
+        }
+    }
+}
+
+impl From<HoloDirectory> for pb::HoloDirectory {
+    fn from(value: HoloDirectory) -> Self {
+        Self {
+            schema_version: u32::from(value.schema_version),
+            primary_layer: value.primary_layer,
+            requires_kappa: value.requires_kappa,
+            layers: value.layers.into_iter().map(Into::into).collect(),
+            children: value.children.into_iter().map(Into::into).collect(),
+            blobs: value.blobs.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<pb::HoloDirectory> for HoloDirectory {
+    type Error = LiveError;
+
+    fn try_from(value: pb::HoloDirectory) -> Result<Self> {
+        Ok(Self {
+            schema_version: narrow(value.schema_version, "directory schema_version")?,
+            primary_layer: value.primary_layer,
+            requires_kappa: value.requires_kappa,
+            layers: value.layers.into_iter().map(Into::into).collect(),
+            children: value.children.into_iter().map(Into::into).collect(),
+            blobs: value.blobs.into_iter().map(Into::into).collect(),
+        })
+    }
+}
+
 impl From<HoloInspection> for pb::HoloInspection {
     fn from(value: HoloInspection) -> Self {
         Self {
@@ -617,6 +710,8 @@ impl From<HoloInspection> for pb::HoloInspection {
             archive_fingerprint: value.archive_fingerprint,
             footer_verified: value.footer_verified,
             sections: value.sections.into_iter().map(Into::into).collect(),
+            directory: value.directory.map(Into::into),
+            directory_embedded: value.directory_embedded,
         }
     }
 }
@@ -633,6 +728,8 @@ impl TryFrom<pb::HoloInspection> for HoloInspection {
             archive_fingerprint: value.archive_fingerprint,
             footer_verified: value.footer_verified,
             sections: value.sections.into_iter().map(Into::into).collect(),
+            directory: value.directory.map(TryInto::try_into).transpose()?,
+            directory_embedded: value.directory_embedded,
         })
     }
 }
@@ -910,6 +1007,53 @@ mod tests {
             decoded,
             RpcResponse::ObjectContent(ObjectContent { metadata, bytes })
                 if metadata.filename.as_deref() == Some("hello.txt") && bytes == b"hello"
+        ));
+    }
+
+    #[test]
+    fn holo_directory_round_trip_preserves_normalized_rows() {
+        let response = RpcResponse::HoloInspection(HoloInspection {
+            kappa: "blake3:archive".to_owned(),
+            name: "app.holo".to_owned(),
+            format_version: 3,
+            byte_length: 128,
+            archive_fingerprint: "fingerprint".to_owned(),
+            footer_verified: true,
+            sections: vec![HoloSection {
+                kind: "AppManifest".to_owned(),
+                offset: 32,
+                length: 64,
+            }],
+            directory: Some(HoloDirectory {
+                schema_version: 1,
+                primary_layer: Some(0),
+                requires_kappa: "blake3:capabilities".to_owned(),
+                layers: vec![HoloLayer {
+                    position: 0,
+                    kind: "wasm".to_owned(),
+                    content_kappa: "blake3:wasm".to_owned(),
+                    entry: "holo_run".to_owned(),
+                    architecture: None,
+                    surface: None,
+                }],
+                children: Vec::new(),
+                blobs: vec![HoloBlob {
+                    kappa: "blake3:wasm".to_owned(),
+                    byte_length: 42,
+                }],
+            }),
+            directory_embedded: true,
+        });
+
+        let decoded =
+            RpcResponse::try_from(pb::RpcResponse::from(response)).expect("decode response");
+        assert!(matches!(
+            decoded,
+            RpcResponse::HoloInspection(HoloInspection {
+                directory: Some(HoloDirectory { layers, blobs, .. }),
+                directory_embedded: true,
+                ..
+            }) if layers[0].content_kappa == "blake3:wasm" && blobs[0].byte_length == 42
         ));
     }
 }

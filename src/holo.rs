@@ -918,7 +918,14 @@ mod tests {
     async fn direct_and_resident_execution_support_a_nonzero_primary_in_wasm_layers() {
         let wasm_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("features/fixtures/wasm-app/transform.wat");
-        let wasm = std::fs::read(wasm_path).expect("read Wasm fixture");
+        let wasm = std::fs::read_to_string(wasm_path)
+            .expect("read Wasm fixture")
+            .replacen(
+                "(export \"holo_run\")",
+                "(export \"holo_run\") (export \"support\")",
+                1,
+            )
+            .into_bytes();
         let capabilities = canonical_capabilities();
         let manifest = AppManifest {
             primary: Some(1),
@@ -957,6 +964,46 @@ mod tests {
             .expect("resident multi-layer run");
         assert_eq!(resident.outputs, vec![b"RESIDENT".to_vec()]);
         runtime.unload(&kappa).await.expect("unload");
+    }
+
+    #[tokio::test]
+    async fn missing_manifest_wasm_entry_fails_direct_and_resident_preparation() {
+        let wasm_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures/wasm-app/transform.wat");
+        let wasm = std::fs::read(wasm_path).expect("read Wasm fixture");
+        let capabilities = canonical_capabilities();
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![Layer::wasm(address_bytes(&wasm), "missing_entry")],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
+        writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
+        let bytes = writer.finish().expect("archive");
+
+        let direct = HoloExecutor::default()
+            .execute(&bytes, Vec::new())
+            .await
+            .expect_err("direct preparation must reject the missing entry");
+        assert_eq!(direct.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(direct.to_string().contains("missing_entry"));
+
+        let runtime = test_runtime("missing-manifest-entry");
+        let kappa = runtime
+            .catalog
+            .import("missing-entry.holo".to_owned(), bytes)
+            .expect("import")
+            .kappa;
+        let resident = runtime
+            .load(&kappa)
+            .await
+            .expect_err("resident preparation must reject the missing entry");
+        assert_eq!(resident.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(resident.to_string().contains("missing_entry"));
+        assert!(runtime.list().await.expect("resident list").is_empty());
     }
 
     #[tokio::test]

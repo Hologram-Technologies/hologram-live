@@ -6,6 +6,7 @@ use hologram_live::compile::{
 };
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo_python::{PythonProfile, PythonRootfsSource};
+use hologram_live::holo_wasm::CORE_WASM_V1_DEFAULT_ENTRY;
 use hologram_live::util::atomic_write;
 use serde::Serialize;
 use std::io::{BufRead, IsTerminal, Write};
@@ -316,7 +317,9 @@ fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
         kind: kind.into(),
         path: Some(path),
         source: None,
-        entry: args.entry.clone(),
+        entry: args.entry.clone().or_else(|| {
+            matches!(kind, LayerKindArg::Wasm).then(|| CORE_WASM_V1_DEFAULT_ENTRY.to_owned())
+        }),
         arch: args.arch.clone(),
         surface: args.surface.clone(),
         engine: args.engine.clone(),
@@ -378,7 +381,12 @@ fn interactive_layers<R: BufRead, W: Write>(
         )?);
         let (entry, arch, surface, engine) = match kind {
             LayerKindArg::Wasm => (
-                Some(prompt(input, output, "Entrypoint", Some("_start"))?),
+                Some(prompt(
+                    input,
+                    output,
+                    "Entrypoint",
+                    Some(CORE_WASM_V1_DEFAULT_ENTRY),
+                )?),
                 None,
                 None,
                 None,
@@ -668,6 +676,10 @@ mod tests {
         assert_eq!(
             manifest.layers[0].path.as_deref(),
             Some(std::path::Path::new("app.wasm"))
+        );
+        assert_eq!(
+            manifest.layers[0].entry.as_deref(),
+            Some(CORE_WASM_V1_DEFAULT_ENTRY)
         );
     }
 

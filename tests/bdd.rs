@@ -55,6 +55,30 @@ fn wasm_manifest(world: &mut BddWorld) {
     world.temporary = Some(tempfile::tempdir().expect("create scenario directory"));
 }
 
+#[given("a Wasm application with a custom manifest entrypoint")]
+fn wasm_manifest_with_custom_entry(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create scenario directory");
+    let fixture =
+        std::fs::read_to_string(workspace_root().join("features/fixtures/wasm-app/transform.wat"))
+            .expect("read Wasm fixture");
+    std::fs::write(
+        temporary.path().join("transform.wat"),
+        fixture.replace("(export \"holo_run\")", "(export \"transform\")"),
+    )
+    .expect("write custom-entry fixture");
+    std::fs::write(
+        temporary.path().join("hologram.json"),
+        r#"{
+          "schema_version": 1,
+          "primary": 0,
+          "layers": [{"kind":"wasm","path":"transform.wat","entry":"transform"}]
+        }"#,
+    )
+    .expect("write manifest");
+    world.manifest = Some(temporary.path().join("hologram.json"));
+    world.temporary = Some(temporary);
+}
+
 #[given("a Wasm application that requests network fetch")]
 fn wasm_manifest_with_network_request(world: &mut BddWorld) {
     let temporary = tempfile::tempdir().expect("create scenario directory");

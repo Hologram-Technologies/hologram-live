@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1, typed Wasm entry/exit and host-interface contracts
+- Next delivery: M3.1 Slice 2, typed provider completion and exit semantics
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -225,7 +225,14 @@ dependencies until an explicit child invocation contract is introduced.
 
 - [x] Move the current Wasmtime implementation behind the provider trait.
 - [x] Preserve direct and resident execution behavior and typed guest-contract errors.
-- [ ] Use the manifest entrypoint instead of assuming one hard-coded function where the contract permits it.
+- [x] Use the manifest entrypoint instead of assuming one hard-coded function where the contract permits it.
+- [x] Name and document the import-free `core-wasm-v1` contract, including its
+  fixed memory/allocator exports, manifest-selected callable export, fresh
+  instances, one-output-per-input behavior, and lack of numeric exit status.
+- [x] Align compiler and app-generator defaults with the executable v1
+  `holo_run` compatibility entry while permitting another declared export.
+- [ ] Introduce a typed provider completion model that does not conflate byte
+  output, successful completion, and a future explicit exit status.
 - [x] Preserve one-output-per-input compatibility until a versioned guest-contract upgrade lands.
 - [x] Remove the runtime’s “exactly one layer at primary position zero” special case.
 
@@ -581,5 +588,7 @@ application/DMG builds pass.
   invoke only the root primary, and roll back or stop in exact reverse order.
 - [x] Complete M2 capability audit records, interface coverage, and conformance
   tests.
-- [ ] Define the M3.1 versioned Wasm entry/exit contract and explicit host
-  interfaces before changing provider behavior.
+- [x] Define and enforce the M3.1 core-Wasm v1 manifest-entry contract without
+  adding host imports or weakening existing archives.
+- [ ] Define typed provider completion and application exit semantics without
+  fabricating a core-Wasm v1 process status.

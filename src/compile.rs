@@ -3,6 +3,7 @@ use crate::error::{LiveError, Result};
 use crate::holo_capability;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
+use crate::holo_wasm::{validate_entry_name, CORE_WASM_V1_DEFAULT_ENTRY};
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
 use hologram::space::{address_bytes, AppManifest, KappaLabel71, Layer, Realization};
@@ -371,10 +372,11 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
             reject_aux(source, "engine", source.engine.as_deref())?;
-            Ok(Layer::wasm(
-                kappa,
-                effective_entry(source).unwrap_or("_start"),
-            ))
+            let entry = effective_entry(source).unwrap_or(CORE_WASM_V1_DEFAULT_ENTRY);
+            validate_entry_name(entry).map_err(|reason| {
+                layer_config_error(source, &format!("invalid entry: {reason}"))
+            })?;
+            Ok(Layer::wasm(kappa, entry))
         }
         CompileLayerKind::Tensor => {
             reject_aux(source, "arch", source.arch.as_deref())?;
@@ -931,6 +933,40 @@ mod tests {
         assert_eq!(directory.layers[0].entry, "ai.default");
         assert_eq!(directory.layers[0].engine.as_deref(), Some("uor-r4"));
         assert_eq!(directory.blobs.len(), 2);
+    }
+
+    #[test]
+    fn wasm_layers_default_to_the_core_v1_entry_and_reject_empty_names() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"app.wasm"}]
+            }"#,
+        )
+        .expect("manifest");
+        let compiled = compile_manifest(&manifest_path).expect("compile default entry");
+        let inspection = inspect_bytes("wasm", "app.holo", &compiled.bytes).expect("inspect");
+        assert_eq!(
+            inspection.directory.expect("directory").layers[0].entry,
+            CORE_WASM_V1_DEFAULT_ENTRY
+        );
+
+        let empty: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":""}]
+            }"#,
+        )
+        .expect("parse empty entry");
+        let error = validate_compile_manifest(&empty).expect_err("empty entry");
+        assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
+        assert!(error.to_string().contains("invalid entry"), "{error}");
     }
 
     #[test]

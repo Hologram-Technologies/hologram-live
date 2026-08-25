@@ -167,7 +167,7 @@ hologram app init ./parent \
   --child-capabilities worker-capabilities.json
 ```
 
-Use `--yes` for a minimal `app.wasm`/`_start` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
+Use `--yes` for a minimal `app.wasm`/`holo_run` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
 
 ```bash
 hologram holo fixture ./fixture.holo
@@ -300,6 +300,16 @@ hologram run ./my-app --input-text 'hello' --output-format text
 hologram compile ./my-app/hologram.json -o ./my-app.holo
 hologram run ./my-app.holo --input ./payload.bin
 ```
+
+Wasm layers use the import-free `core-wasm-v1` contract. The module exports
+`memory`, `holo_alloc(i32) -> i32`, and the function named by the layer's
+manifest `entry` with signature `(i32, i32) -> i64`. `holo_run` is the compiler
+and generator default, not a runtime hard-code; an archive may declare another
+export such as `transform`. The packed `i64` identifies one byte output. V1 has
+no WASI imports and no numeric process exit status: returning bytes is
+successful completion, while a trap is `LIVE_PROTOCOL_ERROR`. Direct and
+resident providers validate the declared entry during preparation and use a
+fresh instance for each input.
 
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as

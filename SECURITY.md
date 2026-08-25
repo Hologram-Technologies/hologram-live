@@ -41,6 +41,12 @@ authorization headers, or application payloads. Successful admission fails
 closed if the audit record cannot be persisted; authorization denial remains
 the primary error if denial auditing also fails.
 
+Core-Wasm guest contract v1 links no imports and no WASI functions. A layer's
+manifest entry selects only a typed export inside the already selected module;
+it cannot select a provider or host function. Future WASI or Hologram imports
+must be introduced by a versioned contract and linked only from the admitted
+effective grant.
+
 ## Desktop sidecar
 
 The Tauri application invokes a bundled `hologram` sidecar through fixed lifecycle and status commands. It does not expose a general-purpose shell command to the webview.

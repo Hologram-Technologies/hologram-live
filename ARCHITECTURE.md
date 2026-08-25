@@ -93,6 +93,13 @@ records expose the non-secret authorization evidence through CLI, JSON/HTTP,
 and Protobuf/gRPC. HTTP resident list/load/unload/run operations are available
 under `/api/v1/holo` alongside the planning route.
 
+Wasmtime implements the import-free `core-wasm-v1` boundary. The canonical
+layer entry selects a typed `(i32, i32) -> i64` export inside the resolved
+module; fixed `memory` and `holo_alloc` exports move bytes across the boundary.
+Direct and resident providers validate that same declared entry before start
+and create a fresh guest instance per input. V1 returns bytes but carries no
+numeric process exit status, and it links no WASI or ambient host interface.
+
 ## Inference engine boundary
 
 The daemon never executes model weights in-process. Chat and model management call an `InferenceEngine` selected by `[inference].engine` in `live.toml`: `echo` (local fallback that repeats the user message), `weightc` (spawns `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact directory), or `ollama` (proxies `POST /api/generate` on an Ollama-compatible endpoint). Imported artifacts are copied under `data_dir/models/<digest>/` and recorded in the content-addressed object store with `kind = "model"`. The daemon renders conversation history as a plain `role: content` transcript; engines apply their own chat templates. An unconfigured engine or model returns `LIVE_CAPABILITY_MISSING` rather than simulating a response.

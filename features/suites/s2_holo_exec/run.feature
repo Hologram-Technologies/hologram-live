@@ -31,6 +31,20 @@ Feature: Resident .holo wasm execution
     And the run reports allowed authorization from "local_baseline"
     And the capability audit records "allowed" from "local_baseline" for principal "local-cli"
 
+  Scenario: invoke the manifest-declared Wasm entry directly and resident
+    Given a Wasm application with a custom manifest entrypoint
+    And a fresh Hologram home
+    When I compile the application
+    Then the compile command succeeds
+    When I run the compiled archive directly with input "custom direct"
+    Then the run output is "CUSTOM DIRECT"
+    Given an initialized configuration on a test port
+    When I import the compiled archive
+    And I load the archive
+    And I run the archive with input "custom resident"
+    Then the run output is "CUSTOM RESIDENT"
+    And I stop the local service
+
   Scenario: capability requests require an explicit sufficient grant
     Given a Wasm application that requests network fetch
     And a fresh Hologram home

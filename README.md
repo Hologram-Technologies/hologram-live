@@ -187,6 +187,33 @@ The stable build creates and validates real v4 `.holo` archives while retaining 
 
 The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider.
 
+Applications request authority with an optional `capabilities.json`. This is a
+human-authored compiler input, not the object embedded in the archive:
+
+```json
+{
+  "schema_version": 1,
+  "storage_roots": [],
+  "storage_quota_bytes": 0,
+  "network_fetch": false,
+  "network_announce": false,
+  "publish_channels": [],
+  "subscribe_channels": [],
+  "memory_max_bytes": 0,
+  "cpu_time_per_event_ms": 0,
+  "priority_weight": 0
+}
+```
+
+Set `"requires": "capabilities.json"` in `hologram.json`. `compile --check`
+validates the version, fields, and canonical sorted κ lists; `compile` converts
+the JSON into the upstream canonical `CapabilitySet` bytes and stores that
+object's κ in `AppManifest.requires`. Omitting `requires` produces the canonical
+empty request. A request describes what an application needs—it is never itself
+a grant. In the upstream capability contract, a scalar budget of `0` means
+unbounded; use a nonzero value to request a finite ceiling. Runtime grant
+enforcement and child attenuation are the active M2 work.
+
 See the [complete `.holo` format guide](https://hologram-technologies.github.io/hologram-live/docs/holo-files) for the byte layout, section kinds, manifest schema, identity model, application directory, verification rules, and current runtime support.
 
 Archives whose primary layer is Wasm execute in-process through wasmtime. A self-contained archive can run directly without starting the service:
@@ -218,14 +245,14 @@ With `--json`, compilation reports the three distinct identities directly:
 
 ```bash
 hologram --json compile ./my-app/hologram.json -o ./my-app.holo |
-  jq '{archive_kappa, archive_fingerprint, application_kappa}'
+  jq '{archive_kappa, archive_fingerprint, application_kappa, capabilities_kappa}'
 ```
 
 `archive_kappa` is the BLAKE3 address of the complete physical file,
 `archive_fingerprint` is the footer integrity value, and
 `application_kappa` addresses the canonical `AppManifest`. Fat and thin files
 have different archive κ values and footer fingerprints but the same
-application κ. The existing `kappa` returned by `holo inspect`, catalog,
+application κ and `capabilities_kappa`. The existing `kappa` returned by `holo inspect`, catalog,
 resident, and run operations continues to mean the physical archive object;
 inspection adds `application_kappa` when an application manifest is present.
 

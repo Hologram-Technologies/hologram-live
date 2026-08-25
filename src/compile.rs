@@ -1,5 +1,6 @@
 use crate::application_plan::HoloIdentity;
 use crate::error::{LiveError, Result};
+use crate::holo_capability;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
 use crate::util::hex;
@@ -67,6 +68,13 @@ pub struct CompiledHolo {
     pub layer_count: usize,
     pub packaging: HoloPackaging,
     pub identity: HoloIdentity,
+    pub capabilities_kappa: String,
+}
+
+#[derive(Debug)]
+pub struct CheckedManifest {
+    pub specification: CompileManifest,
+    pub capabilities_kappa: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,12 +87,12 @@ pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
     compile_manifest_with(path, HoloPackaging::Fat)
 }
 
-pub fn check_manifest(path: &Path) -> Result<CompileManifest> {
+pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
     let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
     let specification = parse_compile_manifest(path, &source)?;
     validate_compile_manifest(&specification)?;
     let root = path.parent().unwrap_or_else(|| Path::new("."));
-    let _ = read_relative(root, specification.requires.as_deref())?;
+    let capabilities = compile_capabilities(root, specification.requires.as_deref())?;
     for layer in &specification.layers {
         match (&layer.path, &layer.source) {
             (Some(path), None) => {
@@ -102,7 +110,10 @@ pub fn check_manifest(path: &Path) -> Result<CompileManifest> {
             }
         }
     }
-    Ok(specification)
+    Ok(CheckedManifest {
+        specification,
+        capabilities_kappa: address_bytes(&capabilities).to_string(),
+    })
 }
 
 pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<CompiledHolo> {
@@ -111,7 +122,7 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
     validate_compile_manifest(&specification)?;
 
     let root = path.parent().unwrap_or_else(|| Path::new("."));
-    let requires_bytes = read_relative(root, specification.requires.as_deref())?;
+    let requires_bytes = compile_capabilities(root, specification.requires.as_deref())?;
     let requires = address_bytes(&requires_bytes);
     let mut blobs = BTreeMap::new();
     blobs.insert(requires.as_bytes().to_vec(), requires_bytes);
@@ -169,6 +180,7 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
         layer_count,
         packaging,
         identity,
+        capabilities_kappa: requires.to_string(),
     })
 }
 
@@ -265,8 +277,16 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
     }
 }
 
-fn read_relative(root: &Path, path: Option<&Path>) -> Result<Vec<u8>> {
-    path.map_or_else(|| Ok(Vec::new()), |path| read_required(root, path))
+fn compile_capabilities(root: &Path, path: Option<&Path>) -> Result<Vec<u8>> {
+    path.map_or_else(
+        || Ok(holo_capability::empty_canonical()),
+        |path| {
+            let resolved = root.join(path);
+            let source =
+                std::fs::read(&resolved).map_err(|error| LiveError::io(&resolved, error))?;
+            holo_capability::compile_source(&resolved, &source)
+        },
+    )
 }
 
 fn read_required(root: &Path, path: &Path) -> Result<Vec<u8>> {
@@ -380,6 +400,7 @@ const fn default_schema_version() -> u16 {
 mod tests {
     use super::*;
     use crate::holo::inspect_bytes;
+    use crate::holo_capability;
 
     #[test]
     fn compiles_a_self_contained_view_application() {
@@ -486,6 +507,78 @@ mod tests {
             .expect("directory")
             .blobs
             .is_empty());
+    }
+
+    #[test]
+    fn compiles_capability_source_to_canonical_content_for_fat_and_thin_archives() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        std::fs::write(
+            directory.path().join("capabilities.json"),
+            r#"{
+                "schema_version": 1,
+                "network_fetch": true,
+                "storage_quota_bytes": 4096
+            }"#,
+        )
+        .expect("capabilities");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "requires": "capabilities.json",
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
+            }"#,
+        )
+        .expect("manifest");
+
+        let checked = check_manifest(&manifest_path).expect("check");
+        let fat = compile_manifest_with(&manifest_path, HoloPackaging::Fat).expect("fat");
+        let thin = compile_manifest_with(&manifest_path, HoloPackaging::Thin).expect("thin");
+        assert_eq!(checked.capabilities_kappa, fat.capabilities_kappa);
+        assert_eq!(fat.capabilities_kappa, thin.capabilities_kappa);
+
+        let loader = HoloLoader::from_bytes(&fat.bytes).expect("archive");
+        let plan = loader.into_plan().expect("archive plan");
+        let manifest = AppManifest::decode(plan.app_manifest().expect("application manifest"))
+            .expect("decode application manifest");
+        assert_eq!(manifest.requires.to_string(), fat.capabilities_kappa);
+        let capabilities = plan
+            .content_blobs()
+            .expect("content blobs")
+            .into_iter()
+            .find_map(|(label, bytes)| (label == manifest.requires.as_bytes()).then_some(bytes))
+            .expect("embedded capabilities");
+        let decoded = holo_capability::decode_canonical(capabilities).expect("canonical set");
+        assert!(decoded.network_fetch);
+        assert_eq!(decoded.storage_quota_bytes, 4096);
+    }
+
+    #[test]
+    fn check_reports_the_capability_source_path_and_field() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        std::fs::write(
+            directory.path().join("capabilities.json"),
+            r#"{"storage_roots":["not-a-kappa"]}"#,
+        )
+        .expect("capabilities");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "primary": 0,
+                "requires": "capabilities.json",
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
+            }"#,
+        )
+        .expect("manifest");
+
+        let error = check_manifest(&manifest_path).expect_err("invalid capabilities");
+        assert!(error.to_string().contains("capabilities.json"), "{error}");
+        assert!(error.to_string().contains("storage_roots[0]"), "{error}");
     }
 
     #[test]

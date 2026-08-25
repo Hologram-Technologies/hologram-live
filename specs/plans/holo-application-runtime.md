@@ -159,10 +159,10 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Capability source schema
 
-- [ ] Define the schema accepted by source `capabilities.json` using the upstream canonical `CapabilitySet` realization.
-- [ ] Reject malformed or non-canonical capability input during `compile --check` and `compile`.
-- [ ] Preserve the capability-set κ in `AppManifest.requires`.
-- [ ] Provide clear diagnostics that point to the invalid capability entry and source file.
+- [x] Define the schema accepted by source `capabilities.json` using the upstream canonical `CapabilitySet` realization.
+- [x] Reject malformed or non-canonical capability input during `compile --check` and `compile`.
+- [x] Preserve the capability-set κ in `AppManifest.requires`.
+- [x] Provide clear diagnostics that point to the invalid capability entry and source file.
 
 ### Runtime grants
 

@@ -82,6 +82,23 @@ import { sitePath } from '../../lib/site';
   </table></div>
   <p>Manifest order is initialization order. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>; a model-only archive uses <code>primary = null</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
 
+  <h3>Capability requests</h3>
+  <p>The <code>requires</code> operand points to an upstream canonical <code>CapabilitySet</code>, not to JSON. Authors may declare the request in a versioned <code>capabilities.json</code>; the compiler validates it and converts it to canonical realization bytes before calculating the κ stored in <code>AppManifest.requires</code>.</p>
+  <pre><code>&#123;
+  "schema_version": 1,
+  "storage_roots": [],
+  "storage_quota_bytes": 0,
+  "network_fetch": false,
+  "network_announce": false,
+  "publish_channels": [],
+  "subscribe_channels": [],
+  "memory_max_bytes": 0,
+  "cpu_time_per_event_ms": 0,
+  "priority_weight": 0
+&#125;</code></pre>
+  <p>κ arrays must be strictly sorted, contain no duplicates, and use canonical <code>blake3:&lt;64 lowercase hex&gt;</code> labels. Unknown fields and schema versions fail during both <code>compile --check</code> and <code>compile</code>, with the source path and invalid field/index in the diagnostic. Omitting <code>requires</code> produces the same canonical empty set as the document above. The upstream budget convention uses <code>0</code> for unbounded; set a nonzero budget to request a finite ceiling.</p>
+  <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Grant admission, provider isolation, and attenuated child authority are tracked separately in M2.</div>
+
   <h3>Source languages do not add layer kinds</h3>
   <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
   <p>This keeps the canonical layer model stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-aware rootfs compiler and <a href={sitePath('/docs/model-apps')}>AI model applications</a> for the v4 service layer.</p>
@@ -116,7 +133,7 @@ import { sitePath } from '../../lib/site';
     <li><strong>Archive object κ (<code>archive_kappa</code> in compile output, existing <code>kappa</code> in inspection):</strong> BLAKE3 over the complete file. It changes between fat and thin and is distinct from the footer fingerprint.</li>
   </ul>
   <pre><code>hologram --json compile hologram.json --output application.holo |
-  jq '&#123;archive_kappa, archive_fingerprint, application_kappa&#125;'
+  jq '&#123;archive_kappa, archive_fingerprint, application_kappa, capabilities_kappa&#125;'
 
 hologram --json holo inspect application.holo |
   jq '&#123;kappa, archive_fingerprint, application_kappa&#125;'</code></pre>
@@ -154,6 +171,7 @@ hologram --json holo plan blake3:… |
 &#125;
 
 hologram compile hologram.json --output application.holo
+hologram --json compile --check hologram.json | jq '&#123;valid, capabilities_kappa&#125;'
 hologram run application.holo --input payload.bin
 hologram compile hologram.json --thin --output application.thin.holo
 hologram holo import application.holo

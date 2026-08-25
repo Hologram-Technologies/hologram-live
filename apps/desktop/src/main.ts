@@ -433,7 +433,7 @@ function renderNewChat() {
   messages.innerHTML = "";
   setChatWelcome(
     "Chat with Hologram",
-    "Start a conversation. For now, Hologram will repeat your message and save both sides to this thread.",
+    "Start a conversation. Hologram answers with the inference engine configured on the server and saves both sides to this thread.",
     "Conversations stay in your local history.",
   );
 }
@@ -445,7 +445,7 @@ function renderConversation(conversation: Conversation, pending = false) {
     messages.hidden = true;
     setChatWelcome(
       "Start this conversation",
-      "Send a message and the echo module will answer with the same text.",
+      "Send a message and the configured inference engine will answer.",
       "This thread is stored in your local history.",
     );
     return;

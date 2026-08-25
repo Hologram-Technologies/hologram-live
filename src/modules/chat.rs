@@ -16,7 +16,7 @@ const OPERATIONS: &[OperationDescriptor] = &[OperationDescriptor {
 
 static DESCRIPTOR: ModuleDescriptor = ModuleDescriptor {
     id: "dev.hologram.live.chat",
-    name: "Echo Chat",
+    name: "Chat",
     version: env!("CARGO_PKG_VERSION"),
     dependencies: &["dev.hologram.live.history"],
     operations: OPERATIONS,
@@ -63,14 +63,6 @@ pub async fn send_message(
     Path(id): Path<String>,
     Json(request): Json<ChatRequest>,
 ) -> Result<Json<Conversation>, HttpError> {
-    let history = state.history().clone();
-    let echoed = request.content.clone();
-    let conversation = tokio::task::spawn_blocking(move || {
-        history.append_exchange(&id, request.content, echoed)
-    })
-    .await
-    .map_err(|error| {
-        crate::error::LiveError::Conflict(format!("join chat response: {error}"))
-    })??;
+    let conversation = state.chat().send(&id, request.content).await?;
     Ok(Json(conversation))
 }

@@ -204,6 +204,26 @@ Compiled archives include a versioned application directory over their canonical
 
 `holo load` resolves the primary layer by κ, compiles the Wasm layer once, and keeps it resident under a supervised actor; `run` invokes its exported `holo_run` entrypoint per input. Archives whose primary layer is a tensor or rootfs still return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md`; the guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
 
+#### Python applications (planned)
+
+Python should be a compiler input, not a fifth `.holo` layer kind. A future source-manifest schema will turn a Python project plus its lock file into one of the existing executable payloads:
+
+- `wasm` for a portable WebAssembly component containing pinned CPython, the application, and WASI-compatible dependencies; or
+- `rootfs` for an architecture-specific, microVM-isolated Python environment when the application needs ordinary native wheels, OS packages, or a broader POSIX surface.
+
+The intended workflow is:
+
+```bash
+hologram app init --template python       # proposed
+hologram compile --check hologram.json    # proposed
+hologram compile hologram.json -o app.holo
+hologram run app.holo --input request.json
+```
+
+This is not implemented yet. Today `hologram compile` packages prebuilt layer files, and the runtime accepts only a core-Wasm module implementing guest contract v1; it does not provide WASI or the WebAssembly Component Model. The portable compiler must resolve dependencies for the declared target rather than reuse the host virtual environment, reject incompatible native wheels with actionable diagnostics, and pin the interpreter, toolchain, lock file, and dependency hashes for reproducible κ identity.
+
+See the [Python applications design](https://hologram-technologies.github.io/hologram-live/docs/python-apps) for proposed schema-v2 manifests, both build pipelines, dependency rules, runtime contracts, reproducibility requirements, and delivery order.
+
 ### Inference compatibility APIs
 
 The daemon exposes non-streaming OpenAI- and Ollama-compatible HTTP surfaces over the configured inference engine:

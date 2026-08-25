@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
 ---
 <DocsLayout title=".holo files" description="The physical layout, logical layers, identity model, packaging profiles, and verification rules of Hologram v3 application archives.">
   <h1><code>.holo</code> files</h1>
@@ -79,6 +80,10 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   </table></div>
   <p>Manifest order is boot order in the v3 design. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
 
+  <h3>Source languages do not add layer kinds</h3>
+  <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
+  <p>This keeps <code>.holo</code> v3 stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python applications design</a> for the proposed dependency-aware compiler and runtime profiles.</p>
+
   <h2>Queryable application directory</h2>
   <p>New Hologram Live archives carry the extension <code>https://hologram.foundation/extension/application-directory/v1</code>. Its deterministic JSON is a normalized projection of the manifest and physical packaging:</p>
   <pre><code>&#123;
@@ -118,6 +123,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
   <h2>Build, inspect, and run</h2>
   <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
+  <div class="note"><strong>Schema v1 accepts prebuilt payloads</strong>The current compiler reads <code>path</code> for each layer and does not compile Python projects or resolve language dependencies. The proposed Python workflow uses a future source-manifest schema while preserving the same canonical v3 layer model.</div>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,

@@ -1,0 +1,128 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
+---
+<DocsLayout title="Python applications" description="The proposed compiler and runtime profiles for packaging Python projects and locked dependencies as executable .holo applications.">
+  <h1>Python applications</h1>
+  <p>A Python project should become a <code>.holo</code> application through a source-language compiler stage, not through a new Python layer kind. The compiler turns the project, its locked dependencies, and a pinned Python runtime into either a portable WebAssembly component or an isolated root filesystem. The resulting payload still uses the existing <code>wasm</code> or <code>rootfs</code> layer descriptor.</p>
+
+  <div class="note"><strong>Design proposal, not current CLI behavior</strong>Hologram Live currently assembles prebuilt layer files and executes only a single primary core-Wasm layer using the v1 <code>holo_alloc</code>/<code>holo_run</code> guest contract. It does not yet resolve Python dependencies, build WebAssembly components, provide WASI, or execute rootfs layers. The commands and schema-v2 examples below define the intended milestone.</div>
+
+  <h2>Two execution profiles</h2>
+  <div class="doc-grid">
+    <article class="doc-card"><h3>Portable WASI</h3><p>Bundle CPython, application code, and compatible dependencies into a WebAssembly component. This is the default for pure-Python applications that fit WASI's sandboxed host surface.</p></article>
+    <article class="doc-card"><h3>Isolated rootfs</h3><p>Build a locked Linux filesystem containing CPython, wheels, and system libraries, then execute it through the future microVM provider. This supports more of the normal Python ecosystem but is larger and architecture-specific.</p></article>
+  </div>
+
+  <p>The portable profile should fail with a useful dependency report when a package cannot target WASI; it must not silently fall back to host execution. The user can then choose the rootfs profile explicitly.</p>
+
+  <h2>Example project</h2>
+  <pre><code>greeter/
+├─ pyproject.toml
+├─ uv.lock
+├─ src/greeter/__init__.py
+└─ hologram.json</code></pre>
+
+  <p>The application exposes one byte-oriented function initially. A generated binding adapts it to a versioned Hologram WIT world so Python code does not implement the current low-level core-Wasm memory ABI itself.</p>
+  <pre><code># src/greeter/__init__.py
+import json
+import humanize
+
+def run(request: bytes) -&gt; bytes:
+    payload = json.loads(request)
+    result = &#123;"size": humanize.naturalsize(payload["bytes"])&#125;
+    return json.dumps(result).encode()</code></pre>
+  <p><code>humanize</code> illustrates a locked Python dependency in the portable path. A dependency containing native code is accepted only when a compatible WASI build exists; otherwise the project selects the rootfs profile or replaces that dependency.</p>
+
+  <h2>Proposed source manifest</h2>
+  <p>Source-manifest schema v2 replaces a prebuilt <code>path</code> with a typed <code>source</code> recipe. This recipe is compiler input only. The canonical <code>AppManifest</code> inside the archive still contains a content κ, entrypoint, and one of the four closed layer kinds.</p>
+  <pre><code>&#123;
+  "schema_version": 2,
+  "primary": 0,
+  "requires": "capabilities.json",
+  "layers": [
+    &#123;
+      "kind": "wasm",
+      "source": &#123;
+        "language": "python",
+        "project": ".",
+        "entry": "greeter:run",
+        "lock": "uv.lock",
+        "profile": "wasi-component"
+      &#125;
+    &#125;
+  ]
+&#125;</code></pre>
+  <p>The interactive flow can gather these fields without making users author JSON:</p>
+  <pre><code># Proposed
+hologram app init --template python
+hologram compile --check hologram.json
+hologram compile hologram.json --output greeter.holo
+hologram run greeter.holo --input request.json</code></pre>
+
+  <h2>Portable build pipeline</h2>
+  <pre><code>pyproject.toml + lock + source
+          │
+          ├─ validate an exact, target-aware dependency closure
+          ├─ stage application and dependency modules in a clean build root
+          ├─ generate bindings for hologram:app/run@1.0.0
+          ├─ bundle pinned CPython + modules as a Wasm component
+          ├─ validate component imports, exports, limits, and capabilities
+          └─ write component bytes as a WasmCodemodule ContentBlob
+                                      │
+                                      └─ AppManifest → .holo v3</code></pre>
+
+  <p><a href="https://component-model.bytecodealliance.org/language-support/building-a-simple-component/python.html"><code>componentize-py</code></a> provides a useful reference implementation: it packages a Python application as a WebAssembly component and generates bindings from WIT. Hologram still needs its own pinned toolchain wrapper, guest world, import policy, deterministic-build checks, and component-model runtime provider.</p>
+
+  <h3>Dependency rules</h3>
+  <ul>
+    <li>Require a lock file and reject unresolved or unpinned dependencies.</li>
+    <li>Resolve for the declared target, never for the developer workstation by accident.</li>
+    <li>Accept portable wheels only when their code also avoids unsupported host assumptions.</li>
+    <li>Require native extensions to have a compatible target build; ordinary macOS, Windows, and <code>manylinux</code> wheels are not WASI binaries.</li>
+    <li>Record the exact compiler, Python runtime, dependency artifacts, hashes, and target ABI in build metadata.</li>
+    <li>Exclude <code>.git</code>, local virtual environments, caches, credentials, and undeclared files by default.</li>
+  </ul>
+  <p>Python's <a href="https://docs.python.org/3/library/intro.html#webassembly-platforms">WebAssembly platform notes</a> describe the restricted process, networking, threading, signal, IPC, and filesystem behavior. Python packaging's <a href="https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/">compatibility tags</a> explain why a wheel built for one Python ABI and platform cannot be assumed to work on another.</p>
+
+  <h2>Runtime contract</h2>
+  <p>The Wasm provider would load the component and link only host interfaces admitted by the application's effective capability grant. The first WIT world can expose a byte request and byte response, then evolve through explicit versions toward typed ports, streams, logs, and cancellation. WASI filesystem directories, clocks, environment values, random data, and outbound network access remain denied unless the host deliberately supplies them.</p>
+  <p>This requires the planned provider boundary and capability work. A component produced by <code>componentize-py</code> will not run in Hologram Live today because the current engine expects a core module implementing Hologram guest contract v1 rather than a component with WASI imports.</p>
+
+  <h2>Rootfs fallback</h2>
+  <p>Applications that need standard native wheels, operating-system packages, subprocesses, or a broader POSIX environment use a rootfs recipe instead:</p>
+  <pre><code>&#123;
+  "schema_version": 2,
+  "primary": 0,
+  "layers": [
+    &#123;
+      "kind": "rootfs",
+      "arch": "arm64",
+      "source": &#123;
+        "language": "python",
+        "project": ".",
+        "entry": "python -m greeter",
+        "lock": "uv.lock",
+        "profile": "rootfs",
+        "base": "oci://python@sha256:&lt;pinned-image-digest&gt;"
+      &#125;
+    &#125;
+  ]
+&#125;</code></pre>
+  <p>The compiler builds a normalized filesystem, installs only locked artifacts, records its target architecture, and stores the image as a <code>RootfsImage</code> layer. Execution must go through the planned microVM provider with explicit CPU, memory, disk, network, and lifetime budgets. Hologram should not unpack and run this environment directly on the host.</p>
+
+  <h2>Reproducibility and identity</h2>
+  <p>For equal source, lock file, toolchain, target, and options, compilation should produce equal layer bytes and therefore the same layer κ and application κ. Stable output requires sorted paths, normalized permissions and timestamps, a fixed source epoch, pinned base images and toolchains, deterministic generated bindings, and a clean build environment.</p>
+  <p>A first implementation may embed the interpreter, standard library, dependencies, and application in one self-contained layer payload. Later, shared κ-addressed runtime and dependency objects can reduce transfer and storage without changing the logical application identity model. Fat and thin packaging remains an independent archive choice.</p>
+
+  <h2>Recommended delivery slices</h2>
+  <ol>
+    <li>Land <code>ApplicationPlan</code>, providers, capability grants, limits, and guest-contract versioning.</li>
+    <li>Prove a dependency-free Python component through a versioned <code>run(bytes) -&gt; bytes</code> WIT world.</li>
+    <li>Add a locked, pure-Python dependency and byte-for-byte reproducibility tests on macOS, Linux, and Windows.</li>
+    <li>Add target-aware dependency diagnostics and compatible native-extension fixtures.</li>
+    <li>Add the explicit rootfs profile only after the microVM provider and cleanup gates are ready.</li>
+  </ol>
+
+  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a> for the archive model and the repository's <code>specs/plans/holo-application-runtime.md</code> for the milestone checklist.</p>
+</DocsLayout>

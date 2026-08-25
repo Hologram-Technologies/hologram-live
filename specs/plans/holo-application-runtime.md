@@ -198,6 +198,16 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] Preserve one-output-per-input compatibility until a versioned guest-contract upgrade lands.
 - [ ] Remove the runtime’s “exactly one layer at primary position zero” special case.
 
+### M3.1a Component-model and Python/WASI proof
+
+- [ ] Define a versioned Hologram WIT world beginning with one byte input and one byte output.
+- [ ] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
+- [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
+- [ ] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
+- [ ] Prove a locked pure-Python dependency is included without reading the developer's ambient virtual environment.
+- [ ] Report unsupported WASI modules, imports, and dependencies as typed preparation diagnostics.
+- [ ] Add component fuel, memory, input/output, deadline, and cancellation limits before advertising Python/WASI execution.
+
 ### M3.2 View provider
 
 - [ ] Define a versioned, deterministic view-bundle payload rather than treating one HTML file as an entire application UI.
@@ -244,6 +254,20 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] Validate tensor and rootfs payload metadata without claiming to compile formats the selected provider cannot consume.
 - [ ] Keep source-language compilation and archive assembly as explicit stages with actionable diagnostics.
 
+### Python source compilation
+
+- [ ] Add source-manifest schema v2 with a typed source recipe while retaining schema-v1 prebuilt `path` compatibility.
+- [ ] Add `hologram app init --template python` prompts and equivalent non-interactive flags for project, entrypoint, lock file, and execution profile.
+- [ ] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
+- [ ] Require a lock file and resolve dependencies for the declared target in an isolated build root.
+- [ ] Pin and record the Python runtime, component toolchain, target ABI, dependency artifacts, and hashes.
+- [ ] Exclude host virtual environments, VCS metadata, caches, credentials, absolute paths, and undeclared files by default.
+- [ ] Diagnose native dependencies that lack a compatible WASI build and recommend the explicit rootfs profile.
+- [ ] Add a `rootfs` Python profile using a digest-pinned base image and target architecture only after the microVM provider is ready.
+- [ ] Normalize file order, paths, permissions, timestamps, generated bindings, and source epoch for reproducible layer κ values.
+- [ ] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
+- [ ] Keep fat/thin archive packaging independent from source-language compilation.
+
 ### Manifest features
 
 - [ ] Add child applications and delegated capabilities to `hologram.json`.
@@ -267,6 +291,9 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] `.wat` and equivalent `.wasm` input produce the intended portable executable payload.
 - [ ] A generated multi-layer manifest passes `--check` and compiles without manual JSON edits.
 - [ ] Golden tests cover every source layer kind, child applications, fat, thin, and any supported hybrid profile.
+- [ ] The same locked Python project and pinned toolchain produce byte-identical layer payloads and equal application κ values across clean builds.
+- [ ] A Python project with a portable dependency executes through the component provider; an incompatible native wheel fails before archive emission with an actionable diagnostic.
+- [ ] The Python rootfs profile is not marked executable until architecture validation, microVM isolation, resource limits, and cleanup tests pass.
 
 ## M5 — Execution isolation and operational controls
 
@@ -402,6 +429,8 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [ ] Installed-application record and garbage-collection ownership model.
 - [ ] Certificate payload, signed message, and trust policy.
 - [ ] Guest-contract v2 versioning, typed ports, sessions, and streaming.
+- [ ] Hologram WIT world versioning and the relationship between core-Wasm v1 and component-model applications.
+- [ ] Python dependency resolver, supported lock formats, toolchain pinning, and build-provenance schema.
 
 ## Per-milestone definition of done
 

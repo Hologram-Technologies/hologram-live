@@ -71,7 +71,18 @@ hologram run python-component-dependency.holo \
   "runtime": "python-component"
 &#125;</code></pre>
   <p>The compiler traverses the editable project's runtime dependency graph and ignores unreferenced development/optional records. For every reached external package, it requires a registry source and an HTTPS, SHA-256-pinned Python 3 wheel ending in <code>-none-any.whl</code>. It installs only those direct URLs using <code>--no-index --no-deps --require-hashes --only-binary :all:</code>, then rejects symlinks or native library suffixes before componentization. Git/path dependencies, source-only packages, and native wheel tags fail during <code>compile --check</code> and recommend <code>profile: "rootfs"</code>.</p>
-  <div class="note"><strong>Portable boundary today</strong>Every reached runtime dependency must have a qualifying universal wheel; target-marker pruning inside that graph is deliberately conservative. Stubbed WASI bakes a build-time PRNG seed into the component, so <code>random</code> must not protect secrets and repeated clean compiles are not yet byte-identical. Secure randomness, real capability-gated WASI, deterministic component output, and a versioned build-provenance report remain follow-up work.</div>
+  <div class="note"><strong>Portable boundary today</strong>Every reached runtime dependency must have a qualifying universal wheel; target-marker pruning inside that graph is deliberately conservative. Stubbed WASI bakes a build-time PRNG seed into the component, so <code>random</code> must not protect secrets and repeated clean compiles are not yet byte-identical. Secure randomness, real capability-gated WASI, and deterministic component output remain follow-up work.</div>
+
+  <h2>Build provenance</h2>
+  <p><code>compile</code> and <code>compile --check</code> expose a versioned provenance report under <code>build_provenance</code>. The report is marked <code>canonical: false</code> and is not embedded in the archive, so build-host evidence does not alter layer or application identity. Validation reports the declared toolchain, target ABI, normalized SHA-256 hashes for <code>pyproject.toml</code>, <code>uv.lock</code>, and the source tree, plus every selected wheel URL and hash. A completed build also reports the observed uvx/uv versions and the emitted layer κ and byte length.</p>
+  <pre><code>hologram --json compile \
+  examples/python-component-dependency/hologram.json --check \
+  | jq '.build_provenance.layers[0].source'
+
+# Save the completed report next to an archive when desired
+hologram --json compile hologram.json --output application.holo \
+  | jq '.build_provenance' &gt; application.provenance.json</code></pre>
+  <p>The source-tree digest uses lexical normalized paths and file bytes; timestamps, permissions, and directory creation order are excluded. The compiler stages the same regular files in lexical order and rejects nested symlinks. The report currently states <code>reproducible: false</code> because componentize-py 0.25.0 has no deterministic pre-initialization seed control. It is evidence about the build, not a claim that two clean builds are byte-identical.</p>
 
   <h2>Rootfs example: Python hello</h2>
   <p><code>examples/python-hello/</code> is the small companion to the Wasm project example. It has no third-party dependencies, but it still carries a committed <code>uv.lock</code>, uses the schema-v2 rootfs recipe, and implements the real byte entrypoint contract:</p>

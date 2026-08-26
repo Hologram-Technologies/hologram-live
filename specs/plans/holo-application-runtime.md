@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1c, deterministic Python Component output and build provenance
+- Next delivery: M3.1d, deterministic Python Component toolchain and clean-build equality
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -289,8 +289,31 @@ This does not satisfy deterministic-output acceptance. Two clean compiles of
 the locked example produced different component sizes, application κ values,
 and archive κ values. Pinned `componentize-py 0.25.0 --stub-wasi` documents that
 it bakes a build-time PRNG seed into the component and exposes no seed override.
-Toolchain/artifact provenance and a deterministic replacement or upstream
-control remain the next Python compiler slice.
+The versioned provenance slice below now records the toolchain and artifacts.
+A deterministic replacement or upstream control remains the next Python
+compiler slice.
+
+Build-provenance follow-up (2026-08-26): compile and check results now expose
+`build_provenance` schema v1 with `canonical: false`. Each Python Component row
+names its manifest layer, compiler, CPython runtime, componentizer release and
+source revision, guest contract, target ABI, build host, normalized SHA-256
+input hashes, and every selected wheel URL/hash. A completed build adds the
+observed uvx/uv versions and component layer κ/length; `--check` omits those
+unobserved fields and performs no tool download. The report is not written into
+archive metadata, directories, manifests, or content blobs, so build evidence
+does not affect canonical or physical `.holo` identity. Source files are
+hashed and staged in lexical normalized-path order; nested symlinks and special
+files fail before componentization. ADR 013 defines the schema and identity
+boundary.
+
+Deterministic output remains unclaimed. Inspection of componentize-py release
+revision `c0949b1` confirmed that its pre-initializer owns a private WASI
+context with no seed injection. Two controlled non-stubbed builds also differed
+in both byte length (18,308,535 vs 18,320,373) and SHA-256, ruling out the stub
+adapter as the only source and making fixed-offset output patching unsafe.
+Cache reuse is not clean-build reproducibility. The machine-readable report
+therefore carries `reproducible: false` and the blocker until a deterministic
+componentizer and cross-platform equality gate land.
 
 ### M3.2 View provider
 
@@ -434,14 +457,14 @@ application/DMG builds pass.
 - [x] Keep a minimal locked standard-library Python project as a fast teaching example alongside the NumPy/pandas dependency proof.
 - [x] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
 - [x] Require `uv.lock` and resolve it for the declared Linux target in a clean OCI build root for the experimental rootfs provider.
-- [ ] Record the already-pinned Python runtime, component toolchain, target ABI,
+- [x] Record the already-pinned Python runtime, component toolchain, target ABI,
   dependency artifact URLs, and hashes in a versioned build-provenance report.
 - [x] Stage only `pyproject.toml`, the declared lock file, `src/`, and the generated launcher for the experimental rootfs provider; reject absolute/escaping paths and symlinks.
 - [x] Diagnose native, source-only, non-registry, or unpinned dependencies that
   lack a portable wheel and recommend the explicit rootfs profile.
 - [ ] Promote the experimental `rootfs` Python profile to supported status only after digest pinning, reproducibility, and the microVM provider are ready. The current direct OCI provider is demo-only.
 - [ ] Normalize file order, paths, permissions, timestamps, generated bindings, and source epoch for reproducible layer κ values.
-- [ ] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
+- [x] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
 - [ ] Keep fat/thin archive packaging independent from source-language compilation.
 
 ### Manifest features
@@ -611,7 +634,8 @@ application/DMG builds pass.
 - [x] Hologram WIT world versioning and the relationship between core-Wasm v1 and component-model applications.
 - [x] Python dependency resolver, supported `uv.lock` inputs, portable-wheel
   admission, and toolchain pinning (ADR 012).
-- [ ] Python build-provenance schema and deterministic Component output.
+- [x] Python build-provenance schema and non-canonical identity boundary (ADR 013).
+- [ ] Deterministic Python Component output and clean-build equality proof.
 
 ## Per-milestone definition of done
 
@@ -655,5 +679,9 @@ application/DMG builds pass.
   introducing ambient WASI.
 - [x] Package and execute a SHA-256-locked pure-Python wheel without consulting
   ambient Python paths, and fail native/source-only locks before emission.
-- [ ] Define deterministic Python Component output and a versioned provenance
-  report before claiming reproducible layer or application κ values.
+- [x] Define and emit a versioned, non-canonical Python Component provenance
+  report with stable source hashes, selected artifacts, observed tools, target,
+  output identity, and an explicit reproducibility status.
+- [ ] Supply deterministic componentizer randomness and prove byte-identical
+  layer, application, and archive κ values across clean supported-host builds
+  before claiming reproducible output.

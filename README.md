@@ -479,6 +479,24 @@ re-resolution, source builds, and ambient pip/uv configuration disabled.
 Native, source-only, Git, and path packages fail during `compile --check` with
 guidance to use `rootfs`.
 
+Both validation and compilation return a versioned, non-canonical provenance
+report when global `--json` is active:
+
+```console
+$ hologram --json compile \
+    examples/python-component-dependency/hologram.json --check \
+    | jq '.build_provenance.layers[0].source \
+      | {runtime, componentizer, inputs, dependencies, reproducibility}'
+```
+
+The schema records normalized SHA-256 source inputs, the complete selected
+wheel inventory, CPython and componentizer pins, build host, and target ABI. A
+completed compile additionally records the observed `uvx`/`uv` versions and
+the generated layer κ and byte length. `canonical: false` is deliberate: the
+report is not embedded in `.holo`, so host evidence cannot silently change the
+canonical application identity. Save a durable copy with
+`jq '.build_provenance' > application.provenance.json`.
+
 `examples/python-component-dependency/` demonstrates `six==1.17.0`:
 
 ```console
@@ -497,7 +515,8 @@ $ hologram run python-component-dependency.holo \
 Stubbed randomness repeats one build-time seed inside an emitted component and
 is not suitable for security-sensitive randomness. The pinned tool does not
 offer deterministic seed control, so byte-identical component builds are not
-yet claimed. Real capability-gated WASI remains a later milestone.
+yet claimed; the same blocker appears in the provenance report as
+`reproducible: false`. Real capability-gated WASI remains a later milestone.
 
 Run the repeatable direct-and-resident proof with:
 

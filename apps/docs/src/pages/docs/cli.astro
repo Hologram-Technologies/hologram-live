@@ -104,6 +104,7 @@ hologram compile hologram.json --thin --output application.thin.holo</code></pre
 
   <h3>Python source projects</h3>
   <p><code>hologram app init --template python --profile wasi-component</code> records a schema-v4 Component v1 Wasm source. Pinned <code>componentize-py --stub-wasi</code> bundles CPython plus HTTPS/SHA-256-pinned Python 3 <code>*-none-any.whl</code> artifacts from <code>uv.lock</code> without linking ambient WASI; the archive executes directly or resident. Native, source-only, Git, and path dependencies fail during <code>hologram compile --check</code> with rootfs guidance. <code>--profile rootfs</code> records an OCI base and target architecture in schema v2 for those ordinary native dependencies. See <a href={sitePath('/docs/python-apps')}>Python applications</a> for both examples and their boundaries.</p>
+  <p>With global <code>--json</code>, both compile modes include <code>build_provenance</code> schema v1. <code>compile --check</code> reports normalized input hashes, locked wheel URLs/hashes, toolchain pins, build host, target ABI, and the current reproducibility status without downloading tools. A completed compile adds observed uvx/uv versions and the emitted layer κ. The report declares <code>canonical: false</code> and is not embedded in the archive.</p>
 
   <h3>AI model archives</h3>
   <pre><code>hologram --json ai inspect model.holo

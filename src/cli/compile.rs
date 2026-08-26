@@ -1,6 +1,8 @@
 use super::{helpers, Cli};
 use clap::Args;
-use hologram_live::compile::{check_manifest, compile_manifest_with, HoloPackaging};
+use hologram_live::compile::{
+    check_manifest, compile_manifest_with, BuildProvenanceReport, HoloPackaging,
+};
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::inspect_bytes;
 use serde::Serialize;
@@ -32,6 +34,7 @@ struct CompileReport {
     application_kappa: String,
     capabilities_kappa: String,
     packaging: &'static str,
+    build_provenance: BuildProvenanceReport,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,6 +44,7 @@ struct CheckReport {
     child_count: usize,
     schema_version: u16,
     capabilities_kappa: String,
+    build_provenance: BuildProvenanceReport,
     valid: bool,
 }
 
@@ -63,6 +67,7 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
                 child_count: checked.specification.children.len(),
                 schema_version: checked.specification.schema_version,
                 capabilities_kappa: checked.capabilities_kappa,
+                build_provenance: checked.build_provenance,
                 valid: true,
             },
         );
@@ -102,6 +107,7 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
                 HoloPackaging::Fat => "fat",
                 HoloPackaging::Thin => "thin",
             },
+            build_provenance: compiled.build_provenance,
         },
     )
 }

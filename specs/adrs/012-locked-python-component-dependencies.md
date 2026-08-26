@@ -80,8 +80,9 @@ other WASI host interface.
 - The compiler conservatively requires every reached runtime dependency to be
   portable; marker-aware pruning within that graph is deferred until it can be
   performed for a defined Component Python target rather than the build host.
-- Artifact URLs and hashes are compiler inputs but are not yet emitted as a
-  versioned provenance report or added to canonical application identity.
+- Artifact URLs and hashes are emitted through the versioned, non-canonical
+  compiler provenance report defined by ADR 013. They are not added to
+  canonical application identity.
 - Byte-for-byte reproducibility is not claimed. Pinned
   `componentize-py 0.25.0 --stub-wasi` bakes a build-time PRNG seed and exposes
   no deterministic seed control; clean builds currently produce different
@@ -89,8 +90,8 @@ other WASI host interface.
 
 ## Follow-up
 
-- Define a versioned, non-canonical build-provenance report containing the
-  Python runtime, component toolchain, target ABI, artifact URLs, and hashes.
+- Keep the versioned, non-canonical build-provenance report synchronized with
+  toolchain and dependency-policy changes.
 - Obtain an upstream deterministic seed/source-epoch control or replace the
   nondeterministic componentization step before checking reproducible-output
   acceptance criteria.

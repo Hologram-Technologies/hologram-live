@@ -29,6 +29,20 @@ fn compile_check_reports_versioned_noncanonical_python_provenance() {
     assert_eq!(source["target_abi"], "wasm32-wasip2-component");
     assert_eq!(source["runtime"]["version"], "3.14.0");
     assert_eq!(source["componentizer"]["version"], "0.25.0");
+    assert!(source["componentizer"]["distribution"]["url"]
+        .as_str()
+        .is_some_and(|url| {
+            url.starts_with("https://files.pythonhosted.org/")
+                && std::path::Path::new(url)
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("whl"))
+        }));
+    assert_eq!(
+        source["componentizer"]["distribution"]["sha256"]
+            .as_str()
+            .map(str::len),
+        Some(64)
+    );
     assert!(source.get("componentizer_runner").is_none());
     assert!(source.get("dependency_installer").is_none());
     assert!(source.get("output").is_none());

@@ -260,6 +260,9 @@ dependencies until an explicit child invocation contract is introduced.
 - [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
 - [x] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
 - [x] Prove a locked pure-Python dependency is included without reading the developer's ambient virtual environment.
+- [x] Resolve componentize-py through an exact URL/SHA-256 wheel for every
+  server-release host, disable index/source fallback, report the artifact, and
+  fail unsupported hosts closed.
 - [x] Report unsupported WASI imports and dependency-bearing portable locks as typed preparation/compile diagnostics.
 - [x] Add component fuel, memory, input/output, deadline, and cancellation limits before advertising Component execution.
 
@@ -314,6 +317,18 @@ adapter as the only source and making fixed-offset output patching unsafe.
 Cache reuse is not clean-build reproducibility. The machine-readable report
 therefore carries `reproducible: false` and the blocker until a deterministic
 componentizer and cross-platform equality gate land.
+
+Exact-artifact follow-up (2026-08-26): version-only uvx resolution has been
+removed. The compiler maps the five server-release hosts (macOS arm64/x86_64,
+Linux arm64/x86_64, and Windows x86_64) to the upstream componentize-py 0.25.0
+wheel URL and PyPI SHA-256, supplies that direct reference with `--no-index
+--no-build`, and records it under `componentizer.distribution` in both planned
+and completed provenance. An unmapped host returns
+`LIVE_CAPABILITY_MISSING`; it cannot fall back to an index or source archive.
+The exact arm64 macOS wheel compiled the dependency-free proof and preserved
+direct and resident execution. This closes distribution selection, not output
+determinism: uvx/host-Python bundling and deterministic pre-initialization
+randomness remain separate follow-ups.
 
 ### M3.2 View provider
 
@@ -635,6 +650,8 @@ application/DMG builds pass.
 - [x] Python dependency resolver, supported `uv.lock` inputs, portable-wheel
   admission, and toolchain pinning (ADR 012).
 - [x] Python build-provenance schema and non-canonical identity boundary (ADR 013).
+- [x] Exact platform componentizer distribution selection and fail-closed host
+  coverage (ADR 013).
 - [ ] Deterministic Python Component output and clean-build equality proof.
 
 ## Per-milestone definition of done
@@ -682,6 +699,8 @@ application/DMG builds pass.
 - [x] Define and emit a versioned, non-canonical Python Component provenance
   report with stable source hashes, selected artifacts, observed tools, target,
   output identity, and an explicit reproducibility status.
+- [x] Pin the exact componentizer wheel URL/SHA-256 for all five server release
+  hosts, report it, disable registry/source fallback, and fail unpinned hosts.
 - [ ] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.

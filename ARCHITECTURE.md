@@ -118,6 +118,15 @@ increments only that component engine's epoch, isolating it from core Wasm and
 other applications. Nonzero admitted memory and CPU-time capability scalars
 can tighten, never expand, the runtime-owned ceilings.
 
+Python `wasi-component` is a compiler adapter over this provider, not a new
+runtime layer. It chooses an exact `componentize-py 0.25.0` wheel URL/SHA-256
+from the five server-release host pairs, invokes it through isolated uvx with
+indexes and source builds disabled, and records that distribution alongside
+source, dependency, runner, target, and output evidence in non-canonical build
+provenance. Unsupported hosts fail closed. The resulting component remains
+nondeterministic until the componentizer exposes controlled pre-initialization
+randomness; provenance therefore does not become `.holo` identity.
+
 Provider invocation returns outputs and completion as separate values. The
 root primary alone supplies `returned` or a provider-observed `exited { code }`
 completion; child primaries and non-primary dependencies never compete with it.

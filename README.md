@@ -467,11 +467,14 @@ $ hologram run python-component-hello.holo \
 }
 ```
 
-This compiler invokes pinned `componentize-py 0.25.0` through an isolated
-`uvx` tool environment, removes the developer virtual environment and Python
-search path, and uses `--stub-wasi`. The emitted component therefore imports
-no WASI and runs under the existing Component v1 limits. Install `uv`; the
-first compile downloads the pinned tool and later compiles reuse its cache.
+This compiler invokes `componentize-py 0.25.0` through an isolated `uvx` tool
+environment, removes the developer virtual environment and Python search path,
+and uses `--stub-wasi`. It selects one exact wheel URL and SHA-256 for each of
+the five server-release hosts, disables package indexes and source builds, and
+fails with `LIVE_CAPABILITY_MISSING` on an unpinned host. The emitted component
+therefore imports no WASI and runs under the existing Component v1 limits.
+Install `uv`; the first compile downloads the hash-verified wheel and later
+compiles may reuse its cache.
 For external packages, the portable profile accepts registry records only when
 `uv.lock` contains an HTTPS, SHA-256-pinned Python 3 `*-none-any.whl`. It
 installs those exact wheels into a private path with indexes, dependency
@@ -490,7 +493,8 @@ $ hologram --json compile \
 ```
 
 The schema records normalized SHA-256 source inputs, the complete selected
-wheel inventory, CPython and componentizer pins, build host, and target ABI. A
+dependency-wheel inventory, CPython and componentizer pins, the exact
+host-specific componentizer wheel URL/hash, build host, and target ABI. A
 completed compile additionally records the observed `uvx`/`uv` versions and
 the generated layer κ and byte length. `canonical: false` is deliberate: the
 report is not embedded in `.holo`, so host evidence cannot silently change the

@@ -55,6 +55,11 @@ This document is deliberately strict about what the current stable build does an
   memory and CPU-time scalars can only tighten them. Timeout and cancellation
   use a component-local epoch-interruptible engine. No WASI or ambient host
   interface is linked.
+- Python `wasi-component` source compilation with bundled CPython 3.14, locked
+  universal-wheel dependencies, exact SHA-256-pinned componentizer wheels for
+  all five server-release hosts, non-canonical build provenance, and direct or
+  resident execution. Unsupported build hosts fail closed; deterministic
+  component bytes remain unclaimed.
 
 ## Present as an extension seam, not implemented by the default module set
 

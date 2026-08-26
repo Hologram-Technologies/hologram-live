@@ -1,4 +1,4 @@
-# Current sprint: M3.1c Python Component build provenance
+# Current sprint: M3.1d exact Python Component tool artifact
 
 ## Sprint status
 
@@ -6,107 +6,95 @@
 - Started: 2026-08-26
 - Last reviewed: 2026-08-26
 - Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
-- Goal: make Python Component inputs, selected artifacts, toolchain, target, and
-  output explainable through a versioned report without changing `.holo`
-  identity, while determining the honest boundary for reproducible output
-- Exit signal: `compile --check --json` reports stable planned provenance, a
-  completed compile adds observed tools and layer identity, nested source
-  symlinks fail closed, and the remaining deterministic-output blocker is
-  machine-readable and backed by a controlled experiment
+- Goal: remove mutable version-only componentizer resolution from Python
+  Component builds while preserving the honest boundary between supply-chain
+  pinning and reproducible output
+- Exit signal: every server-release host selects one reviewed
+  `componentize-py 0.25.0` wheel URL/SHA-256, uvx cannot consult an index or
+  build a source distribution, provenance reports the selected artifact,
+  unsupported hosts fail closed, and direct/resident execution still passes
 
-The completed dependency-packaging tracker remains in Git history. Durable
-requirements stay in
+The completed dependency admission and provenance trackers remain in Git
+history. Durable requirements stay in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md).
-Dependency admission is ADR 012; this sprint's provenance boundary is ADR 013.
+Dependency admission is ADR 012; provenance identity and artifact reporting
+are ADR 013.
 
-## Provenance policy
+## Acceptance boundary
 
-- Use additive `build_provenance` schema version 1 in compile/check results.
-  Mark it `canonical: false` and do not embed it in archive metadata,
-  application directories, manifests, or content blobs.
-- Index reports by manifest layer. The first schema covers Python
-  `wasi-component` source layers; prebuilt layers and rootfs provenance remain
-  outside this slice.
-- Record the Hologram compiler, CPython runtime, componentizer version/release
-  revision, target ABI, guest contract, and build host.
-- Hash `pyproject.toml`, `uv.lock`, and a domain-separated source-tree view with
-  SHA-256. The tree view sorts normalized UTF-8 `/` paths and includes path,
-  length, and file bytes while ignoring directory order, timestamps, and
-  permissions.
-- Record every selected runtime dependency name, version, HTTPS wheel URL, and
-  SHA-256 from the lock closure.
-- During a real build, record observed uvx/uv versions plus the component layer
-  κ and byte length. During `--check`, omit fields that were not observed and
-  do not download or execute the toolchain.
-- Stage source regular files in lexical order and reject nested symlinks and
-  special files before componentization.
-- Keep `reproducible: false` until two clean builds on every supported host
-  produce byte-identical layers. Never substitute cache reuse for that proof.
+- This slice pins the componentizer distribution artifact. It does not claim
+  that uvx, its host interpreter, or generated component bytes are
+  reproducible.
+- Keep `build_provenance.schema_version: 1` additive, non-canonical, and
+  outside every archive, manifest, directory, and content blob.
+- Select artifacts only for the five published server targets: macOS arm64 and
+  x86_64, Linux arm64 and x86_64, and Windows x86_64.
+- Use upstream wheel URLs and PyPI-published SHA-256 digests. Do not admit the
+  source distribution or fall back to a package index.
+- Continue reporting `reproducible: false` until controlled componentizer
+  randomness and clean cross-host equality are proven.
 
-## Reproducibility investigation
+## Compiler and provenance
 
-- [x] Confirm pinned componentize-py 0.25.0 exposes no deterministic seed
-  option.
-- [x] Inspect release source revision `c0949b1`: pre-initialization owns a
-  private `WasiCtxBuilder`, so the caller cannot inject deterministic random.
-- [x] Compile identical dependency-free input twice without `--stub-wasi` to
-  test whether only the stub adapter caused variation.
-- [x] Record that non-stubbed outputs also differed: 18,308,535 vs 18,320,373
-  bytes and distinct SHA-256 values.
-- [x] Reject output byte patching as unsafe because snapshot layout and total
-  length differ, not merely one fixed seed field.
-- [x] Reject caching as reproducibility evidence because a clean build still
-  generates a new output.
+- [x] Map each server-release OS/architecture pair to one exact
+  `componentize-py 0.25.0` wheel.
+- [x] Pass a PEP 508 direct URL with `#sha256=` to isolated uvx.
+- [x] Disable registry lookup and source builds for the componentizer
+  invocation.
+- [x] Add the selected distribution URL/hash to the declared componentizer in
+  both check and completed provenance.
+- [x] Return typed `LIVE_CAPABILITY_MISSING` for an unmapped host.
+- [x] Keep runner observation separate: `compile --check` does not execute uvx,
+  while a real compile records the observed uvx version.
+- [x] Keep the exact artifact report outside canonical `.holo` identity.
+
+## Tests and release evidence
+
+- [x] Cover all five release host mappings and validate wheel suffix/hash
+  shape.
+- [x] Cover an unsupported host and its typed diagnostic.
+- [x] Exercise `compile --check --json` and assert the artifact URL/hash is
+  selectable with jq.
+- [x] Execute the exact direct-reference form with `--no-index --no-build` on
+  macOS arm64.
+- [x] Compile the dependency-free Python Component with the exact wheel and
+  execute it directly and resident.
+- [x] Run formatting, source-size, all-target tests, Clippy, BDD, optimized
+  build, release smoke, all Component demos, WIT conformance, and docs.
+
+## Documentation and delivery
+
+- [x] Update README, website Python/CLI/security pages, architecture, security,
+  actual capabilities, and ADR 013.
+- [x] Keep `specs/plans/holo-application-runtime.md` synchronized with proven
+  and still-open acceptance.
+- [ ] Land the reviewable PR, remove the feature worktree, and return the
+  primary repository to clean, synchronized `main`.
+
+## Reproducibility investigation retained from M3.1c
+
+- [x] Confirm componentize-py 0.25.0 exposes no deterministic seed option.
+- [x] Inspect release revision `c0949b1`: pre-initialization owns a private
+  `WasiCtxBuilder`, so the caller cannot inject deterministic random.
+- [x] Prove non-stubbed outputs also differ in length and SHA-256, ruling out
+  the stub adapter as the only source.
+- [x] Reject output byte patching because snapshot layout and total length
+  differ.
+- [x] Reject cache reuse as clean-build reproducibility evidence.
 - [ ] Obtain or maintain a componentizer with explicit deterministic
   pre-initialization randomness.
 - [ ] Prove byte-identical component, application κ, and archive κ values
   across clean macOS, Linux, and Windows builds.
 
-## Compiler and report
-
-- [x] Add the versioned non-canonical report to compile and check library
-  results.
-- [x] Expose the report from `hologram --json compile` and `compile --check` so
-  it can be selected or saved with `jq`.
-- [x] Add normalized source input and source-tree SHA-256 values.
-- [x] Add complete selected portable-wheel inventory with exact artifact URLs
-  and hashes.
-- [x] Add declared compiler/runtime/componentizer, Component target and
-  contract, and build-host evidence.
-- [x] Add observed uvx/uv versions and output layer κ/length only after a real
-  build.
-- [x] Keep provenance outside all canonical and physical archive bytes.
-- [x] Stage source files deterministically and reject nested symlinks/special
-  files.
-
-## Tests and conformance
-
-- [x] Cover stable tree hashing across file-creation order and sensitivity to
-  content changes.
-- [x] Cover nested source-symlink rejection.
-- [x] Cover planned provenance through a real `compile --check --json` CLI
-  invocation without downloading tools.
-- [x] Prove completed provenance and direct/resident execution with the pinned
-  Component toolchain.
-- [x] Run formatting, focused tests, all-target tests, Clippy, BDD, optimized
-  build, release smoke, Component demos, WIT conformance, and docs.
-
-## Documentation and delivery
-
-- [x] Record the identity and schema decision in ADR 013 and reconcile ADR 012.
-- [x] Update README and website Python, CLI, architecture, format, and security
-  documentation.
-- [x] Keep `specs/plans/holo-application-runtime.md` synchronized with proven
-  and still-open acceptance.
-- [ ] Land the reviewable PR, remove the feature worktree, and return the
-  primary repository to clean `main`.
-
 ## Deferred discoveries
 
-- [ ] `DISC-017d` — Add deterministic random injection to the pinned
-  componentizer or select a maintained deterministic replacement; then make
-  clean cross-platform output equality a release gate.
-- [ ] `DISC-017e` — Pin and report the exact componentizer distribution
-  artifact rather than relying on version plus upstream release revision.
+- [ ] `DISC-017d` — Patch or replace the componentizer so its build-time WASI
+  context receives deterministic randomness, then make clean supported-host
+  output equality a release gate.
+- [x] `DISC-017e` — Pin and report the exact componentizer distribution
+  artifact instead of relying on version plus upstream source revision.
+- [ ] `DISC-017f` — Decide whether uvx and its host Python must become an
+  independently distributed, digest-pinned Hologram toolchain bundle before
+  build provenance can graduate to a signed attestation.
 - [ ] `DISC-018` — Define capability-gated WASI only when an application needs
   real host interfaces; do not broaden the import-free base world.

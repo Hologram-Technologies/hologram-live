@@ -38,8 +38,9 @@ A Python Component entry records:
 - the `wasi-component` profile, exact Component v1 guest contract, and
   `wasm32-wasip2-component` target ABI;
 - build host OS and architecture;
-- Hologram compiler version, CPython `3.14.0`, componentize-py `0.25.0`, and
-  its release source revision;
+- Hologram compiler version, CPython `3.14.0`, componentize-py `0.25.0`, its
+  release source revision, and the exact host-specific distribution URL and
+  SHA-256;
 - normalized logical paths plus SHA-256 for `pyproject.toml`, `uv.lock`, and a
   versioned source-tree digest;
 - every selected dependency name, version, HTTPS wheel URL, and SHA-256 from
@@ -58,6 +59,13 @@ symlinks and special files fail before componentization.
 omits `componentizer_runner`, `dependency_installer`, and `output`; the declared
 toolchain pins and complete locked dependency inventory remain available.
 
+The componentizer distribution is selected from a closed mapping for the five
+server release hosts: macOS arm64/x86_64, Linux arm64/x86_64, and Windows
+x86_64. Each entry is an upstream wheel URL and PyPI-published SHA-256. The
+compiler passes that direct reference to uvx with registry lookup and source
+builds disabled. A host outside the mapping returns
+`LIVE_CAPABILITY_MISSING`; it never falls back to version-only resolution.
+
 The report is CLI result data. It is not embedded in archive metadata, the
 application directory, a content blob, or the canonical `AppManifest`. It does
 not affect layer, application, or archive κ values. A durable copy can be made
@@ -73,6 +81,9 @@ hologram --json compile hologram.json --output application.holo \
 - Build validation is inspectable with `jq` before downloading the toolchain.
 - A completed report ties the exact selected lock artifacts to the observed
   tool runners and emitted layer without conflating evidence with identity.
+- A mutable package index cannot select a different componentizer distribution
+  behind the same version; changing or adding a release host requires an
+  explicit reviewed URL/hash pin.
 - Reports may differ across hosts or tool runners; that is evidence, not an
   application-identity change.
 - Provenance schema evolution can proceed independently and may later become a
@@ -86,8 +97,6 @@ hologram --json compile hologram.json --output application.holo \
 - Obtain or maintain a componentizer that accepts an explicit deterministic
   pre-initialization random source, then verify byte-identical components and
   `.holo` archives across clean builds and supported hosts.
-- Pin and record the exact componentizer distribution artifact, not only its
-  version and release revision.
 - Extend the schema to rootfs inputs only after base-image digest resolution,
   reproducible OCI construction, and the microVM execution boundary land.
 - Define signing and retention if provenance becomes a supply-chain

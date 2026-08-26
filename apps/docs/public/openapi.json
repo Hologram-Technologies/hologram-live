@@ -1,0 +1,1833 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hologram Live API",
+    "description": "Extensible local and remote module host for Hologram",
+    "license": {
+      "name": "MIT OR Apache-2.0",
+      "identifier": "MIT OR Apache-2.0"
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/capabilities": {
+      "get": {
+        "tags": [],
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityManifest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/{id}": {
+      "post": {
+        "tags": [],
+        "operationId": "send_message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files": {
+      "get": {
+        "tags": [],
+        "operationId": "list_files",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObjectMetadata"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "put_file",
+        "parameters": [
+          {
+            "name": "content-type",
+            "in": "header",
+            "description": "Stored media type",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "x-hologram-filename",
+            "in": "header",
+            "description": "Original filename",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectMetadata"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/files/{id}": {
+      "get": {
+        "tags": [],
+        "operationId": "get_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Content-addressed file ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw file bytes",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "File not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "rename_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Content-addressed file ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectMetadata"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found"
+          }
+        }
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "tags": [],
+        "operationId": "list_history",
+        "parameters": [
+          {
+            "name": "include_archived",
+            "in": "query",
+            "description": "Include archived conversations",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Conversation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "create_history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/{id}": {
+      "get": {
+        "tags": [],
+        "operationId": "get_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        }
+      },
+      "delete": {
+        "tags": [],
+        "operationId": "delete_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/history/{id}/archive": {
+      "post": {
+        "tags": [],
+        "operationId": "archive_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/{id}/messages": {
+      "post": {
+        "tags": [],
+        "operationId": "append_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Conversation ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppendMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/holo": {
+      "get": {
+        "tags": [],
+        "operationId": "list_holo",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HoloInspection"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/holo/resident": {
+      "get": {
+        "tags": [],
+        "operationId": "resident_holo",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResidentHolo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/holo/{kappa}": {
+      "get": {
+        "tags": [],
+        "operationId": "inspect_holo",
+        "parameters": [
+          {
+            "name": "kappa",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoloInspection"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/holo/{kappa}/load": {
+      "post": {
+        "tags": [],
+        "operationId": "load_holo",
+        "parameters": [
+          {
+            "name": "kappa",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResidentHolo"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [],
+        "operationId": "unload_holo",
+        "parameters": [
+          {
+            "name": "kappa",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/holo/{kappa}/plan": {
+      "get": {
+        "tags": [],
+        "operationId": "plan_holo",
+        "parameters": [
+          {
+            "name": "kappa",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoloPlan"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/holo/{kappa}/run": {
+      "post": {
+        "tags": [],
+        "operationId": "run_holo",
+        "parameters": [
+          {
+            "name": "kappa",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoloRunHttpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoloRunResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules": {
+      "get": {
+        "tags": [],
+        "operationId": "list_modules",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModuleInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/nodes": {
+      "get": {
+        "tags": [],
+        "operationId": "list_nodes",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NodeRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/objects": {
+      "get": {
+        "tags": [],
+        "operationId": "list_objects",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObjectMetadata"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "put_object",
+        "parameters": [
+          {
+            "name": "content-type",
+            "in": "header",
+            "description": "Stored media type",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "x-hologram-kind",
+            "in": "header",
+            "description": "Object kind; defaults to file",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "x-hologram-filename",
+            "in": "header",
+            "description": "Original filename",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectMetadata"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/objects/{id}": {
+      "get": {
+        "tags": [],
+        "operationId": "get_object",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Content-addressed object ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw object bytes",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "Object not found"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [],
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AppendMessageRequest": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "ApplicationCompletion": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "returned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "code",
+              "kind"
+            ],
+            "properties": {
+              "code": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "exited"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ArchiveConversationRequest": {
+        "type": "object",
+        "required": [
+          "archived"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CapabilityManifest": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "server_version",
+          "server_id",
+          "role",
+          "operations",
+          "modules",
+          "maximum_message_bytes"
+        ],
+        "properties": {
+          "maximum_message_bytes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "modules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModuleInfo"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationInfo"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "role": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "server_version": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatRequest": {
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "Conversation": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "created_at_millis",
+          "updated_at_millis",
+          "messages"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "description": "Defaulted so conversations written before archiving existed still load."
+          },
+          "created_at_millis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at_millis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "ConversationMessage": {
+        "type": "object",
+        "required": [
+          "role",
+          "content",
+          "created_at_millis"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "created_at_millis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateConversationRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "role",
+          "modules_ready"
+        ],
+        "properties": {
+          "modules_ready": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "HoloBlob": {
+        "type": "object",
+        "description": "One content-addressed blob physically embedded in a fat `.holo`.",
+        "required": [
+          "kappa",
+          "byte_length"
+        ],
+        "properties": {
+          "byte_length": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "kappa": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HoloChild": {
+        "type": "object",
+        "description": "One composed child application and its attenuated capability set.",
+        "required": [
+          "position",
+          "application_kappa",
+          "capabilities_kappa"
+        ],
+        "properties": {
+          "application_kappa": {
+            "type": "string"
+          },
+          "application_resolution_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capabilities_kappa": {
+            "type": "string"
+          },
+          "capabilities_resolution_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "parent_application_kappa": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "requires_kappa": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "HoloDirectory": {
+        "type": "object",
+        "description": "A normalized, versioned projection of an application manifest and its\nphysical packaging. Layers refer to blobs by kappa instead of nesting them.",
+        "required": [
+          "schema_version",
+          "requires_kappa",
+          "layers",
+          "children",
+          "blobs"
+        ],
+        "properties": {
+          "blobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoloBlob"
+            }
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoloChild"
+            }
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoloLayer"
+            }
+          },
+          "primary_layer": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "requires_kappa": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "HoloInspection": {
+        "type": "object",
+        "required": [
+          "kappa",
+          "name",
+          "format_version",
+          "byte_length",
+          "archive_fingerprint",
+          "footer_verified",
+          "sections",
+          "directory_embedded"
+        ],
+        "properties": {
+          "application_kappa": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Canonical application-manifest kappa, absent for structural archives\nthat do not contain an application manifest."
+          },
+          "archive_fingerprint": {
+            "type": "string"
+          },
+          "byte_length": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "directory": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HoloDirectory"
+              }
+            ]
+          },
+          "directory_embedded": {
+            "type": "boolean"
+          },
+          "footer_verified": {
+            "type": "boolean"
+          },
+          "format_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "kappa": {
+            "type": "string",
+            "description": "Physical archive object kappa (BLAKE3 of the complete file)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoloSection"
+            }
+          }
+        }
+      },
+      "HoloLayer": {
+        "type": "object",
+        "description": "One ordered application layer in the queryable `.holo` directory.",
+        "required": [
+          "position",
+          "kind",
+          "content_kappa",
+          "entry"
+        ],
+        "properties": {
+          "architecture": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_kappa": {
+            "type": "string"
+          },
+          "contract": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entry": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "surface": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "HoloPlan": {
+        "type": "object",
+        "required": [
+          "archive_kappa",
+          "archive_fingerprint",
+          "application_kappa",
+          "execution_target",
+          "packaging",
+          "capabilities",
+          "layers",
+          "children",
+          "resolved_object_count",
+          "resolved_bytes",
+          "application_count",
+          "max_depth",
+          "limits",
+          "runnable",
+          "blockers"
+        ],
+        "properties": {
+          "application_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "application_kappa": {
+            "type": "string"
+          },
+          "archive_fingerprint": {
+            "type": "string"
+          },
+          "archive_kappa": {
+            "type": "string"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoloPlanBlocker"
+            }
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/HoloPlanObject"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoloChild"
+            }
+          },
+          "execution_target": {
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoloPlanLayer"
+            }
+          },
+          "limits": {
+            "$ref": "#/components/schemas/HoloPlanLimits"
+          },
+          "max_depth": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "packaging": {
+            "type": "string"
+          },
+          "primary_layer": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "resolved_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "resolved_object_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "runnable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "HoloPlanBlocker": {
+        "type": "object",
+        "required": [
+          "kind",
+          "error_code",
+          "message"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "HoloPlanLayer": {
+        "type": "object",
+        "required": [
+          "position",
+          "kind",
+          "content_kappa",
+          "entry",
+          "primary",
+          "provider"
+        ],
+        "properties": {
+          "architecture": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_length": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "content_kappa": {
+            "type": "string"
+          },
+          "contract": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entry": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "primary": {
+            "type": "boolean"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/HoloPlanProvider"
+          },
+          "resolution_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HoloPlanLimits": {
+        "type": "object",
+        "required": [
+          "max_layers",
+          "max_applications",
+          "max_depth",
+          "max_objects",
+          "max_resolved_bytes"
+        ],
+        "properties": {
+          "max_applications": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_depth": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_layers": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_objects": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_resolved_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "HoloPlanObject": {
+        "type": "object",
+        "required": [
+          "kappa"
+        ],
+        "properties": {
+          "byte_length": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "kappa": {
+            "type": "string"
+          },
+          "resolution_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HoloPlanProvider": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "HoloRunHttpRequest": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
+      "HoloRunResult": {
+        "type": "object",
+        "required": [
+          "kappa",
+          "outputs",
+          "elapsed_micros",
+          "resident_bytes"
+        ],
+        "properties": {
+          "authorization": {
+            "type": "string"
+          },
+          "completion": {
+            "$ref": "#/components/schemas/ApplicationCompletion"
+          },
+          "effective_grant_kappa": {
+            "type": "string"
+          },
+          "elapsed_micros": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "grant_source": {
+            "type": "string"
+          },
+          "kappa": {
+            "type": "string"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          "requested_capabilities_kappa": {
+            "type": "string"
+          },
+          "resident_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "HoloSection": {
+        "type": "object",
+        "required": [
+          "kind",
+          "offset",
+          "length"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "length": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "ModuleInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "state",
+          "dependencies",
+          "operations"
+        ],
+        "properties": {
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "state": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "NodeRecord": {
+        "type": "object",
+        "required": [
+          "node_id",
+          "version",
+          "operations",
+          "last_seen_millis"
+        ],
+        "properties": {
+          "last_seen_millis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "ObjectMetadata": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "media_type",
+          "size",
+          "created_at_millis"
+        ],
+        "properties": {
+          "created_at_millis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "filename": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "OperationInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "fallback_safe_before_dispatch"
+        ],
+        "properties": {
+          "fallback_safe_before_dispatch": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OperationKind"
+          }
+        }
+      },
+      "OperationKind": {
+        "type": "string",
+        "enum": [
+          "read",
+          "mutation",
+          "stream"
+        ]
+      },
+      "RenameFileRequest": {
+        "type": "object",
+        "required": [
+          "filename"
+        ],
+        "properties": {
+          "filename": {
+            "type": "string"
+          }
+        }
+      },
+      "ResidentHolo": {
+        "type": "object",
+        "required": [
+          "kappa",
+          "state",
+          "input_count",
+          "output_count",
+          "resident_bytes",
+          "queued",
+          "processed"
+        ],
+        "properties": {
+          "authorization": {
+            "type": "string"
+          },
+          "effective_grant_kappa": {
+            "type": "string"
+          },
+          "grant_source": {
+            "type": "string"
+          },
+          "input_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "kappa": {
+            "type": "string"
+          },
+          "output_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "processed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "queued": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "requested_capabilities_kappa": {
+            "type": "string"
+          },
+          "resident_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "Hologram Live system endpoints"
+    },
+    {
+      "name": "system",
+      "description": "Host capabilities and module discovery"
+    },
+    {
+      "name": "kappa-registry",
+      "description": "Content-addressed registry provider"
+    },
+    {
+      "name": "history",
+      "description": "Conversation history"
+    },
+    {
+      "name": "chat",
+      "description": "Conversation-backed chat modules"
+    },
+    {
+      "name": "control-plane",
+      "description": "Node inventory"
+    },
+    {
+      "name": "files",
+      "description": "Artifact file discovery"
+    },
+    {
+      "name": "holo",
+      "description": "Hologram application archives"
+    }
+  ]
+}

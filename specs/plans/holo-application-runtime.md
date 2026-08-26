@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1a, upstream contract-tag support and Component Model provider limits
+- Next delivery: M3.1a, Component Model provider resource limits and execution
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -246,6 +246,15 @@ dependencies until an explicit child invocation contract is introduced.
 ### M3.1a Component-model and Python/WASI proof
 
 - [x] Define a versioned, import-free Hologram WIT world beginning with one byte input and one byte output.
+- [x] Land upstream canonical validation for the legacy empty Wasm tag plus
+  explicit `hologram:guest/core-wasm@1` and
+  `hologram:guest/component@1` selectors without changing the codec.
+- [x] Add source-manifest schema v4 `contract`, `app init --contract`, and
+  preserve omitted-contract application identity across schemas v1-v4.
+- [x] Expose the normalized contract through verified directory, inspect,
+  plan, JSON/HTTP, OpenAPI, and Protobuf/gRPC surfaces.
+- [x] Select providers by exact `(LayerKind, contract)` and prove Component v1
+  produces a typed unavailable blocker instead of reaching core Wasm.
 - [ ] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
 - [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
 - [ ] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
@@ -545,6 +554,8 @@ application/DMG builds pass.
 ## Cross-cutting API and guest-contract work
 
 - [x] Define version negotiation for the core-Wasm and Component Model guest contracts.
+- [x] Carry canonical guest-contract selection from authoring through identity,
+  inspection, planning, and provider lookup with legacy decode defaults.
 - [ ] Move beyond fixed anonymous one-input/one-output execution with typed, named ports.
 - [x] Define application completion and exit status separately from byte outputs.
 - [ ] Add structured logs and diagnostics without treating stdout as a protocol.

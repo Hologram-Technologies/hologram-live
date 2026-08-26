@@ -1,13 +1,14 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import { sitePath } from '../../lib/site';
 ---
 <DocsLayout title="API reference" description="OpenAPI, Scalar, and native gRPC reference surfaces for Hologram Live.">
   <h1>API reference</h1>
-  <p>The running service exposes an interactive Scalar reference and the raw Utoipa-generated OpenAPI document on the same listener as the API.</p>
+  <p>GitHub Pages hosts the generated OpenAPI document for browsing without a local service. A running service additionally exposes an interactive Scalar reference on its API listener.</p>
 
   <div class="doc-grid">
-    <article class="doc-card"><h3>Scalar</h3><p><a href="http://127.0.0.1:11435/docs">Open the interactive reference ↗</a></p></article>
-    <article class="doc-card"><h3>OpenAPI JSON</h3><p><a href="http://127.0.0.1:11435/openapi.json">Read the raw document ↗</a></p></article>
+    <article class="doc-card"><h3>Hosted schema</h3><p><a href={sitePath('/openapi.json')}>Read the OpenAPI document ↗</a></p></article>
+    <article class="doc-card"><h3>Local Scalar</h3><p><code>just dev</code>, then open <code>http://127.0.0.1:11435/docs</code>.</p></article>
   </div>
 
   <h2>Start the reference</h2>

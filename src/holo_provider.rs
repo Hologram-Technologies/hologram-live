@@ -119,6 +119,9 @@ pub struct LayerRuntimeStatus {
 #[tonic::async_trait]
 pub trait LayerProvider: Send + Sync {
     fn kind(&self) -> LayerKind;
+    /// Canonical Wasm guest contract served by this provider. Non-Wasm
+    /// providers have no contract selector.
+    fn contract(&self) -> Option<&'static str>;
     fn name(&self) -> &'static str;
     fn availability(
         &self,
@@ -145,13 +148,42 @@ pub struct ProviderRegistry {
 impl ProviderRegistry {
     pub fn new(target: ProviderTarget, providers: Vec<Arc<dyn LayerProvider>>) -> Result<Self> {
         for (index, provider) in providers.iter().enumerate() {
-            if providers[..index]
-                .iter()
-                .any(|existing| existing.kind() == provider.kind())
-            {
+            if provider.kind() == LayerKind::WasmCodemodule {
+                let contract = provider.contract().ok_or_else(|| {
+                    LiveError::Config(format!(
+                        "{} Wasm provider {} has no guest contract selector",
+                        target.name(),
+                        provider.name()
+                    ))
+                })?;
+                let normalized = crate::holo_contract::normalize_wasm_contract(contract)
+                    .map_err(LiveError::Config)?;
+                if normalized != contract {
+                    return Err(LiveError::Config(format!(
+                        "{} Wasm provider {} must declare the explicit canonical contract {normalized}",
+                        target.name(),
+                        provider.name()
+                    )));
+                }
+            }
+            if providers[..index].iter().any(|existing| {
+                existing.kind() == provider.kind() && existing.contract() == provider.contract()
+            }) {
                 return Err(LiveError::Config(format!(
-                    "duplicate {} provider for {} layers",
+                    "duplicate {} provider for {} layers{}",
                     target.name(),
+                    layer_kind_name(provider.kind()),
+                    provider
+                        .contract()
+                        .map(|contract| format!(" using contract {contract}"))
+                        .unwrap_or_default()
+                )));
+            }
+            if provider.kind() != LayerKind::WasmCodemodule && provider.contract().is_some() {
+                return Err(LiveError::Config(format!(
+                    "{} provider {} declares a Wasm contract for {} layers",
+                    target.name(),
+                    provider.name(),
                     layer_kind_name(provider.kind())
                 )));
             }
@@ -168,23 +200,35 @@ impl ProviderRegistry {
     }
 
     fn availability(&self, context: &ProviderContext<'_>) -> ProviderAvailability {
-        let Some(provider) = self.select(context.kind) else {
-            let reason = if context.kind == LayerKind::InferenceModel {
-                format!(
-                    "inference provider for service {} ({}) is not connected to {} execution",
-                    context.entry,
-                    context.aux,
-                    self.target.name()
-                )
-            } else {
-                format!(
-                    "{} execution has no provider for {} layer entry {}",
-                    self.target.name(),
-                    layer_kind_name(context.kind),
-                    context.entry
-                )
-            };
-            return ProviderAvailability::Unavailable { reason };
+        let provider = match self.select(context.kind, context.aux) {
+            Ok(Some(provider)) => provider,
+            Err(reason) => return ProviderAvailability::Unavailable { reason },
+            Ok(None) => {
+                let reason = if context.kind == LayerKind::InferenceModel {
+                    format!(
+                        "inference provider for service {} ({}) is not connected to {} execution",
+                        context.entry,
+                        context.aux,
+                        self.target.name()
+                    )
+                } else if context.kind == LayerKind::WasmCodemodule {
+                    let contract = crate::holo_contract::normalize_wasm_contract(context.aux)
+                        .unwrap_or(context.aux);
+                    format!(
+                        "{} execution has no provider for Wasm guest contract {contract} (entry {})",
+                        self.target.name(),
+                        context.entry
+                    )
+                } else {
+                    format!(
+                        "{} execution has no provider for {} layer entry {}",
+                        self.target.name(),
+                        layer_kind_name(context.kind),
+                        context.entry
+                    )
+                };
+                return ProviderAvailability::Unavailable { reason };
+            }
         };
         match provider.availability(context, self.target) {
             Ok(()) => ProviderAvailability::Available {
@@ -194,10 +238,20 @@ impl ProviderRegistry {
         }
     }
 
-    fn select(&self, kind: LayerKind) -> Option<&Arc<dyn LayerProvider>> {
-        self.providers
+    fn select(
+        &self,
+        kind: LayerKind,
+        aux: &str,
+    ) -> std::result::Result<Option<&Arc<dyn LayerProvider>>, String> {
+        let contract = if kind == LayerKind::WasmCodemodule {
+            Some(crate::holo_contract::normalize_wasm_contract(aux)?)
+        } else {
+            None
+        };
+        Ok(self
+            .providers
             .iter()
-            .find(|provider| provider.kind() == kind)
+            .find(|provider| provider.kind() == kind && provider.contract() == contract))
     }
 }
 
@@ -383,14 +437,26 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
             ))
         })?;
         for layer in layers {
-            let provider = registry.select(layer.kind).ok_or_else(|| {
-                LiveError::Capability(format!(
-                    "application {application_kappa} layer {} has no {} provider for {}",
-                    layer.position,
-                    registry.target.name(),
-                    layer_kind_name(layer.kind)
-                ))
-            })?;
+            let provider = registry
+                .select(layer.kind, &layer.aux)
+                .map_err(LiveError::Capability)?
+                .ok_or_else(|| {
+                    LiveError::Capability(format!(
+                        "application {application_kappa} layer {} has no {} provider for {}{}",
+                        layer.position,
+                        registry.target.name(),
+                        layer_kind_name(layer.kind),
+                        if layer.kind == LayerKind::WasmCodemodule {
+                            format!(
+                                " contract {}",
+                                crate::holo_contract::normalize_wasm_contract(&layer.aux)
+                                    .unwrap_or(&layer.aux)
+                            )
+                        } else {
+                            String::new()
+                        }
+                    ))
+                })?;
             if layer.provider != provider.name() {
                 return Err(LiveError::Conflict(format!(
                     "application {application_kappa} layer {} selected provider {}, but registry resolved {}",
@@ -579,6 +645,10 @@ mod tests {
             LayerKind::WasmCodemodule
         }
 
+        fn contract(&self) -> Option<&'static str> {
+            Some(crate::holo_contract::WASM_CONTRACT_CORE_V1)
+        }
+
         fn name(&self) -> &'static str {
             "synthetic-wasm"
         }
@@ -627,6 +697,10 @@ mod tests {
     impl LayerProvider for NamedProvider {
         fn kind(&self) -> LayerKind {
             LayerKind::WasmCodemodule
+        }
+
+        fn contract(&self) -> Option<&'static str> {
+            Some(crate::holo_contract::WASM_CONTRACT_CORE_V1)
         }
 
         fn name(&self) -> &'static str {
@@ -954,6 +1028,51 @@ mod tests {
             crate::holo_capability::GrantSource::DirectDevelopmentFile,
         )
         .expect("development grant")
+    }
+
+    #[test]
+    fn component_contract_is_not_routed_to_the_core_wasm_provider() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events, None, None, None);
+        let capabilities = test_capabilities();
+        let payload = b"component payload";
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(payload),
+                "hologram:application/run",
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_V1,
+            )],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
+        writer.add_content_blob(address_bytes(payload).as_bytes(), payload);
+        let bytes = writer.finish().expect("archive");
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan");
+
+        registry.evaluate(&mut report);
+
+        assert!(!report.runnable());
+        assert!(matches!(
+            &report.layers[0].provider,
+            ProviderAvailability::Unavailable { reason }
+                if reason.contains(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
+        ));
+        let blocker = report
+            .blockers
+            .iter()
+            .find(|blocker| {
+                matches!(
+                    blocker,
+                    crate::application_plan::PlanBlocker::ProviderUnavailable { .. }
+                )
+            })
+            .expect("provider blocker");
+        assert_eq!(blocker.error_code(), "LIVE_CAPABILITY_MISSING");
     }
 
     #[tokio::test]

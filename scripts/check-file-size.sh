@@ -6,7 +6,7 @@ failed=0
 
 while IFS= read -r file; do
   case "$file" in
-    tests/*|*/tests/*|features/*|*/generated/*|*/gen/*|*Cargo.lock|*package-lock.json)
+    tests/*|*/tests/*|features/*|*/generated/*|*/gen/*|apps/docs/public/openapi.json|*Cargo.lock|*package-lock.json)
       continue
       ;;
   esac

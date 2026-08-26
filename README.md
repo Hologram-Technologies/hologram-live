@@ -311,14 +311,34 @@ successful completion, while a trap is `LIVE_PROTOCOL_ERROR`. Direct and
 resident providers validate the declared entry during preparation and use a
 fresh instance for each input.
 
-The accepted next ABI design keeps the callable `entry` separate from contract
-selection. A Wasm layer's canonical `aux` tag carries a namespaced contract
-identifier; empty remains the byte-compatible alias for
-`hologram:guest/core-wasm@1`, while a future Component Model archive declares
-`hologram:guest/component@1`. The checked-in Component v1 WIT world accepts and
-returns one byte list and imports nothing. Component execution is not yet
-implemented: unknown contracts and unavailable or under-granted imports must
-fail during preparation without falling back to core Wasm or ambient WASI.
+The callable `entry` stays separate from guest-contract selection. Source
+manifest schema v4 adds `contract` for Wasm layers; the compiler writes it to
+the canonical, identity-bearing `aux` tag. Omitting it retains the legacy empty
+tag and the same application κ, normalized at inspection and planning time to
+`hologram:guest/core-wasm@1`. The other accepted identifier is
+`hologram:guest/component@1`:
+
+```json
+{
+  "schema_version": 4,
+  "primary": 0,
+  "layers": [{
+    "kind": "wasm",
+    "path": "app.component.wasm",
+    "entry": "hologram:application/run",
+    "contract": "hologram:guest/component@1"
+  }]
+}
+```
+
+`hologram app init --contract hologram:guest/component@1` generates the same
+field. Component archives now compile, inspect, and plan, and both JSON and
+gRPC report the normalized `contract`. Component execution is deliberately not
+connected yet: plans return `runnable: false` with a typed
+`LIVE_CAPABILITY_MISSING` provider blocker, never a fallback to core Wasm or
+ambient WASI. Unknown source identifiers are rejected before archive emission;
+unknown canonical manifest tags are invalid archives. The checked-in Component
+v1 WIT world accepts and returns one byte list and imports nothing.
 
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as

@@ -41,6 +41,9 @@ struct InitArgs {
     /// Entrypoint for a Wasm, tensor, rootfs, or inference-model layer.
     #[arg(long)]
     entry: Option<String>,
+    /// Canonical guest contract for a Wasm layer (schema v4).
+    #[arg(long)]
+    contract: Option<String>,
     /// Architecture required by a rootfs layer.
     #[arg(long)]
     arch: Option<String>,
@@ -148,6 +151,7 @@ fn has_layer_flags(args: &InitArgs) -> bool {
         || args.template.is_some()
         || args.path.is_some()
         || args.entry.is_some()
+        || args.contract.is_some()
         || args.arch.is_some()
         || args.surface.is_some()
         || args.engine.is_some()
@@ -209,7 +213,9 @@ fn initialize<R: BufRead, W: Write>(
     };
 
     let specification = CompileManifest {
-        schema_version: if !children.is_empty() {
+        schema_version: if layers.iter().any(|layer| layer.contract.is_some()) {
+            4
+        } else if !children.is_empty() {
             3
         } else if python {
             2
@@ -320,6 +326,7 @@ fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
         entry: args.entry.clone().or_else(|| {
             matches!(kind, LayerKindArg::Wasm).then(|| CORE_WASM_V1_DEFAULT_ENTRY.to_owned())
         }),
+        contract: args.contract.clone(),
         arch: args.arch.clone(),
         surface: args.surface.clone(),
         engine: args.engine.clone(),
@@ -331,10 +338,11 @@ fn python_layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
         || args.path.is_some()
         || args.surface.is_some()
         || args.engine.is_some()
+        || args.contract.is_some()
         || args.yes
     {
         return Err(LiveError::Config(
-            "--template python cannot be combined with --kind, --path, --surface, --engine, or --yes"
+            "--template python cannot be combined with --kind, --path, --surface, --engine, --contract, or --yes"
                 .to_owned(),
         ));
     }
@@ -360,6 +368,7 @@ fn python_layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
                 .unwrap_or_else(|| "python:3.12-slim".to_owned()),
         })),
         entry: None,
+        contract: None,
         arch: Some(args.arch.clone().unwrap_or_else(default_arch)),
         surface: None,
         engine: None,
@@ -379,18 +388,28 @@ fn interactive_layers<R: BufRead, W: Write>(
             "Layer path",
             Some(&default_path(kind).to_string_lossy()),
         )?);
-        let (entry, arch, surface, engine) = match kind {
-            LayerKindArg::Wasm => (
-                Some(prompt(
+        let (entry, contract, arch, surface, engine) = match kind {
+            LayerKindArg::Wasm => {
+                let entry = prompt(
                     input,
                     output,
                     "Entrypoint",
                     Some(CORE_WASM_V1_DEFAULT_ENTRY),
-                )?),
-                None,
-                None,
-                None,
-            ),
+                )?;
+                let contract = prompt(
+                    input,
+                    output,
+                    "Guest contract (blank for core-Wasm v1 compatibility)",
+                    Some(""),
+                )?;
+                (
+                    Some(entry),
+                    (!contract.is_empty()).then_some(contract),
+                    None,
+                    None,
+                    None,
+                )
+            }
             LayerKindArg::Tensor => (
                 Some(prompt(
                     input,
@@ -401,14 +420,17 @@ fn interactive_layers<R: BufRead, W: Write>(
                 None,
                 None,
                 None,
+                None,
             ),
             LayerKindArg::Rootfs => (
                 Some(prompt(input, output, "Boot entrypoint", Some("boot"))?),
+                None,
                 Some(prompt_required(input, output, "Architecture")?),
                 None,
                 None,
             ),
             LayerKindArg::View => (
+                None,
                 None,
                 None,
                 Some(prompt(input, output, "Surface", Some("portable"))?),
@@ -423,6 +445,7 @@ fn interactive_layers<R: BufRead, W: Write>(
                 )?),
                 None,
                 None,
+                None,
                 Some(prompt_required(input, output, "Inference engine")?),
             ),
         };
@@ -431,6 +454,7 @@ fn interactive_layers<R: BufRead, W: Write>(
             path: Some(path),
             source: None,
             entry,
+            contract,
             arch,
             surface,
             engine,
@@ -623,6 +647,7 @@ mod tests {
             kind: None,
             path: None,
             entry: None,
+            contract: None,
             arch: None,
             surface: None,
             engine: None,
@@ -644,7 +669,7 @@ mod tests {
     fn interactive_flow_generates_multiple_valid_layers() {
         let directory = tempfile::tempdir().expect("tempdir");
         let input =
-            b"wasm\napp.wasm\nholo_run\ny\nview\nindex.html\nportable\nn\n0\ncapabilities.json\n";
+            b"wasm\napp.wasm\nholo_run\n\ny\nview\nindex.html\nportable\nn\n0\ncapabilities.json\n";
         let report = initialize(
             args(directory.path().to_path_buf()),
             true,
@@ -680,6 +705,28 @@ mod tests {
         assert_eq!(
             manifest.layers[0].entry.as_deref(),
             Some(CORE_WASM_V1_DEFAULT_ENTRY)
+        );
+        assert_eq!(manifest.schema_version, 1);
+        assert!(manifest.layers[0].contract.is_none());
+    }
+
+    #[test]
+    fn contract_flag_generates_a_schema_four_wasm_manifest() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let mut options = args(directory.path().to_path_buf());
+        options.kind = Some(LayerKindArg::Wasm);
+        options.path = Some("app.wasm".into());
+        options.contract = Some("hologram:guest/component@1".to_owned());
+        initialize(options, false, &mut Cursor::new([]), &mut Vec::new()).expect("initialize");
+
+        let manifest: CompileManifest = serde_json::from_slice(
+            &std::fs::read(directory.path().join("hologram.json")).expect("manifest"),
+        )
+        .expect("parse");
+        assert_eq!(manifest.schema_version, 4);
+        assert_eq!(
+            manifest.layers[0].contract.as_deref(),
+            Some("hologram:guest/component@1")
         );
     }
 
@@ -811,7 +858,7 @@ mod tests {
     #[test]
     fn interactive_flow_prompts_for_child_archives_and_delegated_capabilities() {
         let directory = tempfile::tempdir().expect("tempdir");
-        let input = b"wasm\napp.wasm\nholo_run\nn\n0\n\nyes\nworker.holo\nworker-caps.json\nno\n";
+        let input = b"wasm\napp.wasm\nholo_run\n\nn\n0\n\nyes\nworker.holo\nworker-caps.json\nno\n";
         initialize(
             args(directory.path().to_path_buf()),
             true,

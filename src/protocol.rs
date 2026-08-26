@@ -125,6 +125,8 @@ pub struct HoloLayer {
     pub kind: String,
     pub content_kappa: String,
     pub entry: String,
+    #[serde(default)]
+    pub contract: Option<String>,
     pub architecture: Option<String>,
     pub surface: Option<String>,
     pub engine: Option<String>,
@@ -208,6 +210,8 @@ pub struct HoloPlanLayer {
     pub kind: String,
     pub content_kappa: String,
     pub entry: String,
+    #[serde(default)]
+    pub contract: Option<String>,
     pub architecture: Option<String>,
     pub surface: Option<String>,
     pub engine: Option<String>,
@@ -260,17 +264,26 @@ impl HoloPlan {
             .iter()
             .map(|layer| {
                 let object = report.objects.get(&layer.content_kappa);
-                let (architecture, surface, engine) = match layer.kind {
-                    LayerKind::RootfsImage => (Some(layer.aux.clone()), None, None),
-                    LayerKind::View => (None, Some(layer.aux.clone()), None),
-                    LayerKind::InferenceModel => (None, None, Some(layer.aux.clone())),
-                    LayerKind::WasmCodemodule | LayerKind::TensorPlan => (None, None, None),
+                let (contract, architecture, surface, engine) = match layer.kind {
+                    LayerKind::WasmCodemodule => (
+                        crate::holo_contract::normalize_wasm_contract(&layer.aux)
+                            .ok()
+                            .map(str::to_owned),
+                        None,
+                        None,
+                        None,
+                    ),
+                    LayerKind::RootfsImage => (None, Some(layer.aux.clone()), None, None),
+                    LayerKind::View => (None, None, Some(layer.aux.clone()), None),
+                    LayerKind::InferenceModel => (None, None, None, Some(layer.aux.clone())),
+                    LayerKind::TensorPlan => (None, None, None, None),
                 };
                 HoloPlanLayer {
                     position: layer.position,
                     kind: layer_kind_name(layer.kind).to_owned(),
                     content_kappa: layer.content_kappa.clone(),
                     entry: layer.entry.clone(),
+                    contract,
                     architecture,
                     surface,
                     engine,

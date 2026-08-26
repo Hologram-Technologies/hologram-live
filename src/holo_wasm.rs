@@ -224,6 +224,10 @@ impl LayerProvider for WasmProvider {
         LayerKind::WasmCodemodule
     }
 
+    fn contract(&self) -> Option<&'static str> {
+        Some(crate::holo_contract::WASM_CONTRACT_CORE_V1)
+    }
+
     fn name(&self) -> &'static str {
         match self.target {
             ProviderTarget::Direct => "wasmtime-direct",

@@ -1,6 +1,7 @@
 //! Queryable application-directory projection for `.holo` v3/v4 archives.
 
 use crate::error::{LiveError, Result};
+use crate::holo_contract::normalize_wasm_contract;
 use crate::protocol::{HoloBlob, HoloChild, HoloDirectory, HoloLayer};
 use hologram::space::{address_bytes, AppManifest, LayerKind};
 use std::collections::BTreeMap;
@@ -47,13 +48,23 @@ where
             let position = u32::try_from(position).map_err(|_| {
                 LiveError::InvalidHolo("application has too many layers".to_owned())
             })?;
-            let (kind, architecture, surface, engine) = match layer.kind {
-                LayerKind::WasmCodemodule => ("wasm", None, None, None),
-                LayerKind::TensorPlan => ("tensor", None, None, None),
-                LayerKind::RootfsImage => ("rootfs", Some(layer.aux.clone()), None, None),
-                LayerKind::View => ("view", None, Some(layer.aux.clone()), None),
+            let (kind, contract, architecture, surface, engine) = match layer.kind {
+                LayerKind::WasmCodemodule => (
+                    "wasm",
+                    Some(
+                        normalize_wasm_contract(&layer.aux)
+                            .map_err(LiveError::InvalidHolo)?
+                            .to_owned(),
+                    ),
+                    None,
+                    None,
+                    None,
+                ),
+                LayerKind::TensorPlan => ("tensor", None, None, None, None),
+                LayerKind::RootfsImage => ("rootfs", None, Some(layer.aux.clone()), None, None),
+                LayerKind::View => ("view", None, None, Some(layer.aux.clone()), None),
                 LayerKind::InferenceModel => {
-                    ("inference-model", None, None, Some(layer.aux.clone()))
+                    ("inference-model", None, None, None, Some(layer.aux.clone()))
                 }
             };
             Ok(HoloLayer {
@@ -61,6 +72,7 @@ where
                 kind: kind.to_owned(),
                 content_kappa: layer.content.to_string(),
                 entry: layer.entry.clone(),
+                contract,
                 architecture,
                 surface,
                 engine,
@@ -106,7 +118,7 @@ pub fn encode(directory: &HoloDirectory) -> Result<Vec<u8>> {
 }
 
 pub fn decode(bytes: &[u8]) -> Result<HoloDirectory> {
-    let directory: HoloDirectory = serde_json::from_slice(bytes).map_err(|error| {
+    let mut directory: HoloDirectory = serde_json::from_slice(bytes).map_err(|error| {
         LiveError::InvalidHolo(format!("decode application directory: {error}"))
     })?;
     if directory.schema_version != DIRECTORY_SCHEMA_VERSION {
@@ -114,6 +126,18 @@ pub fn decode(bytes: &[u8]) -> Result<HoloDirectory> {
             "unsupported application directory schema {}; expected {DIRECTORY_SCHEMA_VERSION}",
             directory.schema_version
         )));
+    }
+    for layer in &mut directory.layers {
+        if layer.kind == "wasm" {
+            let normalized = normalize_wasm_contract(layer.contract.as_deref().unwrap_or(""))
+                .map_err(LiveError::InvalidHolo)?;
+            layer.contract = Some(normalized.to_owned());
+        } else if layer.contract.is_some() {
+            return Err(LiveError::InvalidHolo(format!(
+                "{} directory layers do not accept a guest contract",
+                layer.kind
+            )));
+        }
     }
     Ok(directory)
 }
@@ -147,6 +171,10 @@ mod tests {
 
         assert!(directory.blobs[0].kappa < directory.blobs[1].kappa);
         assert_eq!(directory.layers[0].position, 0);
+        assert_eq!(
+            directory.layers[0].contract.as_deref(),
+            Some(crate::holo_contract::WASM_CONTRACT_CORE_V1)
+        );
         assert_eq!(
             directory.layers[0].content_kappa,
             address_bytes(second).to_string()
@@ -203,5 +231,9 @@ mod tests {
         .expect("legacy directory");
 
         assert_eq!(directory.layers[0].engine, None);
+        assert_eq!(
+            directory.layers[0].contract.as_deref(),
+            Some(crate::holo_contract::WASM_CONTRACT_CORE_V1)
+        );
     }
 }

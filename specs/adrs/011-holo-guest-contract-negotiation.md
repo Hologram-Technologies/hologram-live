@@ -1,6 +1,6 @@
 # ADR 011: `.holo` guest contracts use the Wasm layer auxiliary tag
 
-- Status: accepted design; component implementation deferred to M3.1a
+- Status: accepted; selector implemented, component execution deferred
 - Date: 2026-08-25
 
 ## Context
@@ -31,23 +31,26 @@ Its values are exact, namespaced identifiers:
 The empty alias remains the compiler default while core-Wasm v1 is current, so
 existing compatible archives retain their canonical bytes and application κ.
 New component archives must carry the explicit component identifier. Source
-manifests will expose this as a separate `contract` field; the compiler maps it
-to `Layer.aux`. The callable `entry` remains only the function or exported
+manifest schema v4 exposes this as a separate `contract` field; the compiler
+maps it to `Layer.aux`. The callable `entry` remains only the function or exported
 interface selection and is never parsed as a version.
 
-This requires a coordinated upstream validation change: Wasm `aux` changes
+The coordinated upstream validation change landed in
+`Hologram-Technologies/hologram` PR 142, merge `c5e33ec`. It exports
+`WASM_CONTRACT_CORE_V1`, `WASM_CONTRACT_COMPONENT_V1`, and
+`Layer::wasm_with_contract`, while `Layer::wasm` retains the empty compatibility
+tag. Wasm `aux` changed
 from “must be empty” to “empty or a well-formed supported contract identifier.”
 The canonical codec does not change. Older runtimes already reject non-empty
-Wasm `aux`, which is the required fail-closed behavior. Live must not emit an
-explicit component identifier until it pins an upstream revision that accepts
-and preserves it.
+Wasm `aux`, which is the required fail-closed behavior. Live pins the merge and
+can emit either accepted explicit identifier.
 
 ### Negotiation
 
 Planning resolves the effective contract before provider preparation:
 
 1. normalize empty Wasm `aux` to `hologram:guest/core-wasm@1`;
-2. look up the exact `(LayerKind::WasmCodemodule, contract-major)` pair in a
+2. look up the exact `(LayerKind::WasmCodemodule, contract)` pair in a
    closed runtime registry;
 3. validate the payload against that contract before any layer starts;
 4. reject an unknown contract without falling back to core Wasm, WASI, or an
@@ -97,8 +100,12 @@ runtime does not inherit host arguments or environment variables.
 
 ### Diagnostics
 
-- Unknown or runtime-unsupported contract: `LIVE_CAPABILITY_MISSING`, naming
-  the contract, layer position, and supported identifiers.
+- Known but runtime-unsupported contract: `LIVE_CAPABILITY_MISSING`, naming the
+  contract and layer position. Component v1 has this status until its provider
+  lands.
+- Unknown source identifier: `LIVE_CONFIG_INVALID` before archive emission.
+  Unknown canonical manifest identifier: `LIVE_HOLO_INVALID` during manifest
+  validation. Neither reaches provider preparation.
 - Known contract with a malformed payload, wrong world, wrong export, or
   undeclared import: `LIVE_PROTOCOL_ERROR` during preparation.
 - Declared import whose required authority is absent from the admitted grant:
@@ -117,8 +124,8 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- Component implementation, upstream validation, resource enforcement, and a
-  Python/WASI proof remain M3.1a work; this ADR does not advertise them as
-  current capabilities.
+- Component provider implementation, resource enforcement, and a Python/WASI
+  proof remain M3.1a work. Canonical validation, source schema v4, normalized
+  inspection/planning, and exact provider selection are current capabilities.
 - New host authority requires both a versioned contract profile and a canonical
   capability field before an import can be linked.

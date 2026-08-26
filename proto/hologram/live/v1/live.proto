@@ -126,6 +126,7 @@ message HoloLayer {
   optional string architecture = 5;
   optional string surface = 6;
   optional string engine = 7;
+  optional string contract = 8;
 }
 message HoloChild {
   uint32 position = 1;
@@ -180,6 +181,7 @@ message HoloPlanLayer {
   optional string resolution_source = 9;
   optional uint64 byte_length = 10;
   HoloPlanProvider provider = 11;
+  optional string contract = 12;
 }
 message HoloPlanLimits {
   uint64 max_layers = 1;

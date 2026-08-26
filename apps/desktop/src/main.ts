@@ -59,6 +59,7 @@ type HoloLayer = {
   kind: string;
   content_kappa: string;
   entry: string;
+  contract: string | null;
   architecture: string | null;
   surface: string | null;
   engine: string | null;
@@ -887,7 +888,7 @@ function renderHoloInspector(item: HoloInspection | null) {
   const directory = item.directory;
   const layers = directory?.layers.map((layer) => `<article class="inspect-layer">
     <div><strong>${layer.position}. ${escapeHtml(layer.kind)}</strong>${directory.primary_layer === layer.position ? '<span class="kind">primary</span>' : ""}</div>
-    <p>${escapeHtml(layer.entry)}${layer.architecture === null ? "" : ` · ${escapeHtml(layer.architecture)}`}${layer.surface === null ? "" : ` · ${escapeHtml(layer.surface)}`}${layer.engine === null ? "" : ` · ${escapeHtml(layer.engine)}`}</p>
+    <p>${escapeHtml(layer.entry)}${layer.contract === null ? "" : ` · ${escapeHtml(layer.contract)}`}${layer.architecture === null ? "" : ` · ${escapeHtml(layer.architecture)}`}${layer.surface === null ? "" : ` · ${escapeHtml(layer.surface)}`}${layer.engine === null ? "" : ` · ${escapeHtml(layer.engine)}`}</p>
     <code>${escapeHtml(layer.content_kappa)}</code>
   </article>`).join("") ?? '<p class="inspect-muted">No application directory.</p>';
   const sections = item.sections.map((section) => `<li><span>${escapeHtml(section.kind)}</span><code>${section.offset} + ${section.length}</code></li>`).join("");

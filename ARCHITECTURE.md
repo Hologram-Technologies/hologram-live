@@ -101,13 +101,17 @@ and create a fresh guest instance per input. V1 returns bytes but carries no
 numeric process exit status, and it links no WASI or ambient host interface.
 
 Guest-contract selection is canonical but remains separate from the callable
-entry. Empty Wasm `aux` normalizes to `hologram:guest/core-wasm@1`; future
-Component Model archives use `hologram:guest/component@1`. Exact-major
-negotiation never falls back across contracts. The Component v1 WIT world is an
-import-free, stateless `list<u8> -> result<list<u8>, guest-error>` boundary.
-ADR 011 maps each proposed host interface to admitted capability fields and
-keeps interfaces with no canonical authority unavailable. The component
-provider itself remains planned work, not an advertised runtime capability.
+entry. Source schema v4 maps a Wasm `contract` field to the identity-bearing
+layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; explicit
+core-v1 and `hologram:guest/component@1` tags are accepted. Inspection and
+planning expose the normalized selector, and provider lookup is keyed by both
+layer kind and exact contract. Component archives therefore compile and plan
+as unavailable without ever reaching the core provider. The Component v1 WIT
+world is an import-free, stateless
+`list<u8> -> result<list<u8>, guest-error>` boundary. ADR 011 maps each
+proposed host interface to admitted capability fields and keeps interfaces
+with no canonical authority unavailable. The component provider itself remains
+planned work, not an advertised runtime capability.
 
 Provider invocation returns outputs and completion as separate values. The
 root primary alone supplies `returned` or a provider-observed `exited { code }`

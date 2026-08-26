@@ -1,6 +1,7 @@
 use crate::application_plan::HoloIdentity;
 use crate::error::{LiveError, Result};
 use crate::holo_capability;
+use crate::holo_contract::normalize_wasm_contract;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
 use crate::holo_wasm::{validate_entry_name, CORE_WASM_V1_DEFAULT_ENTRY};
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 3;
+const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 4;
 
 /// Source manifest accepted by `hologram compile`.
 ///
@@ -55,6 +56,9 @@ pub struct CompileLayer {
     pub source: Option<CompileSource>,
     #[serde(default)]
     pub entry: Option<String>,
+    /// Canonical guest-contract selector for Wasm layers (schema v4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<String>,
     #[serde(default)]
     pub arch: Option<String>,
     #[serde(default)]
@@ -227,13 +231,23 @@ pub fn parse_compile_manifest(path: &Path, source: &[u8]) -> Result<CompileManif
 pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> {
     if !(1..=CURRENT_MANIFEST_SCHEMA_VERSION).contains(&specification.schema_version) {
         return Err(LiveError::Config(format!(
-            "unsupported compile manifest schema {}; expected 1, 2, or {CURRENT_MANIFEST_SCHEMA_VERSION}",
+            "unsupported compile manifest schema {}; expected 1, 2, 3, or {CURRENT_MANIFEST_SCHEMA_VERSION}",
             specification.schema_version
         )));
     }
     if !specification.children.is_empty() && specification.schema_version < 3 {
         return Err(LiveError::Config(
             "child applications require schema_version 3".to_owned(),
+        ));
+    }
+    if specification.schema_version < 4
+        && specification
+            .layers
+            .iter()
+            .any(|layer| layer.contract.is_some())
+    {
+        return Err(LiveError::Config(
+            "Wasm guest contracts require schema_version 4".to_owned(),
         ));
     }
     let mut layers = Vec::with_capacity(specification.layers.len());
@@ -376,9 +390,21 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             validate_entry_name(entry).map_err(|reason| {
                 layer_config_error(source, &format!("invalid entry: {reason}"))
             })?;
-            Ok(Layer::wasm(kappa, entry))
+            match source.contract.as_deref() {
+                None => Ok(Layer::wasm(kappa, entry)),
+                Some("") => Err(layer_config_error(
+                    source,
+                    "contract must be a non-empty canonical identifier",
+                )),
+                Some(contract) => {
+                    let contract = normalize_wasm_contract(contract)
+                        .map_err(|reason| layer_config_error(source, &reason))?;
+                    Ok(Layer::wasm_with_contract(kappa, entry, contract))
+                }
+            }
         }
         CompileLayerKind::Tensor => {
+            reject_aux(source, "contract", source.contract.as_deref())?;
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
             reject_aux(source, "engine", source.engine.as_deref())?;
@@ -388,6 +414,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             ))
         }
         CompileLayerKind::Rootfs => {
+            reject_aux(source, "contract", source.contract.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
             reject_aux(source, "engine", source.engine.as_deref())?;
             let arch = required_field(source, "arch", source.arch.as_deref())?;
@@ -403,6 +430,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             ))
         }
         CompileLayerKind::View => {
+            reject_aux(source, "contract", source.contract.as_deref())?;
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "engine", source.engine.as_deref())?;
             if source.entry.is_some() {
@@ -415,6 +443,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             Ok(Layer::view(kappa, surface))
         }
         CompileLayerKind::InferenceModel => {
+            reject_aux(source, "contract", source.contract.as_deref())?;
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
             let entry = required_field(source, "entry", source.entry.as_deref())?;
@@ -547,7 +576,7 @@ const fn default_schema_version() -> u16 {
 mod tests {
     use super::*;
     use crate::application_plan::{explain_application, PlanLimits};
-    use crate::holo::inspect_bytes;
+    use crate::holo::{inspect_bytes, plan_bytes};
     use crate::holo_capability;
 
     fn write_child_archive(directory: &Path, include_blobs: bool) -> (PathBuf, KappaLabel71) {
@@ -967,6 +996,113 @@ mod tests {
         let error = validate_compile_manifest(&empty).expect_err("empty entry");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
         assert!(error.to_string().contains("invalid entry"), "{error}");
+    }
+
+    #[test]
+    fn schema_four_wasm_contract_is_identity_bearing_and_inspectable() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
+            }"#,
+        )
+        .expect("legacy manifest");
+        let legacy = compile_manifest(&manifest_path).expect("compile legacy");
+
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "primary": 0,
+                "layers": [{
+                    "kind":"wasm",
+                    "path":"app.wasm",
+                    "entry":"holo_run",
+                    "contract":"hologram:guest/component@1"
+                }]
+            }"#,
+        )
+        .expect("component manifest");
+        let component = compile_manifest(&manifest_path).expect("compile component");
+        assert_ne!(
+            legacy.identity.application_kappa,
+            component.identity.application_kappa
+        );
+        let inspection = inspect_bytes("component", "component.holo", &component.bytes)
+            .expect("inspect component");
+        assert_eq!(
+            inspection.directory.expect("directory").layers[0]
+                .contract
+                .as_deref(),
+            Some(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
+        );
+        let plan = plan_bytes(&component.bytes).expect("plan component");
+        assert_eq!(
+            plan.layers[0].contract.as_deref(),
+            Some(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
+        );
+        assert!(!plan.runnable);
+        assert!(plan.blockers.iter().any(|blocker| {
+            blocker.error_code == "LIVE_CAPABILITY_MISSING"
+                && blocker
+                    .message
+                    .contains(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
+        }));
+
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
+            }"#,
+        )
+        .expect("schema four compatibility manifest");
+        let omitted = compile_manifest(&manifest_path).expect("compile omitted contract");
+        assert_eq!(
+            legacy.identity.application_kappa,
+            omitted.identity.application_kappa
+        );
+    }
+
+    #[test]
+    fn wasm_contract_source_schema_and_identifier_fail_closed() {
+        let schema_three: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 3,
+                "primary": 0,
+                "layers": [{
+                    "kind":"wasm",
+                    "path":"app.wasm",
+                    "contract":"hologram:guest/core-wasm@1"
+                }]
+            }"#,
+        )
+        .expect("parse schema three");
+        let error = validate_compile_manifest(&schema_three).expect_err("schema mismatch");
+        assert!(error.to_string().contains("schema_version 4"), "{error}");
+
+        let unknown: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 4,
+                "primary": 0,
+                "layers": [{
+                    "kind":"wasm",
+                    "path":"app.wasm",
+                    "contract":"hologram:guest/core-wasm@2"
+                }]
+            }"#,
+        )
+        .expect("parse unknown contract");
+        let error = validate_compile_manifest(&unknown).expect_err("unknown contract");
+        assert!(error
+            .to_string()
+            .contains("unsupported Wasm guest contract"));
     }
 
     #[test]

@@ -1,7 +1,9 @@
 use crate::application_plan::HoloIdentity;
 use crate::error::{LiveError, Result};
 use crate::holo_capability;
-use crate::holo_contract::normalize_wasm_contract;
+use crate::holo_contract::{
+    normalize_wasm_contract, COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_V1,
+};
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
 use crate::holo_wasm::{validate_entry_name, CORE_WASM_V1_DEFAULT_ENTRY};
@@ -399,6 +401,14 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
                 Some(contract) => {
                     let contract = normalize_wasm_contract(contract)
                         .map_err(|reason| layer_config_error(source, &reason))?;
+                    if contract == WASM_CONTRACT_COMPONENT_V1 && entry != COMPONENT_V1_ENTRY {
+                        return Err(layer_config_error(
+                            source,
+                            &format!(
+                                "Component v1 entry must be {COMPONENT_V1_ENTRY:?}, got {entry:?}"
+                            ),
+                        ));
+                    }
                     Ok(Layer::wasm_with_contract(kappa, entry, contract))
                 }
             }
@@ -1022,7 +1032,7 @@ mod tests {
                 "layers": [{
                     "kind":"wasm",
                     "path":"app.wasm",
-                    "entry":"holo_run",
+                    "entry":"run",
                     "contract":"hologram:guest/component@1"
                 }]
             }"#,
@@ -1046,13 +1056,12 @@ mod tests {
             plan.layers[0].contract.as_deref(),
             Some(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
         );
-        assert!(!plan.runnable);
-        assert!(plan.blockers.iter().any(|blocker| {
-            blocker.error_code == "LIVE_CAPABILITY_MISSING"
-                && blocker
-                    .message
-                    .contains(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
-        }));
+        assert!(plan.runnable);
+        assert_eq!(
+            plan.layers[0].provider.name.as_deref(),
+            Some("wasmtime-component-direct")
+        );
+        assert!(plan.blockers.is_empty());
 
         std::fs::write(
             &manifest_path,
@@ -1103,6 +1112,24 @@ mod tests {
         assert!(error
             .to_string()
             .contains("unsupported Wasm guest contract"));
+
+        let wrong_entry: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 4,
+                "primary": 0,
+                "layers": [{
+                    "kind":"wasm",
+                    "path":"app.wasm",
+                    "entry":"holo_run",
+                    "contract":"hologram:guest/component@1"
+                }]
+            }"#,
+        )
+        .expect("parse wrong component entry");
+        let error = validate_compile_manifest(&wrong_entry).expect_err("wrong component entry");
+        assert!(error
+            .to_string()
+            .contains("Component v1 entry must be \"run\""));
     }
 
     #[test]

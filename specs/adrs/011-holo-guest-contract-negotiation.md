@@ -85,7 +85,7 @@ effective grant. There is no ambient fallback.
 | `hologram:host/channel.subscribe` | channel κ is in `subscribe_channels` | withheld from base world |
 | `hologram:host/network.fetch` | `network_fetch` | withheld from base world |
 | `hologram:host/network.announce` | `network_announce` | withheld from base world |
-| Wasm memory and execution | `memory_max_bytes`, `cpu_time_per_event_ms`, and `priority_weight` | mandatory limits before component execution ships |
+| Wasm memory and execution | `memory_max_bytes`, `cpu_time_per_event_ms`, and `priority_weight` | runtime ceilings ship in base v1; nonzero admitted memory/time scalars only tighten them; priority scheduling remains deferred |
 | WASI filesystem preopens | `storage_roots` plus `storage_quota_bytes` for writes | no ambient directories; deferred profile only |
 | WASI HTTP or outbound sockets | `network_fetch` | raw sockets withheld; deferred mediated profile only |
 | WASI listen sockets | `network_announce` | raw sockets withheld; deferred mediated profile only |
@@ -101,8 +101,8 @@ runtime does not inherit host arguments or environment variables.
 ### Diagnostics
 
 - Known but runtime-unsupported contract: `LIVE_CAPABILITY_MISSING`, naming the
-  contract and layer position. Component v1 has this status until its provider
-  lands.
+  contract and layer position. Component v1 is supported; future known profiles
+  may use this status until their providers land.
 - Unknown source identifier: `LIVE_CONFIG_INVALID` before archive emission.
   Unknown canonical manifest identifier: `LIVE_HOLO_INVALID` during manifest
   validation. Neither reaches provider preparation.
@@ -124,8 +124,8 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- Component provider implementation, resource enforcement, and a Python/WASI
-  proof remain M3.1a work. Canonical validation, source schema v4, normalized
-  inspection/planning, and exact provider selection are current capabilities.
+- The import-free Component provider and resource enforcement are current
+  capabilities. Python packaging and any capability-gated WASI profile remain
+  M3.1a work.
 - New host authority requires both a versioned contract profile and a canonical
   capability field before an import can be linked.

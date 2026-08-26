@@ -105,13 +105,18 @@ entry. Source schema v4 maps a Wasm `contract` field to the identity-bearing
 layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; explicit
 core-v1 and `hologram:guest/component@1` tags are accepted. Inspection and
 planning expose the normalized selector, and provider lookup is keyed by both
-layer kind and exact contract. Component archives therefore compile and plan
-as unavailable without ever reaching the core provider. The Component v1 WIT
-world is an import-free, stateless
+layer kind and exact contract. Component archives therefore reach only the
+dedicated direct or resident Component provider and never the core provider.
+The Component v1 WIT world is an import-free, stateless
 `list<u8> -> result<list<u8>, guest-error>` boundary. ADR 011 maps each
 proposed host interface to admitted capability fields and keeps interfaces
-with no canonical authority unavailable. The component provider itself remains
-planned work, not an advertised runtime capability.
+with no canonical authority unavailable. Each prepared component owns an
+epoch-interruptible Wasmtime engine and serial execution boundary; compiled
+code stays warm, while every input receives a fresh store with memory and fuel
+limits. The provider also bounds input/output bytes and wall time. Cancellation
+increments only that component engine's epoch, isolating it from core Wasm and
+other applications. Nonzero admitted memory and CPU-time capability scalars
+can tighten, never expand, the runtime-owned ceilings.
 
 Provider invocation returns outputs and completion as separate values. The
 root primary alone supplies `returned` or a provider-observed `exited { code }`

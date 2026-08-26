@@ -3,6 +3,7 @@ use crate::application_plan::{explain_application, ApplicationPlan, PlanLimits};
 use crate::audit::{AuditEvent, AuditLog};
 use crate::error::{LiveError, Result};
 use crate::holo_capability::EffectiveGrant;
+use crate::holo_component::ComponentProvider;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_provider::{
     prepare_and_start_with_admitted_grants, LayerCompletion, ProviderRegistry, ProviderTarget,
@@ -542,6 +543,7 @@ fn direct_registry(engine: Engine) -> Result<ProviderRegistry> {
         ProviderTarget::Direct,
         vec![
             Arc::new(WasmProvider::direct(engine)),
+            Arc::new(ComponentProvider::direct()),
             Arc::new(PythonRootfsProvider),
         ],
     )
@@ -554,11 +556,10 @@ fn resident_registry(
 ) -> Result<ProviderRegistry> {
     ProviderRegistry::new(
         ProviderTarget::Resident,
-        vec![Arc::new(WasmProvider::resident(
-            engine,
-            root,
-            mailbox_capacity,
-        ))],
+        vec![
+            Arc::new(WasmProvider::resident(engine, root, mailbox_capacity)),
+            Arc::new(ComponentProvider::resident()),
+        ],
     )
 }
 
@@ -738,6 +739,81 @@ mod tests {
         assert_eq!(result.outputs, vec![b"HELLO HOLO".to_vec()]);
         assert_eq!(result.completion, ApplicationCompletion::Returned);
         assert!(result.resident_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn one_shot_executor_runs_component_v1() {
+        let archive = component_fixture_archive();
+        let result = HoloExecutor::default()
+            .execute(&archive, vec![b"component direct".to_vec()])
+            .await
+            .expect("execute Component v1");
+        assert_eq!(result.outputs, vec![b"component direct".to_vec()]);
+        assert_eq!(result.completion, ApplicationCompletion::Returned);
+        assert!(result.resident_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn resident_runtime_runs_component_v1() {
+        let runtime = test_runtime("resident-component-v1");
+        let archive = component_fixture_archive();
+        let kappa = runtime
+            .catalog
+            .import("component-echo.holo".to_owned(), archive)
+            .expect("import component")
+            .kappa;
+        runtime.load(&kappa).await.expect("load component");
+        let result = runtime
+            .run(&kappa, vec![b"component resident".to_vec()])
+            .await
+            .expect("run resident component");
+        assert_eq!(result.outputs, vec![b"component resident".to_vec()]);
+        assert_eq!(result.completion, ApplicationCompletion::Returned);
+        assert_eq!(runtime.list().await.expect("list")[0].processed, 1);
+        runtime.unload(&kappa).await.expect("unload component");
+    }
+
+    #[tokio::test]
+    async fn malformed_component_and_wrong_entry_fail_closed() {
+        let malformed = component_archive(b"not a WebAssembly component", "run");
+        let error = HoloExecutor::default()
+            .execute(&malformed, vec![b"input".to_vec()])
+            .await
+            .expect_err("malformed component");
+        assert_eq!(error.code(), "LIVE_HOLO_INVALID");
+
+        let component = include_bytes!("../tests/fixtures/component-echo/echo.wat");
+        let wrong_entry = component_archive(component, "other");
+        let error = HoloExecutor::default()
+            .execute(&wrong_entry, vec![b"input".to_vec()])
+            .await
+            .expect_err("wrong component entry");
+        assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
+        assert!(error.to_string().contains("entry must be \"run\""));
+    }
+
+    #[test]
+    fn resident_plan_advertises_exact_component_provider() {
+        let runtime = test_runtime("component-v1-plan");
+        let kappa = runtime
+            .catalog
+            .import(
+                "component-echo.holo".to_owned(),
+                component_fixture_archive(),
+            )
+            .expect("import component")
+            .kappa;
+        let plan = runtime.catalog.plan(&kappa).expect("component plan");
+        assert!(plan.runnable);
+        assert_eq!(
+            plan.layers[0].contract.as_deref(),
+            Some(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
+        );
+        assert_eq!(
+            plan.layers[0].provider.name.as_deref(),
+            Some("wasmtime-component-resident")
+        );
+        assert_eq!(plan.layers[0].provider.status, "available");
     }
 
     #[tokio::test]
@@ -1151,5 +1227,32 @@ mod tests {
             layers: vec![Layer::wasm(address_bytes(wasm), "holo_run")],
             children: Vec::new(),
         }
+    }
+
+    fn component_fixture_archive() -> Vec<u8> {
+        let component = include_bytes!("../tests/fixtures/component-echo/echo.wat");
+        component_archive(component, crate::holo_contract::COMPONENT_V1_ENTRY)
+    }
+
+    fn component_archive(component: &[u8], entry: &str) -> Vec<u8> {
+        let capabilities = crate::holo_capability::empty_canonical();
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(&capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(component),
+                entry,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_V1,
+            )],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(
+            address_bytes(&capabilities).as_bytes(),
+            capabilities.as_slice(),
+        );
+        writer.add_content_blob(address_bytes(component).as_bytes(), component);
+        writer.finish().expect("component fixture archive")
     }
 }

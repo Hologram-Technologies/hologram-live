@@ -2,6 +2,8 @@
 
 pub use hologram::space::{WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V1};
 
+pub const COMPONENT_V1_ENTRY: &str = "run";
+
 /// Normalize the legacy empty Wasm tag and the explicit core selector to one
 /// provider-facing contract identifier. Identifiers are exact and closed.
 pub fn normalize_wasm_contract(value: &str) -> std::result::Result<&'static str, String> {

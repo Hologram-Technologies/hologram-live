@@ -94,11 +94,11 @@ import { sitePath } from '../../lib/site';
   "layers": [&#123;
     "kind": "wasm",
     "path": "app.component.wasm",
-    "entry": "hologram:application/run",
+    "entry": "run",
     "contract": "hologram:guest/component@1"
   &#125;]
 &#125;</code></pre>
-  <p>The checked-in <code>hologram:application@1.0.0</code> WIT world exports one stateless binary <code>run</code> and imports nothing. Component archives compile, inspect, and plan, but execution is not implemented: planning reports a typed unavailable provider and never routes the payload to core Wasm. Unknown source identifiers are rejected before archive emission; an unknown canonical tag makes the archive invalid. Future storage, channel, and mediated network imports must be linked only from admitted canonical capability fields.</p>
+  <p>The checked-in <code>hologram:application@1.0.0</code> WIT world exports one stateless binary <code>run</code> and imports nothing. Component archives compile, inspect, plan, and execute directly or resident through an exact-contract provider; they never route to core Wasm. Compiled code stays warm, but each input uses a fresh store. The host caps memory at 64 MiB, fuel at 100 million units per input, input and output at 1 MiB each, and each invocation at two seconds. Nonzero admitted memory and CPU-time scalars can only tighten those ceilings. Timeout and cancellation interrupt only the prepared component's engine. Unknown source identifiers are rejected before archive emission; an unknown canonical tag makes the archive invalid. Future storage, channel, and mediated network imports must be linked only from admitted canonical capability fields.</p>
 
   <h2>Completion and exit</h2>
   <p>A run result carries output bytes and typed completion independently. <code>returned</code> means a callable such as core-Wasm v1 returned normally without a numeric process status. <code>exited</code> carries a code only when the provider observed a real process exit. <code>unknown</code> is a legacy decode value and is never emitted by a new provider. Traps, nonzero process exits, protocol violations, and cleanup failures are operation errors, not successful completion values.</p>

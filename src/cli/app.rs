@@ -5,6 +5,7 @@ use hologram_live::compile::{
     CompileSource,
 };
 use hologram_live::error::{LiveError, Result};
+use hologram_live::holo_contract::{COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_V1};
 use hologram_live::holo_python::{PythonProfile, PythonRootfsSource};
 use hologram_live::holo_wasm::CORE_WASM_V1_DEFAULT_ENTRY;
 use hologram_live::util::atomic_write;
@@ -324,13 +325,22 @@ fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
         path: Some(path),
         source: None,
         entry: args.entry.clone().or_else(|| {
-            matches!(kind, LayerKindArg::Wasm).then(|| CORE_WASM_V1_DEFAULT_ENTRY.to_owned())
+            matches!(kind, LayerKindArg::Wasm)
+                .then(|| default_wasm_entry(args.contract.as_deref()).to_owned())
         }),
         contract: args.contract.clone(),
         arch: args.arch.clone(),
         surface: args.surface.clone(),
         engine: args.engine.clone(),
     })
+}
+
+fn default_wasm_entry(contract: Option<&str>) -> &'static str {
+    if contract == Some(WASM_CONTRACT_COMPONENT_V1) {
+        COMPONENT_V1_ENTRY
+    } else {
+        CORE_WASM_V1_DEFAULT_ENTRY
+    }
 }
 
 fn python_layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
@@ -390,25 +400,20 @@ fn interactive_layers<R: BufRead, W: Write>(
         )?);
         let (entry, contract, arch, surface, engine) = match kind {
             LayerKindArg::Wasm => {
-                let entry = prompt(
-                    input,
-                    output,
-                    "Entrypoint",
-                    Some(CORE_WASM_V1_DEFAULT_ENTRY),
-                )?;
                 let contract = prompt(
                     input,
                     output,
                     "Guest contract (blank for core-Wasm v1 compatibility)",
                     Some(""),
                 )?;
-                (
-                    Some(entry),
-                    (!contract.is_empty()).then_some(contract),
-                    None,
-                    None,
-                    None,
-                )
+                let contract = (!contract.is_empty()).then_some(contract);
+                let entry = prompt(
+                    input,
+                    output,
+                    "Entrypoint",
+                    Some(default_wasm_entry(contract.as_deref())),
+                )?;
+                (Some(entry), contract, None, None, None)
             }
             LayerKindArg::Tensor => (
                 Some(prompt(
@@ -669,7 +674,7 @@ mod tests {
     fn interactive_flow_generates_multiple_valid_layers() {
         let directory = tempfile::tempdir().expect("tempdir");
         let input =
-            b"wasm\napp.wasm\nholo_run\n\ny\nview\nindex.html\nportable\nn\n0\ncapabilities.json\n";
+            b"wasm\napp.wasm\n\nholo_run\ny\nview\nindex.html\nportable\nn\n0\ncapabilities.json\n";
         let report = initialize(
             args(directory.path().to_path_buf()),
             true,
@@ -727,6 +732,10 @@ mod tests {
         assert_eq!(
             manifest.layers[0].contract.as_deref(),
             Some("hologram:guest/component@1")
+        );
+        assert_eq!(
+            manifest.layers[0].entry.as_deref(),
+            Some(COMPONENT_V1_ENTRY)
         );
     }
 
@@ -858,7 +867,7 @@ mod tests {
     #[test]
     fn interactive_flow_prompts_for_child_archives_and_delegated_capabilities() {
         let directory = tempfile::tempdir().expect("tempdir");
-        let input = b"wasm\napp.wasm\nholo_run\n\nn\n0\n\nyes\nworker.holo\nworker-caps.json\nno\n";
+        let input = b"wasm\napp.wasm\n\nholo_run\nn\n0\n\nyes\nworker.holo\nworker-caps.json\nno\n";
         initialize(
             args(directory.path().to_path_buf()),
             true,

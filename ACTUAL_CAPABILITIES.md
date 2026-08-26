@@ -48,15 +48,22 @@ This document is deliberately strict about what the current stable build does an
   `src-tauri` retains only native path authority, fixed sidecar calls, and UI
   event delivery.
 - Responsive Astro documentation website.
+- Import-free Component Model v1 execution for exact-contract Wasm layers,
+  directly and resident. Compiled components stay warm while every input uses
+  a fresh store. Runtime-owned 64 MiB memory, 100 million fuel, 1 MiB
+  input/output, and two-second deadline ceilings apply by default; admitted
+  memory and CPU-time scalars can only tighten them. Timeout and cancellation
+  use a component-local epoch-interruptible engine. No WASI or ambient host
+  interface is linked.
 
 ## Present as an extension seam, not implemented by the default module set
 
-- Component Model execution and WASI imports. Canonical contract negotiation,
-  upstream Wasm `aux` validation, source schema v4, inspection/planning output,
-  fail-closed provider selection, and the import-free WIT world have landed;
-  the component provider and enforced resource limits have not.
+- WASI or capability-gated Component host imports beyond the import-free v1
+  world.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
-- Engine enforcement of scalar CPU, memory, deadline, and concurrency budgets carried by effective grants.
+- Uniform engine enforcement of scalar CPU, memory, deadline, priority, and
+  concurrency budgets across providers; Component v1 currently enforces its
+  memory/time subset plus host-owned ceilings.
 - `.holo` execution for `tensor`, inference-model, and non-Python/resident `rootfs` layers.
 - Token streaming on the compatibility APIs.
 - Full enterprise users, OIDC/SAML, organizations, and RBAC policy storage.

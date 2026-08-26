@@ -325,20 +325,27 @@ tag and the same application κ, normalized at inspection and planning time to
   "layers": [{
     "kind": "wasm",
     "path": "app.component.wasm",
-    "entry": "hologram:application/run",
+    "entry": "run",
     "contract": "hologram:guest/component@1"
   }]
 }
 ```
 
 `hologram app init --contract hologram:guest/component@1` generates the same
-field. Component archives now compile, inspect, and plan, and both JSON and
-gRPC report the normalized `contract`. Component execution is deliberately not
-connected yet: plans return `runnable: false` with a typed
-`LIVE_CAPABILITY_MISSING` provider blocker, never a fallback to core Wasm or
-ambient WASI. Unknown source identifiers are rejected before archive emission;
-unknown canonical manifest tags are invalid archives. The checked-in Component
-v1 WIT world accepts and returns one byte list and imports nothing.
+field. Component archives compile, inspect, plan, and execute directly or as a
+resident application; both JSON and gRPC report the normalized `contract`.
+The exact Component v1 entry is `run`. Its checked-in WIT world accepts and
+returns one byte list and imports nothing, so it cannot reach ambient WASI,
+filesystem, network, clocks, environment, or host services. Each input gets a
+fresh store while the compiled component remains warm. Runtime ceilings apply
+even when capability scalars are unspecified: 64 MiB memory, 100 million fuel
+units per input, 1 MiB input and output, and a two-second invocation deadline.
+Nonzero admitted memory or CPU-time limits can only tighten those ceilings.
+Deadline and dropped-future cancellation interrupt the isolated component
+engine. Guest errors, traps, and limit failures remain typed operation errors.
+There is never a fallback to core Wasm.
+Unknown source identifiers are rejected before archive emission, and unknown
+canonical manifest tags are invalid archives.
 
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as

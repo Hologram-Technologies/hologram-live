@@ -21,9 +21,12 @@ Feature: Compile Hologram applications
     When I run the compiled archive directly with input "hello generator"
     Then the run output is "HELLO GENERATOR"
 
-  Scenario: compile and plan a Component Model application without ABI fallback
+  Scenario: compile, plan, and run a bounded Component Model application
     Given a Component v1 application manifest
+    And a fresh Hologram home
     When I compile the application
     Then the compile command succeeds
     When I plan the compiled archive directly
-    Then the component contract is inspectable and unavailable without fallback
+    Then the component contract selects the bounded component provider
+    When I run the compiled archive directly with input "hello component"
+    Then the run output is "hello component"

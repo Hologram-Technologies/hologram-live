@@ -98,12 +98,14 @@ prefer mediated Hologram interfaces or first introduce endpoint-scoped
 capabilities. Invocation input/output replaces WASI stdin/stdout, and the
 runtime does not inherit host arguments or environment variables.
 
-Dependency-free Python uses this unchanged base world. The source compiler
-pins `componentize-py 0.25.0` and passes `--stub-wasi`, which replaces CPython's
-WASI imports inside the generated guest rather than linking them in Live. The
-result is type-checked and executed like any other import-free Component v1
-payload. The stubbed PRNG seed is deterministic within the built component and
-must not be treated as secure randomness.
+Python uses this unchanged base world. The source compiler pins
+`componentize-py 0.25.0` and passes `--stub-wasi`, which replaces CPython's WASI
+imports inside the generated guest rather than linking them in Live. ADR 012
+admits SHA-256-locked platform-independent wheels through a private build path;
+those compiler inputs do not add runtime imports. The result is type-checked
+and executed like any other import-free Component v1 payload. The stubbed PRNG
+seed is deterministic only within one built component and must not be treated
+as secure randomness or reproducible build input.
 
 ### Diagnostics
 
@@ -131,8 +133,8 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- The import-free Component provider, resource enforcement, and dependency-free
-  Python packaging are current capabilities. Locked portable dependencies and
-  any capability-gated WASI profile remain M3.1a follow-up work.
+- The import-free Component provider, resource enforcement, and locked
+  pure-Python wheel packaging are current capabilities. Native Python packages
+  and any capability-gated WASI profile remain explicit follow-up work.
 - New host authority requires both a versioned contract profile and a canonical
   capability field before an import can be linked.

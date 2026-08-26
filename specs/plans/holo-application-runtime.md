@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1a, locked pure-Python dependencies targeting Component v1
+- Next delivery: M3.1c, deterministic Python Component output and build provenance
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -259,7 +259,7 @@ dependencies until an explicit child invocation contract is introduced.
 - [x] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
 - [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
 - [x] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
-- [ ] Prove a locked pure-Python dependency is included without reading the developer's ambient virtual environment.
+- [x] Prove a locked pure-Python dependency is included without reading the developer's ambient virtual environment.
 - [x] Report unsupported WASI imports and dependency-bearing portable locks as typed preparation/compile diagnostics.
 - [x] Add component fuel, memory, input/output, deadline, and cancellation limits before advertising Component execution.
 
@@ -269,9 +269,28 @@ environment, emits an 18.3 MiB import-free Wasm layer, and preserves the
 existing `module:function` byte entrypoint through a generated private adapter.
 `examples/python-component-hello` executed directly and through catalog
 import/load/run/unload with bundled CPython 3.14.0. The opt-in
-`just python-component-holo-demo` gate repeats both paths. The current compiler
-rejects every non-project package in `uv.lock`; locked portable dependencies
-and reproducible build provenance remain the next slice.
+`just python-component-holo-demo` gate repeats both paths. That initial slice
+rejected every non-project package in `uv.lock`; the follow-up below admits a
+bounded portable subset. Reproducible output and build provenance remain open.
+
+Locked dependency follow-up (2026-08-26): the compiler now admits registry
+packages only through HTTPS, SHA-256-pinned Python 3 `*-none-any.whl` artifacts
+already present in `uv.lock`. It chooses one qualifying wheel deterministically,
+installs exact direct references into a private target with uv configuration,
+indexes, dependency re-resolution, source builds, and cache links disabled,
+then scans the result for symlinks and native payload suffixes before exposing
+that target to componentization. `examples/python-component-dependency` bundles
+`six==1.17.0` and executes directly and resident. A separate proof places a
+poisoned `six.py` on ambient `PYTHONPATH` and in a fake virtual environment;
+the guest still reports the locked `six-1.17.0`. Native/source-only and
+non-registry packages fail during `compile --check` with rootfs guidance.
+
+This does not satisfy deterministic-output acceptance. Two clean compiles of
+the locked example produced different component sizes, application κ values,
+and archive κ values. Pinned `componentize-py 0.25.0 --stub-wasi` documents that
+it bakes a build-time PRNG seed into the component and exposes no seed override.
+Toolchain/artifact provenance and a deterministic replacement or upstream
+control remain the next Python compiler slice.
 
 ### M3.2 View provider
 
@@ -415,9 +434,11 @@ application/DMG builds pass.
 - [x] Keep a minimal locked standard-library Python project as a fast teaching example alongside the NumPy/pandas dependency proof.
 - [x] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
 - [x] Require `uv.lock` and resolve it for the declared Linux target in a clean OCI build root for the experimental rootfs provider.
-- [ ] Pin and record the Python runtime, component toolchain, target ABI, dependency artifacts, and hashes.
+- [ ] Record the already-pinned Python runtime, component toolchain, target ABI,
+  dependency artifact URLs, and hashes in a versioned build-provenance report.
 - [x] Stage only `pyproject.toml`, the declared lock file, `src/`, and the generated launcher for the experimental rootfs provider; reject absolute/escaping paths and symlinks.
-- [ ] Diagnose native dependencies that lack a compatible WASI build and recommend the explicit rootfs profile.
+- [x] Diagnose native, source-only, non-registry, or unpinned dependencies that
+  lack a portable wheel and recommend the explicit rootfs profile.
 - [ ] Promote the experimental `rootfs` Python profile to supported status only after digest pinning, reproducibility, and the microVM provider are ready. The current direct OCI provider is demo-only.
 - [ ] Normalize file order, paths, permissions, timestamps, generated bindings, and source epoch for reproducible layer κ values.
 - [ ] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
@@ -447,7 +468,7 @@ application/DMG builds pass.
 - [ ] A generated multi-layer manifest passes `--check` and compiles without manual JSON edits.
 - [ ] Golden tests cover every source layer kind, child applications, fat, thin, and any supported hybrid profile.
 - [ ] The same locked Python project and pinned toolchain produce byte-identical layer payloads and equal application κ values across clean builds.
-- [ ] A Python project with a portable dependency executes through the component provider; an incompatible native wheel fails before archive emission with an actionable diagnostic.
+- [x] A Python project with a portable dependency executes through the component provider; an incompatible native wheel fails before archive emission with an actionable diagnostic.
 - [ ] The Python rootfs profile is not marked executable until architecture validation, microVM isolation, resource limits, and cleanup tests pass.
 
 ## M5 — Execution isolation and operational controls
@@ -588,7 +609,9 @@ application/DMG builds pass.
 - [ ] Certificate payload, signed message, and trust policy.
 - [ ] Guest-contract v2 versioning, typed ports, sessions, and streaming.
 - [x] Hologram WIT world versioning and the relationship between core-Wasm v1 and component-model applications.
-- [ ] Python dependency resolver, supported lock formats, toolchain pinning, and build-provenance schema.
+- [x] Python dependency resolver, supported `uv.lock` inputs, portable-wheel
+  admission, and toolchain pinning (ADR 012).
+- [ ] Python build-provenance schema and deterministic Component output.
 
 ## Per-milestone definition of done
 
@@ -630,3 +653,7 @@ application/DMG builds pass.
   cancellation interruption.
 - [x] Package and execute dependency-free Python against Component v1 without
   introducing ambient WASI.
+- [x] Package and execute a SHA-256-locked pure-Python wheel without consulting
+  ambient Python paths, and fail native/source-only locks before emission.
+- [ ] Define deterministic Python Component output and a versioned provenance
+  report before claiming reproducible layer or application κ values.

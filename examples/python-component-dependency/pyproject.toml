@@ -1,0 +1,10 @@
+[project]
+name = "python-component-dependency"
+version = "0.1.0"
+description = "Locked pure-Python dependency Component v1 .holo example"
+requires-python = ">=3.14,<3.15"
+dependencies = ["six==1.17.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

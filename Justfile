@@ -31,7 +31,8 @@ python-hello-demo:
     ./target/release/hologram --json compile examples/python-hello/hologram.json --check >/dev/null
     ./target/release/hologram --json run examples/python-hello --input-text Ada --output-format json
 
-# Compile the dependency-free Python Component example and prove direct + resident execution.
+# Compile both Python Component examples and prove direct + resident execution
+# plus isolation from the developer Python environment.
 python-component-holo-demo:
     cargo test --release --locked --test python_component -- --ignored --nocapture
 

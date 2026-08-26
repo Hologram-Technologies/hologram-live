@@ -1,4 +1,4 @@
-//! Opt-in end-to-end proof for the pinned Python Component toolchain.
+//! Opt-in end-to-end proofs for the pinned Python Component toolchain.
 //!
 //! This is ignored by the hermetic default suite because a cold run downloads
 //! `componentize-py` through `uvx`. Run it with `just python-component-holo-demo`.
@@ -42,6 +42,83 @@ async fn dependency_free_python_runs_direct_and_resident() {
         .expect("unload Python component");
 }
 
+#[tokio::test]
+#[ignore = "requires uv and uvx plus the pinned component toolchain and wheel"]
+async fn locked_pure_python_dependency_runs_direct_and_resident() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/python-component-dependency/hologram.json");
+    let compiled = compile_manifest(&manifest).expect("compile dependency Python component .holo");
+
+    let direct = HoloExecutor::default()
+        .execute(&compiled.bytes, vec![b"Ada".to_vec()])
+        .await
+        .expect("run dependency Python component directly");
+    assert_dependency_response(&direct.outputs, "Ada");
+
+    let directory = tempfile::tempdir().expect("catalog directory");
+    let store = Arc::new(ObjectStore::open(directory.path()).expect("object store"));
+    let catalog = Arc::new(HoloCatalog::new(store));
+    let kappa = catalog
+        .import(
+            "python-component-dependency.holo".to_owned(),
+            compiled.bytes,
+        )
+        .expect("import dependency Python component")
+        .kappa;
+    let runtime = HoloRuntime::new(catalog, 8);
+    runtime
+        .load(&kappa)
+        .await
+        .expect("load dependency Python component");
+    let resident = runtime
+        .run(&kappa, vec![b"Grace".to_vec()])
+        .await
+        .expect("run dependency Python component resident");
+    assert_dependency_response(&resident.outputs, "Grace");
+    runtime
+        .unload(&kappa)
+        .await
+        .expect("unload dependency Python component");
+}
+
+#[tokio::test]
+#[ignore = "requires uv and uvx plus the pinned component toolchain and wheel"]
+async fn ambient_python_path_cannot_replace_locked_dependency() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest = root.join("examples/python-component-dependency/hologram.json");
+    let temporary = tempfile::tempdir().expect("temporary compile directory");
+    let poison = temporary.path().join("poison");
+    std::fs::create_dir_all(&poison).expect("poison directory");
+    std::fs::write(
+        poison.join("six.py"),
+        "__version__ = 'ambient-poison'\ndef ensure_text(value, encoding='utf-8'): return 'Poison'\n",
+    )
+    .expect("poison six module");
+    let output = temporary.path().join("application.holo");
+
+    let command = std::process::Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("compile")
+        .arg(&manifest)
+        .arg("--output")
+        .arg(&output)
+        .env("PYTHONPATH", &poison)
+        .env("VIRTUAL_ENV", &poison)
+        .output()
+        .expect("start hologram compile");
+    assert!(
+        command.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&command.stderr)
+    );
+
+    let archive = std::fs::read(&output).expect("compiled archive");
+    let direct = HoloExecutor::default()
+        .execute(&archive, vec![b"Ada".to_vec()])
+        .await
+        .expect("run dependency Python component");
+    assert_dependency_response(&direct.outputs, "Ada");
+}
+
 fn assert_response(outputs: &[Vec<u8>], expected_name: &str) {
     let [output] = outputs else {
         panic!("expected one Python output, got {}", outputs.len());
@@ -52,4 +129,14 @@ fn assert_response(outputs: &[Vec<u8>], expected_name: &str) {
     assert!(value["python"]
         .as_str()
         .is_some_and(|value| !value.is_empty()));
+}
+
+fn assert_dependency_response(outputs: &[Vec<u8>], expected_name: &str) {
+    let [output] = outputs else {
+        panic!("expected one Python output, got {}", outputs.len());
+    };
+    let value: Value = serde_json::from_slice(output).expect("Python JSON output");
+    assert_eq!(value["name"], expected_name);
+    assert_eq!(value["runtime"], "python-component");
+    assert_eq!(value["dependency"], "six-1.17.0");
 }

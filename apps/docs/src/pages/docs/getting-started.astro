@@ -28,7 +28,7 @@ import { sitePath } from '../../lib/site';
   <h2>Open the interfaces</h2>
   <div class="doc-grid">
     <article class="doc-card"><h3>Status page</h3><p><a href="http://127.0.0.1:11435">127.0.0.1:11435</a> confirms the service is reachable.</p></article>
-    <article class="doc-card"><h3>API reference</h3><p><a href="http://127.0.0.1:11435/docs">/docs</a> renders the self-hosted Scalar reference.</p></article>
+    <article class="doc-card"><h3>API reference</h3><p><a href={sitePath('/docs/api-reference')}>Browse the hosted OpenAPI reference</a>; a running service also serves Scalar at <code>/docs</code>.</p></article>
   </div>
 
   <h2>Exercise <code>.holo</code> support</h2>

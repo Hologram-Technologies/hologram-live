@@ -20,3 +20,10 @@ Feature: Compile Hologram applications
     Then the direct plan is runnable without exposing payload bytes
     When I run the compiled archive directly with input "hello generator"
     Then the run output is "HELLO GENERATOR"
+
+  Scenario: compile and plan a Component Model application without ABI fallback
+    Given a Component v1 application manifest
+    When I compile the application
+    Then the compile command succeeds
+    When I plan the compiled archive directly
+    Then the component contract is inspectable and unavailable without fallback

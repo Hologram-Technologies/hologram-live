@@ -221,6 +221,10 @@ impl LayerProvider for PythonRootfsProvider {
         LayerKind::RootfsImage
     }
 
+    fn contract(&self) -> Option<&'static str> {
+        None
+    }
+
     fn name(&self) -> &'static str {
         "python-oci-direct"
     }

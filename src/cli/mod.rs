@@ -59,7 +59,7 @@ enum Command {
     /// Inspect AI model services packaged in .holo archives.
     Ai(ai::AiArgs),
     /// Create and manage Hologram application source manifests.
-    App(app::AppArgs),
+    App(Box<app::AppArgs>),
     /// Create ~/.config/hologram/live.toml.
     Init(init::InitArgs),
     /// Compile a JSON application manifest into a self-contained .holo archive.
@@ -125,7 +125,7 @@ impl Cli {
     pub async fn run(self, tracing_handle: TracingHandle) -> Result<()> {
         match self.command.clone() {
             Command::Ai(args) => ai::run(self, args).await,
-            Command::App(args) => app::run(self, args).await,
+            Command::App(args) => app::run(self, *args).await,
             Command::Init(args) => init::run(self, args).await,
             Command::Compile(args) => compile::run(self, args).await,
             Command::Serve(args) => serve::run(self, args, tracing_handle).await,

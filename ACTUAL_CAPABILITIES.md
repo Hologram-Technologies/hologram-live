@@ -22,7 +22,7 @@ This document is deliberately strict about what the current stable build does an
   records for root requests, child delegations, and child requests.
 - Bearer-token authentication seam for protected routes.
 - First-class `.holo` fixture creation, import, list, inspect, payload-free plan, verify, and remove through CLI, native gRPC, JSON/HTTP, and OpenAPI surfaces.
-- `.holo` compiler/runtime/execution path: v4 writes with v2/v3 reads, fat or thin packaging, explicit archive object κ / footer fingerprint / canonical application κ reporting, complete pre-provider resolution and re-hashing of root and child closures with deterministic limits/blockers, explanatory local or catalog-backed plans (including unsupported providers), a closed `LayerKind` provider registry with transactional depth-first manifest-order prepare/start and exact reverse stop/rollback, root-primary-only invocation, aggregate tree status, multi-layer Wasm execution with nonzero primary positions, manifest-declared `core-wasm-v1` callable exports, direct service-free execution, κ-backed thin payload resolution, and idempotent resident load/unload sessions over supervised Wasmtime actors with lifecycle status.
+- `.holo` compiler/runtime/execution path: v4 writes with v2/v3 reads, fat or thin packaging, explicit archive object κ / footer fingerprint / canonical application κ reporting, source-schema-v4 Wasm guest-contract tags with legacy identity preservation, normalized contract inspection and planning, exact `(LayerKind, contract)` provider selection, complete pre-provider resolution and re-hashing of root and child closures with deterministic limits/blockers, explanatory local or catalog-backed plans (including unsupported providers), transactional depth-first manifest-order prepare/start and exact reverse stop/rollback, root-primary-only invocation, aggregate tree status, multi-layer core-Wasm execution with nonzero primary positions, manifest-declared callable exports, direct service-free execution, κ-backed thin payload resolution, and idempotent resident load/unload sessions over supervised Wasmtime actors with lifecycle status.
 - `.holo` capability admission: canonical requests are distinct from trusted effective grants, the default local baseline has no storage/channel/network authority, explicit development grants are restricted to direct files or loopback service configuration, denial occurs before provider preparation, and durable audit rows plus run/resident results report non-secret request/grant identities, relation, principal, trusted source, and outcome across CLI, JSON/HTTP, and Protobuf/gRPC.
 - Typed `.holo` completion across CLI, JSON/HTTP, and Protobuf/gRPC: byte
   outputs remain separate from `returned` callable completion and real
@@ -51,10 +51,10 @@ This document is deliberately strict about what the current stable build does an
 
 ## Present as an extension seam, not implemented by the default module set
 
-- Component Model execution and WASI imports. ADR 011 defines canonical
-  contract negotiation and an import-free WIT world, but the provider,
-  upstream Wasm `aux` validation change, and enforced resource limits have not
-  landed.
+- Component Model execution and WASI imports. Canonical contract negotiation,
+  upstream Wasm `aux` validation, source schema v4, inspection/planning output,
+  fail-closed provider selection, and the import-free WIT world have landed;
+  the component provider and enforced resource limits have not.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
 - Engine enforcement of scalar CPU, memory, deadline, and concurrency budgets carried by effective grants.
 - `.holo` execution for `tensor`, inference-model, and non-Python/resident `rootfs` layers.

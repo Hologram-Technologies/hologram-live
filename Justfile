@@ -73,6 +73,7 @@ dev:
 
 # Build the docs
 docs:
+    cargo run --locked --package hologram-live --bin hologram -- --json openapi --output apps/docs/public/openapi.json
     cd apps/docs && npm ci && npm run build
 
 # Validate, tag, and push the current documentation version to GitHub Pages.

@@ -79,6 +79,32 @@ fn wasm_manifest_with_custom_entry(world: &mut BddWorld) {
     world.temporary = Some(temporary);
 }
 
+#[given("a Component v1 application manifest")]
+fn component_v1_manifest(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create scenario directory");
+    std::fs::write(
+        temporary.path().join("application.component.wasm"),
+        b"component fixture bytes",
+    )
+    .expect("write component fixture");
+    std::fs::write(
+        temporary.path().join("hologram.json"),
+        r#"{
+          "schema_version": 4,
+          "primary": 0,
+          "layers": [{
+            "kind":"wasm",
+            "path":"application.component.wasm",
+            "entry":"hologram:application/run",
+            "contract":"hologram:guest/component@1"
+          }]
+        }"#,
+    )
+    .expect("write component manifest");
+    world.manifest = Some(temporary.path().join("hologram.json"));
+    world.temporary = Some(temporary);
+}
+
 #[given("a Wasm application that requests network fetch")]
 fn wasm_manifest_with_network_request(world: &mut BddWorld) {
     let temporary = tempfile::tempdir().expect("create scenario directory");
@@ -212,6 +238,28 @@ fn direct_plan_is_payload_free(world: &mut BddWorld) {
     assert_eq!(plan["layers"][0]["provider"]["status"], "available");
     assert!(plan["layers"][0].get("content").is_none());
     assert!(plan["layers"][0].get("bytes").is_none());
+}
+
+#[then("the component contract is inspectable and unavailable without fallback")]
+fn component_plan_is_unavailable_without_fallback(world: &mut BddWorld) {
+    let plan = world.plan_result.as_ref().expect("plan result");
+    assert_eq!(plan["execution_target"], "direct");
+    assert_eq!(plan["runnable"], false);
+    assert_eq!(plan["layers"][0]["contract"], "hologram:guest/component@1");
+    assert_eq!(plan["layers"][0]["provider"]["status"], "unavailable");
+    assert!(plan["layers"][0]["provider"]["name"].is_null());
+    assert!(plan["layers"][0]["provider"]["reason"]
+        .as_str()
+        .expect("provider reason")
+        .contains("hologram:guest/component@1"));
+    assert!(plan["blockers"]
+        .as_array()
+        .expect("blockers")
+        .iter()
+        .any(|blocker| blocker["error_code"] == "LIVE_CAPABILITY_MISSING"
+            && blocker["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("hologram:guest/component@1"))));
 }
 
 #[then("the resident plan identifies the imported archive")]

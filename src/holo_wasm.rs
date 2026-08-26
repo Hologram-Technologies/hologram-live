@@ -1,15 +1,24 @@
 //! In-process wasm execution for `.holo` archives.
 //!
-//! Guest contract v1 (core wasm, no WASI): the module must export
+//! Core-Wasm guest contract v1 (`core-wasm-v1`, no WASI) requires the module
+//! to export:
 //!
 //! - `memory` — the guest linear memory the host reads and writes through.
 //! - `holo_alloc(len: i32) -> i32` — returns a guest pointer the host may
 //!   write `len` bytes into (a bump allocator is sufficient; every run uses a
 //!   fresh instance, so no reclamation is required).
-//! - `holo_run(ptr: i32, len: i32) -> i64` — executes one input of `len`
-//!   bytes at `ptr` and returns the output location packed as
+//! - the Wasm layer's manifest-declared `entry` with signature
+//!   `(ptr: i32, len: i32) -> i64` — executes one input of `len` bytes at
+//!   `ptr` and returns the output location packed as
 //!   `out_ptr << 32 | out_len`; the host reads `out_len` bytes at `out_ptr`
 //!   from `memory`.
+//!
+//! `holo_run` is only the default entry used when generating a manifest or by
+//! compatibility helpers that do not receive one. Runtime providers always
+//! use the entry bound into the canonical application manifest. V1 accepts no
+//! imports or WASI functions and exposes no numeric process exit status: a
+//! returned byte value is successful completion, while a trap is a typed
+//! protocol failure.
 //!
 //! All pointers and lengths must be non-negative `i32` values. A module that
 //! is missing any of these exports (or exports them with different types) is
@@ -23,8 +32,8 @@ use crate::actor::RootSupervisor;
 use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
 use crate::holo_provider::{
-    LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus, PreparedLayer,
-    ProviderTarget,
+    LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
+    PreparedLayer, ProviderTarget,
 };
 use hologram::space::LayerKind;
 use kameo::actor::{ActorRef, Spawn};
@@ -37,12 +46,60 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use wasmtime::{Engine, Instance, Memory, Module, Store, TypedFunc};
 
+pub const CORE_WASM_V1: &str = "core-wasm-v1";
+pub const CORE_WASM_V1_DEFAULT_ENTRY: &str = "holo_run";
+
+pub fn validate_entry_name(entry: &str) -> std::result::Result<(), &'static str> {
+    if entry.is_empty() {
+        return Err("must not be empty");
+    }
+    if entry.len() > 256 {
+        return Err("must be at most 256 UTF-8 bytes");
+    }
+    if entry.chars().any(char::is_control) {
+        return Err("must not contain control characters");
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+struct CoreWasmV1Guest {
+    module: Module,
+    entry: String,
+}
+
+impl CoreWasmV1Guest {
+    fn compile(engine: &Engine, kappa: &str, wasm: &[u8], entry: &str) -> Result<Self> {
+        validate_entry_name(entry).map_err(|reason| {
+            LiveError::Protocol(format!(
+                "invalid {CORE_WASM_V1} manifest entry {entry:?}: {reason}"
+            ))
+        })?;
+        let module = Module::new(engine, wasm).map_err(|error| {
+            LiveError::InvalidHolo(format!("compile wasm layer of {kappa}: {error}"))
+        })?;
+        validate_contract(engine, &module, entry)?;
+        Ok(Self {
+            module,
+            entry: entry.to_owned(),
+        })
+    }
+
+    fn run_inputs(&self, kappa: &str, inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        inputs
+            .iter()
+            .map(|input| run_once(&self.module, kappa, &self.entry, input))
+            .collect()
+    }
+}
+
 /// One execution request against a resident holo: one output per input.
 pub struct Run {
     pub inputs: Vec<Vec<u8>>,
 }
 
 /// Outputs plus wall-clock execution time, measured inside the actor.
+#[derive(Debug)]
 pub struct RunOutcome {
     pub outputs: Vec<Vec<u8>>,
     pub elapsed_micros: u64,
@@ -51,7 +108,7 @@ pub struct RunOutcome {
 /// A resident, compiled wasm holo. Spawned and stopped by `HoloRuntime`.
 #[derive(Actor)]
 pub struct ResidentHoloActor {
-    module: Module,
+    guest: CoreWasmV1Guest,
     kappa: String,
     processed: Arc<AtomicUsize>,
 }
@@ -64,10 +121,20 @@ impl ResidentHoloActor {
         wasm: &[u8],
         processed: Arc<AtomicUsize>,
     ) -> Result<Self> {
+        Self::compile_entry(kappa, engine, wasm, CORE_WASM_V1_DEFAULT_ENTRY, processed)
+    }
+
+    pub fn compile_entry(
+        kappa: impl Into<String>,
+        engine: &Engine,
+        wasm: &[u8],
+        entry: &str,
+        processed: Arc<AtomicUsize>,
+    ) -> Result<Self> {
         let kappa = kappa.into();
-        let module = compile_module(engine, &kappa, wasm)?;
+        let guest = CoreWasmV1Guest::compile(engine, &kappa, wasm, entry)?;
         Ok(Self {
-            module,
+            guest,
             kappa,
             processed,
         })
@@ -83,7 +150,7 @@ impl Message<Run> for ResidentHoloActor {
         _context: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         let started = Instant::now();
-        let outputs = run_inputs(&self.module, &self.kappa, &message.inputs)?;
+        let outputs = self.guest.run_inputs(&self.kappa, &message.inputs)?;
         self.processed.fetch_add(1, Ordering::Relaxed);
         Ok(RunOutcome {
             outputs,
@@ -101,9 +168,19 @@ pub fn execute(
     wasm: &[u8],
     inputs: &[Vec<u8>],
 ) -> Result<RunOutcome> {
+    execute_entry(engine, kappa, wasm, CORE_WASM_V1_DEFAULT_ENTRY, inputs)
+}
+
+pub fn execute_entry(
+    engine: &Engine,
+    kappa: &str,
+    wasm: &[u8],
+    entry: &str,
+    inputs: &[Vec<u8>],
+) -> Result<RunOutcome> {
     let started = Instant::now();
-    let module = compile_module(engine, kappa, wasm)?;
-    let outputs = run_inputs(&module, kappa, inputs)?;
+    let guest = CoreWasmV1Guest::compile(engine, kappa, wasm, entry)?;
+    let outputs = guest.run_inputs(kappa, inputs)?;
     Ok(RunOutcome {
         outputs,
         elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
@@ -182,20 +259,21 @@ impl LayerProvider for WasmProvider {
         let engine = self.engine.clone();
         let kappa = context.identity.archive_kappa;
         let position = context.layer.position;
+        let entry = context.layer.entry;
         let payload = context.layer.content;
         let resident_bytes = payload.len();
         match self.target {
             ProviderTarget::Direct => {
                 let compile_kappa = kappa.clone();
                 let module = tokio::task::spawn_blocking(move || {
-                    compile_module(&engine, &compile_kappa, &payload)
+                    CoreWasmV1Guest::compile(&engine, &compile_kappa, &payload, &entry)
                 })
                 .await
                 .map_err(|error| LiveError::Conflict(format!("join wasm prepare: {error}")))??;
                 Ok(Arc::new(DirectWasmLayer {
                     position,
                     kappa,
-                    module,
+                    guest: module,
                     resident_bytes,
                     running: AtomicBool::new(false),
                     processed: AtomicUsize::new(0),
@@ -209,7 +287,13 @@ impl LayerProvider for WasmProvider {
                 let actor_processed = processed.clone();
                 let compile_kappa = kappa.clone();
                 let actor = tokio::task::spawn_blocking(move || {
-                    ResidentHoloActor::compile(compile_kappa, &engine, &payload, actor_processed)
+                    ResidentHoloActor::compile_entry(
+                        compile_kappa,
+                        &engine,
+                        &payload,
+                        &entry,
+                        actor_processed,
+                    )
                 })
                 .await
                 .map_err(|error| {
@@ -233,7 +317,7 @@ impl LayerProvider for WasmProvider {
 struct DirectWasmLayer {
     position: u32,
     kappa: String,
-    module: Module,
+    guest: CoreWasmV1Guest,
     resident_bytes: usize,
     running: AtomicBool,
     processed: AtomicUsize,
@@ -258,10 +342,11 @@ impl PreparedLayer for DirectWasmLayer {
             )));
         }
         let started = Instant::now();
-        let outputs = run_inputs(&self.module, &self.kappa, &inputs)?;
+        let outputs = self.guest.run_inputs(&self.kappa, &inputs)?;
         self.processed.fetch_add(1, Ordering::Relaxed);
         Ok(LayerInvocation {
             outputs,
+            completion: LayerCompletion::Returned,
             elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
         })
     }
@@ -344,6 +429,7 @@ impl PreparedLayer for ResidentWasmLayer {
         };
         Ok(LayerInvocation {
             outputs: outcome.outputs,
+            completion: LayerCompletion::Returned,
             elapsed_micros: outcome.elapsed_micros,
         })
     }
@@ -374,34 +460,19 @@ impl ResidentWasmLayer {
     }
 }
 
-fn compile_module(engine: &Engine, kappa: &str, wasm: &[u8]) -> Result<Module> {
-    let module = Module::new(engine, wasm).map_err(|error| {
-        LiveError::InvalidHolo(format!("compile wasm layer of {kappa}: {error}"))
-    })?;
-    validate_contract(engine, &module)?;
-    Ok(module)
-}
-
-fn run_inputs(module: &Module, kappa: &str, inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
-    inputs
-        .iter()
-        .map(|input| run_once(module, kappa, input))
-        .collect()
-}
-
 /// Instantiate the module against a scratch store and resolve the contract
 /// exports, so a malformed guest fails at load time instead of first run.
-fn validate_contract(engine: &Engine, module: &Module) -> Result<()> {
+fn validate_contract(engine: &Engine, module: &Module, entry: &str) -> Result<()> {
     let mut store = Store::new(engine, ());
     let instance = instantiate(&mut store, module)?;
-    contract_exports(&mut store, &instance)?;
+    contract_exports(&mut store, &instance, entry)?;
     Ok(())
 }
 
-fn run_once(module: &Module, kappa: &str, input: &[u8]) -> Result<Vec<u8>> {
+fn run_once(module: &Module, kappa: &str, entry: &str, input: &[u8]) -> Result<Vec<u8>> {
     let mut store = Store::new(module.engine(), ());
     let instance = instantiate(&mut store, module)?;
-    let (memory, alloc, run) = contract_exports(&mut store, &instance)?;
+    let (memory, alloc, run) = contract_exports(&mut store, &instance, entry)?;
 
     let input_len = i32::try_from(input.len()).map_err(|_| {
         LiveError::Protocol(format!(
@@ -420,7 +491,7 @@ fn run_once(module: &Module, kappa: &str, input: &[u8]) -> Result<Vec<u8>> {
 
     let packed = run
         .call(&mut store, (input_ptr, input_len))
-        .map_err(|error| trap(kappa, "holo_run", error))?;
+        .map_err(|error| trap(kappa, entry, error))?;
     let packed = packed.cast_unsigned();
     let output_ptr = u32::try_from(packed >> 32).map_err(|_| {
         LiveError::Protocol(format!(
@@ -448,22 +519,24 @@ fn instantiate(store: &mut Store<()>, module: &Module) -> Result<Instance> {
 
 type Contract = (Memory, TypedFunc<i32, i32>, TypedFunc<(i32, i32), i64>);
 
-fn contract_exports(store: &mut Store<()>, instance: &Instance) -> Result<Contract> {
+fn contract_exports(store: &mut Store<()>, instance: &Instance, entry: &str) -> Result<Contract> {
     let memory = instance
         .get_memory(&mut *store, "memory")
-        .ok_or_else(|| missing_export("memory"))?;
+        .ok_or_else(|| contract_export_error("memory", entry))?;
     let alloc = instance
         .get_typed_func::<i32, i32>(&mut *store, "holo_alloc")
-        .map_err(|_| missing_export("holo_alloc(len: i32) -> i32"))?;
+        .map_err(|_| contract_export_error("holo_alloc(len: i32) -> i32", entry))?;
     let run = instance
-        .get_typed_func::<(i32, i32), i64>(&mut *store, "holo_run")
-        .map_err(|_| missing_export("holo_run(ptr: i32, len: i32) -> i64"))?;
+        .get_typed_func::<(i32, i32), i64>(&mut *store, entry)
+        .map_err(|_| {
+            contract_export_error(&format!("{entry}(ptr: i32, len: i32) -> i64"), entry)
+        })?;
     Ok((memory, alloc, run))
 }
 
-fn missing_export(export: &str) -> LiveError {
+fn contract_export_error(export: &str, entry: &str) -> LiveError {
     LiveError::Protocol(format!(
-        "wasm guest is missing the required export `{export}` (guest contract v1)"
+        "wasm guest does not satisfy {CORE_WASM_V1} for manifest entry {entry:?}: required export `{export}` is missing or has an incompatible type"
     ))
 }
 
@@ -522,8 +595,58 @@ mod tests {
             Arc::new(AtomicUsize::new(0)),
         )
         .expect("compile");
-        let output = run_once(&actor.module, "blake3:test", b"hello").expect("run");
-        assert_eq!(output, b"hello");
+        let output = actor
+            .guest
+            .run_inputs("blake3:test", &[b"hello".to_vec()])
+            .expect("run");
+        assert_eq!(output, [b"hello"]);
+    }
+
+    #[test]
+    fn executes_the_manifest_declared_entry() {
+        let engine = Engine::default();
+        let custom = ECHO_WAT.replace("holo_run", "transform");
+        let outcome = execute_entry(
+            &engine,
+            "blake3:test",
+            custom.as_bytes(),
+            "transform",
+            &[b"hello".to_vec()],
+        )
+        .expect("execute custom entry");
+        assert_eq!(outcome.outputs, [b"hello"]);
+    }
+
+    #[test]
+    fn rejects_a_missing_or_wrongly_typed_manifest_entry_during_compilation() {
+        let engine = Engine::default();
+        let missing = execute_entry(
+            &engine,
+            "blake3:test",
+            ECHO_WAT.as_bytes(),
+            "transform",
+            &[],
+        )
+        .expect_err("missing manifest entry");
+        assert_eq!(missing.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(missing.to_string().contains("transform"));
+        assert!(missing.to_string().contains(CORE_WASM_V1));
+
+        let wrong_type = ECHO_WAT.replace(
+            "(func (export \"holo_run\") (param $ptr i32) (param $len i32) (result i64)",
+            "(func (export \"holo_run\") (param $ptr i32) (param $len i32) (param $extra i32) (result i64)",
+        );
+        let wrong = execute_entry(
+            &engine,
+            "blake3:test",
+            wrong_type.as_bytes(),
+            CORE_WASM_V1_DEFAULT_ENTRY,
+            &[],
+        )
+        .expect_err("wrongly typed manifest entry");
+        assert_eq!(wrong.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(wrong.to_string().contains(CORE_WASM_V1_DEFAULT_ENTRY));
+        assert!(wrong.to_string().contains("incompatible type"));
     }
 
     #[test]

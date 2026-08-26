@@ -1,6 +1,9 @@
 use super::{helpers, Cli};
 use clap::{Args, ValueEnum};
+use hologram_live::actor::ActorSystem;
+use hologram_live::audit::AuditLog;
 use hologram_live::compile::{compile_manifest_with, HoloPackaging};
+use hologram_live::config::AppConfig;
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::HoloExecutor;
 use hologram_live::holo_capability::{EffectiveGrant, GrantSource};
@@ -120,7 +123,7 @@ async fn execute_local(
     development_grant: Option<&Path>,
     output_format: RunOutputFormat,
 ) -> Result<()> {
-    let result = match development_grant {
+    let grant = match development_grant {
         Some(path) => {
             let grant =
                 EffectiveGrant::from_development_file(path, GrantSource::DirectDevelopmentFile)?;
@@ -129,12 +132,22 @@ async fn execute_local(
                 effective_grant_kappa = %grant.kappa,
                 "direct holo development grant is enabled"
             );
-            HoloExecutor::default()
-                .execute_with_grant(&bytes, inputs, &grant)
-                .await?
+            grant
         }
-        None => HoloExecutor::default().execute(&bytes, inputs).await?,
+        None => EffectiveGrant::local_baseline(),
     };
+    let (config, _) = AppConfig::load(cli.config.as_deref())?;
+    config.create_directories()?;
+    let actors = ActorSystem::start();
+    let audit = AuditLog::open(
+        config.paths.state_dir.join("audit.jsonl"),
+        config.server.actor_mailbox_capacity,
+        actors.root(),
+    )
+    .await?;
+    let result = HoloExecutor::default()
+        .execute_with_grant_and_audit(&bytes, inputs, &grant, &audit, "local-cli")
+        .await?;
     print_result(cli, &result, output_format)
 }
 

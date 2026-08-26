@@ -137,6 +137,16 @@ pub struct HoloChild {
     pub position: u32,
     pub application_kappa: String,
     pub capabilities_kappa: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_application_kappa: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires_kappa: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application_resolution_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities_resolution_source: Option<String>,
 }
 
 /// One content-addressed blob physically embedded in a fat `.holo`.
@@ -210,6 +220,8 @@ pub struct HoloPlanLayer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HoloPlanLimits {
     pub max_layers: u64,
+    pub max_applications: u64,
+    pub max_depth: u64,
     pub max_objects: u64,
     pub max_resolved_bytes: u64,
 }
@@ -234,6 +246,8 @@ pub struct HoloPlan {
     pub children: Vec<HoloChild>,
     pub resolved_object_count: u64,
     pub resolved_bytes: u64,
+    pub application_count: u64,
+    pub max_depth: u64,
     pub limits: HoloPlanLimits,
     pub runnable: bool,
     pub blockers: Vec<HoloPlanBlocker>,
@@ -275,6 +289,17 @@ impl HoloPlan {
                 position: child.position,
                 application_kappa: child.application_kappa.clone(),
                 capabilities_kappa: child.capabilities_kappa.clone(),
+                parent_application_kappa: Some(child.parent_application_kappa.clone()),
+                depth: Some(child.depth),
+                requires_kappa: child.requires_kappa.clone(),
+                application_resolution_source: child
+                    .application_resolution_source
+                    .as_ref()
+                    .map(resolution_source_name),
+                capabilities_resolution_source: child
+                    .capabilities_resolution_source
+                    .as_ref()
+                    .map(resolution_source_name),
             })
             .collect();
         let blockers = report
@@ -298,8 +323,16 @@ impl HoloPlan {
             children,
             resolved_object_count: report.objects.len().try_into().unwrap_or(u64::MAX),
             resolved_bytes: report.resolved_bytes,
+            application_count: report.application_count.try_into().unwrap_or(u64::MAX),
+            max_depth: report.max_depth.try_into().unwrap_or(u64::MAX),
             limits: HoloPlanLimits {
                 max_layers: report.limits.max_layers.try_into().unwrap_or(u64::MAX),
+                max_applications: report
+                    .limits
+                    .max_applications
+                    .try_into()
+                    .unwrap_or(u64::MAX),
+                max_depth: report.limits.max_depth.try_into().unwrap_or(u64::MAX),
                 max_objects: report.limits.max_objects.try_into().unwrap_or(u64::MAX),
                 max_resolved_bytes: report.limits.max_resolved_bytes,
             },
@@ -366,6 +399,25 @@ pub struct ResidentHolo {
     pub resident_bytes: usize,
     pub queued: usize,
     pub processed: usize,
+    #[serde(default)]
+    pub requested_capabilities_kappa: String,
+    #[serde(default)]
+    pub effective_grant_kappa: String,
+    #[serde(default)]
+    pub grant_source: String,
+    #[serde(default)]
+    pub authorization: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ApplicationCompletion {
+    #[default]
+    Unknown,
+    Returned,
+    Exited {
+        code: i32,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -374,6 +426,8 @@ pub struct HoloRunResult {
     pub outputs: Vec<Vec<u8>>,
     pub elapsed_micros: u64,
     pub resident_bytes: usize,
+    #[serde(default)]
+    pub completion: ApplicationCompletion,
     #[serde(default)]
     pub requested_capabilities_kappa: String,
     #[serde(default)]
@@ -632,5 +686,29 @@ impl RpcResponse {
             Ok(value) => map(value),
             Err(error) => Self::Error(ApiError::from(&error)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn holo_completion_json_is_typed_and_legacy_results_default_to_unknown() {
+        let legacy: HoloRunResult = serde_json::from_value(serde_json::json!({
+            "kappa": "blake3:legacy",
+            "outputs": [],
+            "elapsed_micros": 0,
+            "resident_bytes": 0
+        }))
+        .expect("decode legacy result");
+        assert_eq!(legacy.completion, ApplicationCompletion::Unknown);
+
+        let returned = serde_json::to_value(ApplicationCompletion::Returned)
+            .expect("serialize returned completion");
+        assert_eq!(returned, serde_json::json!({"kind": "returned"}));
+        let exited = serde_json::to_value(ApplicationCompletion::Exited { code: 9 })
+            .expect("serialize exited completion");
+        assert_eq!(exited, serde_json::json!({"kind": "exited", "code": 9}));
     }
 }

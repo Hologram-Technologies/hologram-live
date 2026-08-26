@@ -55,6 +55,13 @@ impl AppState {
         let registry: Arc<dyn RegistryProvider> =
             Arc::new(LocalRegistryProvider::new(store.clone()));
         let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
+        let actor_system = ActorSystem::start();
+        let audit = AuditLog::open(
+            config.paths.state_dir.join("audit.jsonl"),
+            config.server.actor_mailbox_capacity,
+            actor_system.root(),
+        )
+        .await?;
         let effective_grant = match &config.holo.development_grant {
             Some(path) => {
                 let grant = EffectiveGrant::from_development_file(
@@ -70,10 +77,11 @@ impl AppState {
             }
             None => EffectiveGrant::local_baseline(),
         };
-        let holo_runtime = Arc::new(HoloRuntime::new_with_grant(
+        let holo_runtime = Arc::new(HoloRuntime::new_with_grant_and_audit(
             holo_catalog.clone(),
             config.server.actor_mailbox_capacity,
             effective_grant,
+            audit.clone(),
         ));
         let history = Arc::new(HistoryService::open(config.paths.data_dir.join("history"))?);
         let models = Arc::new(ModelCatalog::open(
@@ -89,13 +97,6 @@ impl AppState {
         let nodes = Arc::new(NodeDirectory::open(
             config.paths.data_dir.join("control-plane/nodes.json"),
         )?);
-        let actor_system = ActorSystem::start();
-        let audit = AuditLog::open(
-            config.paths.state_dir.join("audit.jsonl"),
-            config.server.actor_mailbox_capacity,
-            actor_system.root(),
-        )
-        .await?;
         let server_seed = format!(
             "{}\0{}\0{}",
             config.server.listen,
@@ -251,7 +252,7 @@ impl AppState {
             return RpcResponse::Error(ApiError::from(&error));
         }
         let resource = resource_for(&request);
-        let response = self.dispatch_authorized(request).await;
+        let response = self.dispatch_authorized(principal, request).await;
         if kind != crate::protocol::OperationKind::Read {
             let outcome = match &response {
                 RpcResponse::Error(error) => format!("error:{}", error.code),
@@ -274,7 +275,7 @@ impl AppState {
         response
     }
 
-    async fn dispatch_authorized(&self, request: RpcRequest) -> RpcResponse {
+    async fn dispatch_authorized(&self, principal: &Principal, request: RpcRequest) -> RpcResponse {
         match request {
             RpcRequest::Handshake => RpcResponse::CapabilityManifest(self.capability_manifest()),
             RpcRequest::Health => RpcResponse::Health(self.health()),
@@ -387,11 +388,13 @@ impl AppState {
                     Err(error) => RpcResponse::Error(ApiError::from(&error)),
                 }
             }
-            RpcRequest::HoloLoad { kappa } => {
-                RpcResponse::from_result(self.inner.holo_runtime.load(&kappa).await, |record| {
-                    RpcResponse::HoloResident(vec![record])
-                })
-            }
+            RpcRequest::HoloLoad { kappa } => RpcResponse::from_result(
+                self.inner
+                    .holo_runtime
+                    .load_for(&kappa, &principal.id)
+                    .await,
+                |record| RpcResponse::HoloResident(vec![record]),
+            ),
             RpcRequest::HoloUnload { kappa } => {
                 match self.inner.holo_runtime.unload(&kappa).await {
                     Ok(()) => RpcResponse::Accepted,

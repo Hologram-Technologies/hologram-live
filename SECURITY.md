@@ -31,6 +31,22 @@ Tracing is configurable and may be filtered. OpenTelemetry does not export unles
 
 Raw prompts, response bodies, authorization headers, bearer tokens, private keys, and uploaded file bytes should not be added to tracing fields.
 
+Every evaluated `.holo` root request, child delegation, and child request is
+written to `audit.jsonl` through an awaited audit boundary before provider
+preparation. The typed row contains the principal, application and optional
+parent application κ, relation, requested or delegated capability κ, effective
+grant κ, trusted grant-source label, and `allowed` or `denied` outcome. It does
+not contain capability source documents, storage roots, channels, tokens,
+authorization headers, or application payloads. Successful admission fails
+closed if the audit record cannot be persisted; authorization denial remains
+the primary error if denial auditing also fails.
+
+Core-Wasm guest contract v1 links no imports and no WASI functions. A layer's
+manifest entry selects only a typed export inside the already selected module;
+it cannot select a provider or host function. Future WASI or Hologram imports
+must be introduced by a versioned contract and linked only from the admitted
+effective grant.
+
 ## Desktop sidecar
 
 The Tauri application invokes a bundled `hologram` sidecar through fixed lifecycle and status commands. It does not expose a general-purpose shell command to the webview.

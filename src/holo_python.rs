@@ -9,8 +9,8 @@
 use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
 use crate::holo_provider::{
-    LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus, PreparedLayer,
-    ProviderTarget,
+    LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
+    PreparedLayer, ProviderTarget,
 };
 use hologram::space::LayerKind;
 use serde::{Deserialize, Serialize};
@@ -308,6 +308,7 @@ impl PreparedLayer for PreparedPythonRootfs {
         self.processed.fetch_add(1, Ordering::Relaxed);
         Ok(LayerInvocation {
             outputs: outcome.outputs,
+            completion: LayerCompletion::Exited { code: 0 },
             elapsed_micros: outcome.elapsed_micros,
         })
     }

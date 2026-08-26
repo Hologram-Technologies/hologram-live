@@ -152,16 +152,22 @@ cd my-app
 hologram app init
 ```
 
-The generator prompts for ordered layers, their kind-specific entrypoint or surface information, the primary layer, and an optional capability file. It writes `hologram.json` atomically and prints the commands needed to compile and run it. For scripts and CI, provide the first layer as flags:
+The generator prompts for ordered layers, their kind-specific entrypoint or surface information, the primary layer, an optional capability file, and optional child applications with delegated capability documents. It writes `hologram.json` atomically and prints the commands needed to compile and run it. For scripts and CI, provide the first layer as flags:
 
 ```bash
 hologram app init ./my-app \
   --kind wasm \
   --path app.wasm \
   --entry holo_run
+
+# Compose a previously compiled, self-contained child archive
+hologram app init ./parent \
+  --kind wasm --path parent.wasm --entry holo_run \
+  --child worker.holo \
+  --child-capabilities worker-capabilities.json
 ```
 
-Use `--yes` for a minimal `app.wasm`/`_start` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
+Use `--yes` for a minimal `app.wasm`/`holo_run` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
 
 ```bash
 hologram holo fixture ./fixture.holo
@@ -237,7 +243,17 @@ empty request. A request describes what an application needs—it is never itsel
 a grant. In the upstream capability contract, a scalar budget of `0` means
 unbounded; use a nonzero value to request a finite ceiling. Runtime grant
 enforcement now decodes this canonical request and authorizes it before any
-provider prepares. Child attenuation remains the next M2 slice.
+provider prepares. Schema-v3 source manifests may pair a self-contained child
+`.holo` archive with a delegated capability document; compilation binds both
+canonical κ values into the parent and embeds the verified child closure in a
+fat build. The planner verifies that recursive child closure—including every
+child manifest, delegated capability object, requested capability object, and
+layer—under one bounded κ-resolution walk. Before provider preparation, each
+delegation must be admitted by its parent's effective grant and must itself
+admit the child's request. Admitted children start depth-first in manifest
+order under their delegated grants and stop or roll back in exact reverse
+order. The current call invokes only the root primary; child primaries are
+lifecycle-managed dependencies rather than independent resident applications.
 
 Ordinary local execution uses the built-in baseline grant: no storage roots,
 publish/subscribe channels, or network flags. A non-empty request therefore
@@ -256,8 +272,13 @@ configuration, never from a remote request. Set
 from `paths.config_dir`, and configuration validation rejects this mode on a
 non-loopback listener. Both direct and service modes emit a warning and trace
 the request κ, effective-grant κ, source, and allow/deny decision without
-logging the capability document. Successful raw run results expose the same
-non-secret decision metadata as `requested_capabilities_kappa`,
+logging the capability document. They also synchronously append each root
+request, child delegation, and child request decision to `audit.jsonl` under
+the configured state directory before provider preparation. Audit rows contain
+the authenticated principal, relation, application and parent identities,
+request and grant identities, trusted source label, and outcome—never tokens,
+source documents, roots, channels, or payload bytes. Successful raw run results
+expose the same non-secret decision metadata as `requested_capabilities_kappa`,
 `effective_grant_kappa`, `grant_source`, and `authorization`, so automated
 checks can retain the authority evidence:
 
@@ -280,6 +301,16 @@ hologram compile ./my-app/hologram.json -o ./my-app.holo
 hologram run ./my-app.holo --input ./payload.bin
 ```
 
+Wasm layers use the import-free `core-wasm-v1` contract. The module exports
+`memory`, `holo_alloc(i32) -> i32`, and the function named by the layer's
+manifest `entry` with signature `(i32, i32) -> i64`. `holo_run` is the compiler
+and generator default, not a runtime hard-code; an archive may declare another
+export such as `transform`. The packed `i64` identifies one byte output. V1 has
+no WASI imports and no numeric process exit status: returning bytes is
+successful completion, while a trap is `LIVE_PROTOCOL_ERROR`. Direct and
+resident providers validate the declared entry during preparation and use a
+fresh instance for each input.
+
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as
 fat archives in memory and are not written or imported. Repeat `--input` for
@@ -295,6 +326,13 @@ hologram run blake3:... --input ./payload.bin
 hologram holo resident
 hologram holo unload blake3:...
 ```
+
+The browser API exposes the same resident lifecycle at
+`GET /api/v1/holo/resident`, `POST` or `DELETE`
+`/api/v1/holo/{kappa}/load`, and `POST /api/v1/holo/{kappa}/run`. Run request
+inputs are JSON arrays of byte arrays. Native and HTTP resident records include
+`requested_capabilities_kappa`, `effective_grant_kappa`, `grant_source`, and
+`authorization` alongside lifecycle counters.
 
 The compiler emits fat archives by default. `--thin` emits the same canonical application manifest without its κ-addressed payloads:
 
@@ -361,7 +399,7 @@ For low-level archive assembly, a source manifest can package an already-built p
 
 `weightc` remains a chat execution provider over imported `.wcpu` directories. Those directories are not placed into `.holo` files until a deterministic single-blob bundle and validation contract is defined. See the [AI model application guide](https://hologram-technologies.github.io/hologram-live/docs/model-apps) and [ADR 009](specs/adrs/009-inference-model-holo-v4.md).
 
-Before direct execution or `holo load` starts a provider, Live builds a runtime-owned application plan from the canonical manifest. It resolves and re-hashes the required capability object and every non-child layer from embedded content or the local κ store, deduplicates shared objects, applies layer/object/byte limits, and rejects missing secondary layers before compiling anything. Child references remain visible blockers until M2 defines capability attenuation. A closed `LayerKind` registry then prepares and starts every supported layer in manifest order, invokes the declared primary layer, and stops or rolls back in reverse order. Wasm layers use Wasmtime behind this boundary and may have a primary position other than zero; resident status reports `state`, aggregate resident bytes, queued calls, and processed calls. Repeated load and unload are idempotent. Python rootfs archives use the same lifecycle through an explicitly experimental, direct-only OCI adapter. Inference-model services can be inspected but not invoked through Live yet. Tensors, inference models without a provider, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md` and the planning/provider contract in `specs/adrs/010-holo-application-plan-and-provider-lifecycle.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
+Before direct execution or `holo load` starts a provider, Live builds a runtime-owned application plan from the canonical manifest. It recursively resolves and re-hashes root and child manifests, requested and delegated capability objects, and every layer from embedded content or the local κ store. Shared objects are deduplicated while logical applications remain distinct, and aggregate application-depth, application-count, layer, object, and byte limits bound the complete tree. Missing or malformed nested content and cyclic paths therefore fail before provider preparation. Runtime admission first admits the root request, then proves every delegated child grant is a subset of its parent's effective grant and admits the child's request. Each decision is written through the separate audit boundary with the real CLI or service principal before provider preparation; amplification or an under-granted request returns `LIVE_AUTHORIZATION_DENIED`. A closed `LayerKind` registry then prepares and starts the complete admitted tree depth-first in manifest order. Every child provider receives only that child's delegated grant. Direct and resident calls invoke only the root primary; child primaries are managed dependencies. Normal stop and failure rollback traverse the exact reverse order, and resident status aggregates root and child layers. Wasm layers use Wasmtime behind this boundary and may have a primary position other than zero; resident status reports `state`, aggregate resident bytes, queued calls, processed calls, and non-secret authorization evidence. Repeated load and unload are idempotent. Python rootfs archives use the same lifecycle through an explicitly experimental, direct-only OCI adapter. Inference-model services can be inspected but not invoked through Live yet. Tensors, inference models without a provider, resident Python rootfs archives, and unknown rootfs payloads return a typed `LIVE_CAPABILITY_MISSING` error. The compiler/runtime/executor boundary is recorded in `specs/adrs/007-holo-compiler-runtime-execution.md` and the planning/provider contract in `specs/adrs/010-holo-application-plan-and-provider-lifecycle.md`; the Wasm guest contract is documented in `src/holo_wasm.rs` and demonstrated by `features/fixtures/wasm-app/`.
 
 #### Python applications
 
@@ -401,6 +439,14 @@ $ hologram run numpy-pandas.holo \
 ```
 
 `hologram run` preserves the binary-safe `HoloRunResult` envelope by default. Add `--output-format text` for UTF-8 application output or `--output-format json` for JSON application output. One decoded result prints directly; results from multiple `--input` arguments print in order, with JSON results collected into an array. Invalid text or JSON returns a typed protocol error instead of changing the bytes.
+
+The raw envelope keeps output and completion distinct. Core-Wasm v1 returns
+`"completion":{"kind":"returned"}` because its callable returned bytes but has
+no process exit code. A provider with a real process status may return
+`"completion":{"kind":"exited","code":0}`. `unknown` appears only when
+decoding an older peer that did not carry completion. Traps, nonzero processes,
+failures remain typed errors rather than successful results with invented
+status values.
 
 Generate the same schema without hand-writing JSON:
 

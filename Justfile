@@ -13,7 +13,9 @@ check:
 
 # Run workspace tests
 test:
-    cargo test --workspace --all-targets --locked
+    # Several tests own real subprocesses; serialize them so teardown cannot
+    # race another fixture's process lifecycle in CI.
+    cargo test --workspace --all-targets --locked -- --test-threads=1
 
 # Run public-boundary Gherkin scenarios.
 bdd:

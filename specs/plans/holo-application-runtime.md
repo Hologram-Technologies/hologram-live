@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M1, identity, planning, provider, and lifecycle foundation
-- Next runtime milestone: M1, application planning and provider boundary
+- Next delivery: M3.1 Slice 3, guest-contract versioning and host-interface design
+- Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the current v4 baseline, compatibility requirements, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -19,9 +19,9 @@ This is the living implementation plan for turning `.holo` archives into complet
 - [x] Keep the application-directory extension a verified projection, never a second manifest.
 - [x] Keep physical archive identity distinct from canonical application identity.
 - [x] Resolve content by κ; do not make filenames or catalog metadata authoritative.
-- [ ] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
-- [ ] Boot ordered layers transactionally and unwind partial starts in reverse order.
-- [ ] Keep execution providers behind typed boundaries so Wasm, views, tensors, and root filesystems do not leak engine details into the archive loader.
+- [x] Reject missing capabilities and unsupported providers explicitly; never simulate execution success.
+- [x] Boot ordered layers transactionally and unwind partial starts in reverse order.
+- [x] Keep execution providers behind typed boundaries so Wasm, views, tensors, and root filesystems do not leak engine details into the archive loader.
 - [x] Make every interactive workflow available non-interactively for automation and CI.
 
 ## Completed baseline
@@ -65,6 +65,8 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Refuse to prompt in non-interactive environments unless all required choices are supplied as flags.
 - [x] Add non-interactive flags for layer kind, layer path, entrypoint, architecture, surface, primary layer, and capability file.
 - [x] Support repeated layer flags or a repeatable interactive “add another layer” step.
+- [x] Support schema-v3 child application archives and delegated capability
+  files through paired flags or a repeatable interactive prompt.
 - [x] Show the resulting compile and run commands after generation.
 - [x] Return a machine-readable creation report when global `--json` is active.
 
@@ -107,9 +109,10 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Distinguish embedded, local-store, and future synchronized resolution sources.
 - [x] Resolve and validate the required capability-set object before preparing providers.
 - [x] Resolve every layer payload before any layer starts, rather than resolving only the primary Wasm layer.
-- [ ] Resolve child application and delegated-capability references recursively.
-- [ ] Detect child-application cycles.
-- [ ] Apply explicit maximum closure depth, object count, and cumulative resolved-byte limits.
+- [x] Resolve child application and delegated-capability references recursively.
+- [x] Detect child-application cycles.
+- [x] Apply explicit maximum closure depth, application count, object count,
+  aggregate layer count, and cumulative resolved-byte limits.
 - [x] Deduplicate equal κ references while retaining every logical edge and layer position.
 - [x] Reject a declared embedded κ whose bytes do not re-hash to that κ.
 - [x] Reject unresolved closure members with an error that names the missing κ and referring manifest edge.
@@ -131,9 +134,9 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Prepare and start layers in manifest order.
 - [x] If a layer fails, stop every previously started layer in reverse order.
 - [x] Stop all layers in reverse order during normal unload.
-- [ ] Route application exit status from the manifest’s primary exit-bearing layer.
-- [ ] Do not invent exit semantics for tensor or view layers.
-- [ ] Define how a non-primary layer failure affects a running application.
+- [x] Route typed application completion or provider-observed exit status from the manifest’s primary exit-bearing layer.
+- [x] Do not invent exit semantics for tensor, view, or inference-model layers.
+- [x] Define how an observed non-primary layer failure affects a running application; the autonomous provider notification mechanism lands with the first provider that needs it.
 - [x] Make repeated load and unload requests idempotent where safe.
 - [x] Preserve bounded mailboxes and backpressure for resident applications.
 - [ ] Emit structured lifecycle traces and audit events for plan, prepare, start, rollback, and stop.
@@ -156,7 +159,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] A multi-layer manifest is fully resolved before returning the expected unsupported-provider error.
 - [x] A missing non-primary layer prevents all layer starts.
 - [x] A synthetic provider failure proves reverse-order rollback.
-- [ ] A cyclic child graph fails deterministically without recursion overflow.
+- [x] A cyclic child graph fails deterministically without recursion overflow.
 - [x] Fat and thin variants produce equivalent logical plans when the local store contains the required content.
 - [x] Unit, BDD, API round-trip, docs, Clippy, release build, and smoke gates pass.
 - [x] ADR 004 and ADR 007 are amended if implementation details refine their accepted decisions.
@@ -172,31 +175,48 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 ### Runtime grants
 
-- [ ] Define where effective grants come from for direct local execution, local service execution, remote execution, and child applications.
+- [x] Define where effective grants come from for direct local execution, local service execution, remote execution, and child applications.
   - [x] Direct local execution uses the deny-by-default baseline or an explicit trusted `--development-grant` file.
   - [x] Local service execution uses the baseline or loopback-only `holo.development_grant` host configuration.
   - [x] Remote callers cannot attach self-asserted grants; absent trusted remote authority remains denied.
-  - [ ] Child execution receives only an admitted attenuation of the parent grant.
+  - [x] Child execution receives only an admitted attenuation of the parent grant.
 - [x] Fail before provider preparation unless the effective grant admits the application’s `requires` set.
 - [x] Pass only the effective grant—not the untrusted request—to providers and host interfaces.
 - [x] Add an explicit local-development grant mode without making it the production default.
-- [ ] Include capability decisions in structured audit records without leaking secrets.
+- [x] Include capability decisions in structured audit records without leaking secrets.
 
 ### Child applications
 
-- [ ] Add source-manifest syntax for child application references and delegated capability documents.
-- [ ] Resolve child applications through the same κ closure resolver as layers.
-- [ ] Enforce that every delegated child grant is a subset of the parent’s effective grant.
-- [ ] Reject capability amplification before starting the child.
-- [ ] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
-- [ ] Apply closure and resource limits across the entire application tree, not independently per child.
+- [x] Add source-manifest syntax for child application references and delegated capability documents.
+- [x] Resolve child applications through the same κ closure resolver as layers.
+- [x] Enforce that every delegated child grant is a subset of the parent’s effective grant.
+- [x] Reject capability amplification before starting the child.
+- [x] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
+- [x] Apply closure and resource limits across the entire application tree, not independently per child.
+
+Compiler evidence (2026-08-25): source-manifest schema v3 accepts child entries
+that pair a verified, self-contained child `.holo` archive with a canonical
+delegated-capability document. Fat parents embed the canonical child manifest,
+its verified closure blobs, and the delegated capability object. Thin parents
+omit those payloads while preserving the same canonical parent application κ.
+`hologram app init` exposes the same model through repeatable paired flags and
+interactive prompts. Runtime planning now iteratively resolves canonical child
+manifests, delegated and requested capability objects, and nested layers under
+one tree-wide budget. It reports application count and maximum depth through
+the plan API. Strict plans retain distinct delegated and requested capability
+objects for runtime admission. Admission proves parent grant → delegation →
+child request for every edge before provider preparation. The runtime then
+prepares and starts the tree depth-first in manifest order, passes each child
+only its admitted delegated grant, and rolls back or stops the exact reverse
+order. Only the root primary is invoked; child primaries are lifecycle-managed
+dependencies until an explicit child invocation contract is introduced.
 
 ### M2 acceptance criteria
 
 - [x] Insufficient grants fail with `LIVE_AUTHORIZATION_DENIED` before any provider starts.
 - [x] Sufficient grants produce the same plan and behavior as the previous Wasm fixture.
-- [ ] Child attenuation succeeds; attempted amplification fails deterministically.
-- [ ] Capability checks are covered by unit, BDD, audit, and native API tests.
+- [x] Child attenuation succeeds; attempted amplification fails deterministically.
+- [x] Capability checks are covered by unit, BDD, audit, native API, and HTTP/OpenAPI tests.
 - [x] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
 
 ## M3 — Real multi-layer providers
@@ -205,7 +225,16 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 
 - [x] Move the current Wasmtime implementation behind the provider trait.
 - [x] Preserve direct and resident execution behavior and typed guest-contract errors.
-- [ ] Use the manifest entrypoint instead of assuming one hard-coded function where the contract permits it.
+- [x] Use the manifest entrypoint instead of assuming one hard-coded function where the contract permits it.
+- [x] Name and document the import-free `core-wasm-v1` contract, including its
+  fixed memory/allocator exports, manifest-selected callable export, fresh
+  instances, one-output-per-input behavior, and lack of numeric exit status.
+- [x] Align compiler and app-generator defaults with the executable v1
+  `holo_run` compatibility entry while permitting another declared export.
+- [x] Introduce a typed provider completion model that does not conflate byte
+  output, successful completion, and a future explicit exit status.
+- [x] Expose `returned`, provider-observed `exited { code }`, and legacy-only
+  `unknown` completion additively through JSON/HTTP and Protobuf/gRPC.
 - [x] Preserve one-output-per-input compatibility until a versioned guest-contract upgrade lands.
 - [x] Remove the runtime’s “exactly one layer at primary position zero” special case.
 
@@ -371,7 +400,7 @@ application/DMG builds pass.
 
 ### Manifest features
 
-- [ ] Add child applications and delegated capabilities to `hologram.json`.
+- [x] Add child applications and delegated capabilities to `hologram.json`.
 - [ ] Validate `primary` against exit-bearing layer kinds before reading large payloads.
 - [ ] Validate duplicate, missing, unreadable, and unsupported layer paths with source locations.
 - [ ] Decide whether hybrid archives with only some embedded blobs are supported and document the decision.
@@ -512,7 +541,7 @@ application/DMG builds pass.
 
 - [ ] Define version negotiation for the core-Wasm guest contract.
 - [ ] Move beyond fixed anonymous one-input/one-output execution with typed, named ports.
-- [ ] Define application exit status separately from byte outputs.
+- [x] Define application completion and exit status separately from byte outputs.
 - [ ] Add structured logs and diagnostics without treating stdout as a protocol.
 - [ ] Define streaming output only after provider cancellation and backpressure are in place.
 - [ ] Define stateful sessions as an explicit API rather than silently changing per-run fresh-instance behavior.
@@ -520,10 +549,10 @@ application/DMG builds pass.
 
 ## Open decisions to record as ADRs
 
-- [ ] Provider trait async and platform-bound requirements.
+- [x] Provider trait async and platform-bound requirements.
 - [ ] View-bundle canonical encoding and surface protocol.
-- [ ] Direct-execution capability grant source and safe defaults.
-- [ ] Child lifecycle and exit propagation.
+- [x] Direct-execution capability grant source and safe defaults.
+- [x] Child lifecycle ownership and the current root-primary-only exit boundary.
 - [ ] TensorPlan payload/port schema and weightc adapter contract.
 - [ ] Rootfs image format, architecture naming, and microVM contract.
 - [ ] Resource-budget schema and default limits.
@@ -535,14 +564,14 @@ application/DMG builds pass.
 
 ## Per-milestone definition of done
 
-- [ ] Public behavior has BDD coverage.
-- [ ] Unit and negative tests cover the new invariants and failure paths.
-- [ ] Native protocol, JSON/HTTP API, CLI, and desktop behavior agree where the capability is exposed.
-- [ ] Error paths use stable typed errors and name the failing application, layer, provider, or κ.
-- [ ] Security-sensitive decisions have an ADR and audit coverage.
-- [ ] README, website documentation, architecture, and actual-capabilities inventory are current.
-- [ ] `cargo fmt`, source-size gate, `cargo check`, tests, Clippy, BDD, release build, and smoke test pass.
-- [ ] Changes are committed as a reviewable milestone without unrelated workspace modifications.
+- [x] Public behavior has BDD coverage.
+- [x] Unit and negative tests cover the new invariants and failure paths.
+- [x] Native protocol, JSON/HTTP API, CLI, and desktop behavior agree where the capability is exposed.
+- [x] Error paths use stable typed errors and name the failing application, layer, provider, or κ.
+- [x] Security-sensitive decisions have an ADR and audit coverage.
+- [x] README, website documentation, architecture, and actual-capabilities inventory are current.
+- [x] `cargo fmt`, source-size gate, `cargo check`, tests, Clippy, BDD, release build, and smoke test pass.
+- [x] Changes are committed as a reviewable milestone without unrelated workspace modifications.
 
 ## Immediate next slice
 
@@ -553,4 +582,18 @@ application/DMG builds pass.
 - [x] Add `hologram holo plan` over local paths and catalog κ values.
 - [x] Route existing direct and resident Wasm execution through the plan.
 - [x] Add synthetic-provider rollback tests.
-- [ ] Extend closure resolution to child applications after M2 grant semantics are fixed.
+- [x] Extend closure resolution to child applications with bounded, iterative κ
+  traversal.
+- [x] Admit parent grant → delegated grant → child request chains before any
+  provider preparation.
+- [x] Prepare and start the admitted child tree in depth-first manifest order,
+  invoke only the root primary, and roll back or stop in exact reverse order.
+- [x] Complete M2 capability audit records, interface coverage, and conformance
+  tests.
+- [x] Define and enforce the M3.1 core-Wasm v1 manifest-entry contract without
+  adding host imports or weakening existing archives.
+- [x] Define typed provider completion and application exit semantics without
+  fabricating a core-Wasm v1 process status.
+- [ ] Decide the canonical guest-contract version negotiation and
+  capability-gated host-interface mapping before implementing Component Model
+  or WASI support.

@@ -3,11 +3,11 @@ use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
 use crate::models::ModelInfo;
 use crate::protocol::{
-    CapabilityManifest, Conversation, ConversationMessage, HealthResponse, HoloBlob, HoloChild,
-    HoloDirectory, HoloInspection, HoloLayer, HoloPlan, HoloPlanBlocker, HoloPlanLayer,
-    HoloPlanLimits, HoloPlanObject, HoloPlanProvider, HoloRunResult, HoloSection, ModuleInfo,
-    NodeRecord, ObjectContent, ObjectMetadata, OperationInfo, OperationKind, PluginStatus,
-    ResidentHolo, RpcRequest, RpcResponse,
+    ApplicationCompletion, CapabilityManifest, Conversation, ConversationMessage, HealthResponse,
+    HoloBlob, HoloChild, HoloDirectory, HoloInspection, HoloLayer, HoloPlan, HoloPlanBlocker,
+    HoloPlanLayer, HoloPlanLimits, HoloPlanObject, HoloPlanProvider, HoloRunResult, HoloSection,
+    ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata, OperationInfo, OperationKind,
+    PluginStatus, ResidentHolo, RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -647,6 +647,11 @@ impl From<HoloChild> for pb::HoloChild {
             position: value.position,
             application_kappa: value.application_kappa,
             capabilities_kappa: value.capabilities_kappa,
+            parent_application_kappa: value.parent_application_kappa,
+            depth: value.depth,
+            requires_kappa: value.requires_kappa,
+            application_resolution_source: value.application_resolution_source,
+            capabilities_resolution_source: value.capabilities_resolution_source,
         }
     }
 }
@@ -657,6 +662,11 @@ impl From<pb::HoloChild> for HoloChild {
             position: value.position,
             application_kappa: value.application_kappa,
             capabilities_kappa: value.capabilities_kappa,
+            parent_application_kappa: value.parent_application_kappa,
+            depth: value.depth,
+            requires_kappa: value.requires_kappa,
+            application_resolution_source: value.application_resolution_source,
+            capabilities_resolution_source: value.capabilities_resolution_source,
         }
     }
 }
@@ -832,6 +842,8 @@ impl From<HoloPlanLimits> for pb::HoloPlanLimits {
             max_layers: value.max_layers,
             max_objects: value.max_objects,
             max_resolved_bytes: value.max_resolved_bytes,
+            max_applications: value.max_applications,
+            max_depth: value.max_depth,
         }
     }
 }
@@ -842,6 +854,8 @@ impl From<pb::HoloPlanLimits> for HoloPlanLimits {
             max_layers: value.max_layers,
             max_objects: value.max_objects,
             max_resolved_bytes: value.max_resolved_bytes,
+            max_applications: value.max_applications,
+            max_depth: value.max_depth,
         }
     }
 }
@@ -880,6 +894,8 @@ impl From<HoloPlan> for pb::HoloPlan {
             children: value.children.into_iter().map(Into::into).collect(),
             resolved_object_count: value.resolved_object_count,
             resolved_bytes: value.resolved_bytes,
+            application_count: value.application_count,
+            max_depth: value.max_depth,
             limits: Some(value.limits.into()),
             runnable: value.runnable,
             blockers: value.blockers.into_iter().map(Into::into).collect(),
@@ -912,6 +928,8 @@ impl TryFrom<pb::HoloPlan> for HoloPlan {
             children: value.children.into_iter().map(Into::into).collect(),
             resolved_object_count: value.resolved_object_count,
             resolved_bytes: value.resolved_bytes,
+            application_count: value.application_count,
+            max_depth: value.max_depth,
             limits: value
                 .limits
                 .ok_or_else(|| LiveError::Protocol("gRPC holo plan has no limits".to_owned()))?
@@ -932,6 +950,10 @@ impl From<ResidentHolo> for pb::ResidentHolo {
             resident_bytes: value.resident_bytes.try_into().unwrap_or(u64::MAX),
             queued: value.queued.try_into().unwrap_or(u64::MAX),
             processed: value.processed.try_into().unwrap_or(u64::MAX),
+            requested_capabilities_kappa: value.requested_capabilities_kappa,
+            effective_grant_kappa: value.effective_grant_kappa,
+            grant_source: value.grant_source,
+            authorization: value.authorization,
         }
     }
 }
@@ -952,6 +974,10 @@ impl TryFrom<pb::ResidentHolo> for ResidentHolo {
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
             queued: narrow(value.queued, "queued")?,
             processed: narrow(value.processed, "processed")?,
+            requested_capabilities_kappa: value.requested_capabilities_kappa,
+            effective_grant_kappa: value.effective_grant_kappa,
+            grant_source: value.grant_source,
+            authorization: value.authorization,
         })
     }
 }
@@ -967,6 +993,7 @@ impl From<HoloRunResult> for pb::HoloRunResult {
             effective_grant_kappa: value.effective_grant_kappa,
             grant_source: value.grant_source,
             authorization: value.authorization,
+            completion: Some(value.completion.into()),
         }
     }
 }
@@ -980,11 +1007,50 @@ impl TryFrom<pb::HoloRunResult> for HoloRunResult {
             outputs: value.outputs,
             elapsed_micros: value.elapsed_micros,
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
+            completion: value
+                .completion
+                .map(ApplicationCompletion::try_from)
+                .transpose()?
+                .unwrap_or_default(),
             requested_capabilities_kappa: value.requested_capabilities_kappa,
             effective_grant_kappa: value.effective_grant_kappa,
             grant_source: value.grant_source,
             authorization: value.authorization,
         })
+    }
+}
+
+impl From<ApplicationCompletion> for pb::ApplicationCompletion {
+    fn from(value: ApplicationCompletion) -> Self {
+        match value {
+            ApplicationCompletion::Unknown => Self {
+                kind: "unknown".to_owned(),
+                code: None,
+            },
+            ApplicationCompletion::Returned => Self {
+                kind: "returned".to_owned(),
+                code: None,
+            },
+            ApplicationCompletion::Exited { code } => Self {
+                kind: "exited".to_owned(),
+                code: Some(code),
+            },
+        }
+    }
+}
+
+impl TryFrom<pb::ApplicationCompletion> for ApplicationCompletion {
+    type Error = LiveError;
+
+    fn try_from(value: pb::ApplicationCompletion) -> Result<Self> {
+        match (value.kind.as_str(), value.code) {
+            ("" | "unknown", None) => Ok(Self::Unknown),
+            ("returned", None) => Ok(Self::Returned),
+            ("exited", Some(code)) => Ok(Self::Exited { code }),
+            (kind, code) => Err(LiveError::Protocol(format!(
+                "invalid application completion kind {kind:?} with code {code:?}"
+            ))),
+        }
     }
 }
 
@@ -1323,9 +1389,15 @@ mod tests {
             resident_bytes: 42,
             queued: 0,
             processed: 3,
+            requested_capabilities_kappa: "blake3:request".to_owned(),
+            effective_grant_kappa: "blake3:grant".to_owned(),
+            grant_source: "service_development_file".to_owned(),
+            authorization: "allowed".to_owned(),
         };
         let decoded = ResidentHolo::try_from(pb::ResidentHolo::from(resident)).expect("decode");
         assert_eq!(decoded.state, "running");
+        assert_eq!(decoded.authorization, "allowed");
+        assert_eq!(decoded.grant_source, "service_development_file");
 
         let legacy = ResidentHolo::try_from(pb::ResidentHolo {
             kappa: "blake3:legacy".to_owned(),
@@ -1335,9 +1407,14 @@ mod tests {
             queued: 0,
             processed: 0,
             state: String::new(),
+            requested_capabilities_kappa: String::new(),
+            effective_grant_kappa: String::new(),
+            grant_source: String::new(),
+            authorization: String::new(),
         })
         .expect("decode legacy resident");
         assert_eq!(legacy.state, "unknown");
+        assert!(legacy.authorization.is_empty());
     }
 
     #[test]
@@ -1347,6 +1424,7 @@ mod tests {
             outputs: vec![b"ok".to_vec()],
             elapsed_micros: 7,
             resident_bytes: 42,
+            completion: ApplicationCompletion::Returned,
             requested_capabilities_kappa: "blake3:request".to_owned(),
             effective_grant_kappa: "blake3:grant".to_owned(),
             grant_source: "local_baseline".to_owned(),
@@ -1357,6 +1435,7 @@ mod tests {
         assert_eq!(decoded.effective_grant_kappa, "blake3:grant");
         assert_eq!(decoded.grant_source, "local_baseline");
         assert_eq!(decoded.authorization, "allowed");
+        assert_eq!(decoded.completion, ApplicationCompletion::Returned);
 
         let legacy = HoloRunResult::try_from(pb::HoloRunResult {
             kappa: "blake3:legacy".to_owned(),
@@ -1367,9 +1446,25 @@ mod tests {
             effective_grant_kappa: String::new(),
             grant_source: String::new(),
             authorization: String::new(),
+            completion: None,
         })
         .expect("decode legacy result");
         assert!(legacy.authorization.is_empty());
         assert!(legacy.grant_source.is_empty());
+        assert_eq!(legacy.completion, ApplicationCompletion::Unknown);
+
+        let exited = ApplicationCompletion::try_from(pb::ApplicationCompletion {
+            kind: "exited".to_owned(),
+            code: Some(17),
+        })
+        .expect("explicit exit status");
+        assert_eq!(exited, ApplicationCompletion::Exited { code: 17 });
+
+        let malformed = ApplicationCompletion::try_from(pb::ApplicationCompletion {
+            kind: "returned".to_owned(),
+            code: Some(0),
+        })
+        .expect_err("returned completion cannot carry an exit code");
+        assert_eq!(malformed.code(), "LIVE_PROTOCOL_ERROR");
     }
 }

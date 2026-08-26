@@ -8,6 +8,7 @@ use crate::error::{LiveError, Result};
 use crate::holo_capability::EffectiveGrant;
 use hologram::space::LayerKind;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -80,9 +81,31 @@ pub struct LayerPrepareContext {
     pub target: ProviderTarget,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerCompletion {
+    Returned,
+    Exited { code: i32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerCompletionRole {
+    ExitBearing,
+    NonExitBearing,
+}
+
+pub const fn layer_completion_role(kind: LayerKind) -> LayerCompletionRole {
+    match kind {
+        LayerKind::WasmCodemodule | LayerKind::RootfsImage => LayerCompletionRole::ExitBearing,
+        LayerKind::TensorPlan | LayerKind::View | LayerKind::InferenceModel => {
+            LayerCompletionRole::NonExitBearing
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayerInvocation {
     pub outputs: Vec<Vec<u8>>,
+    pub completion: LayerCompletion,
     pub elapsed_micros: u64,
 }
 
@@ -181,8 +204,14 @@ impl ProviderRegistry {
 pub struct RunningApplication {
     identity: HoloIdentity,
     primary_layer: u32,
-    layers: Vec<Arc<dyn PreparedLayer>>,
+    layers: Vec<PreparedApplicationLayer>,
     state: AtomicU8,
+}
+
+struct PreparedApplicationLayer {
+    application_index: usize,
+    application_kappa: String,
+    layer: Arc<dyn PreparedLayer>,
 }
 
 impl RunningApplication {
@@ -195,7 +224,7 @@ impl RunningApplication {
     }
 
     pub fn status(&self) -> LayerRuntimeStatus {
-        self.layers.iter().map(|layer| layer.status()).fold(
+        self.layers.iter().map(|layer| layer.layer.status()).fold(
             LayerRuntimeStatus::default(),
             |mut total, layer| {
                 total.resident_bytes = total.resident_bytes.saturating_add(layer.resident_bytes);
@@ -217,14 +246,16 @@ impl RunningApplication {
         let layer = self
             .layers
             .iter()
-            .find(|layer| layer.position() == self.primary_layer)
+            .find(|layer| {
+                layer.application_index == 0 && layer.layer.position() == self.primary_layer
+            })
             .ok_or_else(|| {
                 LiveError::Conflict(format!(
                     "running application {} lost primary layer {}",
                     self.identity.application_kappa, self.primary_layer
                 ))
             })?;
-        layer.invoke(inputs).await
+        layer.layer.invoke(inputs).await
     }
 
     pub async fn invoke_then_stop(&self, inputs: Vec<Vec<u8>>) -> Result<LayerInvocation> {
@@ -303,74 +334,115 @@ pub async fn prepare_and_start_with_grant(
     registry: &ProviderRegistry,
     effective_grant: &EffectiveGrant,
 ) -> Result<RunningApplication> {
-    effective_grant.authorize(
-        &plan.identity.application_kappa,
-        &plan.requested_capabilities,
-    )?;
+    let admitted_grants = plan.admitted_grants(effective_grant)?;
+    prepare_and_start_with_admitted_grants(plan, registry, &admitted_grants).await
+}
+
+pub(crate) async fn prepare_and_start_with_admitted_grants(
+    plan: &ApplicationPlan,
+    registry: &ProviderRegistry,
+    admitted_grants: &HashMap<usize, EffectiveGrant>,
+) -> Result<RunningApplication> {
     let primary_layer = plan.primary_layer.ok_or_else(|| {
         LiveError::Capability(format!(
             "application {} has no primary exit-bearing layer",
             plan.identity.application_kappa
         ))
     })?;
-    let state = AtomicU8::new(LifecycleState::Preparing.value());
-    let mut prepared = Vec::with_capacity(plan.layers.len());
-    for layer in &plan.layers {
-        let provider = registry.select(layer.kind).ok_or_else(|| {
-            LiveError::Capability(format!(
-                "application {} layer {} has no {} provider for {}",
-                plan.identity.application_kappa,
-                layer.position,
-                registry.target.name(),
-                layer_kind_name(layer.kind)
+    let primary = plan
+        .layers
+        .iter()
+        .find(|layer| layer.position == primary_layer)
+        .ok_or_else(|| {
+            LiveError::InvalidHolo(format!(
+                "application {} primary layer {primary_layer} is missing",
+                plan.identity.application_kappa
             ))
         })?;
-        if layer.provider != provider.name() {
-            return Err(LiveError::Conflict(format!(
-                "application {} layer {} selected provider {}, but registry resolved {}",
-                plan.identity.application_kappa,
-                layer.position,
-                layer.provider,
-                provider.name()
-            )));
-        }
-        tracing::info!(
-            application_kappa = %plan.identity.application_kappa,
-            archive_kappa = %plan.identity.archive_kappa,
-            layer_position = layer.position,
-            provider = provider.name(),
-            lifecycle_phase = "prepare",
-            "preparing holo layer"
-        );
-        match provider
-            .prepare(LayerPrepareContext {
-                identity: plan.identity.clone(),
-                effective_grant: effective_grant.clone(),
-                layer: layer.clone(),
-                target: registry.target,
-            })
-            .await
-        {
-            Ok(instance) => prepared.push(instance),
-            Err(error) => {
-                state.store(LifecycleState::Failed.value(), Ordering::Release);
-                return Err(with_rollback(
-                    error,
-                    stop_reverse(&plan.identity, &prepared, "rollback").await,
-                ));
+    if layer_completion_role(primary.kind) == LayerCompletionRole::NonExitBearing {
+        return Err(LiveError::Capability(format!(
+            "application {} cannot use non-exit-bearing {} layer {primary_layer} as its primary",
+            plan.identity.application_kappa,
+            layer_kind_name(primary.kind)
+        )));
+    }
+    let state = AtomicU8::new(LifecycleState::Preparing.value());
+    let application_order = lifecycle_application_order(plan)?;
+    let layer_count = plan.layers.len()
+        + plan
+            .children
+            .iter()
+            .map(|child| child.layers.len())
+            .sum::<usize>();
+    let mut prepared = Vec::with_capacity(layer_count);
+    for application_index in application_order {
+        let (application_kappa, layers) = application_layers(plan, application_index)?;
+        let grant = admitted_grants.get(&application_index).ok_or_else(|| {
+            LiveError::Conflict(format!(
+                "runtime lost admitted grant for application {application_kappa}"
+            ))
+        })?;
+        for layer in layers {
+            let provider = registry.select(layer.kind).ok_or_else(|| {
+                LiveError::Capability(format!(
+                    "application {application_kappa} layer {} has no {} provider for {}",
+                    layer.position,
+                    registry.target.name(),
+                    layer_kind_name(layer.kind)
+                ))
+            })?;
+            if layer.provider != provider.name() {
+                return Err(LiveError::Conflict(format!(
+                    "application {application_kappa} layer {} selected provider {}, but registry resolved {}",
+                    layer.position,
+                    layer.provider,
+                    provider.name()
+                )));
+            }
+            tracing::info!(
+                application_kappa,
+                archive_kappa = %plan.identity.archive_kappa,
+                layer_position = layer.position,
+                provider = provider.name(),
+                lifecycle_phase = "prepare",
+                "preparing holo layer"
+            );
+            let mut identity = plan.identity.clone();
+            application_kappa.clone_into(&mut identity.application_kappa);
+            match provider
+                .prepare(LayerPrepareContext {
+                    identity,
+                    effective_grant: grant.clone(),
+                    layer: layer.clone(),
+                    target: registry.target,
+                })
+                .await
+            {
+                Ok(instance) => prepared.push(PreparedApplicationLayer {
+                    application_index,
+                    application_kappa: application_kappa.to_owned(),
+                    layer: instance,
+                }),
+                Err(error) => {
+                    state.store(LifecycleState::Failed.value(), Ordering::Release);
+                    return Err(with_rollback(
+                        error,
+                        stop_reverse(&plan.identity, &prepared, "rollback").await,
+                    ));
+                }
             }
         }
     }
 
     for layer in &prepared {
         tracing::info!(
-            application_kappa = %plan.identity.application_kappa,
+            application_kappa = %layer.application_kappa,
             archive_kappa = %plan.identity.archive_kappa,
-            layer_position = layer.position(),
+            layer_position = layer.layer.position(),
             lifecycle_phase = "start",
             "starting holo layer"
         );
-        if let Err(error) = layer.start().await {
+        if let Err(error) = layer.layer.start().await {
             state.store(LifecycleState::Failed.value(), Ordering::Release);
             return Err(with_rollback(
                 error,
@@ -387,22 +459,74 @@ pub async fn prepare_and_start_with_grant(
     })
 }
 
+fn application_layers(
+    plan: &ApplicationPlan,
+    application_index: usize,
+) -> Result<(&str, &[ResolvedLayer])> {
+    if application_index == 0 {
+        return Ok((&plan.identity.application_kappa, &plan.layers));
+    }
+    plan.children
+        .iter()
+        .find(|child| child.application_index == application_index)
+        .map(|child| (child.application_kappa.as_str(), child.layers.as_slice()))
+        .ok_or_else(|| {
+            LiveError::Conflict(format!(
+                "runtime lost planned child application index {application_index}"
+            ))
+        })
+}
+
+fn lifecycle_application_order(plan: &ApplicationPlan) -> Result<Vec<usize>> {
+    let mut children_by_parent: HashMap<usize, Vec<_>> = HashMap::new();
+    for child in &plan.children {
+        children_by_parent
+            .entry(child.parent_application_index)
+            .or_default()
+            .push(child);
+    }
+    for children in children_by_parent.values_mut() {
+        children.sort_by_key(|child| (child.position, child.application_index));
+    }
+
+    let mut order = Vec::with_capacity(plan.children.len() + 1);
+    let mut stack = vec![0usize];
+    while let Some(application_index) = stack.pop() {
+        order.push(application_index);
+        if let Some(children) = children_by_parent.get(&application_index) {
+            stack.extend(children.iter().rev().map(|child| child.application_index));
+        }
+    }
+    if order.len() != plan.children.len() + 1 {
+        return Err(LiveError::Conflict(format!(
+            "runtime lifecycle traversal reached {} of {} planned applications",
+            order.len(),
+            plan.children.len() + 1
+        )));
+    }
+    Ok(order)
+}
+
 async fn stop_reverse(
     identity: &HoloIdentity,
-    layers: &[Arc<dyn PreparedLayer>],
+    layers: &[PreparedApplicationLayer],
     phase: &'static str,
 ) -> Vec<String> {
     let mut failures = Vec::new();
     for layer in layers.iter().rev() {
         tracing::info!(
-            application_kappa = %identity.application_kappa,
+            application_kappa = %layer.application_kappa,
             archive_kappa = %identity.archive_kappa,
-            layer_position = layer.position(),
+            layer_position = layer.layer.position(),
             lifecycle_phase = phase,
             "stopping holo layer"
         );
-        if let Err(error) = layer.stop().await {
-            failures.push(format!("layer {}: {error}", layer.position()));
+        if let Err(error) = layer.layer.stop().await {
+            failures.push(format!(
+                "application {} layer {}: {error}",
+                layer.application_kappa,
+                layer.layer.position()
+            ));
         }
     }
     failures
@@ -493,6 +617,102 @@ mod tests {
         stopped: AtomicBool,
     }
 
+    struct NamedProvider {
+        events: Arc<Mutex<Vec<String>>>,
+        fail_prepare: Option<&'static str>,
+        fail_start: Option<&'static str>,
+    }
+
+    #[tonic::async_trait]
+    impl LayerProvider for NamedProvider {
+        fn kind(&self) -> LayerKind {
+            LayerKind::WasmCodemodule
+        }
+
+        fn name(&self) -> &'static str {
+            "synthetic-wasm"
+        }
+
+        fn availability(
+            &self,
+            _context: &ProviderContext<'_>,
+            _target: ProviderTarget,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn prepare(&self, context: LayerPrepareContext) -> Result<Arc<dyn PreparedLayer>> {
+            record(
+                &self.events,
+                format!(
+                    "prepare:{}:{}",
+                    context.layer.entry,
+                    context.effective_grant.source.name()
+                ),
+            );
+            if self.fail_prepare == Some(context.layer.entry.as_str()) {
+                return Err(LiveError::Conflict(format!(
+                    "prepare failed at {}",
+                    context.layer.entry
+                )));
+            }
+            let fail_start = self.fail_start == Some(context.layer.entry.as_str());
+            Ok(Arc::new(NamedLayer {
+                position: context.layer.position,
+                entry: context.layer.entry,
+                events: self.events.clone(),
+                fail_start,
+            }))
+        }
+    }
+
+    struct NamedLayer {
+        position: u32,
+        entry: String,
+        events: Arc<Mutex<Vec<String>>>,
+        fail_start: bool,
+    }
+
+    #[tonic::async_trait]
+    impl PreparedLayer for NamedLayer {
+        fn position(&self) -> u32 {
+            self.position
+        }
+
+        async fn start(&self) -> Result<()> {
+            record(&self.events, format!("start:{}", self.entry));
+            if self.fail_start {
+                Err(LiveError::Conflict(format!(
+                    "start failed at {}",
+                    self.entry
+                )))
+            } else {
+                Ok(())
+            }
+        }
+
+        async fn invoke(&self, inputs: Vec<Vec<u8>>) -> Result<LayerInvocation> {
+            record(&self.events, format!("invoke:{}", self.entry));
+            Ok(LayerInvocation {
+                outputs: inputs,
+                completion: LayerCompletion::Returned,
+                elapsed_micros: 1,
+            })
+        }
+
+        async fn stop(&self) -> Result<()> {
+            record(&self.events, format!("stop:{}", self.entry));
+            Ok(())
+        }
+
+        fn status(&self) -> LayerRuntimeStatus {
+            LayerRuntimeStatus {
+                resident_bytes: 10,
+                ..LayerRuntimeStatus::default()
+            }
+        }
+    }
+
     #[tonic::async_trait]
     impl PreparedLayer for SyntheticLayer {
         fn position(&self) -> u32 {
@@ -515,6 +735,7 @@ mod tests {
             record(&self.events, format!("invoke:{}", self.position));
             Ok(LayerInvocation {
                 outputs: inputs,
+                completion: LayerCompletion::Returned,
                 elapsed_micros: 1,
             })
         }
@@ -561,6 +782,26 @@ mod tests {
         .expect("registry")
     }
 
+    fn named_registry(events: Arc<Mutex<Vec<String>>>) -> ProviderRegistry {
+        fallible_named_registry(events, None, None)
+    }
+
+    fn fallible_named_registry(
+        events: Arc<Mutex<Vec<String>>>,
+        fail_prepare: Option<&'static str>,
+        fail_start: Option<&'static str>,
+    ) -> ProviderRegistry {
+        ProviderRegistry::new(
+            ProviderTarget::Direct,
+            vec![Arc::new(NamedProvider {
+                events,
+                fail_prepare,
+                fail_start,
+            })],
+        )
+        .expect("named registry")
+    }
+
     fn plan(registry: &ProviderRegistry) -> ApplicationPlan {
         plan_with_capabilities(registry, test_capabilities())
     }
@@ -587,6 +828,132 @@ mod tests {
             explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan report");
         registry.evaluate(&mut report);
         report.into_application_plan().expect("strict plan")
+    }
+
+    fn plan_with_child(
+        registry: &ProviderRegistry,
+        root_request: &[u8],
+        delegated: &[u8],
+        child_request: &[u8],
+    ) -> ApplicationPlan {
+        let root_layer = b"root wasm";
+        let child_layer = b"child wasm";
+        let child_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(child_request),
+            layers: vec![Layer::wasm(address_bytes(child_layer), "child")],
+            children: Vec::new(),
+        };
+        let child_manifest_bytes = child_manifest.canonicalize();
+        let child_kappa = address_bytes(&child_manifest_bytes);
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(root_request),
+            layers: vec![Layer::wasm(address_bytes(root_layer), "root")],
+            children: vec![(child_kappa, address_bytes(delegated))],
+        };
+        let mut blobs = std::collections::BTreeMap::new();
+        for bytes in [
+            root_request,
+            delegated,
+            child_request,
+            root_layer,
+            child_layer,
+            child_manifest_bytes.as_slice(),
+        ] {
+            blobs.insert(address_bytes(bytes).to_string(), bytes);
+        }
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        for (kappa, bytes) in blobs {
+            writer.add_content_blob(kappa.as_bytes(), bytes);
+        }
+        let bytes = writer.finish().expect("child archive");
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("child plan");
+        registry.evaluate(&mut report);
+        report.into_application_plan().expect("strict child plan")
+    }
+
+    fn plan_with_nested_siblings(registry: &ProviderRegistry) -> ApplicationPlan {
+        let capabilities = test_capabilities();
+        let capabilities_kappa = address_bytes(capabilities);
+        let root_layer = b"root layer";
+        let first_layer = b"first child layer";
+        let grandchild_layer = b"grandchild layer";
+        let second_layer = b"second child layer";
+        let grandchild = AppManifest {
+            primary: Some(0),
+            requires: capabilities_kappa,
+            layers: vec![Layer::wasm(address_bytes(grandchild_layer), "grandchild")],
+            children: Vec::new(),
+        };
+        let grandchild_bytes = grandchild.canonicalize();
+        let first = AppManifest {
+            primary: Some(0),
+            requires: capabilities_kappa,
+            layers: vec![Layer::wasm(address_bytes(first_layer), "first-child")],
+            children: vec![(address_bytes(&grandchild_bytes), capabilities_kappa)],
+        };
+        let first_bytes = first.canonicalize();
+        let second = AppManifest {
+            primary: Some(0),
+            requires: capabilities_kappa,
+            layers: vec![Layer::wasm(address_bytes(second_layer), "second-child")],
+            children: Vec::new(),
+        };
+        let second_bytes = second.canonicalize();
+        let root = AppManifest {
+            primary: Some(0),
+            requires: capabilities_kappa,
+            layers: vec![Layer::wasm(address_bytes(root_layer), "root")],
+            children: vec![
+                (address_bytes(&first_bytes), capabilities_kappa),
+                (address_bytes(&second_bytes), capabilities_kappa),
+            ],
+        };
+        let mut blobs = std::collections::BTreeMap::new();
+        for bytes in [
+            capabilities,
+            root_layer,
+            first_layer,
+            grandchild_layer,
+            second_layer,
+            first_bytes.as_slice(),
+            grandchild_bytes.as_slice(),
+            second_bytes.as_slice(),
+        ] {
+            blobs.insert(address_bytes(bytes).to_string(), bytes);
+        }
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(root.canonicalize());
+        for (kappa, bytes) in blobs {
+            writer.add_content_blob(kappa.as_bytes(), bytes);
+        }
+        let bytes = writer.finish().expect("nested archive");
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("nested plan");
+        registry.evaluate(&mut report);
+        report.into_application_plan().expect("strict nested plan")
+    }
+
+    fn network_capabilities() -> Vec<u8> {
+        crate::holo_capability::compile_source(
+            std::path::Path::new("network.json"),
+            br#"{"network_fetch":true}"#,
+        )
+        .expect("network capabilities")
+    }
+
+    fn network_grant() -> EffectiveGrant {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("grant.json");
+        std::fs::write(&path, br#"{"network_fetch":true}"#).expect("grant");
+        EffectiveGrant::from_development_file(
+            &path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("development grant")
     }
 
     #[tokio::test]
@@ -647,6 +1014,180 @@ mod tests {
 
         assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
         assert!(take(&events).is_empty(), "provider prepare must not run");
+    }
+
+    #[tokio::test]
+    async fn child_amplification_is_denied_before_provider_preparation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events.clone(), None, None, None);
+        let network = network_capabilities();
+        let plan = plan_with_child(
+            &registry,
+            test_capabilities(),
+            &network,
+            test_capabilities(),
+        );
+
+        let mut decisions = Vec::new();
+        let admission_error = plan
+            .admitted_grants_with(&EffectiveGrant::local_baseline(), |decision| {
+                decisions.push(decision);
+            })
+            .expect_err("empty parent grant cannot delegate network");
+        assert_eq!(admission_error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert_eq!(decisions.len(), 2);
+        assert_eq!(decisions[0].relation, "application_request");
+        assert_eq!(decisions[0].outcome, "allowed");
+        assert_eq!(decisions[1].relation, "child_delegation");
+        assert_eq!(decisions[1].outcome, "denied");
+
+        let error = prepare_and_start(&plan, &registry)
+            .await
+            .err()
+            .expect("empty parent grant cannot delegate network");
+
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("not admitted by parent grant"));
+        assert!(take(&events).is_empty(), "provider prepare must not run");
+    }
+
+    #[tokio::test]
+    async fn under_granted_child_request_is_denied_before_provider_preparation() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = registry(events.clone(), None, None, None);
+        let network = network_capabilities();
+        let plan = plan_with_child(
+            &registry,
+            test_capabilities(),
+            test_capabilities(),
+            &network,
+        );
+
+        let error = prepare_and_start_with_grant(&plan, &registry, &network_grant())
+            .await
+            .err()
+            .expect("empty delegation cannot admit child network request");
+
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error
+            .to_string()
+            .contains("not admitted by delegated grant"));
+        assert!(take(&events).is_empty(), "provider prepare must not run");
+    }
+
+    #[tokio::test]
+    async fn admitted_child_runs_under_attenuated_grant_and_root_remains_the_only_exit() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = named_registry(events.clone());
+        let network = network_capabilities();
+        let plan = plan_with_child(&registry, test_capabilities(), &network, &network);
+
+        let application = prepare_and_start_with_grant(&plan, &registry, &network_grant())
+            .await
+            .expect("admitted child starts");
+        assert_eq!(application.status().resident_bytes, 20);
+        application
+            .invoke(vec![b"hello".to_vec()])
+            .await
+            .expect("invoke root primary");
+        application.stop().await.expect("stop tree");
+
+        assert_eq!(
+            take(&events),
+            [
+                "prepare:root:direct_development_file",
+                "prepare:child:child_delegation",
+                "start:root",
+                "start:child",
+                "invoke:root",
+                "stop:child",
+                "stop:root",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_children_follow_depth_first_manifest_order_and_reverse_stop_order() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = named_registry(events.clone());
+        let application = prepare_and_start(&plan_with_nested_siblings(&registry), &registry)
+            .await
+            .expect("start nested tree");
+        assert_eq!(application.status().resident_bytes, 40);
+        application.stop().await.expect("stop nested tree");
+
+        assert_eq!(
+            take(&events),
+            [
+                "prepare:root:local_baseline",
+                "prepare:first-child:child_delegation",
+                "prepare:grandchild:child_delegation",
+                "prepare:second-child:child_delegation",
+                "start:root",
+                "start:first-child",
+                "start:grandchild",
+                "start:second-child",
+                "stop:second-child",
+                "stop:grandchild",
+                "stop:first-child",
+                "stop:root",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn child_prepare_failure_rolls_back_the_prepared_parent() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = fallible_named_registry(events.clone(), Some("child"), None);
+        let plan = plan_with_child(
+            &registry,
+            test_capabilities(),
+            test_capabilities(),
+            test_capabilities(),
+        );
+
+        let error = prepare_and_start(&plan, &registry)
+            .await
+            .err()
+            .expect("child prepare failure");
+        assert_eq!(error.code(), "LIVE_CONFLICT");
+        assert_eq!(
+            take(&events),
+            [
+                "prepare:root:local_baseline",
+                "prepare:child:child_delegation",
+                "stop:root",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn child_start_failure_rolls_back_the_complete_prepared_tree_in_reverse() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registry = fallible_named_registry(events.clone(), None, Some("child"));
+        let plan = plan_with_child(
+            &registry,
+            test_capabilities(),
+            test_capabilities(),
+            test_capabilities(),
+        );
+
+        let error = prepare_and_start(&plan, &registry)
+            .await
+            .err()
+            .expect("child start failure");
+        assert_eq!(error.code(), "LIVE_CONFLICT");
+        assert_eq!(
+            take(&events),
+            [
+                "prepare:root:local_baseline",
+                "prepare:child:child_delegation",
+                "start:root",
+                "start:child",
+                "stop:child",
+                "stop:root",
+            ]
+        );
     }
 
     #[tokio::test]
@@ -739,6 +1280,28 @@ mod tests {
                 "stop:0"
             ]
         );
+    }
+
+    #[test]
+    fn completion_roles_do_not_invent_exit_semantics_for_service_layers() {
+        assert_eq!(
+            layer_completion_role(LayerKind::WasmCodemodule),
+            LayerCompletionRole::ExitBearing
+        );
+        assert_eq!(
+            layer_completion_role(LayerKind::RootfsImage),
+            LayerCompletionRole::ExitBearing
+        );
+        for kind in [
+            LayerKind::TensorPlan,
+            LayerKind::View,
+            LayerKind::InferenceModel,
+        ] {
+            assert_eq!(
+                layer_completion_role(kind),
+                LayerCompletionRole::NonExitBearing
+            );
+        }
     }
 
     fn record(events: &Mutex<Vec<String>>, event: String) {

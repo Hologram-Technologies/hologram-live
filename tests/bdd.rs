@@ -55,6 +55,30 @@ fn wasm_manifest(world: &mut BddWorld) {
     world.temporary = Some(tempfile::tempdir().expect("create scenario directory"));
 }
 
+#[given("a Wasm application with a custom manifest entrypoint")]
+fn wasm_manifest_with_custom_entry(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create scenario directory");
+    let fixture =
+        std::fs::read_to_string(workspace_root().join("features/fixtures/wasm-app/transform.wat"))
+            .expect("read Wasm fixture");
+    std::fs::write(
+        temporary.path().join("transform.wat"),
+        fixture.replace("(export \"holo_run\")", "(export \"transform\")"),
+    )
+    .expect("write custom-entry fixture");
+    std::fs::write(
+        temporary.path().join("hologram.json"),
+        r#"{
+          "schema_version": 1,
+          "primary": 0,
+          "layers": [{"kind":"wasm","path":"transform.wat","entry":"transform"}]
+        }"#,
+    )
+    .expect("write manifest");
+    world.manifest = Some(temporary.path().join("hologram.json"));
+    world.temporary = Some(temporary);
+}
+
 #[given("a Wasm application that requests network fetch")]
 fn wasm_manifest_with_network_request(world: &mut BddWorld) {
     let temporary = tempfile::tempdir().expect("create scenario directory");
@@ -238,6 +262,7 @@ fn run_local_archive(world: &mut BddWorld, input: String) {
         .arg(world.output_path.as_ref().expect("compiled archive"))
         .arg("--input")
         .arg(input_path)
+        .env("HOME", home_path(world))
         .output()
         .expect("run local archive");
     assert!(
@@ -255,6 +280,7 @@ fn run_local_archive_without_grant(world: &mut BddWorld) {
             .arg("--json")
             .arg("run")
             .arg(world.output_path.as_ref().expect("compiled archive"))
+            .env("HOME", home_path(world))
             .output()
             .expect("run local archive"),
     );
@@ -286,6 +312,7 @@ fn run_local_archive_with_grant(world: &mut BddWorld, input: String) {
         .arg(world.development_grant.as_ref().expect("development grant"))
         .arg("--input")
         .arg(input_path)
+        .env("HOME", home_path(world))
         .output()
         .expect("run local archive with grant");
     assert!(
@@ -325,6 +352,82 @@ fn run_reports_authorization(world: &mut BddWorld, source: String) {
             .is_some_and(|value| value.starts_with("blake3:")),
         "run result must identify its effective grant"
     );
+}
+
+#[then("the run completion is returned without an exit code")]
+fn run_completion_is_returned(world: &mut BddWorld) {
+    let result = world.run_result.as_ref().expect("run result");
+    assert_eq!(result["completion"]["kind"], "returned");
+    assert!(result["completion"].get("code").is_none());
+}
+
+#[then(expr = "the capability audit records {string} from {string} for principal {string}")]
+fn capability_audit_records(
+    world: &mut BddWorld,
+    outcome: String,
+    source: String,
+    principal: String,
+) {
+    let rows = capability_audit_rows(world);
+    assert!(
+        rows.iter().any(|row| {
+            row["operation"] == "holo.capability.authorize"
+                && row["principal"] == principal
+                && row["outcome"] == outcome
+                && row["capability_decision"]["grant_source"] == source
+        }),
+        "missing {outcome}/{source}/{principal} capability audit row: {rows:?}"
+    );
+}
+
+#[then("the capability audit contains no source document or payload data")]
+fn capability_audit_is_non_secret(world: &mut BddWorld) {
+    let path = home_path(world).join(".local/state/hologram/audit.jsonl");
+    let encoded = std::fs::read_to_string(path).expect("read audit log");
+    for forbidden in [
+        "network_fetch",
+        "storage_roots",
+        "development-grant.json",
+        "authorized",
+        "resident grant",
+    ] {
+        assert!(!encoded.contains(forbidden), "audit leaked {forbidden}");
+    }
+}
+
+#[when(expr = "I run the archive over HTTP with input {string}")]
+fn run_archive_over_http(world: &mut BddWorld, input: String) {
+    let config_path = home_path(world).join(".config/hologram/live.toml");
+    let config: toml::Value =
+        toml::from_str(&std::fs::read_to_string(config_path).expect("read configuration"))
+            .expect("parse configuration");
+    let endpoint = config["client"]["local_endpoint"]
+        .as_str()
+        .expect("local endpoint");
+    let kappa = world.kappa.as_ref().expect("kappa");
+    let payload = serde_json::json!({"inputs": [input.into_bytes()]}).to_string();
+    let output = Command::new("curl")
+        .args([
+            "--fail-with-body",
+            "--silent",
+            "--show-error",
+            "--request",
+            "POST",
+            "--header",
+            "content-type: application/json",
+            "--data",
+            &payload,
+            &format!("{endpoint}/api/v1/holo/{kappa}/run"),
+        ])
+        .output()
+        .expect("run HTTP request");
+    assert!(
+        output.status.success(),
+        "HTTP holo run failed: {} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    world.run_result = Some(serde_json::from_slice(&output.stdout).expect("HTTP run result"));
 }
 
 #[then("the archive appears in the resident list")]
@@ -763,6 +866,15 @@ fn home_path(world: &BddWorld) -> PathBuf {
         .expect("home directory")
         .path()
         .to_path_buf()
+}
+
+fn capability_audit_rows(world: &BddWorld) -> Vec<serde_json::Value> {
+    let path = home_path(world).join(".local/state/hologram/audit.jsonl");
+    std::fs::read_to_string(path)
+        .expect("read audit log")
+        .lines()
+        .map(|row| serde_json::from_str(row).expect("audit JSON row"))
+        .collect()
 }
 
 fn conversation_output(world: &BddWorld) -> serde_json::Value {

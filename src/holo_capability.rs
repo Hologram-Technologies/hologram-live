@@ -107,11 +107,39 @@ impl RequestedCapabilities {
     }
 }
 
+/// Capability authority named by a parent-to-child application edge.
+///
+/// Archive bytes only become authority after the runtime proves this set is an
+/// attenuation of the parent's already trusted effective grant.
+#[derive(Debug, Clone)]
+pub struct DelegatedCapabilities {
+    pub kappa: String,
+    pub canonical: Arc<[u8]>,
+    pub capabilities: Arc<Capabilities>,
+}
+
+impl DelegatedCapabilities {
+    pub fn decode(kappa: &str, bytes: Arc<[u8]>) -> Result<Self> {
+        if hologram::space::address_bytes(&bytes) != kappa {
+            return Err(LiveError::InvalidHolo(format!(
+                "delegated CapabilitySet bytes do not match declared κ {kappa}"
+            )));
+        }
+        let capabilities = Arc::new(decode_canonical(&bytes)?);
+        Ok(Self {
+            kappa: kappa.to_owned(),
+            canonical: bytes,
+            capabilities,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GrantSource {
     LocalBaseline,
     DirectDevelopmentFile,
     ServiceDevelopmentFile,
+    ChildDelegation,
 }
 
 impl GrantSource {
@@ -120,6 +148,7 @@ impl GrantSource {
             Self::LocalBaseline => "local_baseline",
             Self::DirectDevelopmentFile => "direct_development_file",
             Self::ServiceDevelopmentFile => "service_development_file",
+            Self::ChildDelegation => "child_delegation",
         }
     }
 }
@@ -131,6 +160,68 @@ pub struct EffectiveGrant {
     pub canonical: Arc<[u8]>,
     pub capabilities: Arc<Capabilities>,
     pub source: GrantSource,
+}
+
+/// Non-secret evidence for one capability admission relation.
+///
+/// This deliberately contains only content identities and stable labels. It
+/// never carries capability source documents, decoded roots/channels, tokens,
+/// or application payloads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityDecision {
+    pub application_kappa: String,
+    pub parent_application_kappa: Option<String>,
+    pub requested_capabilities_kappa: String,
+    pub effective_grant_kappa: String,
+    pub grant_source: String,
+    pub relation: String,
+    pub outcome: String,
+}
+
+impl CapabilityDecision {
+    pub fn application_request(
+        application_kappa: &str,
+        parent_application_kappa: Option<&str>,
+        request: &RequestedCapabilities,
+        grant: &EffectiveGrant,
+        allowed: bool,
+    ) -> Self {
+        Self {
+            application_kappa: application_kappa.to_owned(),
+            parent_application_kappa: parent_application_kappa.map(str::to_owned),
+            requested_capabilities_kappa: request.kappa.clone(),
+            effective_grant_kappa: grant.kappa.clone(),
+            grant_source: grant.source.name().to_owned(),
+            relation: "application_request".to_owned(),
+            outcome: decision_outcome(allowed).to_owned(),
+        }
+    }
+
+    pub fn child_delegation(
+        parent_application_kappa: &str,
+        child_application_kappa: &str,
+        delegated: &DelegatedCapabilities,
+        parent_grant: &EffectiveGrant,
+        allowed: bool,
+    ) -> Self {
+        Self {
+            application_kappa: child_application_kappa.to_owned(),
+            parent_application_kappa: Some(parent_application_kappa.to_owned()),
+            requested_capabilities_kappa: delegated.kappa.clone(),
+            effective_grant_kappa: parent_grant.kappa.clone(),
+            grant_source: parent_grant.source.name().to_owned(),
+            relation: "child_delegation".to_owned(),
+            outcome: decision_outcome(allowed).to_owned(),
+        }
+    }
+}
+
+const fn decision_outcome(allowed: bool) -> &'static str {
+    if allowed {
+        "allowed"
+    } else {
+        "denied"
+    }
 }
 
 impl EffectiveGrant {
@@ -145,13 +236,25 @@ impl EffectiveGrant {
     }
 
     pub fn from_development_file(path: &Path, source: GrantSource) -> Result<Self> {
-        if source == GrantSource::LocalBaseline {
+        if matches!(
+            source,
+            GrantSource::LocalBaseline | GrantSource::ChildDelegation
+        ) {
             return Err(LiveError::Config(
                 "a development grant file requires a development grant source".to_owned(),
             ));
         }
         let bytes = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
         Self::from_canonical(compile_source(path, &bytes)?, source)
+    }
+
+    pub fn from_delegation(delegated: &DelegatedCapabilities) -> Self {
+        Self {
+            kappa: delegated.kappa.clone(),
+            canonical: delegated.canonical.clone(),
+            capabilities: delegated.capabilities.clone(),
+            source: GrantSource::ChildDelegation,
+        }
     }
 
     pub fn authorize(
@@ -197,6 +300,62 @@ impl EffectiveGrant {
             source,
         })
     }
+}
+
+pub fn authorize_child_delegation(
+    parent_application_kappa: &str,
+    parent_grant_kappa: &str,
+    parent_grant: &Capabilities,
+    child_application_kappa: &str,
+    delegated: &DelegatedCapabilities,
+    request: &RequestedCapabilities,
+) -> Result<()> {
+    if !parent_grant.admits(&delegated.capabilities) {
+        tracing::warn!(
+            parent_application_kappa,
+            child_application_kappa,
+            parent_grant_kappa,
+            delegated_capabilities_kappa = %delegated.kappa,
+            capability_decision = "deny",
+            capability_relation = "delegation",
+            "denied child capability amplification"
+        );
+        return Err(LiveError::Authorization(format!(
+            "application {parent_application_kappa} delegates capabilities {} ({}) to child {child_application_kappa}, which is not admitted by parent grant {parent_grant_kappa} ({})",
+            delegated.kappa,
+            summary(&delegated.capabilities),
+            summary(parent_grant)
+        )));
+    }
+    if !delegated.capabilities.admits(&request.capabilities) {
+        tracing::warn!(
+            parent_application_kappa,
+            child_application_kappa,
+            delegated_capabilities_kappa = %delegated.kappa,
+            requested_capabilities_kappa = %request.kappa,
+            capability_decision = "deny",
+            capability_relation = "child_request",
+            "denied under-granted child capability request"
+        );
+        return Err(LiveError::Authorization(format!(
+            "child application {child_application_kappa} requests capabilities {} ({}) not admitted by delegated grant {} ({}) from parent {parent_application_kappa}",
+            request.kappa,
+            summary(&request.capabilities),
+            delegated.kappa,
+            summary(&delegated.capabilities)
+        )));
+    }
+    tracing::info!(
+        parent_application_kappa,
+        child_application_kappa,
+        parent_grant_kappa,
+        delegated_capabilities_kappa = %delegated.kappa,
+        requested_capabilities_kappa = %request.kappa,
+        capability_decision = "allow",
+        capability_relation = "child_attenuation",
+        "authorized child capability attenuation"
+    );
+    Ok(())
 }
 
 fn summary(capabilities: &Capabilities) -> String {

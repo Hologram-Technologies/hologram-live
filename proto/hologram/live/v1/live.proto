@@ -131,6 +131,11 @@ message HoloChild {
   uint32 position = 1;
   string application_kappa = 2;
   string capabilities_kappa = 3;
+  optional string parent_application_kappa = 4;
+  optional uint32 depth = 5;
+  optional string requires_kappa = 6;
+  optional string application_resolution_source = 7;
+  optional string capabilities_resolution_source = 8;
 }
 message HoloBlob { string kappa = 1; uint64 byte_length = 2; }
 message HoloDirectory {
@@ -180,6 +185,8 @@ message HoloPlanLimits {
   uint64 max_layers = 1;
   uint64 max_objects = 2;
   uint64 max_resolved_bytes = 3;
+  uint64 max_applications = 4;
+  uint64 max_depth = 5;
 }
 message HoloPlanBlocker {
   string kind = 1;
@@ -201,6 +208,8 @@ message HoloPlan {
   HoloPlanLimits limits = 12;
   bool runnable = 13;
   repeated HoloPlanBlocker blockers = 14;
+  uint64 application_count = 15;
+  uint64 max_depth = 16;
 }
 message ResidentHolo {
   string kappa = 1;
@@ -210,6 +219,10 @@ message ResidentHolo {
   uint64 queued = 5;
   uint64 processed = 6;
   string state = 7;
+  string requested_capabilities_kappa = 8;
+  string effective_grant_kappa = 9;
+  string grant_source = 10;
+  string authorization = 11;
 }
 message HoloRunResult {
   string kappa = 1;
@@ -220,6 +233,11 @@ message HoloRunResult {
   string effective_grant_kappa = 6;
   string grant_source = 7;
   string authorization = 8;
+  ApplicationCompletion completion = 9;
+}
+message ApplicationCompletion {
+  string kind = 1;
+  optional sint32 code = 2;
 }
 
 message ConversationMessage { string role = 1; string content = 2; uint64 created_at_millis = 3; }

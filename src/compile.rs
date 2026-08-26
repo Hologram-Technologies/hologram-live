@@ -3,14 +3,15 @@ use crate::error::{LiveError, Result};
 use crate::holo_capability;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
+use crate::holo_wasm::{validate_entry_name, CORE_WASM_V1_DEFAULT_ENTRY};
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
-use hologram::space::{address_bytes, AppManifest, Layer, Realization};
+use hologram::space::{address_bytes, AppManifest, KappaLabel71, Layer, Realization};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 2;
+const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 3;
 
 /// Source manifest accepted by `hologram compile`.
 ///
@@ -27,6 +28,21 @@ pub struct CompileManifest {
     #[serde(default)]
     pub requires: Option<PathBuf>,
     pub layers: Vec<CompileLayer>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<CompileChild>,
+}
+
+/// One child application composed by its canonical manifest identity.
+///
+/// The source points at a self-contained child archive so a fat parent can
+/// carry the child's verified manifest and content closure. `capabilities` is
+/// a source-schema capability document compiled into the delegated set named
+/// by the parent manifest edge.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CompileChild {
+    pub application: PathBuf,
+    pub capabilities: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,6 +82,7 @@ pub enum CompileSource {
 pub struct CompiledHolo {
     pub bytes: Vec<u8>,
     pub layer_count: usize,
+    pub child_count: usize,
     pub packaging: HoloPackaging,
     pub identity: HoloIdentity,
     pub capabilities_kappa: String,
@@ -110,6 +127,9 @@ pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
             }
         }
     }
+    for child in &specification.children {
+        let _ = compile_child(root, child)?;
+    }
     Ok(CheckedManifest {
         specification,
         capabilities_kappa: address_bytes(&capabilities).to_string(),
@@ -135,17 +155,27 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
         layers.push(build_layer(source_layer, kappa)?);
     }
 
+    let mut children = Vec::with_capacity(specification.children.len());
+    for source_child in &specification.children {
+        let child = compile_child(root, source_child)?;
+        for (kappa, content) in child.blobs {
+            blobs.insert(kappa, content);
+        }
+        children.push((child.application, child.capabilities));
+    }
+
     let manifest = AppManifest {
         primary: specification.primary,
         requires,
         layers,
-        children: Vec::new(),
+        children,
     };
     manifest.validate().map_err(|error| {
         LiveError::InvalidHolo(format!("invalid application manifest: {error:?}"))
     })?;
 
     let layer_count = manifest.layers.len();
+    let child_count = manifest.children.len();
     let manifest_bytes = manifest.canonicalize();
     let application_kappa = address_bytes(&manifest_bytes).to_string();
     let embedded = match packaging {
@@ -178,6 +208,7 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
     Ok(CompiledHolo {
         bytes,
         layer_count,
+        child_count,
         packaging,
         identity,
         capabilities_kappa: requires.to_string(),
@@ -194,14 +225,16 @@ pub fn parse_compile_manifest(path: &Path, source: &[u8]) -> Result<CompileManif
 }
 
 pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> {
-    if !matches!(
-        specification.schema_version,
-        1 | CURRENT_MANIFEST_SCHEMA_VERSION
-    ) {
+    if !(1..=CURRENT_MANIFEST_SCHEMA_VERSION).contains(&specification.schema_version) {
         return Err(LiveError::Config(format!(
-            "unsupported compile manifest schema {}; expected 1 or {CURRENT_MANIFEST_SCHEMA_VERSION}",
+            "unsupported compile manifest schema {}; expected 1, 2, or {CURRENT_MANIFEST_SCHEMA_VERSION}",
             specification.schema_version
         )));
+    }
+    if !specification.children.is_empty() && specification.schema_version < 3 {
+        return Err(LiveError::Config(
+            "child applications require schema_version 3".to_owned(),
+        ));
     }
     let mut layers = Vec::with_capacity(specification.layers.len());
     for source_layer in &specification.layers {
@@ -212,11 +245,124 @@ pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> 
         primary: specification.primary,
         requires: address_bytes(&[]),
         layers,
-        children: Vec::new(),
+        children: specification
+            .children
+            .iter()
+            .map(|child| {
+                validate_child_source(child)?;
+                Ok((address_bytes(&[]), address_bytes(&[])))
+            })
+            .collect::<Result<Vec<_>>>()?,
     };
     manifest
         .validate()
         .map_err(|error| LiveError::Config(format!("invalid application manifest: {error:?}")))?;
+    Ok(())
+}
+
+struct CompiledChild {
+    application: KappaLabel71,
+    capabilities: KappaLabel71,
+    blobs: BTreeMap<Vec<u8>, Vec<u8>>,
+}
+
+fn compile_child(root: &Path, child: &CompileChild) -> Result<CompiledChild> {
+    validate_child_source(child)?;
+    let archive_path = root.join(&child.application);
+    let archive_bytes =
+        std::fs::read(&archive_path).map_err(|error| LiveError::io(&archive_path, error))?;
+    let loader = HoloLoader::from_bytes(&archive_bytes).map_err(|error| {
+        LiveError::InvalidHolo(format!(
+            "read child archive {}: {error}",
+            archive_path.display()
+        ))
+    })?;
+    let plan = loader.into_plan().map_err(|error| {
+        LiveError::InvalidHolo(format!(
+            "read child archive {}: {error}",
+            archive_path.display()
+        ))
+    })?;
+    let manifest_bytes = plan
+        .app_manifest()
+        .ok_or_else(|| {
+            LiveError::InvalidHolo(format!(
+                "child archive {} has no application manifest",
+                archive_path.display()
+            ))
+        })?
+        .to_vec();
+    let manifest = AppManifest::decode(&manifest_bytes).map_err(|error| {
+        LiveError::InvalidHolo(format!(
+            "decode child application manifest {}: {error:?}",
+            archive_path.display()
+        ))
+    })?;
+    manifest.validate().map_err(|error| {
+        LiveError::InvalidHolo(format!(
+            "invalid child application manifest {}: {error:?}",
+            archive_path.display()
+        ))
+    })?;
+    let canonical = manifest.canonicalize();
+    if canonical != manifest_bytes {
+        return Err(LiveError::InvalidHolo(format!(
+            "child archive {} contains a non-canonical application manifest",
+            archive_path.display()
+        )));
+    }
+
+    let application = address_bytes(&canonical);
+    let mut blobs = BTreeMap::new();
+    blobs.insert(application.as_bytes().to_vec(), canonical.clone());
+    for (label, content) in plan
+        .content_blobs()
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?
+    {
+        let actual = address_bytes(content);
+        if actual.as_bytes() != label {
+            return Err(LiveError::InvalidHolo(format!(
+                "child archive {} contains a blob whose label does not match its bytes; expected {actual}",
+                archive_path.display()
+            )));
+        }
+        blobs.insert(label.to_vec(), content.to_vec());
+    }
+    for reference in <AppManifest as Realization>::references(&canonical).map_err(|error| {
+        LiveError::InvalidHolo(format!(
+            "read child application references {}: {error:?}",
+            archive_path.display()
+        ))
+    })? {
+        if !blobs.contains_key(reference.as_bytes()) {
+            return Err(LiveError::Config(format!(
+                "child archive {} is not self-contained; missing referenced object {reference}",
+                archive_path.display()
+            )));
+        }
+    }
+
+    let capabilities_bytes = compile_capabilities(root, Some(&child.capabilities))?;
+    let capabilities = address_bytes(&capabilities_bytes);
+    blobs.insert(capabilities.as_bytes().to_vec(), capabilities_bytes);
+    Ok(CompiledChild {
+        application,
+        capabilities,
+        blobs,
+    })
+}
+
+fn validate_child_source(child: &CompileChild) -> Result<()> {
+    if child.application.as_os_str().is_empty() {
+        return Err(LiveError::Config(
+            "child application archive path cannot be empty".to_owned(),
+        ));
+    }
+    if child.capabilities.as_os_str().is_empty() {
+        return Err(LiveError::Config(
+            "child delegated capability path cannot be empty".to_owned(),
+        ));
+    }
     Ok(())
 }
 
@@ -226,10 +372,11 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
             reject_aux(source, "engine", source.engine.as_deref())?;
-            Ok(Layer::wasm(
-                kappa,
-                effective_entry(source).unwrap_or("_start"),
-            ))
+            let entry = effective_entry(source).unwrap_or(CORE_WASM_V1_DEFAULT_ENTRY);
+            validate_entry_name(entry).map_err(|reason| {
+                layer_config_error(source, &format!("invalid entry: {reason}"))
+            })?;
+            Ok(Layer::wasm(kappa, entry))
         }
         CompileLayerKind::Tensor => {
             reject_aux(source, "arch", source.arch.as_deref())?;
@@ -399,8 +546,31 @@ const fn default_schema_version() -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application_plan::{explain_application, PlanLimits};
     use crate::holo::inspect_bytes;
     use crate::holo_capability;
+
+    fn write_child_archive(directory: &Path, include_blobs: bool) -> (PathBuf, KappaLabel71) {
+        let capabilities = holo_capability::empty_canonical();
+        let wasm = b"child wasm";
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(&capabilities),
+            layers: vec![Layer::wasm(address_bytes(wasm), "holo_run")],
+            children: Vec::new(),
+        };
+        let canonical = manifest.canonicalize();
+        let application = address_bytes(&canonical);
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(canonical);
+        if include_blobs {
+            writer.add_content_blob(address_bytes(&capabilities).as_bytes(), capabilities);
+            writer.add_content_blob(address_bytes(wasm).as_bytes(), wasm);
+        }
+        let path = directory.join("worker.holo");
+        std::fs::write(&path, writer.finish().expect("child archive")).expect("write child");
+        (path, application)
+    }
 
     #[test]
     fn compiles_a_self_contained_view_application() {
@@ -635,6 +805,103 @@ mod tests {
     }
 
     #[test]
+    fn schema_three_embeds_a_verified_child_archive_and_delegated_capabilities() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let (_, child_application) = write_child_archive(directory.path(), true);
+        std::fs::write(directory.path().join("parent.wasm"), b"parent wasm").expect("parent");
+        std::fs::write(
+            directory.path().join("worker-capabilities.json"),
+            r#"{"schema_version":1,"network_fetch":true}"#,
+        )
+        .expect("delegated capabilities");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 3,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"parent.wasm","entry":"holo_run"}],
+                "children": [{
+                    "application": "worker.holo",
+                    "capabilities": "worker-capabilities.json"
+                }]
+            }"#,
+        )
+        .expect("manifest");
+
+        let checked = check_manifest(&manifest_path).expect("check child source");
+        assert_eq!(checked.specification.children.len(), 1);
+        let fat = compile_manifest_with(&manifest_path, HoloPackaging::Fat).expect("fat");
+        let thin = compile_manifest_with(&manifest_path, HoloPackaging::Thin).expect("thin");
+        assert_eq!(fat.child_count, 1);
+        assert_eq!(
+            fat.identity.application_kappa,
+            thin.identity.application_kappa
+        );
+
+        let inspection = inspect_bytes("parent", "parent.holo", &fat.bytes).expect("inspect");
+        let application_directory = inspection.directory.expect("directory");
+        assert_eq!(application_directory.children.len(), 1);
+        assert_eq!(
+            application_directory.children[0].application_kappa,
+            child_application.to_string()
+        );
+        assert_eq!(application_directory.blobs.len(), 5);
+        assert!(application_directory
+            .blobs
+            .iter()
+            .any(|blob| blob.kappa == child_application.to_string()));
+        let closure = explain_application(&fat.bytes, PlanLimits::default(), |_| Ok(None))
+            .expect("resolve compiled child closure");
+        assert_eq!(closure.application_count, 2);
+        assert_eq!(closure.max_depth, 1);
+        assert!(closure.blockers.is_empty());
+
+        let thin_plan = HoloLoader::from_bytes(&thin.bytes)
+            .expect("thin archive")
+            .into_plan()
+            .expect("thin plan");
+        assert!(thin_plan.content_blobs().expect("thin blobs").is_empty());
+    }
+
+    #[test]
+    fn child_sources_require_schema_three_and_a_self_contained_archive() {
+        let schema_two: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 2,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"parent.wasm"}],
+                "children": [{"application":"worker.holo","capabilities":"caps.json"}]
+            }"#,
+        )
+        .expect("parse schema two");
+        let error = validate_compile_manifest(&schema_two).expect_err("schema mismatch");
+        assert!(error.to_string().contains("schema_version 3"), "{error}");
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        write_child_archive(directory.path(), false);
+        std::fs::write(directory.path().join("parent.wasm"), b"parent wasm").expect("parent");
+        std::fs::write(
+            directory.path().join("caps.json"),
+            r#"{"schema_version":1}"#,
+        )
+        .expect("capabilities");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 3,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"parent.wasm"}],
+                "children": [{"application":"worker.holo","capabilities":"caps.json"}]
+            }"#,
+        )
+        .expect("manifest");
+        let error = check_manifest(&manifest_path).expect_err("thin child must fail");
+        assert!(error.to_string().contains("not self-contained"), "{error}");
+    }
+
+    #[test]
     fn packages_a_precompiled_inference_bundle_as_a_v4_model_layer() {
         let directory = tempfile::tempdir().expect("tempdir");
         std::fs::write(
@@ -666,6 +933,40 @@ mod tests {
         assert_eq!(directory.layers[0].entry, "ai.default");
         assert_eq!(directory.layers[0].engine.as_deref(), Some("uor-r4"));
         assert_eq!(directory.blobs.len(), 2);
+    }
+
+    #[test]
+    fn wasm_layers_default_to_the_core_v1_entry_and_reject_empty_names() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"app.wasm"}]
+            }"#,
+        )
+        .expect("manifest");
+        let compiled = compile_manifest(&manifest_path).expect("compile default entry");
+        let inspection = inspect_bytes("wasm", "app.holo", &compiled.bytes).expect("inspect");
+        assert_eq!(
+            inspection.directory.expect("directory").layers[0].entry,
+            CORE_WASM_V1_DEFAULT_ENTRY
+        );
+
+        let empty: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 1,
+                "primary": 0,
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":""}]
+            }"#,
+        )
+        .expect("parse empty entry");
+        let error = validate_compile_manifest(&empty).expect_err("empty entry");
+        assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
+        assert!(error.to_string().contains("invalid entry"), "{error}");
     }
 
     #[test]

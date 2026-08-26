@@ -73,7 +73,7 @@ import { sitePath } from '../../lib/site';
   <div class="table-wrap"><table>
     <thead><tr><th>Source kind</th><th>Manifest kind</th><th>Descriptor</th><th>Hologram Live today</th></tr></thead>
     <tbody>
-      <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and entrypoint; portable.</td><td>Executes in-process through the ordered provider lifecycle; the primary may be at any layer position.</td></tr>
+      <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and callable export; portable.</td><td>Executes in-process through the ordered provider lifecycle; the primary may be at any layer position.</td></tr>
       <tr><td><code>tensor</code></td><td><code>TensorPlan</code></td><td>Content κ and session entrypoint; no app exit code.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
       <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Directly executes experimental Python OCI bundles; other providers remain explicit.</td></tr>
       <tr><td><code>view</code></td><td><code>View</code></td><td>Content κ and target surface; no app exit code.</td><td>Packages and inspects; the desktop does not attach it yet.</td></tr>
@@ -81,6 +81,14 @@ import { sitePath } from '../../lib/site';
     </tbody>
   </table></div>
   <p>Manifest order is initialization order. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>; a model-only archive uses <code>primary = null</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
+
+  <h2>Core-Wasm guest contract v1</h2>
+  <p>A Wasm layer's canonical <code>entry</code> is authoritative. Under <code>core-wasm-v1</code>, the resolved module exports <code>memory</code>, <code>holo_alloc(len: i32) -&gt; i32</code>, and the declared entry with signature <code>(ptr: i32, len: i32) -&gt; i64</code>. The packed result is <code>out_ptr &lt;&lt; 32 | out_len</code>. <code>holo_run</code> is the source compiler and generator default, but direct and resident providers resolve whatever valid export the manifest declares and reject a missing or wrongly typed entry during preparation.</p>
+  <p>V1 imports no WASI or Hologram host functions, creates a fresh instance for every input, and returns exactly one byte output per input. It has no numeric process exit code: returning bytes is successful completion, while a trap is a typed protocol error. A future component/WIT ABI will require explicit version negotiation and capability-gated host imports; the callable entry string will not be overloaded as a version marker.</p>
+
+  <h2>Completion and exit</h2>
+  <p>A run result carries output bytes and typed completion independently. <code>returned</code> means a callable such as core-Wasm v1 returned normally without a numeric process status. <code>exited</code> carries a code only when the provider observed a real process exit. <code>unknown</code> is a legacy decode value and is never emitted by a new provider. Traps, nonzero process exits, protocol violations, and cleanup failures are operation errors, not successful completion values.</p>
+  <p>Only the root primary supplies application completion. Child primaries and non-primary layers are lifecycle-managed dependencies. Wasm and rootfs may be exit-bearing; View, Tensor, and InferenceModel layers are non-exit-bearing and cannot become the runtime primary. Direct execution publishes completion only after reverse-order cleanup succeeds. Resident completion ends the current call but leaves the application loaded.</p>
 
   <h3>Capability requests</h3>
   <p>The <code>requires</code> operand points to an upstream canonical <code>CapabilitySet</code>, not to JSON. Authors may declare the request in a versioned <code>capabilities.json</code>; the compiler validates it and converts it to canonical realization bytes before calculating the κ stored in <code>AppManifest.requires</code>.</p>
@@ -97,7 +105,7 @@ import { sitePath } from '../../lib/site';
   "priority_weight": 0
 &#125;</code></pre>
   <p>κ arrays must be strictly sorted, contain no duplicates, and use canonical <code>blake3:&lt;64 lowercase hex&gt;</code> labels. Unknown fields and schema versions fail during both <code>compile --check</code> and <code>compile</code>, with the source path and invalid field/index in the diagnostic. Omitting <code>requires</code> produces the same canonical empty set as the document above. The upstream budget convention uses <code>0</code> for unbounded; set a nonzero budget to request a finite ceiling.</p>
-  <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Live decodes and admits the request against a trusted effective grant before provider preparation. Attenuated child authority remains the next M2 slice.</div>
+  <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Live decodes and admits the root request against a trusted effective grant, then proves every delegated child grant attenuates its parent's admitted grant and admits that child's request. Any failure occurs before provider preparation.</div>
   <p>The default local grant contains no storage roots, channels, or network flags. A broader request fails with <code>LIVE_AUTHORIZATION_DENIED</code> before a provider prepares. Direct local demos may opt in with <code>hologram run application.holo --development-grant development-grant.json</code>. Resident applications use only <code>holo.development_grant</code> from trusted service configuration; callers cannot attach self-asserted grants to a remote request.</p>
   <pre><code>hologram --json run application.holo \
   --development-grant development-grant.json |
@@ -146,25 +154,28 @@ hologram --json holo inspect application.holo |
   <p>Live rejects a bad footer, truncated or out-of-bounds payloads when accessed, an invalid manifest, duplicate blob labels, a blob whose κ does not match its bytes, duplicate application directories, unknown directory schema versions, and a directory that disagrees with the manifest.</p>
 
   <h2>Explain an execution plan</h2>
-  <p><code>holo plan</code> resolves and verifies the complete non-child application closure without starting a provider. Give it a local path for a service-free direct plan, or an imported archive κ for a resident plan that may resolve thin payloads from the local content cache.</p>
+  <p><code>holo plan</code> resolves and verifies the complete root and child application closure without starting a provider. Give it a local path for a service-free direct plan, or an imported archive κ for a resident plan that may resolve thin payloads from the local content cache.</p>
   <pre><code>hologram --json holo plan ./application.holo |
   jq '&#123;application_kappa, packaging, runnable, layers, blockers&#125;'
 
 hologram --json holo plan blake3:… |
-  jq '&#123;execution_target, resolved_object_count, resolved_bytes, runnable&#125;'</code></pre>
-  <p>The report is deliberately payload-free. It contains the archive and application identities, <code>fat</code>/<code>thin</code>/<code>hybrid</code> packaging, capability κ, ordered layer descriptors, <code>embedded</code> or <code>local_store</code> resolution sources, provider status, child references, and planning limits. Unsupported View, Tensor, rootfs, or inference-model execution still returns a successful explanation with <code>runnable: false</code>; each blocker has a stable <code>kind</code>, typed <code>error_code</code>, and human message. Invalid files and missing catalog IDs remain command errors.</p>
+  jq '&#123;execution_target, application_count, max_depth, resolved_object_count, resolved_bytes, runnable&#125;'</code></pre>
+  <p>The report is deliberately payload-free. It contains the archive and application identities, <code>fat</code>/<code>thin</code>/<code>hybrid</code> packaging, root capability κ, ordered root-layer descriptors, <code>embedded</code> or <code>local_store</code> resolution sources, provider status, recursive application count and depth, and planning limits. Each child row identifies its parent and depth, application κ, delegated <code>capabilities_kappa</code>, requested <code>requires_kappa</code>, and both resolution sources. Unsupported providers return a successful explanation with <code>runnable: false</code>; each blocker has a stable <code>kind</code>, typed <code>error_code</code>, and human message. A fully resolved and provider-supported child tree is runnable. Invalid files and missing catalog IDs remain command errors.</p>
 
   <h2>Fat and thin packaging</h2>
   <div class="doc-grid">
     <article class="doc-card"><h3>Fat</h3><p>The manifest and referenced blobs travel together. It is self-contained and suited to distribution, air-gapped transfer, and first install.</p></article>
     <article class="doc-card"><h3>Thin</h3><p>The manifest travels without payload blobs. The runtime resolves the same κ references from a content store or sync source.</p></article>
   </div>
-  <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives by default and <code>--thin</code> emits the same canonical manifest without content blobs. Importing a fat archive caches its verified payloads by κ, so catalog-backed resident execution can later resolve a thin archive. Before direct or resident execution starts a provider, Live resolves and re-hashes the required capability object and every non-child layer, deduplicates equal κ references, and applies explicit layer, object, and byte limits. A missing secondary layer therefore blocks primary execution. Direct file execution requires a self-contained fat archive; child references remain blockers until capability attenuation lands.</div>
-  <p>Blocker-free applications use a closed provider registry keyed by the canonical layer kind. Providers are prepared and started in manifest order, while unload and failure rollback stop them in reverse order. The original typed failure remains primary if cleanup also fails. Wasmtime and the experimental Python OCI engine stay behind async native interfaces, so their private handles do not enter the plan or transport schema. Resident records expose lifecycle <code>state</code>, aggregate resident bytes, queue depth, and processed calls; repeated load and unload are safe and idempotent.</p>
+  <div class="note"><strong>Current Live behavior</strong><code>hologram compile</code> emits fat archives by default and <code>--thin</code> emits the same canonical manifest without content blobs. Importing a fat archive caches its verified payloads by κ, so catalog-backed resident execution can later resolve a thin archive. Before direct or resident execution starts a provider, Live iteratively resolves and re-hashes root and child manifests, requested and delegated capabilities, and every layer. Equal κ objects are deduplicated, while application depth/count and aggregate layer/object/byte limits cover the complete tree. It then admits the root and each parent → delegation → child-request chain and writes each allow/deny decision through the awaited JSONL audit boundary. Missing content, amplification, and under-granted requests therefore block root execution before provider preparation. Direct file execution requires a self-contained fat archive. An admitted tree starts as one transaction and shares one resident lifetime.</div>
+  <p>Blocker-free applications use a closed provider registry keyed by the canonical layer kind. Providers are prepared and started depth-first in manifest order, with every child receiving only its admitted delegated grant. Unload and failure rollback stop the exact reverse order. The root primary is the only automatic invocation target; child primaries remain managed dependencies. The original typed failure remains primary if cleanup also fails. Wasmtime and the experimental Python OCI engine stay behind async native interfaces, so their private handles do not enter the plan or transport schema. Resident records expose lifecycle <code>state</code>, aggregate root-and-child resident bytes, queue depth, processed calls, and the request/grant κ, trusted source, and authorization outcome; repeated load and unload are safe and idempotent.</p>
+
+  <h2>Capability audit records</h2>
+  <p>Direct CLI and service admission append typed rows to <code>audit.jsonl</code> under the configured state directory before provider preparation. A row names the real principal, <code>application_request</code> or <code>child_delegation</code> relation, application and optional parent application κ, requested or delegated capability κ, effective-grant κ, trusted grant source, and <code>allowed</code> or <code>denied</code> outcome. It never copies source documents, storage roots, channels, tokens, headers, or application payload bytes.</p>
 
   <h2>Build, inspect, and run</h2>
-  <p>Layer paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
-  <div class="note"><strong>Two source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Both produce the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
+  <p>Layer, capability, and child paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
+  <div class="note"><strong>Three source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Schema v3 adds ordered child application archives and delegated capability documents. Every version produces the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,
@@ -190,6 +201,30 @@ hologram holo verify blake3:…
 hologram holo load blake3:…
 hologram run blake3:… --input payload.bin
 hologram holo unload blake3:…</code></pre>
+
+  <h3>Compose a child application</h3>
+  <p>Compile the child first, then reference its self-contained archive from a schema-v3 parent. The compiler verifies the child archive, extracts its canonical application manifest, compiles the delegated capability source, and embeds the child manifest and verified content blobs in a fat parent. A thin parent retains the identical canonical application identity without embedding blobs.</p>
+  <pre><code>&#123;
+  "schema_version": 3,
+  "primary": 0,
+  "layers": [
+    &#123; "kind": "wasm", "path": "parent.wasm", "entry": "holo_run" &#125;
+  ],
+  "children": [
+    &#123;
+      "application": "worker.holo",
+      "capabilities": "worker-capabilities.json"
+    &#125;
+  ]
+&#125;
+
+hologram compile worker/hologram.json --output parent/worker.holo
+hologram --json compile --check parent/hologram.json |
+  jq '&#123;valid, child_count&#125;'
+hologram --json compile parent/hologram.json --output parent.holo |
+  jq '&#123;application_kappa, child_count&#125;'
+hologram --json holo inspect parent.holo | jq '.directory.children'</code></pre>
+  <div class="note"><strong>Execution boundary</strong>Source composition, physical packaging, recursive κ resolution, canonical child/capability validation, cycle diagnostics, whole-tree limits, capability attenuation, and transactional child execution work now. Startup is depth-first in child-manifest order and stop or rollback is its exact reverse. Only the root primary is automatically invoked; explicitly invoking or independently supervising a child remains a future contract.</div>
 
   <h3>Desktop watch-and-compile loop</h3>
   <p>Hologram Desktop's <strong>Applications</strong> view can add a local directory containing <code>hologram.json</code>. The trusted Tauri adapter authorizes the selected path and runs fixed compiler commands into a desktop cache outside the source tree. A Tauri-independent workspace crate performs recursive watching, debounce, persistence, and build-state transitions. Each successful archive goes through the normal catalog import path.</p>

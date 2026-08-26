@@ -240,6 +240,19 @@ mod tests {
             .paths
             .paths
             .contains_key("/api/v1/holo/{kappa}/plan"));
+        assert!(document
+            .paths
+            .paths
+            .contains_key("/api/v1/holo/{kappa}/load"));
+        assert!(document
+            .paths
+            .paths
+            .contains_key("/api/v1/holo/{kappa}/run"));
+        assert!(document.paths.paths.contains_key("/api/v1/holo/resident"));
+        assert!(document
+            .components
+            .as_ref()
+            .is_some_and(|components| components.schemas.contains_key("ApplicationCompletion")));
         assert!(document.paths.paths.contains_key("/api/v1/chat/{id}"));
         assert!(document.paths.paths.contains_key("/api/v1/models"));
         assert!(document.paths.paths.contains_key("/api/v1/history/{id}"));

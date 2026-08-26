@@ -14,6 +14,7 @@ use crate::holo_provider::{
 };
 use hologram::space::{address_bytes, LayerKind};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -35,7 +36,7 @@ const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES: usize = 64 * 1024;
 const MAX_IMAGE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
-const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "Python rootfs builds do not yet resolve mutable base references or produce a normalized byte-reproducible OCI representation";
+const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "compile --check does not contact registries, so this mutable Python rootfs base is not resolved until compilation; Python rootfs builds do not yet produce a normalized byte-reproducible OCI representation";
 const ROOTFS_OUTPUT_BLOCKER: &str =
     "Python rootfs builds do not yet produce a normalized byte-reproducible OCI representation";
 static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -94,8 +95,12 @@ pub struct DockerBuilder {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct BaseImageProvenance {
+    /// The source recipe's user-supplied reference.
     pub reference: String,
     pub digest_pinned: bool,
+    /// The immutable reference passed to Docker's `FROM` instruction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_reference: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_image_id: Option<String>,
 }
@@ -165,6 +170,9 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
     ensure_docker("compile a Python rootfs")?;
     let inputs = resolve_inputs(root, source)?;
     let mut provenance = build_provenance(source, &inputs, arch)?;
+    let resolved_base = resolve_base_image(&source.base)?;
+    provenance.base_image.resolved_reference = Some(resolved_base.clone());
+    provenance.reproducibility.blocker = ROOTFS_OUTPUT_BLOCKER;
 
     let staging = tempfile::tempdir().map_err(LiveError::from)?;
     fs::copy(&inputs.pyproject, staging.path().join("pyproject.toml"))
@@ -184,7 +192,7 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
         source,
         arch,
     )?;
-    let dockerfile = dockerfile(&source.base, &source.entry);
+    let dockerfile = dockerfile(&resolved_base, &source.entry);
     fs::write(staging.path().join("Dockerfile"), dockerfile)
         .map_err(|error| LiveError::io(staging.path(), error))?;
 
@@ -206,7 +214,7 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
         .map_err(|error| LiveError::Io(format!("start Docker build: {error}")))?;
     command_succeeded("Docker build", &build)?;
     provenance.builder = observed_docker_builder()?;
-    provenance.base_image.observed_image_id = inspect_image_id(&source.base)?;
+    provenance.base_image.observed_image_id = inspect_image_id(&resolved_base)?;
 
     let image_path = staging.path().join("image.tar");
     let save = Command::new("docker")
@@ -276,6 +284,7 @@ fn build_provenance(
         base_image: BaseImageProvenance {
             reference: source.base.clone(),
             digest_pinned,
+            resolved_reference: digest_pinned.then(|| source.base.clone()),
             observed_image_id: None,
         },
         dependency_installer: BuildTool {
@@ -714,6 +723,62 @@ fn observed_docker_builder() -> Result<DockerBuilder> {
     })
 }
 
+fn resolve_base_image(base: &str) -> Result<String> {
+    if digest_pinned_base(base) {
+        return Ok(base.to_owned());
+    }
+    let output = Command::new("docker")
+        .args(["buildx", "imagetools", "inspect", "--raw", "--", base])
+        .output()
+        .map_err(|error| {
+            LiveError::Io(format!(
+                "resolve Python OCI base image {base} through Docker: {error}"
+            ))
+        })?;
+    command_succeeded(&format!("resolve Python OCI base image {base}"), &output)?;
+    resolved_base_reference(base, &output.stdout)
+}
+
+fn resolved_base_reference(base: &str, manifest: &[u8]) -> Result<String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RegistryManifest {
+        schema_version: u16,
+    }
+
+    if manifest.is_empty() {
+        return Err(LiveError::Protocol(format!(
+            "Docker returned an empty registry manifest for {base}"
+        )));
+    }
+    let decoded: RegistryManifest = serde_json::from_slice(manifest).map_err(|error| {
+        LiveError::Protocol(format!(
+            "Docker returned an invalid registry manifest for {base}: {error}"
+        ))
+    })?;
+    if decoded.schema_version != 2 {
+        return Err(LiveError::Protocol(format!(
+            "Docker returned unsupported registry manifest schema {} for {base}; expected 2",
+            decoded.schema_version
+        )));
+    }
+    let digest = crate::util::hex(&Sha256::digest(manifest));
+    Ok(format!("{}@sha256:{digest}", base_repository(base)))
+}
+
+fn base_repository(base: &str) -> &str {
+    let without_digest = base
+        .split_once('@')
+        .map_or(base, |(repository, _)| repository);
+    let last_slash = without_digest.rfind('/');
+    match without_digest.rfind(':') {
+        Some(tag_separator) if last_slash.is_none_or(|slash| tag_separator > slash) => {
+            &without_digest[..tag_separator]
+        }
+        _ => without_digest,
+    }
+}
+
 fn docker_version(component: &str) -> Result<String> {
     let format = format!("{{{{.{component}.Version}}}}");
     let output = Command::new("docker")
@@ -936,6 +1001,7 @@ fn valid_identifier(value: &str) -> bool {
 
 fn validate_base(base: &str) -> Result<()> {
     if base.is_empty()
+        || base.starts_with('-')
         || !base
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || "-._/:@".contains(character))
@@ -1157,6 +1223,71 @@ mod tests {
             "A".repeat(64)
         )));
         assert!(!digest_pinned_base("python@sha256:abc"));
+    }
+
+    #[test]
+    fn registry_manifest_digest_qualifies_the_requested_repository() {
+        let manifest = br#"{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}"#;
+        let digest = crate::util::hex(&Sha256::digest(manifest));
+        assert_eq!(
+            resolved_base_reference("python:3.12-slim", manifest).expect("resolve tag"),
+            format!("python@sha256:{digest}")
+        );
+        assert_eq!(
+            resolved_base_reference("registry.example:5000/team/python:stable", manifest)
+                .expect("resolve registry tag"),
+            format!("registry.example:5000/team/python@sha256:{digest}")
+        );
+    }
+
+    #[test]
+    fn digest_pinned_base_resolution_is_offline_and_preserves_the_reference() {
+        let pinned = format!("registry.example/team/python@sha256:{}", "a".repeat(64));
+        assert_eq!(resolve_base_image(&pinned).expect("resolve pin"), pinned);
+    }
+
+    #[test]
+    fn planned_provenance_reports_a_digest_pinned_base_as_resolved() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let pinned = format!("python@sha256:{}", "a".repeat(64));
+        let source = PythonRootfsSource {
+            project: PathBuf::from("examples/python-numpy-pandas"),
+            entry: "numpy_pandas_holo:main".to_owned(),
+            lock: PathBuf::from("uv.lock"),
+            profile: PythonProfile::Rootfs,
+            base: pinned.clone(),
+        };
+        let inputs = resolve_inputs(root, &source).expect("resolve inputs");
+        let provenance = build_provenance(&source, &inputs, "arm64").expect("provenance");
+        assert_eq!(
+            provenance.base_image.resolved_reference.as_deref(),
+            Some(pinned.as_str())
+        );
+        assert_eq!(provenance.reproducibility.blocker, ROOTFS_OUTPUT_BLOCKER);
+    }
+
+    #[test]
+    fn registry_manifest_resolution_rejects_invalid_or_legacy_manifests() {
+        let empty = resolved_base_reference("python:latest", b"").expect_err("empty");
+        assert_eq!(empty.code(), "LIVE_PROTOCOL_ERROR");
+        let invalid = resolved_base_reference("python:latest", b"not json").expect_err("invalid");
+        assert_eq!(invalid.code(), "LIVE_PROTOCOL_ERROR");
+        let legacy = resolved_base_reference("python:latest", br#"{"schemaVersion":1}"#)
+            .expect_err("legacy");
+        assert_eq!(legacy.code(), "LIVE_PROTOCOL_ERROR");
+    }
+
+    #[test]
+    fn dockerfile_uses_the_resolved_base_reference() {
+        let resolved = format!("python@sha256:{}", "a".repeat(64));
+        let file = dockerfile(&resolved, "example:main");
+        assert!(file.starts_with(&format!("FROM {resolved}\n")));
+        assert!(!file.contains("python:3.12-slim"));
+    }
+
+    #[test]
+    fn base_reference_cannot_be_parsed_as_a_docker_option() {
+        assert!(validate_base("-q").is_err());
     }
 
     #[test]

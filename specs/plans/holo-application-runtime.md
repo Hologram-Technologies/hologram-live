@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M2.1, legacy empty-capability archive compatibility
-- Next delivery: M4 rootfs base-digest resolution and normalized OCI construction
+- Current delivery: M4.1, Python rootfs registry base-digest binding
+- Next delivery: M4.2, normalized OCI/rootfs construction and clean-build κ proof
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -369,11 +369,27 @@ Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 tree and reports the target, build host, requested base/digest-pin status,
 compiler, pinned uv, and planned Docker builder without contacting Docker. A
 completed build additionally records observed Docker client/server versions,
-the locally observed requested-base image identity when available, final image
+the resolved and locally observed base identities when available, final image
 ID, rootfs layer κ, and byte sizes. ADR 014 keeps these observations outside
-the archive and explicitly distinguishes them from registry digest resolution
-or byte-reproducible OCI output. The NumPy/pandas demo asserts both completed
+the archive and explicitly distinguishes them from canonical identity or
+byte-reproducible OCI output. The NumPy/pandas demo asserts both completed
 provenance and execution.
+
+Rootfs base-binding follow-up (2026-08-26): real compilation now resolves a
+mutable base through Docker Buildx's raw registry-manifest path, requires
+schema 2, computes the manifest SHA-256, and places the resulting immutable
+reference in Docker's `FROM` instruction before the build starts. Offline
+`compile --check` continues to report the requested mutable value without
+inventing a resolution; already digest-pinned inputs bypass registry lookup.
+Completed provenance preserves the request and adds `resolved_reference` for
+the input Docker actually consumed. Unit coverage proves digest construction,
+registry-port parsing, pinned bypass, invalid-manifest rejection, and
+Dockerfile binding. The real NumPy/pandas compile resolved
+`python:3.12-slim` to
+`sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17`,
+matched Docker's reported digest, emitted a 105,790,579-byte fat archive, and
+executed with three rows, mean `20.0`, and sum `60.0`. ADR 015 records the
+selection/binding boundary; normalized OCI output remains the next M4 slice.
 
 ### M3.2 View provider
 
@@ -522,12 +538,17 @@ application/DMG builds pass.
 - [x] Stage only `pyproject.toml`, the declared lock file, `src/`, and the generated launcher for the experimental rootfs provider; reject absolute/escaping paths and symlinks.
 - [x] Diagnose native, source-only, non-registry, or unpinned dependencies that
   lack a portable wheel and recommend the explicit rootfs profile.
-- [ ] Promote the experimental `rootfs` Python profile to supported status only after digest pinning, reproducibility, and the microVM provider are ready. The current direct OCI provider is demo-only.
+- [ ] Promote the experimental `rootfs` Python profile to supported status only
+  after normalized reproducible output and the microVM provider are ready. Base
+  inputs are now digest-bound, but the current direct OCI provider is demo-only.
 - [ ] Normalize file order, paths, permissions, timestamps, generated bindings, and source epoch for reproducible layer κ values.
 - [x] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
 - [x] Report planned and completed Python rootfs evidence without requiring
   Docker during `compile --check` or claiming the emitted OCI bytes are
   reproducible.
+- [x] Resolve mutable Python rootfs bases to a schema-2 registry manifest
+  digest, bind the digest-qualified reference into `FROM`, and report requested
+  and resolved identities without mutating the source manifest.
 - [ ] Keep fat/thin archive packaging independent from source-language compilation.
 
 ### Manifest features
@@ -702,7 +723,7 @@ application/DMG builds pass.
   coverage (ADR 013).
 - [x] Observational Python rootfs build provenance and its non-canonical
   identity boundary (ADR 014).
-- [ ] Resolve mutable rootfs base tags to a registry manifest digest and bind
+- [x] Resolve mutable rootfs base tags to a registry manifest digest and bind
   the selected digest to the build.
 - [ ] Normalize rootfs OCI output and prove byte-identical layer κ values
   across clean supported hosts.
@@ -756,8 +777,8 @@ application/DMG builds pass.
 - [x] Pin the exact componentizer wheel URL/SHA-256 for all five server release
   hosts, report it, disable registry/source fallback, and fail unpinned hosts.
 - [x] Emit planned/completed Python rootfs provenance with hashed inputs,
-  requested/observed image identities, observed Docker versions, output layer
-  κ, and explicit reproducibility blockers.
+  requested/resolved/observed image identities, observed Docker versions,
+  output layer κ, and explicit reproducibility blockers.
 - [ ] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.

@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1a, Component Model provider resource limits and execution
+- Next delivery: M3.1a, dependency-free Python targeting Component v1
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -253,14 +253,15 @@ dependencies until an explicit child invocation contract is introduced.
   preserve omitted-contract application identity across schemas v1-v4.
 - [x] Expose the normalized contract through verified directory, inspect,
   plan, JSON/HTTP, OpenAPI, and Protobuf/gRPC surfaces.
-- [x] Select providers by exact `(LayerKind, contract)` and prove Component v1
-  produces a typed unavailable blocker instead of reaching core Wasm.
-- [ ] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
+- [x] Select providers by exact `(LayerKind, contract)`; the selector slice
+  proved Component v1 failed closed before its provider landed, and the current
+  provider remains isolated from core Wasm.
+- [x] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
 - [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
 - [ ] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
 - [ ] Prove a locked pure-Python dependency is included without reading the developer's ambient virtual environment.
 - [ ] Report unsupported WASI modules, imports, and dependencies as typed preparation diagnostics.
-- [ ] Add component fuel, memory, input/output, deadline, and cancellation limits before advertising Python/WASI execution.
+- [x] Add component fuel, memory, input/output, deadline, and cancellation limits before advertising Component execution.
 
 ### M3.2 View provider
 
@@ -571,11 +572,12 @@ application/DMG builds pass.
 - [x] Child lifecycle ownership and the current root-primary-only exit boundary.
 - [ ] TensorPlan payload/port schema and weightc adapter contract.
 - [ ] Rootfs image format, architecture naming, and microVM contract.
-- [ ] Resource-budget schema and default limits.
+- [x] Resource-budget defaults and capability tightening for Component v1;
+  cross-provider priority/concurrency policy remains future work.
 - [ ] Installed-application record and garbage-collection ownership model.
 - [ ] Certificate payload, signed message, and trust policy.
 - [ ] Guest-contract v2 versioning, typed ports, sessions, and streaming.
-- [ ] Hologram WIT world versioning and the relationship between core-Wasm v1 and component-model applications.
+- [x] Hologram WIT world versioning and the relationship between core-Wasm v1 and component-model applications.
 - [ ] Python dependency resolver, supported lock formats, toolchain pinning, and build-provenance schema.
 
 ## Per-milestone definition of done
@@ -613,3 +615,8 @@ application/DMG builds pass.
 - [x] Decide the canonical guest-contract version negotiation and
   capability-gated host-interface mapping before implementing Component Model
   or WASI support.
+- [x] Execute import-free Component v1 directly and resident through its exact
+  provider with fresh-store memory/fuel limits, byte ceilings, deadline, and
+  cancellation interruption.
+- [ ] Package and execute dependency-free Python against Component v1 without
+  introducing ambient WASI.

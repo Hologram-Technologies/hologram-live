@@ -1,4 +1,4 @@
-# Current sprint: M3.1a canonical guest-contract selection
+# Current sprint: M3.1a bounded Component v1 execution
 
 ## Sprint status
 
@@ -6,91 +6,77 @@
 - Started: 2026-08-25
 - Last reviewed: 2026-08-25
 - Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
-- Goal: make the canonical Wasm guest-contract selector flow from source
-  manifest through the upstream application identity, inspection, planning, and
-  provider boundary without enabling Component Model execution prematurely
-- Exit signal: legacy core-Wasm archives keep identical canonical bytes and κ,
-  explicit Component v1 archives compile and plan as unsupported, and unknown
-  source or canonical identifiers fail closed before provider preparation
+- Goal: execute the import-free `hologram:guest/component@1` contract directly
+  and resident without weakening core-Wasm v1 or granting ambient WASI
+- Exit signal: a valid Component v1 echo application executes on both targets,
+  malformed components and guest errors are typed, and memory, fuel, input,
+  output, deadline, and cancellation bounds are enforced before the provider is
+  advertised as available
 
-The completed M3.1 tracker remains in Git history. Durable requirements stay in
-[`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
-the accepted negotiation design is
+The completed selector tracker remains in Git history. Durable requirements
+stay in [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md),
+and the accepted negotiation design is
 [`adrs/011-holo-guest-contract-negotiation.md`](adrs/011-holo-guest-contract-negotiation.md).
 
-## Evidence reviewed
+## Runtime policy
 
-- [x] Live pins upstream revision `fdd1190` from
-  `feature/inference-model-layer`, not upstream `main`.
-- [x] Upstream already canonicalizes every layer's `aux` string, so contract
-  selection can become application identity without a codec change.
-- [x] Upstream currently rejects every non-empty Wasm `aux` as
-  `PortableLayerHasArch`; older readers therefore fail closed.
-- [x] Live already preserves `aux` through `PlannedLayer`, `ResolvedLayer`, and
-  `ProviderContext`, but does not normalize or expose it as a Wasm contract.
-- [x] Provider registration is keyed only by `LayerKind`; the existing Wasmtime
-  provider would otherwise accept a Component contract as core Wasm.
-- [x] Source-manifest schema v3 has no `contract` field and must remain readable.
+- Component v1 is the exact exported
+  `hologram:application/application@1.0.0` world and has no imports.
+- Each input is instantiated in a fresh Wasmtime store; compiled components may
+  remain warm, but guest memory and state never cross invocation boundaries.
+- Runtime-owned ceilings apply even when capability scalar `0` means
+  unspecified: 64 MiB linear memory, 100 million fuel units, 1 MiB input, 1 MiB
+  output, and a two-second wall deadline per invocation.
+- A nonzero admitted `memory_max_bytes` or `cpu_time_per_event_ms` may only
+  tighten the runtime ceiling; archive requests never expand host authority.
+- Fuel is the deterministic compute bound. Epoch interruption terminates a
+  timed-out or cancelled synchronous call, and each prepared component owns an
+  engine plus serialization boundary so interruption is isolated.
+- No WASI, filesystem, network, clock, randomness, environment, or Hologram
+  host interface is linked in this slice.
+- Legacy `hologram:guest/core-wasm@1` execution and canonical bytes remain
+  unchanged.
 
-## Contract guardrails
+## Implementation
 
-- Empty canonical Wasm `aux` normalizes to
-  `hologram:guest/core-wasm@1` without changing bytes or κ.
-- Explicit `hologram:guest/core-wasm@1` and
-  `hologram:guest/component@1` are canonical identity-bearing tags.
-- Contract identifiers are exact and closed; no filename, entry-name, content
-  sniffing, implicit downgrade, or major-version fallback is permitted.
-- `entry` remains the callable selection and is never parsed as a contract.
-- Component v1 remains unavailable in this slice. Its provider and resource
-  limits land together in the next slice.
-- Direct and resident planning must produce the same normalized contract and
-  provider decision.
+- [x] Add the generated Component v1 host bindings to the runtime crate.
+- [x] Add a Component provider selected only by the exact Component v1 tag.
+- [x] Register the provider for direct and resident plans.
+- [x] Compile and type-check the component during transactional preparation.
+- [x] Execute one WIT `run` call per input and preserve one output per input.
+- [x] Map guest-declared errors, malformed components, and traps to typed Live
+  errors without exposing payload bytes.
+- [x] Keep resident components compiled and warm while giving every input a
+  fresh store.
 
-## Slice 1 — Upstream canonical validation
+## Resource and cancellation gates
 
-- [x] Add public constants for the two accepted explicit Wasm contracts.
-- [x] Retain `Layer::wasm` as the empty-tag compatibility constructor.
-- [x] Add an explicit-contract Wasm constructor without changing canonical
-  encoding.
-- [x] Accept empty, core-v1, and component-v1 Wasm tags.
-- [x] Reject unknown Wasm tags with a distinct manifest error.
-- [x] Continue rejecting non-empty `aux` for TensorPlan layers.
-- [x] Prove legacy canonical bytes and κ are unchanged.
-- [x] Prove explicit contract tags survive canonical encode/decode.
-- [x] Land upstream PR 142 against `feature/inference-model-layer` at
-  `c5e33ec`.
+- [x] Enforce the memory ceiling with Wasmtime's store limiter.
+- [x] Enforce fuel for every fresh store.
+- [x] Reject oversized inputs before guest allocation.
+- [x] Reject oversized outputs before returning them to the application.
+- [x] Enforce the wall deadline and interrupt the guest on expiry.
+- [x] Interrupt in-flight guest execution when the invocation future is
+  cancelled.
+- [x] Prove a timed-out/cancelled call cannot interrupt another application or
+  the core-Wasm provider.
 
-## Slice 2 — Live source, inspection, and planning
+## Conformance and delivery
 
-- [x] Pin the merged upstream contract-tag revision.
-- [x] Add source-manifest schema v4 `contract` for Wasm layers only.
-- [x] Keep omitted `contract` byte-compatible with schemas v1-v3.
-- [x] Add `hologram app init --contract` and the equivalent interactive prompt.
-- [x] Expose the normalized contract in the verified application directory,
-  inspect, and plan results with legacy decode defaults.
-- [x] Normalize empty Wasm tags to core-v1 in one runtime-owned helper.
-- [x] Key provider selection by both layer kind and normalized contract.
-- [x] Keep core-Wasm direct and resident execution working unchanged.
-- [x] Report Component v1 as a typed unavailable blocker before provider
-  preparation; reject unknown source identifiers as configuration and unknown
-  canonical identifiers as invalid archives; never route either to core.
-- [x] Add compiler, identity, inspection, plan, direct, resident, CLI, OpenAPI,
-  and BDD coverage.
-
-## Documentation and conformance
-
-- [x] Update ADR 011 with the final upstream API and migration behavior.
-- [x] Update README, architecture, security, actual capabilities, and website
-  `.holo`, CLI, architecture, and security pages.
+- [x] Add a valid echo Component fixture and direct execution proof.
+- [x] Add resident load/invoke/unload execution proof.
+- [x] Add malformed contract, guest error, input/output, fuel, memory, deadline,
+  and cancellation tests.
+- [x] Update README, architecture, security, actual-capabilities, and website
+  Component documentation.
 - [x] Keep `specs/plans/holo-application-runtime.md` synchronized.
-- [x] Run upstream formatting and focused workspace tests.
-- [x] Run Live formatting, boundary gates, all-target tests, Clippy, BDD,
-  optimized build, release smoke, WIT conformance, and docs.
-- [ ] Land both reviewable PRs and return both repositories to clean `main`.
+- [x] Run formatting, focused tests, all-target tests, Clippy, BDD, optimized
+  build, release smoke, WIT conformance, and docs.
+- [ ] Land the reviewable PR and return the repository to clean `main`.
 
 ## Deferred discoveries
 
-- [ ] `DISC-016` — **Next slice gate** — Enforce component memory, fuel,
-  input/output, deadline, and cancellation limits before advertising execution.
-- [ ] `DISC-018` — **Later** — Define a capability-gated WASI profile only after
-  the import-free Component v1 provider works directly and resident.
+- [ ] `DISC-017` — Package and execute dependency-free Python through the
+  Component v1 provider once the bounded host contract is proven.
+- [ ] `DISC-018` — Define a capability-gated WASI profile only after the
+  import-free provider works directly and resident.

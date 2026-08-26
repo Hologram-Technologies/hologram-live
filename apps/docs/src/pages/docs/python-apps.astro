@@ -191,7 +191,7 @@ target/release/hologram run target/numpy-pandas.holo \
     <li>The provider requires a local Docker-compatible engine and leaves its content-derived, image-ID-verified image in the engine cache.</li>
     <li>Container isolation is useful for a local demo, but this provider is not advertised as an untrusted or multi-tenant security boundary.</li>
     <li>Base digest resolution, byte-for-byte reproducible OCI output, build provenance, SBOMs, signatures, and the microVM provider remain milestone work.</li>
-    <li>The portable WebAssembly Component Model/WASI profile is still planned; the current Wasm runtime accepts Hologram's core-Wasm guest contract v1.</li>
+    <li>The import-free WebAssembly Component Model v1 provider is available directly and resident. Python targeting that world and any capability-gated WASI profile remain planned.</li>
   </ul>
 
   <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider decision, and remaining milestone checklist.</p>

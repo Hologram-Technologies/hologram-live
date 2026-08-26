@@ -5,7 +5,7 @@
 
 ## Context
 
-The Python milestone needs to prove that a real project and its locked native dependencies can be compiled into, transported by, and executed from a `.holo` file. NumPy and pandas need ordinary Linux wheels and shared libraries; the existing core-Wasm provider has neither WASI nor Component Model support. The planned microVM/rootfs provider is not wired into Hologram Live yet.
+The Python milestone needs to prove that a real project and its locked native dependencies can be compiled into, transported by, and executed from a `.holo` file. NumPy and pandas need ordinary Linux wheels and shared libraries; core-Wasm has no WASI, and the newer import-free Component v1 provider does not yet package CPython or define a WASI profile. The planned microVM/rootfs provider is not wired into Hologram Live yet.
 
 Running the project's host Python directly would violate the archive boundary, make dependency resolution ambient, and make a successful demo say nothing about the packaged payload. Adding Python as a fifth layer kind would also unnecessarily change the closed `.holo` v3 layer model.
 

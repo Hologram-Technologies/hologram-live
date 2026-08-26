@@ -82,11 +82,11 @@ fn wasm_manifest_with_custom_entry(world: &mut BddWorld) {
 #[given("a Component v1 application manifest")]
 fn component_v1_manifest(world: &mut BddWorld) {
     let temporary = tempfile::tempdir().expect("create scenario directory");
-    std::fs::write(
+    std::fs::copy(
+        workspace_root().join("tests/fixtures/component-echo/echo.wat"),
         temporary.path().join("application.component.wasm"),
-        b"component fixture bytes",
     )
-    .expect("write component fixture");
+    .expect("copy component fixture");
     std::fs::write(
         temporary.path().join("hologram.json"),
         r#"{
@@ -95,7 +95,7 @@ fn component_v1_manifest(world: &mut BddWorld) {
           "layers": [{
             "kind":"wasm",
             "path":"application.component.wasm",
-            "entry":"hologram:application/run",
+            "entry":"run",
             "contract":"hologram:guest/component@1"
           }]
         }"#,
@@ -240,26 +240,19 @@ fn direct_plan_is_payload_free(world: &mut BddWorld) {
     assert!(plan["layers"][0].get("bytes").is_none());
 }
 
-#[then("the component contract is inspectable and unavailable without fallback")]
-fn component_plan_is_unavailable_without_fallback(world: &mut BddWorld) {
+#[then("the component contract selects the bounded component provider")]
+fn component_plan_selects_bounded_provider(world: &mut BddWorld) {
     let plan = world.plan_result.as_ref().expect("plan result");
     assert_eq!(plan["execution_target"], "direct");
-    assert_eq!(plan["runnable"], false);
+    assert_eq!(plan["runnable"], true);
     assert_eq!(plan["layers"][0]["contract"], "hologram:guest/component@1");
-    assert_eq!(plan["layers"][0]["provider"]["status"], "unavailable");
-    assert!(plan["layers"][0]["provider"]["name"].is_null());
-    assert!(plan["layers"][0]["provider"]["reason"]
-        .as_str()
-        .expect("provider reason")
-        .contains("hologram:guest/component@1"));
-    assert!(plan["blockers"]
-        .as_array()
-        .expect("blockers")
-        .iter()
-        .any(|blocker| blocker["error_code"] == "LIVE_CAPABILITY_MISSING"
-            && blocker["message"]
-                .as_str()
-                .is_some_and(|message| message.contains("hologram:guest/component@1"))));
+    assert_eq!(plan["layers"][0]["provider"]["status"], "available");
+    assert_eq!(
+        plan["layers"][0]["provider"]["name"],
+        "wasmtime-component-direct"
+    );
+    assert!(plan["layers"][0]["provider"]["reason"].is_null());
+    assert_eq!(plan["blockers"].as_array().expect("blockers").len(), 0);
 }
 
 #[then("the resident plan identifies the imported archive")]

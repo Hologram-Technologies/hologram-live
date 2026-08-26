@@ -5,7 +5,7 @@ use crate::application_plan::{
     ProviderContext, ResolvedLayer,
 };
 use crate::error::{LiveError, Result};
-use crate::holo_capability::EffectiveGrant;
+use crate::holo_capability::{EffectiveGrant, RequestedCapabilities};
 use hologram::space::LayerKind;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -77,6 +77,7 @@ impl ProviderTarget {
 pub struct LayerPrepareContext {
     pub identity: HoloIdentity,
     pub effective_grant: EffectiveGrant,
+    pub requested_capabilities: RequestedCapabilities,
     pub layer: ResolvedLayer,
     pub target: ProviderTarget,
 }
@@ -431,6 +432,7 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
     let mut prepared = Vec::with_capacity(layer_count);
     for application_index in application_order {
         let (application_kappa, layers) = application_layers(plan, application_index)?;
+        let requested_capabilities = application_requested_capabilities(plan, application_index)?;
         let grant = admitted_grants.get(&application_index).ok_or_else(|| {
             LiveError::Conflict(format!(
                 "runtime lost admitted grant for application {application_kappa}"
@@ -479,6 +481,7 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
                 .prepare(LayerPrepareContext {
                     identity,
                     effective_grant: grant.clone(),
+                    requested_capabilities: requested_capabilities.clone(),
                     layer: layer.clone(),
                     target: registry.target,
                 })
@@ -539,6 +542,24 @@ fn application_layers(
         .ok_or_else(|| {
             LiveError::Conflict(format!(
                 "runtime lost planned child application index {application_index}"
+            ))
+        })
+}
+
+fn application_requested_capabilities(
+    plan: &ApplicationPlan,
+    application_index: usize,
+) -> Result<&RequestedCapabilities> {
+    if application_index == 0 {
+        return Ok(&plan.requested_capabilities);
+    }
+    plan.children
+        .iter()
+        .find(|child| child.application_index == application_index)
+        .map(|child| &child.requested_capabilities)
+        .ok_or_else(|| {
+            LiveError::Conflict(format!(
+                "runtime lost requested capabilities for application index {application_index}"
             ))
         })
 }

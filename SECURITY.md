@@ -50,10 +50,13 @@ effective grant.
 ADR 011 assigns Wasm contracts through the canonical, identity-bearing layer
 `aux` tag. Source schema v4 exposes the tag as `contract`; empty means legacy
 core-Wasm v1. The runtime normalizes the selector before exact `(kind,
-contract)` provider lookup. Component v1 currently produces a typed unavailable
-plan, and an unknown non-empty contract fails closed without reaching core Wasm
-or ambient WASI. The first
-Component Model world imports nothing. Future storage, channel, and mediated
+contract)` provider lookup. An unknown non-empty contract fails closed without
+reaching core Wasm or ambient WASI. Component v1 executes through a dedicated import-free
+provider with fixed memory, fuel, input/output, and wall-time ceilings. It uses
+a fresh store per input and an isolated epoch-interruptible engine so timeout,
+stop, or dropped-future cancellation terminates synchronous guest work without
+interrupting another application or core Wasm. The first Component Model world
+imports nothing. Future storage, channel, and mediated
 network interfaces require their corresponding admitted canonical fields;
 clocks, random, environment, process control, secrets, inference, and raw
 sockets remain unavailable while no sufficiently scoped capability exists.

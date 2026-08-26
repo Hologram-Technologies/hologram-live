@@ -128,7 +128,7 @@ import { sitePath } from '../../lib/site';
 
   <h3>Source languages do not add layer kinds</h3>
   <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
-  <p>This keeps the canonical layer model stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-free Component compiler and dependency-aware rootfs compiler, and <a href={sitePath('/docs/model-apps')}>AI model applications</a> for the v4 service layer.</p>
+  <p>This keeps the canonical layer model stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the Component compiler's dependency-free and locked portable-wheel examples plus the native dependency rootfs compiler, and <a href={sitePath('/docs/model-apps')}>AI model applications</a> for the v4 service layer.</p>
 
   <h2>Queryable application directory</h2>
   <p>New Hologram Live archives carry the extension <code>https://hologram.foundation/extension/application-directory/v1</code>. Its deterministic JSON is a normalized projection of the manifest and physical packaging:</p>

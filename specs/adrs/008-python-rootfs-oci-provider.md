@@ -51,4 +51,6 @@ The default base `python:3.12-slim` is convenient but mutable. Users who need re
 - Normalize the OCI representation and prove byte-for-byte reproducible layer κ values.
 - Move rootfs execution behind the planned microVM provider while preserving the layer and launcher contracts where practical.
 - Add resident lifecycle, cancellation, cleanup, metrics, and architecture-specific CI.
-- Extend the now-available dependency-free Python Component Model profile with locked portable dependencies without broadening its import-free runtime contract.
+- Preserve rootfs as the explicit fallback for native/source-only packages now
+  that ADR 012 admits locked platform-independent wheels into the import-free
+  Python Component profile.

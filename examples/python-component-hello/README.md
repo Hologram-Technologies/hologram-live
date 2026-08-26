@@ -14,6 +14,7 @@ HOLOGRAM_STATE_DIR=.state ./target/release/hologram run \
 ```
 
 The first compile lets `uvx` download the pinned `componentize-py 0.25.0`
-tool. Later compiles reuse uv's tool cache. The current profile intentionally
-accepts dependency-free locks only. It stubs CPython's WASI imports, so Python
-randomness is deterministic and must not be used for security-sensitive work.
+tool. Later compiles reuse uv's tool cache. This example is dependency-free;
+the companion `../python-component-dependency/` shows the profile's locked
+pure-Python wheel support. It stubs CPython's WASI imports, so Python randomness
+is deterministic within one built component and must not protect secrets.

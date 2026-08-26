@@ -1,20 +1,19 @@
-# Current sprint: M3.1a Python Component v1 packaging
+# Current sprint: M3.1b locked pure-Python Component dependencies
 
 ## Sprint status
 
-- State: active
+- State: ready for review
 - Started: 2026-08-26
 - Last reviewed: 2026-08-26
 - Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
-- Goal: compile a dependency-free, locked Python project into an import-free
-  `hologram:guest/component@1` Wasm layer and execute the resulting `.holo`
-  directly and resident
-- Exit signal: `hologram compile` invokes a pinned isolated Python component
-  toolchain, the emitted component passes the exact existing world check, and
-  a teaching example executes on both runtime targets without Docker or
-  ambient WASI
+- Goal: package the exact platform-independent wheels selected by `uv.lock`
+  into the existing import-free Python Component v1 build path without reading
+  the developer Python environment
+- Exit signal: a locked `six` dependency executes directly and resident, a
+  poisoned ambient `PYTHONPATH` cannot replace it, and native/source-only locks
+  fail before componentization with a typed diagnostic
 
-The completed bounded-Component tracker remains in Git history. Durable
+The completed M3.1a dependency-free tracker remains in Git history. Durable
 requirements stay in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
 the accepted negotiation design is
@@ -22,67 +21,77 @@ the accepted negotiation design is
 
 ## Packaging policy
 
-- The source profile is `wasi-component`, but this slice uses
-  `componentize-py --stub-wasi`: every WASI import is replaced inside the guest
-  and the emitted component still has the import-free Component v1 contract.
-- Pin `componentize-py` to `0.25.0`; invoke it through an isolated `uvx`
-  environment with the developer virtual environment, user site, and
-  `PYTHONPATH` withheld.
-- Require `pyproject.toml`, `uv.lock`, and `src/` under the declared project;
-  reject escaping paths and symlinks using the existing Python source boundary.
-- Accept dependency-free locks only in this slice. A lock containing an
-  additional package fails before componentization with guidance to the next
-  pure-Python dependency milestone or the explicit rootfs profile.
-- Generate the WIT adapter in a private temporary directory. Application code
-  keeps the existing `module:function`, `bytes -> bytes` entrypoint instead of
-  importing generated Hologram bindings.
-- The output is an ordinary `WasmCodemodule` with entry `run` and contract
-  `hologram:guest/component@1`; `.holo` canonical identity and the runtime
-  provider registry need no new layer kind or selector.
-- `--stub-wasi` makes Python randomness deterministic and unsuitable for
-  security-sensitive randomness. Filesystem, network, clocks, environment,
-  arguments, stdio, DNS, secrets, and process control remain unavailable.
+- Keep source profile `wasi-component` and the import-free
+  `hologram:guest/component@1` contract. This slice adds compiler inputs, not a
+  new layer kind, runtime provider, or host capability.
+- Traverse the editable project's runtime dependency closure while excluding
+  unreferenced development/optional records. Require each reached package to
+  use a registry source and contain an HTTPS, SHA-256-pinned Python 3
+  platform-independent wheel whose filename ends in `-none-any.whl`.
+- Choose one qualifying wheel deterministically, preferring the exact `py3`
+  tag and then lexical URL order. Never resolve a version outside `uv.lock`.
+- Install exact wheel URLs into a private target with `uv --no-config pip
+  install --no-index --no-deps --require-hashes --only-binary :all:` for Python
+  3.14. Use copy mode so the component build does not depend on uv cache links.
+- Withhold `VIRTUAL_ENV`, `PYTHONPATH`, `PYTHONHOME`, pip/uv index overrides,
+  and Python user-site lookup from both dependency installation and
+  componentization.
+- Reject Git/path dependencies, missing or non-SHA-256 artifacts, native wheel
+  tags, source-only packages, installed symlinks, and installed native library
+  suffixes with `LIVE_CAPABILITY_MISSING` and rootfs guidance.
+- Keep pinned `componentize-py 0.25.0 --stub-wasi`; dependencies enter only
+  through the private `--python-path`. Runtime filesystem, network, clocks,
+  environment, arguments, stdio, DNS, secrets, and process control stay absent.
+- Do not claim byte-for-byte reproducibility yet. Two clean proof compiles
+  produced different component/application κ values because the pinned tool's
+  `--stub-wasi` mode bakes a build-time PRNG seed into the component and offers
+  no deterministic seed option.
 
-## Compiler and schema
+## Compiler and validation
 
-- [x] Add `wasi-component` to the Python source profile and validate it only on
-  schema-v4 Component v1 Wasm layers.
-- [x] Add `hologram app init --template python --profile wasi-component` with
-  the exact generated layer kind, entry, and contract.
-- [x] Compile through pinned `componentize-py 0.25.0 --stub-wasi` and emit its
-  component bytes directly as the Wasm layer payload.
-- [x] Refuse dependency-bearing locks and ambient Python search paths with
-  actionable typed diagnostics.
-- [x] Keep `rootfs` source manifests and their OCI compiler behavior compatible.
+- [x] Parse external package records from the declared `uv.lock` without
+  consulting the developer environment.
+- [x] Traverse only the editable project's runtime dependency closure and
+  reject missing or ambiguous dependency references.
+- [x] Admit registry packages only through qualifying locked universal wheels.
+- [x] Install exact HTTPS wheel URLs under SHA-256 enforcement with indexes,
+  transitive re-resolution, source builds, and configuration discovery off.
+- [x] Add the private dependency target to componentization without changing
+  canonical layer kind, entry, or contract.
+- [x] Reject native/source-only and non-registry packages during `compile
+  --check`, before wheel download or archive emission.
+- [x] Reject requirement-injection names, installed symlinks, and native
+  payload suffixes with typed diagnostics.
+- [x] Preserve dependency-free Component and rootfs source compatibility.
 
 ## Runtime and conformance
 
-- [x] Admit the bounded internal instance/table/memory counts required by the
-  bundled CPython component without increasing its 64 MiB byte ceiling.
-- [x] Prove the emitted component has no imports and exports the exact
-  `hologram:application/application@1.0.0` world.
-- [x] Execute the dependency-free Python example directly.
-- [x] Import, load, invoke, and unload the same archive resident.
-- [x] Prove a dependency lock and malformed Python entry fail before archive
-  emission with typed diagnostics.
-- [x] Preserve core-Wasm v1 and the Rust Component v1 conformance suite.
+- [x] Add a locked `six==1.17.0` teaching project.
+- [x] Execute its `.holo` directly and through catalog import/load/run/unload.
+- [x] Prove the guest observes `six-1.17.0` with a poisoned ambient `six.py` on
+  `PYTHONPATH` and a fake `VIRTUAL_ENV`.
+- [x] Keep the dependency-free direct/resident proof passing.
+- [x] Cover universal-wheel admission, native-wheel rejection, non-registry
+  rejection, unsafe names, and installed native payloads with unit tests.
+- [ ] Add cross-platform proof on Linux and Windows before broadening the
+  portable-wheel claim beyond the current runtime matrix.
 
 ## Documentation and delivery
 
-- [x] Add the dependency-free Python Component example and a repeatable demo
-  command.
-- [x] Update README, website Python guide, architecture/security capability
-  matrices, and `.holo` format documentation where the new compiler profile is
-  user-visible.
+- [x] Update README and website Python/CLI/format documentation with the
+  portable dependency policy, example, and native fallback.
+- [x] Record the observed non-reproducibility and keep deterministic component
+  output unchecked in the durable runtime plan.
 - [x] Keep `specs/plans/holo-application-runtime.md` synchronized.
 - [x] Run formatting, focused tests, all-target tests, Clippy, BDD, optimized
-  build, release smoke, WIT conformance, and docs.
-- [ ] Land the reviewable PR and return the repository to clean `main`.
+  build, release smoke, Component demos, WIT conformance, and docs.
+- [ ] Land the reviewable PR, remove the feature worktree, and return the
+  primary repository to clean `main`.
 
 ## Deferred discoveries
 
-- [ ] `DISC-017b` — Resolve and package a locked pure-Python dependency into an
-  isolated Component v1 build path.
-- [ ] `DISC-018` — Define a capability-gated WASI profile only when an
-  application needs real host interfaces; do not broaden the import-free base
-  world.
+- [ ] `DISC-017c` — Define deterministic Component Python builds despite the
+  pinned `--stub-wasi` build-time PRNG seed; record toolchain/artifact
+  provenance without changing canonical identity accidentally.
+- [ ] `DISC-018` — Define capability-gated WASI only when an application needs
+  real host interfaces; do not broaden the import-free base world.

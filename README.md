@@ -443,13 +443,13 @@ Python is a compiler input, not a fifth `.holo` layer kind. Both available
 profiles keep the same `module:function` entrypoint, where the function accepts
 and returns `bytes`:
 
-- schema-v4 `wasi-component` packages dependency-free Python and CPython into
-  an import-free `WasmCodemodule` selected by
+- schema-v4 `wasi-component` packages Python, CPython, and locked pure-Python
+  wheels into an import-free `WasmCodemodule` selected by
   `hologram:guest/component@1`; it runs directly or resident without Docker;
 - schema-v2 `rootfs` packages Python, native dependencies, and Linux libraries
   into an architecture-specific OCI image for the experimental direct provider.
 
-The portable teaching example is `examples/python-component-hello/`:
+The dependency-free teaching example is `examples/python-component-hello/`:
 
 ```console
 $ hologram app init ./my-python-component \
@@ -472,10 +472,32 @@ This compiler invokes pinned `componentize-py 0.25.0` through an isolated
 search path, and uses `--stub-wasi`. The emitted component therefore imports
 no WASI and runs under the existing Component v1 limits. Install `uv`; the
 first compile downloads the pinned tool and later compiles reuse its cache.
-The current portable profile rejects every third-party package in `uv.lock`
-before archive emission. Stubbed randomness repeats a build-time seed and is
-not suitable for security-sensitive randomness. Real WASI host interfaces and
-portable dependency resolution remain later milestones.
+For external packages, the portable profile accepts registry records only when
+`uv.lock` contains an HTTPS, SHA-256-pinned Python 3 `*-none-any.whl`. It
+installs those exact wheels into a private path with indexes, dependency
+re-resolution, source builds, and ambient pip/uv configuration disabled.
+Native, source-only, Git, and path packages fail during `compile --check` with
+guidance to use `rootfs`.
+
+`examples/python-component-dependency/` demonstrates `six==1.17.0`:
+
+```console
+$ hologram compile examples/python-component-dependency/hologram.json \
+    --output python-component-dependency.holo
+$ hologram run python-component-dependency.holo \
+    --input-text Ada --output-format json
+{
+  "dependency": "six-1.17.0",
+  "message": "Hello, Ada!",
+  "name": "Ada",
+  "runtime": "python-component"
+}
+```
+
+Stubbed randomness repeats one build-time seed inside an emitted component and
+is not suitable for security-sensitive randomness. The pinned tool does not
+offer deterministic seed control, so byte-identical component builds are not
+yet claimed. Real capability-gated WASI remains a later milestone.
 
 Run the repeatable direct-and-resident proof with:
 
@@ -540,7 +562,7 @@ hologram app init ./my-python-app \
 
 Compilation stages only `pyproject.toml`, the declared `uv.lock`, and `src/`, then runs `uv sync --locked` in a clean Linux image. It does not read or copy the host `.venv`. Direct execution validates the archive and target architecture, disables networking, mounts the container filesystem read-only, drops Linux capabilities, enables `no-new-privileges`, and applies CPU, memory, PID, temporary-storage, input/output, and 30-second wall-clock limits.
 
-This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. New archives record the exact image ID, so a warm local run skips decompression and `docker image load` only when that trusted ID is already present; a cold machine still restores the image from the archive. Compile once with an optimized release binary and reuse the resulting `.holo`; debug builds spend substantially longer hashing the roughly 100 MiB archive. `just python-holo-demo` builds and uses the release CLI, with a one-time optimized link on the first invocation. Use a digest-pinned value for `source.base` when reproducible builds matter. Portable third-party dependencies, capability-gated WASI, and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps) and [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md).
+This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. New archives record the exact image ID, so a warm local run skips decompression and `docker image load` only when that trusted ID is already present; a cold machine still restores the image from the archive. Compile once with an optimized release binary and reuse the resulting `.holo`; debug builds spend substantially longer hashing the roughly 100 MiB archive. `just python-holo-demo` builds and uses the release CLI, with a one-time optimized link on the first invocation. Use a digest-pinned value for `source.base` when reproducibility matters. Capability-gated WASI and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps), [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md), and [ADR 012](specs/adrs/012-locked-python-component-dependencies.md).
 
 The demo writes one JSON document to stdout; progress and failures use stderr:
 
@@ -722,7 +744,7 @@ The default build does not yet provide:
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives—including dependency-free Python Components—execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, inference-model provider invocation, resident rootfs execution, portable third-party Python dependencies, capability-gated WASI, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives—including Python Components with locked pure-Python wheels—execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, inference-model provider invocation, resident rootfs execution, native Component dependencies, capability-gated WASI, deterministic Python Component output, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

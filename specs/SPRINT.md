@@ -61,6 +61,8 @@ are ADR 013.
   execute it directly and resident.
 - [x] Run formatting, source-size, all-target tests, Clippy, BDD, optimized
   build, release smoke, all Component demos, WIT conformance, and docs.
+- [x] Align CI and server-release workspace tests with the existing serialized
+  subprocess-test contract after GitHub exposed a Linux `ETXTBSY` race.
 
 ## Documentation and delivery
 

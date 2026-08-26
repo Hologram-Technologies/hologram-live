@@ -20,7 +20,8 @@ jobs:
       - run: ./scripts/check-release-tag.sh server "$GITHUB_REF_NAME"
       - uses: dtolnay/rust-toolchain@1.97.1
       - run: ./scripts/check-product-boundaries.sh
-      - run: cargo test --workspace --all-targets --locked
+      # Keep subprocess-owning fixtures serialized, matching CI and `just test`.
+      - run: cargo test --workspace --all-targets --locked -- --test-threads=1
 
   build:
     needs: verify

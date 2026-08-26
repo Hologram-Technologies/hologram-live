@@ -47,6 +47,15 @@ it cannot select a provider or host function. Future WASI or Hologram imports
 must be introduced by a versioned contract and linked only from the admitted
 effective grant.
 
+ADR 011 assigns future Wasm contracts through the canonical, identity-bearing
+layer `aux` tag. Empty means legacy core-Wasm v1; an unknown non-empty contract
+fails closed and never falls back to core Wasm or ambient WASI. The first
+Component Model world imports nothing. Future storage, channel, and mediated
+network interfaces require their corresponding admitted canonical fields;
+clocks, random, environment, process control, secrets, inference, and raw
+sockets remain unavailable while no sufficiently scoped capability exists.
+Under-granted imports must fail before linker construction.
+
 ## Desktop sidecar
 
 The Tauri application invokes a bundled `hologram` sidecar through fixed lifecycle and status commands. It does not expose a general-purpose shell command to the webview.

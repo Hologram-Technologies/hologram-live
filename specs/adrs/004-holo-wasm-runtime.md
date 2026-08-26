@@ -23,6 +23,10 @@ a typed `LIVE_PROTOCOL_ERROR`; the runtime does not reinterpret output bytes as
 an exit code. A future ABI and host interfaces require explicit version
 negotiation. They must not overload the callable entry string, and imports may
 only be linked from an admitted effective capability grant.
+[ADR 011](011-holo-guest-contract-negotiation.md) defines that negotiation:
+empty canonical Wasm `aux` remains the core-v1 alias, while explicit namespaced
+contract identifiers use the same identity-bearing tag and fail closed on
+older runtimes.
 
 The upstream `uor-hologram` CPU backend remains excluded (it needs unstable AVX-512 intrinsics), and `tensor`/`rootfs` layers keep returning `LIVE_CAPABILITY_MISSING`. Compiled `weightc` artifacts and mvm microVMs are the candidate future engines for those kinds.
 

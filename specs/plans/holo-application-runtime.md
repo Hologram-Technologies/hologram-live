@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1 Slice 3, guest-contract versioning and host-interface design
+- Next delivery: M3.1a, upstream contract-tag support and Component Model provider limits
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -235,12 +235,17 @@ dependencies until an explicit child invocation contract is introduced.
   output, successful completion, and a future explicit exit status.
 - [x] Expose `returned`, provider-observed `exited { code }`, and legacy-only
   `unknown` completion additively through JSON/HTTP and Protobuf/gRPC.
+- [x] Select canonical Wasm `Layer.aux` as the namespaced guest-contract
+  identifier, retaining empty as the byte-compatible core-Wasm v1 alias.
+- [x] Define exact-major contract negotiation, the import-free Component Model
+  v1 WIT world, capability-to-import mapping, and fail-closed diagnostics in
+  ADR 011.
 - [x] Preserve one-output-per-input compatibility until a versioned guest-contract upgrade lands.
 - [x] Remove the runtime’s “exactly one layer at primary position zero” special case.
 
 ### M3.1a Component-model and Python/WASI proof
 
-- [ ] Define a versioned Hologram WIT world beginning with one byte input and one byte output.
+- [x] Define a versioned, import-free Hologram WIT world beginning with one byte input and one byte output.
 - [ ] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
 - [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
 - [ ] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
@@ -539,7 +544,7 @@ application/DMG builds pass.
 
 ## Cross-cutting API and guest-contract work
 
-- [ ] Define version negotiation for the core-Wasm guest contract.
+- [x] Define version negotiation for the core-Wasm and Component Model guest contracts.
 - [ ] Move beyond fixed anonymous one-input/one-output execution with typed, named ports.
 - [x] Define application completion and exit status separately from byte outputs.
 - [ ] Add structured logs and diagnostics without treating stdout as a protocol.
@@ -594,6 +599,6 @@ application/DMG builds pass.
   adding host imports or weakening existing archives.
 - [x] Define typed provider completion and application exit semantics without
   fabricating a core-Wasm v1 process status.
-- [ ] Decide the canonical guest-contract version negotiation and
+- [x] Decide the canonical guest-contract version negotiation and
   capability-gated host-interface mapping before implementing Component Model
   or WASI support.

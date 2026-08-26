@@ -51,6 +51,10 @@ This document is deliberately strict about what the current stable build does an
 
 ## Present as an extension seam, not implemented by the default module set
 
+- Component Model execution and WASI imports. ADR 011 defines canonical
+  contract negotiation and an import-free WIT world, but the provider,
+  upstream Wasm `aux` validation change, and enforced resource limits have not
+  landed.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
 - Engine enforcement of scalar CPU, memory, deadline, and concurrency budgets carried by effective grants.
 - `.holo` execution for `tensor`, inference-model, and non-Python/resident `rootfs` layers.

@@ -100,6 +100,15 @@ Direct and resident providers validate that same declared entry before start
 and create a fresh guest instance per input. V1 returns bytes but carries no
 numeric process exit status, and it links no WASI or ambient host interface.
 
+Guest-contract selection is canonical but remains separate from the callable
+entry. Empty Wasm `aux` normalizes to `hologram:guest/core-wasm@1`; future
+Component Model archives use `hologram:guest/component@1`. Exact-major
+negotiation never falls back across contracts. The Component v1 WIT world is an
+import-free, stateless `list<u8> -> result<list<u8>, guest-error>` boundary.
+ADR 011 maps each proposed host interface to admitted capability fields and
+keeps interfaces with no canonical authority unavailable. The component
+provider itself remains planned work, not an advertised runtime capability.
+
 Provider invocation returns outputs and completion as separate values. The
 root primary alone supplies `returned` or a provider-observed `exited { code }`
 completion; child primaries and non-primary dependencies never compete with it.

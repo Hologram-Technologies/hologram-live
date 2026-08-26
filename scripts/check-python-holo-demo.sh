@@ -63,6 +63,17 @@ if provenance["canonical"] or source["profile"] != "rootfs":
 if not source["builder"].get("client_version") or not source["builder"].get("server_version"):
     print(f"rootfs provenance is missing Docker versions: {source!r}", file=sys.stderr)
     raise SystemExit(1)
+base_image = source["base_image"]
+resolved_base = base_image.get("resolved_reference", "")
+if base_image.get("reference") != "python:3.12-slim" or not resolved_base.startswith("python@sha256:"):
+    print(f"rootfs provenance did not bind the requested base to a digest: {base_image!r}", file=sys.stderr)
+    raise SystemExit(1)
+if len(resolved_base.removeprefix("python@sha256:")) != 64:
+    print(f"rootfs provenance contains an invalid resolved base: {base_image!r}", file=sys.stderr)
+    raise SystemExit(1)
+if "not resolved until compilation" in source["reproducibility"]["blocker"]:
+    print(f"completed rootfs provenance retained its planned base blocker: {source!r}", file=sys.stderr)
+    raise SystemExit(1)
 build_output = source.get("output", {})
 if not build_output.get("layer_kappa", "").startswith("blake3:"):
     print(f"rootfs provenance is missing layer identity: {source!r}", file=sys.stderr)
@@ -93,6 +104,8 @@ summary = {
     "archive_persisted": sys.argv[1] == "true",
     "build": {
         "target_platform": source["target_platform"],
+        "base_reference": base_image["reference"],
+        "resolved_base_reference": resolved_base,
         "image_id": build_output["image_id"],
         "layer_kappa": build_output["layer_kappa"],
         "reproducible": source["reproducibility"]["reproducible"],

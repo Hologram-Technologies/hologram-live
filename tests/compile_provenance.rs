@@ -90,6 +90,7 @@ fn rootfs_compile_check_reports_planned_provenance_without_docker() {
         .is_some_and(|platform| platform == "linux/arm64" || platform == "linux/amd64"));
     assert_eq!(source["base_image"]["reference"], "python:3.12-slim");
     assert_eq!(source["base_image"]["digest_pinned"], false);
+    assert!(source["base_image"].get("resolved_reference").is_none());
     assert!(source["base_image"].get("observed_image_id").is_none());
     assert_eq!(source["dependency_installer"]["name"], "uv");
     assert_eq!(source["dependency_installer"]["version"], "0.11.8");
@@ -106,5 +107,6 @@ fn rootfs_compile_check_reports_planned_provenance_without_docker() {
     assert_eq!(source["reproducibility"]["reproducible"], false);
     assert!(source["reproducibility"]["blocker"]
         .as_str()
-        .is_some_and(|blocker| blocker.contains("OCI representation")));
+        .is_some_and(|blocker| blocker.contains("not resolved until compilation")
+            && blocker.contains("OCI representation")));
 }

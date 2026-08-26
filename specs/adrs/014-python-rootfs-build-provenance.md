@@ -14,9 +14,10 @@ layer, and final image identity.
 
 That gap is especially confusing because the default base
 `python:3.12-slim` is mutable and Docker's exported OCI archive is not
-normalized for byte-for-byte reproducibility. Reporting observations is still
-useful, but those observations must not be mistaken for either canonical
-application identity or a reproducibility claim.
+normalized for byte-for-byte reproducibility. ADR 015 subsequently closed the
+mutable-tag build race by binding real builds to a registry manifest digest.
+Reporting observations is still useful, but those observations must not be
+mistaken for either canonical application identity or a reproducibility claim.
 
 ## Decision
 
@@ -36,15 +37,18 @@ A rootfs entry from `compile --check` records:
   OCI-output blocker.
 
 `compile --check` remains read-only and does not require or contact Docker. A
-completed compile adds the observed Docker client/server versions, the locally
-observed identity of the requested base when Docker exposes it, and output
-evidence containing the exact rootfs layer κ, envelope byte length, final image
-ID, and uncompressed image-archive byte length.
+completed compile adds the registry-resolved reference that ADR 015 passes to
+Docker, observed Docker client/server versions, the locally observed identity
+of that resolved base when Docker exposes it, and output evidence containing
+the exact rootfs layer κ, envelope byte length, final image ID, and
+uncompressed image-archive byte length.
 
-The observed base image ID is evidence about the local build. It is not treated
-as a registry-resolved digest and does not rewrite a mutable source manifest.
-Likewise, the output image ID and layer κ identify what was emitted; they do not
-prove that a clean build will emit the same bytes.
+The registry-resolved reference and observed local image ID are distinct:
+`resolved_reference` is the immutable registry manifest identity actually used
+by `FROM`, while `observed_image_id` is optional local-engine evidence. Neither
+rewrites the mutable source manifest. Likewise, the output image ID and layer κ
+identify what was emitted; they do not prove that a clean build will emit the
+same bytes.
 
 As in ADR 013, the report is CLI result data. It remains outside the `.holo`
 archive, source metadata, application directory, content blobs, and canonical
@@ -63,15 +67,16 @@ hologram --json compile hologram.json --output application.holo \
 - Planned provenance is available on machines without Docker and cannot be
   confused with observed build-run evidence because version/output fields are
   absent until compilation.
-- Mutable bases and Docker export nondeterminism remain visible, machine-
-  readable blockers instead of implicit limitations.
+- Planned checks expose an unresolved mutable base without contacting a
+  registry; completed builds expose its digest binding. Docker export
+  nondeterminism remains a machine-readable blocker.
 - Provenance stays additive and may evolve independently of the archive codec.
 - The report is not yet a signed attestation or an SBOM.
 
 ## Follow-up
 
-- Resolve tag references through a registry and record the manifest digest
-  used by the build without mutating the source recipe silently.
+- Keep ADR 015's registry resolver compatible with authenticated registries and
+  future OCI-native builders.
 - Define and implement a normalized, byte-reproducible OCI/rootfs construction
   path, then prove equal layer κ values across clean supported hosts.
 - Add dependency inventory and SBOM material for the installed rootfs closure.

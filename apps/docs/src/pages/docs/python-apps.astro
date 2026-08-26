@@ -18,7 +18,7 @@ import { sitePath } from '../../lib/site';
   <ul>
     <li>A <code>pyproject.toml</code>, a committed <code>uv.lock</code>, and a <code>src/</code> package layout.</li>
     <li><code>uv</code> for the portable compiler. The first build downloads the exact host-specific <code>componentize-py 0.25.0</code> wheel by URL and SHA-256 into uv's isolated tool cache, plus exact dependency wheel URLs from the lock.</li>
-    <li>Python 3.12 and a Docker-compatible engine with Linux container support only for the rootfs profile.</li>
+    <li>Python 3.12 and a Docker-compatible engine with Linux container support and Buildx registry inspection only for the rootfs profile.</li>
     <li>An entrypoint written as <code>module.path:function</code>. It receives one byte string and must return one byte string.</li>
     <li>A target architecture of <code>arm64</code> or <code>x86_64</code> only for rootfs. The Component profile has no <code>arch</code> or OCI <code>base</code> field.</li>
   </ul>
@@ -178,7 +178,7 @@ def main(request: bytes) -&gt; bytes:
     &#125;
   ]
 &#125;</code></pre>
-  <p>The convenience default is <code>python:3.12-slim</code>. Tags are mutable; replace it with the registry's <code>repository@sha256:digest</code> form when reproducibility matters. Hologram validates that value but does not yet resolve or record a tag's digest automatically.</p>
+  <p>The convenience default is <code>python:3.12-slim</code>. A real compile resolves a mutable tag through Docker's registry client and replaces it in the build with <code>repository@sha256:digest</code>. Supplying that digest-qualified form yourself skips the lookup. The source recipe retains the requested value; completed provenance records the immutable value actually passed to <code>FROM</code>.</p>
 
   <h3>4. Validate without building</h3>
   <pre><code>hologram --json compile hologram.json --check \
@@ -208,14 +208,14 @@ def main(request: bytes) -&gt; bytes:
     &#125;
   ]
 &#125;</code></pre>
-  <p>This parses the schema, validates the primary layer and entrypoint, and hashes <code>pyproject.toml</code>, <code>uv.lock</code>, and the normalized <code>src/</code> tree. It does not contact the container engine or write an archive. The full report includes each logical input path and SHA-256; the shortened output above shows the important shape.</p>
+  <p>This parses the schema, validates the primary layer and entrypoint, and hashes <code>pyproject.toml</code>, <code>uv.lock</code>, and the normalized <code>src/</code> tree. It does not contact the container engine, contact a registry, or write an archive. A mutable tag therefore has no <code>resolved_reference</code> during <code>--check</code>; an already digest-pinned reference is reported as resolved. The full report includes each logical input path and SHA-256; the shortened output above shows the important shape.</p>
 
   <h3>5. Compile a self-contained archive</h3>
   <pre><code>hologram --json compile hologram.json \
   --output numpy-pandas.holo \
   | jq '.build_provenance' &gt; numpy-pandas.provenance.json</code></pre>
-  <p>The compiler builds a clean Linux image for the selected architecture, installs the pinned <code>uv</code> build tool, runs <code>uv sync --locked --no-dev --no-editable</code>, adds the generated launcher, saves the OCI image, compresses it with Zstandard, and embeds it as a content-addressed rootfs blob. The resulting archive contains the source manifest as metadata and the canonical runtime manifest as its application identity.</p>
-  <p>A completed provenance report adds the observed Docker client/server versions, locally observed base-image identity when available, exact output image ID, rootfs layer κ, and output sizes. The report is <code>canonical: false</code> and stays outside the archive, so build-host evidence cannot alter application identity. It is observational evidence, not a reproducibility claim.</p>
+  <p>The compiler asks <code>docker buildx imagetools inspect --raw</code> for a mutable base's original registry manifest, verifies schema 2, hashes those exact bytes with SHA-256, and writes the resulting digest-qualified reference into the Dockerfile. It then builds a clean Linux image for the selected architecture, installs the pinned <code>uv</code> build tool, runs <code>uv sync --locked --no-dev --no-editable</code>, adds the generated launcher, saves the OCI image, compresses it with Zstandard, and embeds it as a content-addressed rootfs blob. A tag change after resolution cannot redirect that build because Docker consumes the fixed digest.</p>
+  <p>A completed provenance report adds <code>base_image.resolved_reference</code>, observed Docker client/server versions, locally observed base-image identity when available, exact output image ID, rootfs layer κ, and output sizes. The requested <code>base_image.reference</code> remains intact for auditability. The report is <code>canonical: false</code> and stays outside the archive, so build-host evidence cannot alter application identity. OCI archive normalization remains open, so the report still does not claim byte-identical clean builds.</p>
 
   <h3>6. Execute the <code>.holo</code></h3>
   <pre><code>hologram run numpy-pandas.holo --input request.json \
@@ -273,9 +273,9 @@ target/release/hologram run target/numpy-pandas.holo \
     <li>The rootfs profile supports only direct execution of a self-contained fat archive. The Python Component profile is a Wasm layer and supports <code>holo load</code>.</li>
     <li>The provider requires a local Docker-compatible engine and leaves its content-derived, image-ID-verified image in the engine cache.</li>
     <li>Container isolation is useful for a local demo, but this provider is not advertised as an untrusted or multi-tenant security boundary.</li>
-    <li>Build validation and compilation now report non-canonical rootfs provenance. Automatic registry base-digest resolution, byte-for-byte reproducible OCI output, dependency SBOMs, signed attestations, and the microVM provider remain milestone work.</li>
+    <li>Real builds bind mutable bases to a registry manifest digest and report the requested and resolved identities. Byte-for-byte reproducible OCI output, dependency SBOMs, signed attestations, and the microVM provider remain milestone work.</li>
     <li>Python Component v1 runs dependency-free projects and locked platform-independent wheels directly and resident. Native/source-only packages require rootfs; deterministic Component output and any real capability-gated WASI profile remain planned.</li>
   </ul>
 
-  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, <code>specs/adrs/012-locked-python-component-dependencies.md</code>, <code>specs/adrs/014-python-rootfs-build-provenance.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider and provenance decisions, and remaining milestone checklist.</p>
+  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, <code>specs/adrs/012-locked-python-component-dependencies.md</code>, <code>specs/adrs/014-python-rootfs-build-provenance.md</code>, <code>specs/adrs/015-python-rootfs-base-digest-binding.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider and provenance decisions, and remaining milestone checklist.</p>
 </DocsLayout>

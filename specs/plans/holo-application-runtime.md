@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1a, dependency-free Python targeting Component v1
+- Next delivery: M3.1a, locked pure-Python dependencies targeting Component v1
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -258,10 +258,20 @@ dependencies until an explicit child invocation contract is introduced.
   provider remains isolated from core Wasm.
 - [x] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
 - [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
-- [ ] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
+- [x] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
 - [ ] Prove a locked pure-Python dependency is included without reading the developer's ambient virtual environment.
-- [ ] Report unsupported WASI modules, imports, and dependencies as typed preparation diagnostics.
+- [x] Report unsupported WASI imports and dependency-bearing portable locks as typed preparation/compile diagnostics.
 - [x] Add component fuel, memory, input/output, deadline, and cancellation limits before advertising Component execution.
+
+Python Component proof (2026-08-26): source profile `wasi-component` invokes
+pinned `componentize-py 0.25.0 --stub-wasi` through an isolated `uvx`
+environment, emits an 18.3 MiB import-free Wasm layer, and preserves the
+existing `module:function` byte entrypoint through a generated private adapter.
+`examples/python-component-hello` executed directly and through catalog
+import/load/run/unload with bundled CPython 3.14.0. The opt-in
+`just python-component-holo-demo` gate repeats both paths. The current compiler
+rejects every non-project package in `uv.lock`; locked portable dependencies
+and reproducible build provenance remain the next slice.
 
 ### M3.2 View provider
 
@@ -403,7 +413,7 @@ application/DMG builds pass.
 - [x] Add source-manifest schema v2 with a typed source recipe while retaining schema-v1 prebuilt `path` compatibility.
 - [x] Add `hologram app init --template python` and non-interactive flags for project, entrypoint, lock file, and execution profile. Interactive Python-specific prompting remains a UX follow-up.
 - [x] Keep a minimal locked standard-library Python project as a fast teaching example alongside the NumPy/pandas dependency proof.
-- [ ] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
+- [x] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
 - [x] Require `uv.lock` and resolve it for the declared Linux target in a clean OCI build root for the experimental rootfs provider.
 - [ ] Pin and record the Python runtime, component toolchain, target ABI, dependency artifacts, and hashes.
 - [x] Stage only `pyproject.toml`, the declared lock file, `src/`, and the generated launcher for the experimental rootfs provider; reject absolute/escaping paths and symlinks.
@@ -618,5 +628,5 @@ application/DMG builds pass.
 - [x] Execute import-free Component v1 directly and resident through its exact
   provider with fresh-store memory/fuel limits, byte ceilings, deadline, and
   cancellation interruption.
-- [ ] Package and execute dependency-free Python against Component v1 without
+- [x] Package and execute dependency-free Python against Component v1 without
   introducing ambient WASI.

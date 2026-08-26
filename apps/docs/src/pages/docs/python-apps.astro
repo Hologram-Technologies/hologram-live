@@ -2,28 +2,58 @@
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import { sitePath } from '../../lib/site';
 ---
-<DocsLayout title="Python applications" description="Package a locked Python project and its dependencies as an executable rootfs layer in a .holo application.">
+<DocsLayout title="Python applications" description="Package Python as a portable Component v1 Wasm layer or a dependency-aware rootfs layer in a .holo application.">
   <h1>Python applications</h1>
-  <p>Hologram can compile a locked Python project into an architecture-specific <code>RootfsImage</code>, embed it in a fat <code>.holo</code> archive, and execute its <code>main(request: bytes) -&gt; bytes</code> function. Python remains a compiler input rather than a layer kind, so the canonical <code>.holo</code> model stays unchanged.</p>
+  <p>Hologram can compile Python into either an import-free Component v1 <code>WasmCodemodule</code> or an architecture-specific <code>RootfsImage</code>, embed that payload in a <code>.holo</code> archive, and execute its <code>main(request: bytes) -&gt; bytes</code> function. Python remains a compiler input rather than a layer kind, so the canonical <code>.holo</code> model stays unchanged.</p>
 
-  <div class="note"><strong>Experimental local provider</strong>The workflow on this page works today and is intended for demos and trusted local applications. Compilation and direct execution require a running Docker-compatible engine. Execution uses a locked-down OCI container, not the planned hardware-backed microVM provider, and resident or thin-archive Python execution is not supported yet. Desktop's Run panel verifies and downloads a catalog archive before using this direct executor.</div>
+  <div class="note"><strong>Choose the profile explicitly</strong><code>wasi-component</code> works without Docker and runs directly or resident, but currently accepts dependency-free locks only. <code>rootfs</code> supports ordinary native dependencies such as NumPy and pandas through an experimental direct-only Docker provider. Neither profile runs host Python or reads the developer virtual environment.</div>
 
   <h2>What is supported</h2>
   <div class="doc-grid">
-    <article class="doc-card"><h3>Rootfs profile · available</h3><p>Packages CPython, the application, locked Linux dependencies, compiled extensions, and shared libraries into a compressed OCI image carried by a <code>rootfs</code> layer.</p></article>
-    <article class="doc-card"><h3>Portable WASI · planned</h3><p>A future profile will package CPython and compatible dependencies as a WebAssembly component. Hologram does not silently fall back to host Python or claim that ordinary native wheels are WASI binaries.</p></article>
+    <article class="doc-card"><h3>WASI Component · available</h3><p>Packages CPython 3.14 and a dependency-free application into an import-free Component v1 <code>wasm</code> layer. Direct and resident execution use the bounded Component provider.</p></article>
+    <article class="doc-card"><h3>Rootfs profile · available</h3><p>Packages CPython 3.12, the application, locked Linux dependencies, compiled extensions, and shared libraries into a compressed OCI image carried by a <code>rootfs</code> layer.</p></article>
   </div>
 
   <h2>Requirements and contract</h2>
   <ul>
     <li>A <code>pyproject.toml</code>, a committed <code>uv.lock</code>, and a <code>src/</code> package layout.</li>
-    <li>Python 3.12 for the current generated image and a Docker-compatible engine with Linux container support.</li>
+    <li><code>uv</code> for the portable compiler. The first build downloads pinned <code>componentize-py 0.25.0</code> into uv's isolated tool cache.</li>
+    <li>Python 3.12 and a Docker-compatible engine with Linux container support only for the rootfs profile.</li>
     <li>An entrypoint written as <code>module.path:function</code>. It receives one byte string and must return one byte string.</li>
-    <li>A target architecture of <code>arm64</code> or <code>x86_64</code>. <code>host</code> resolves to the current machine for portable examples; direct execution requires the resolved architecture to match the host.</li>
+    <li>A target architecture of <code>arm64</code> or <code>x86_64</code> only for rootfs. The Component profile has no <code>arch</code> or OCI <code>base</code> field.</li>
   </ul>
-  <p>The compiler stages only <code>pyproject.toml</code>, the declared lock file, <code>src/</code>, and its generated launcher. It rejects absolute paths, paths escaping the manifest directory, and symlinks. The host <code>.venv</code>, Git metadata, caches, credentials, and undeclared files do not enter the image.</p>
+  <p>Both profiles validate only <code>pyproject.toml</code>, the declared lock file, and <code>src/</code>; they reject absolute paths, escaping paths, and symlinks. Component compilation exposes only <code>src/</code> plus a private generated adapter to the isolated tool. Rootfs compilation stages those declared inputs and its generated launcher. The host <code>.venv</code>, Git metadata, caches, credentials, and undeclared project files do not enter either payload.</p>
 
-  <h2>Quick example: Python hello</h2>
+  <h2>Portable example: Python Component hello</h2>
+  <p><code>examples/python-component-hello/</code> is dependency-free and compiles to the exact import-free <code>hologram:guest/component@1</code> contract. It needs no generated bindings in application source:</p>
+  <pre><code># examples/python-component-hello/src/python_component_hello/__init__.py
+import json
+import sys
+
+
+def main(request: bytes) -&gt; bytes:
+    name = request.decode("utf-8").strip() or "Hologram"
+    return json.dumps(&#123;
+        "message": f"Hello, &#123;name&#125;!",
+        "name": name,
+        "python": sys.version.split()[0],
+        "runtime": "python-component",
+    &#125;, separators=(",", ":"), sort_keys=True).encode()</code></pre>
+  <pre><code>hologram app init . \
+  --template python --profile wasi-component \
+  --project . --entry python_component_hello:main --lock uv.lock
+
+hologram compile examples/python-component-hello/hologram.json \
+  --output python-component-hello.holo
+hologram run python-component-hello.holo \
+  --input-text Ada --output-format json
+
+# Compile once, then prove direct and resident execution
+just python-component-holo-demo</code></pre>
+  <p>The compiler writes a private WIT adapter, removes <code>VIRTUAL_ENV</code>, <code>PYTHONPATH</code>, <code>PYTHONHOME</code>, and user-site lookup, and invokes pinned <code>componentize-py 0.25.0 --stub-wasi</code>. CPython and the app are inside the roughly 18.3 MiB component. The emitted layer imports no WASI, so filesystem, network, clocks, environment, arguments, stdio, DNS, secrets, and process control are absent at runtime.</p>
+  <div class="note"><strong>Portable boundary today</strong>The compiler rejects a lock containing any package beyond the editable project before componentization. Stubbed WASI also bakes one PRNG seed into the component, so <code>random</code> repeats and must not protect secrets. Locked pure-Python dependencies, secure randomness, real capability-gated WASI, and byte-for-byte reproducible component builds remain follow-up work.</div>
+
+  <h2>Rootfs example: Python hello</h2>
   <p><code>examples/python-hello/</code> is the small companion to the Wasm project example. It has no third-party dependencies, but it still carries a committed <code>uv.lock</code>, uses the schema-v2 rootfs recipe, and implements the real byte entrypoint contract:</p>
   <pre><code># examples/python-hello/src/python_hello_holo/__init__.py
 import json
@@ -187,11 +217,11 @@ target/release/hologram run target/numpy-pandas.holo \
 
   <h2>Current boundaries</h2>
   <ul>
-    <li>Only direct execution of a self-contained fat archive is supported. <code>holo load</code> remains Wasm-only.</li>
+    <li>The rootfs profile supports only direct execution of a self-contained fat archive. The Python Component profile is a Wasm layer and supports <code>holo load</code>.</li>
     <li>The provider requires a local Docker-compatible engine and leaves its content-derived, image-ID-verified image in the engine cache.</li>
     <li>Container isolation is useful for a local demo, but this provider is not advertised as an untrusted or multi-tenant security boundary.</li>
     <li>Base digest resolution, byte-for-byte reproducible OCI output, build provenance, SBOMs, signatures, and the microVM provider remain milestone work.</li>
-    <li>The import-free WebAssembly Component Model v1 provider is available directly and resident. Python targeting that world and any capability-gated WASI profile remain planned.</li>
+    <li>Dependency-free Python Component v1 is available directly and resident. Locked portable dependencies and any real capability-gated WASI profile remain planned.</li>
   </ul>
 
   <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider decision, and remaining milestone checklist.</p>

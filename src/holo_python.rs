@@ -44,7 +44,7 @@ pub struct PythonRootfsSource {
     pub entry: String,
     pub lock: PathBuf,
     pub profile: PythonProfile,
-    #[serde(default = "default_base")]
+    #[serde(default = "default_base", skip_serializing_if = "is_default_base")]
     pub base: String,
 }
 
@@ -52,6 +52,7 @@ pub struct PythonRootfsSource {
 #[serde(rename_all = "kebab-case")]
 pub enum PythonProfile {
     Rootfs,
+    WasiComponent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,10 +75,10 @@ pub struct PythonRunOutcome {
 }
 
 #[derive(Debug)]
-struct SourceInputs {
-    pyproject: PathBuf,
-    lock: PathBuf,
-    source_dir: PathBuf,
+pub(crate) struct SourceInputs {
+    pub(crate) pyproject: PathBuf,
+    pub(crate) lock: PathBuf,
+    pub(crate) source_dir: PathBuf,
 }
 
 pub fn validate_source(source: &PythonRootfsSource, arch: Option<&str>) -> Result<()> {
@@ -764,7 +765,7 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn validate_entry(entry: &str) -> Result<()> {
+pub(crate) fn validate_entry(entry: &str) -> Result<()> {
     let Some((module, function)) = entry.split_once(':') else {
         return Err(LiveError::Config(
             "Python entry must use module:function syntax".to_owned(),
@@ -860,7 +861,7 @@ fn require_directory(path: &Path, label: &str) -> Result<()> {
     }
 }
 
-fn resolve_inputs(root: &Path, source: &PythonRootfsSource) -> Result<SourceInputs> {
+pub(crate) fn resolve_inputs(root: &Path, source: &PythonRootfsSource) -> Result<SourceInputs> {
     let root = root
         .canonicalize()
         .map_err(|error| LiveError::io(root, error))?;
@@ -933,6 +934,10 @@ fn diagnostic(bytes: &[u8]) -> String {
 
 fn default_base() -> String {
     "python:3.12-slim".to_owned()
+}
+
+fn is_default_base(base: &str) -> bool {
+    base == "python:3.12-slim"
 }
 
 #[cfg(test)]

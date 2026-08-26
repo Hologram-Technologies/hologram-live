@@ -106,6 +106,7 @@ enum TemplateArg {
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 enum PythonProfileArg {
     Rootfs,
+    WasiComponent,
 }
 
 #[derive(Debug, Serialize)]
@@ -356,33 +357,52 @@ fn python_layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
                 .to_owned(),
         ));
     }
-    if args.profile.unwrap_or(PythonProfileArg::Rootfs) != PythonProfileArg::Rootfs {
-        return Err(LiveError::Config(
-            "Python applications currently support only --profile rootfs".to_owned(),
-        ));
-    }
     let entry = args.entry.clone().ok_or_else(|| {
         LiveError::Config("--template python requires --entry module:function".to_owned())
     })?;
-    Ok(CompileLayer {
-        kind: CompileLayerKind::Rootfs,
-        path: None,
-        source: Some(CompileSource::Python(PythonRootfsSource {
-            project: args.project.clone().unwrap_or_else(|| ".".into()),
-            entry,
-            lock: args.lock.clone().unwrap_or_else(|| "uv.lock".into()),
-            profile: PythonProfile::Rootfs,
-            base: args
-                .base
-                .clone()
-                .unwrap_or_else(|| "python:3.12-slim".to_owned()),
-        })),
-        entry: None,
-        contract: None,
-        arch: Some(args.arch.clone().unwrap_or_else(default_arch)),
-        surface: None,
-        engine: None,
-    })
+    let profile = args.profile.unwrap_or(PythonProfileArg::Rootfs);
+    let source = Some(CompileSource::Python(PythonRootfsSource {
+        project: args.project.clone().unwrap_or_else(|| ".".into()),
+        entry,
+        lock: args.lock.clone().unwrap_or_else(|| "uv.lock".into()),
+        profile: match profile {
+            PythonProfileArg::Rootfs => PythonProfile::Rootfs,
+            PythonProfileArg::WasiComponent => PythonProfile::WasiComponent,
+        },
+        base: args
+            .base
+            .clone()
+            .unwrap_or_else(|| "python:3.12-slim".to_owned()),
+    }));
+    match profile {
+        PythonProfileArg::Rootfs => Ok(CompileLayer {
+            kind: CompileLayerKind::Rootfs,
+            path: None,
+            source,
+            entry: None,
+            contract: None,
+            arch: Some(args.arch.clone().unwrap_or_else(default_arch)),
+            surface: None,
+            engine: None,
+        }),
+        PythonProfileArg::WasiComponent => {
+            if args.arch.is_some() || args.base.is_some() {
+                return Err(LiveError::Config(
+                    "Python --profile wasi-component does not accept --arch or --base".to_owned(),
+                ));
+            }
+            Ok(CompileLayer {
+                kind: CompileLayerKind::Wasm,
+                path: None,
+                source,
+                entry: Some(COMPONENT_V1_ENTRY.to_owned()),
+                contract: Some(WASM_CONTRACT_COMPONENT_V1.to_owned()),
+                arch: None,
+                surface: None,
+                engine: None,
+            })
+        }
+    }
 }
 
 fn interactive_layers<R: BufRead, W: Write>(
@@ -834,6 +854,39 @@ mod tests {
         assert!(matches!(
             manifest.layers[0].source,
             Some(CompileSource::Python(_))
+        ));
+    }
+
+    #[test]
+    fn python_component_template_generates_a_schema_four_wasm_source() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let mut options = args(directory.path().to_path_buf());
+        options.template = Some(TemplateArg::Python);
+        options.profile = Some(PythonProfileArg::WasiComponent);
+        options.entry = Some("python_component_hello:main".to_owned());
+        initialize(options, false, &mut Cursor::new([]), &mut Vec::new()).expect("initialize");
+
+        let manifest: CompileManifest = serde_json::from_slice(
+            &std::fs::read(directory.path().join("hologram.json")).expect("manifest"),
+        )
+        .expect("parse");
+        assert_eq!(manifest.schema_version, 4);
+        assert_eq!(manifest.primary, Some(0));
+        assert!(matches!(manifest.layers[0].kind, CompileLayerKind::Wasm));
+        assert_eq!(
+            manifest.layers[0].contract.as_deref(),
+            Some(WASM_CONTRACT_COMPONENT_V1)
+        );
+        assert_eq!(
+            manifest.layers[0].entry.as_deref(),
+            Some(COMPONENT_V1_ENTRY)
+        );
+        assert!(matches!(
+            manifest.layers[0].source,
+            Some(CompileSource::Python(PythonRootfsSource {
+                profile: PythonProfile::WasiComponent,
+                ..
+            }))
         ));
     }
 

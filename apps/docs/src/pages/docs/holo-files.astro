@@ -128,7 +128,7 @@ import { sitePath } from '../../lib/site';
 
   <h3>Source languages do not add layer kinds</h3>
   <p>Python, Rust, Zig, and other source languages are compiler concerns. For example, a Python compiler can produce a <code>WasmCodemodule</code> containing a CPython WebAssembly component or a <code>RootfsImage</code> containing a locked Linux Python environment. The canonical application manifest records the resulting executable payload, not the workstation build recipe.</p>
-  <p>This keeps the canonical layer model stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-aware rootfs compiler and <a href={sitePath('/docs/model-apps')}>AI model applications</a> for the v4 service layer.</p>
+  <p>This keeps the canonical layer model stable while source-manifest schemas and toolchains evolve independently. See the <a href={sitePath('/docs/python-apps')}>Python application guide</a> for the working dependency-free Component compiler and dependency-aware rootfs compiler, and <a href={sitePath('/docs/model-apps')}>AI model applications</a> for the v4 service layer.</p>
 
   <h2>Queryable application directory</h2>
   <p>New Hologram Live archives carry the extension <code>https://hologram.foundation/extension/application-directory/v1</code>. Its deterministic JSON is a normalized projection of the manifest and physical packaging:</p>
@@ -189,7 +189,7 @@ hologram --json holo plan blake3:… |
 
   <h2>Build, inspect, and run</h2>
   <p>Layer, capability, and child paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
-  <div class="note"><strong>Three source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Schema v3 adds ordered child application archives and delegated capability documents. Every version produces the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
+  <div class="note"><strong>Four source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Schema v3 adds ordered child application archives and delegated capability documents. Schema v4 adds the Wasm guest-contract selector and permits Python <code>profile: "wasi-component"</code> to compile into an ordinary Component v1 <code>WasmCodemodule</code>. Every version produces the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,

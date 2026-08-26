@@ -6,6 +6,7 @@ use crate::holo_contract::{
 };
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
+use crate::holo_python_component;
 use crate::holo_wasm::{validate_entry_name, CORE_WASM_V1_DEFAULT_ENTRY};
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
@@ -121,10 +122,15 @@ pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
             (Some(path), None) => {
                 let _ = read_required(root, path)?;
             }
-            (None, Some(CompileSource::Python(source))) => {
-                let arch = required_field(layer, "arch", layer.arch.as_deref())?;
-                holo_python::check_source(root, source, arch)?;
-            }
+            (None, Some(CompileSource::Python(source))) => match source.profile {
+                holo_python::PythonProfile::Rootfs => {
+                    let arch = required_field(layer, "arch", layer.arch.as_deref())?;
+                    holo_python::check_source(root, source, arch)?;
+                }
+                holo_python::PythonProfile::WasiComponent => {
+                    holo_python_component::check_source(root, source)?;
+                }
+            },
             _ => {
                 return Err(layer_config_error(
                     layer,
@@ -483,10 +489,15 @@ fn read_required(root: &Path, path: &Path) -> Result<Vec<u8>> {
 fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<Vec<u8>> {
     match (&layer.path, &layer.source) {
         (Some(path), None) => read_required(root, path),
-        (None, Some(CompileSource::Python(source))) => {
-            let arch = required_field(layer, "arch", layer.arch.as_deref())?;
-            holo_python::compile(root, source, arch)
-        }
+        (None, Some(CompileSource::Python(source))) => match source.profile {
+            holo_python::PythonProfile::Rootfs => {
+                let arch = required_field(layer, "arch", layer.arch.as_deref())?;
+                holo_python::compile(root, source, arch)
+            }
+            holo_python::PythonProfile::WasiComponent => {
+                holo_python_component::compile(root, source)
+            }
+        },
         _ => Err(layer_config_error(
             layer,
             "exactly one of path or source is required",
@@ -501,21 +512,47 @@ fn validate_layer_source(schema_version: u16, layer: &CompileLayer) -> Result<()
             layer,
             "source recipes require schema_version 2",
         )),
-        (None, Some(CompileSource::Python(source))) => {
-            if !matches!(layer.kind, CompileLayerKind::Rootfs) {
-                return Err(layer_config_error(
-                    layer,
-                    "Python rootfs sources require kind rootfs",
-                ));
+        (None, Some(CompileSource::Python(source))) => match source.profile {
+            holo_python::PythonProfile::Rootfs => {
+                if !matches!(layer.kind, CompileLayerKind::Rootfs) {
+                    return Err(layer_config_error(
+                        layer,
+                        "Python rootfs sources require kind rootfs",
+                    ));
+                }
+                if layer.entry.is_some() {
+                    return Err(layer_config_error(
+                        layer,
+                        "Python source entry belongs inside source",
+                    ));
+                }
+                holo_python::validate_source(source, layer.arch.as_deref())
             }
-            if layer.entry.is_some() {
-                return Err(layer_config_error(
-                    layer,
-                    "Python source entry belongs inside source",
-                ));
+            holo_python::PythonProfile::WasiComponent => {
+                if schema_version < 4 {
+                    return Err(layer_config_error(
+                        layer,
+                        "Python wasi-component sources require schema_version 4",
+                    ));
+                }
+                if !matches!(layer.kind, CompileLayerKind::Wasm) {
+                    return Err(layer_config_error(
+                        layer,
+                        "Python wasi-component sources require kind wasm",
+                    ));
+                }
+                if layer.entry.as_deref() != Some(COMPONENT_V1_ENTRY)
+                    || layer.contract.as_deref() != Some(WASM_CONTRACT_COMPONENT_V1)
+                {
+                    return Err(layer_config_error(
+                        layer,
+                        "Python wasi-component sources require entry \"run\" and contract \"hologram:guest/component@1\"",
+                    ));
+                }
+                reject_aux(layer, "arch", layer.arch.as_deref())?;
+                holo_python_component::validate_source(source)
             }
-            holo_python::validate_source(source, layer.arch.as_deref())
-        }
+        },
         _ => Err(layer_config_error(
             layer,
             "exactly one of path or source is required",
@@ -525,8 +562,12 @@ fn validate_layer_source(schema_version: u16, layer: &CompileLayer) -> Result<()
 
 fn effective_entry(layer: &CompileLayer) -> Option<&str> {
     layer.entry.as_deref().or(match layer.source.as_ref() {
-        Some(CompileSource::Python(source)) => Some(source.entry.as_str()),
-        None => None,
+        Some(CompileSource::Python(source))
+            if source.profile == holo_python::PythonProfile::Rootfs =>
+        {
+            Some(source.entry.as_str())
+        }
+        Some(CompileSource::Python(_)) | None => None,
     })
 }
 
@@ -817,6 +858,37 @@ mod tests {
             manifest.layers[0].source,
             Some(CompileSource::Python(_))
         ));
+    }
+
+    #[test]
+    fn schema_four_accepts_an_import_free_python_component_source() {
+        let manifest: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 4,
+                "primary": 0,
+                "layers": [{
+                    "kind": "wasm",
+                    "source": {
+                        "language": "python",
+                        "project": ".",
+                        "entry": "analytics:main",
+                        "lock": "uv.lock",
+                        "profile": "wasi-component"
+                    },
+                    "entry": "run",
+                    "contract": "hologram:guest/component@1"
+                }]
+            }"#,
+        )
+        .expect("parse");
+        validate_compile_manifest(&manifest).expect("validate");
+
+        let mut wrong_contract = manifest;
+        wrong_contract.layers[0].contract = None;
+        let error = validate_compile_manifest(&wrong_contract).expect_err("contract required");
+        assert!(error
+            .to_string()
+            .contains("require entry \"run\" and contract"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # ADR 011: `.holo` guest contracts use the Wasm layer auxiliary tag
 
-- Status: accepted; selector implemented, component execution deferred
+- Status: accepted and implemented for import-free Component v1
 - Date: 2026-08-25
 
 ## Context
@@ -98,6 +98,13 @@ prefer mediated Hologram interfaces or first introduce endpoint-scoped
 capabilities. Invocation input/output replaces WASI stdin/stdout, and the
 runtime does not inherit host arguments or environment variables.
 
+Dependency-free Python uses this unchanged base world. The source compiler
+pins `componentize-py 0.25.0` and passes `--stub-wasi`, which replaces CPython's
+WASI imports inside the generated guest rather than linking them in Live. The
+result is type-checked and executed like any other import-free Component v1
+payload. The stubbed PRNG seed is deterministic within the built component and
+must not be treated as secure randomness.
+
 ### Diagnostics
 
 - Known but runtime-unsupported contract: `LIVE_CAPABILITY_MISSING`, naming the
@@ -124,8 +131,8 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- The import-free Component provider and resource enforcement are current
-  capabilities. Python packaging and any capability-gated WASI profile remain
-  M3.1a work.
+- The import-free Component provider, resource enforcement, and dependency-free
+  Python packaging are current capabilities. Locked portable dependencies and
+  any capability-gated WASI profile remain M3.1a follow-up work.
 - New host authority requires both a versioned contract profile and a canonical
   capability field before an import can be linked.

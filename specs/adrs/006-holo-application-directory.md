@@ -29,12 +29,15 @@ Its deterministic JSON document is a normalized projection with six fields:
 
 The canonical `AppManifest` remains the source of application identity and execution truth. On inspection or import, Live decodes and validates that manifest, re-derives every embedded blob's kappa from its bytes, derives the directory, and compares an embedded directory byte-for-byte at the typed value level. Duplicate blob labels, forged content addresses, duplicate directories, unknown directory schema versions, and disagreement with the manifest are rejected as `LIVE_HOLO_INVALID`.
 
-The extension is optional when reading. A legacy v3 application without it receives the same derived directory in inspection results with `directory_embedded = false`. Bare tensor archives without an application manifest have no application directory.
+The extension is required exactly once for every v4 archive with an application
+manifest. Inspection re-derives it and rejects missing, duplicate, malformed,
+or disagreeing directories. Structural archives without an application
+manifest may omit it.
 
 ## Consequences
 
 - `holo inspect` and the HTTP/gRPC APIs expose a stable table-like view without embedding a database engine.
 - Layer order and κ identity remain canonical; the directory cannot override either.
-- Existing v3 archives and upstream fat/thin conversion remain compatible.
+- Fat and thin v4 archives use the same directory verification rule.
 - New directory schemas require a new extension key or supported schema version rather than reinterpretation.
 - A future catalog can index these rows across installed applications, and a thin-archive resolver can join layer references against the content store without changing the archive identity model.

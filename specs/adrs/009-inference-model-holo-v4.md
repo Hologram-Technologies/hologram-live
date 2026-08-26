@@ -25,7 +25,7 @@ Until a typed model provider is connected, `hologram run` and resident load retu
 
 ## Consequences
 
-- Existing v2/v3 archives remain readable, while newly compiled non-model applications are physically v4 archives.
+- Live accepts only physical v4 archives for model and non-model applications.
 - The verified application directory gains an optional `engine` field and the gRPC representation adds the same field additively.
 - `hologram-ai` is the preferred compiler/runtime path for R4G1 model archives. A future adapter may connect that facade to Live's chat and OpenAI/Ollama surfaces.
 - Weightc remains an existing chat provider over `.wcpu`. Packaging it in `InferenceModel` requires a deterministic single-blob contract and provider validation; this ADR does not invent one.

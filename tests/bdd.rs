@@ -69,9 +69,9 @@ fn wasm_manifest_with_custom_entry(world: &mut BddWorld) {
     std::fs::write(
         temporary.path().join("hologram.json"),
         r#"{
-          "schema_version": 1,
+          "schema_version": 4,
           "primary": 0,
-          "layers": [{"kind":"wasm","path":"transform.wat","entry":"transform"}]
+          "layers": [{"kind":"wasm","path":"transform.wat","entry":"transform","contract":"hologram:guest/core-wasm@1"}]
         }"#,
     )
     .expect("write manifest");
@@ -121,10 +121,10 @@ fn wasm_manifest_with_network_request(world: &mut BddWorld) {
     std::fs::write(
         temporary.path().join("hologram.json"),
         r#"{
-          "schema_version": 1,
+          "schema_version": 4,
           "primary": 0,
           "requires": "capabilities.json",
-          "layers": [{"kind":"wasm","path":"transform.wat","entry":"holo_run"}]
+          "layers": [{"kind":"wasm","path":"transform.wat","entry":"holo_run","contract":"hologram:guest/core-wasm@1"}]
         }"#,
     )
     .expect("write manifest");

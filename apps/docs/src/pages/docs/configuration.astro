@@ -40,7 +40,7 @@ export_timeout_secs = 5
 [holo]
 # Development only; relative paths resolve from paths.config_dir.
 # development_grant = "development-grant.json"</code></pre>
-  <p>Version 1 configurations are migrated automatically. Installations that used the original default module set gain the built-in echo chat module; customized module selections remain unchanged.</p>
+  <p>Configuration schema version 2 is required. Startup rejects missing fields and every other schema version instead of applying implicit defaults or rewriting the file.</p>
   <div class="note"><strong>Telemetry remains local by default</strong>Leave <code>telemetry.endpoint</code> unset to prevent any telemetry network connection.</div>
 
   <h2><code>.holo</code> development grants</h2>

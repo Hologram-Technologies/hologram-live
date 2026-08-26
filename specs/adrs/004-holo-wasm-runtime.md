@@ -12,7 +12,7 @@ The guest contract is named `core-wasm-v1` and has no imports or WASI. The
 module exports `memory`, `holo_alloc(len: i32) -> i32`, and the function named
 by the canonical Wasm layer's manifest `entry` with signature
 `(ptr: i32, len: i32) -> i64`. The result packs the output pointer and length.
-`holo_run` is the compiler, generator, and compatibility-helper default; the
+`holo_run` is the generator default; the
 runtime provider does not hard-code it when a manifest entry is available.
 Direct and resident providers resolve and type-check the declared entry during
 preparation, before any layer starts, and use that same entry for invocation.

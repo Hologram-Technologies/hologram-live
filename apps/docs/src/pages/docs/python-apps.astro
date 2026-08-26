@@ -159,9 +159,9 @@ def main(request: bytes) -&gt; bytes:
   --entry numpy_pandas_holo:main \
   --lock uv.lock \
   --arch arm64</code></pre>
-  <p>Use <code>x86_64</code> on an Intel/AMD host. The command writes source-manifest schema v2:</p>
+  <p>Use <code>x86_64</code> on an Intel/AMD host. The command writes source-manifest schema v4:</p>
   <pre><code>&#123;
-  "schema_version": 2,
+  "schema_version": 4,
   "primary": 0,
   "layers": [
     &#123;
@@ -256,7 +256,7 @@ target/release/hologram run target/numpy-pandas.holo \
 ├─ AppManifest
 │  └─ primary: RootfsImage · arm64 · κ(image bundle)
 ├─ Extension: application-directory/v1
-├─ Metadata: schema-v2 source recipe
+├─ Metadata: schema-v4 source recipe
 ├─ ContentBlob: κ(image bundle)
 │  ├─ Python OCI provider metadata
 │  └─ Zstandard-compressed OCI image archive

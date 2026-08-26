@@ -60,7 +60,7 @@ server-build:
 desktop-build:
     cd apps/desktop && npm ci && npm run build
 
-# Backwards-compatible default release build for the server.
+# Default release build for the server.
 build: server-build
 
 # Verify code
@@ -78,7 +78,7 @@ dev:
 
 # Build the docs
 docs:
-    cargo run --locked --package hologram-live --bin hologram -- --json openapi --output apps/docs/public/openapi.json
+    HOLOGRAM_CONFIG="{{justfile_directory()}}/target/docs-config/live.toml" cargo run --locked --package hologram-live --bin hologram -- --json openapi --output apps/docs/public/openapi.json
     cd apps/docs && npm ci && npm run build
 
 # Validate, tag, and push the current documentation version to GitHub Pages.

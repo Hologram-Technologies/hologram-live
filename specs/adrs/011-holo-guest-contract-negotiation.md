@@ -24,7 +24,7 @@ an unbounded format-enum problem.
 The existing canonical Wasm layer `aux` string is the guest-contract selector.
 Its values are exact, namespaced identifiers:
 
-- empty string: legacy alias for `hologram:guest/core-wasm@1`;
+- empty string: invalid;
 - `hologram:guest/core-wasm@1`: explicit core-Wasm v1;
 - `hologram:guest/component@1`: Hologram Component Model v1.
 
@@ -38,12 +38,11 @@ interface selection and is never parsed as a version.
 The coordinated upstream validation change landed in
 `Hologram-Technologies/hologram` PR 142, merge `c5e33ec`. It exports
 `WASM_CONTRACT_CORE_V1`, `WASM_CONTRACT_COMPONENT_V1`, and
-`Layer::wasm_with_contract`, while `Layer::wasm` retains the empty compatibility
-tag. Wasm `aux` changed
-from “must be empty” to “empty or a well-formed supported contract identifier.”
-The canonical codec does not change. Older runtimes already reject non-empty
-Wasm `aux`, which is the required fail-closed behavior. Live pins the merge and
-can emit either accepted explicit identifier.
+`Layer::wasm_with_contract`; the upstream `Layer::wasm` helper still produces
+an empty tag, but Live neither emits nor accepts it. Wasm `aux` changed upstream
+to permit well-formed supported contract identifiers without changing the
+canonical codec. Live pins the merge and requires either accepted explicit
+identifier.
 
 ### Negotiation
 

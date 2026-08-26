@@ -122,6 +122,7 @@ impl HoloCatalog {
     }
 
     fn cache_content_blobs(&self, bytes: &[u8]) -> Result<()> {
+        crate::holo_format::require_current(bytes)?;
         let loader = HoloLoader::from_bytes(bytes)
             .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
         let plan = loader
@@ -153,6 +154,7 @@ impl HoloCatalog {
 }
 
 pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspection> {
+    crate::holo_format::require_current(bytes)?;
     let loader =
         HoloLoader::from_bytes(bytes).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     let fingerprint = loader.fingerprint();
@@ -167,12 +169,6 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
         .iter()
         .filter(|(key, _)| *key == DIRECTORY_EXTENSION_KEY)
         .collect::<Vec<_>>();
-    if directory_extensions.len() > 1 {
-        return Err(LiveError::InvalidHolo(
-            "archive contains more than one application directory".to_owned(),
-        ));
-    }
-    let directory_embedded = !directory_extensions.is_empty();
     let (directory, application_kappa) = if let Some(manifest_bytes) = plan.app_manifest() {
         let manifest = AppManifest::decode(manifest_bytes).map_err(|error| {
             LiveError::InvalidHolo(format!("decode application manifest: {error:?}"))
@@ -181,25 +177,21 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
         let blobs = plan
             .content_blobs()
             .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-        let derived = holo_directory::derive(&manifest, blobs.iter().copied())?;
-        if let Some((_, bytes)) = directory_extensions.first() {
-            let declared = holo_directory::decode(bytes)?;
-            if declared != derived {
-                return Err(LiveError::InvalidHolo(
-                    "application directory does not match the manifest and embedded blobs"
-                        .to_owned(),
-                ));
-            }
-        }
+        let derived = holo_directory::verify_required(
+            &manifest,
+            directory_extensions.iter().map(|(_, bytes)| *bytes),
+            blobs.iter().copied(),
+        )?;
         (Some(derived), Some(application_kappa))
     } else {
-        if directory_embedded {
+        if !directory_extensions.is_empty() {
             return Err(LiveError::InvalidHolo(
                 "application directory requires an application manifest".to_owned(),
             ));
         }
         (None, None)
     };
+    let directory_embedded = directory.is_some();
     let sections = plan
         .sections()
         .iter()
@@ -568,9 +560,37 @@ mod tests {
     use super::*;
     use hologram::space::{address_bytes, Layer, Realization};
 
+    fn wasm_layer(content: hologram::space::KappaLabel71, entry: &str) -> Layer {
+        Layer::wasm_with_contract(content, entry, crate::holo_contract::WASM_CONTRACT_CORE_V1)
+    }
+
     fn canonical_capabilities() -> &'static [u8] {
         static CAPABILITIES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
         CAPABILITIES.get_or_init(crate::holo_capability::empty_canonical)
+    }
+
+    fn current_archive(manifest: &AppManifest, contents: &[&[u8]]) -> Vec<u8> {
+        let addressed = contents
+            .iter()
+            .map(|content| (address_bytes(content), *content))
+            .collect::<Vec<_>>();
+        let directory = holo_directory::derive(
+            manifest,
+            addressed
+                .iter()
+                .map(|(kappa, content)| (kappa.as_bytes(), *content)),
+        )
+        .expect("directory");
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_extension(
+            DIRECTORY_EXTENSION_KEY,
+            holo_directory::encode(&directory).expect("encode directory"),
+        );
+        for (kappa, content) in addressed {
+            writer.add_content_blob(kappa.as_bytes(), content);
+        }
+        writer.finish().expect("current archive")
     }
 
     #[test]
@@ -597,28 +617,21 @@ mod tests {
     }
 
     #[test]
-    fn legacy_application_derives_a_directory_without_requiring_the_extension() {
-        let requires = b"legacy capabilities";
-        let wasm = b"legacy wasm";
+    fn application_without_a_directory_is_rejected() {
+        let requires = canonical_capabilities();
+        let wasm = b"wasm";
         let manifest = test_manifest(wasm, requires);
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(manifest.canonicalize());
         writer.add_content_blob(address_bytes(requires).as_bytes(), requires);
         writer.add_content_blob(address_bytes(wasm).as_bytes(), wasm);
 
-        let bytes = writer.finish().expect("legacy archive");
-        let inspection = inspect_bytes("legacy", "legacy.holo", &bytes).expect("inspect");
-        assert_eq!(
-            inspection.application_kappa.as_deref(),
-            Some(address_bytes(&manifest.canonicalize()).to_string().as_str())
-        );
-        let directory = inspection.directory.expect("derived directory");
-
-        assert!(!inspection.directory_embedded);
-        assert_eq!(directory.primary_layer, Some(0));
-        assert_eq!(directory.layers.len(), 1);
-        assert_eq!(directory.layers[0].kind, "wasm");
-        assert_eq!(directory.blobs.len(), 2);
+        let bytes = writer.finish().expect("archive");
+        let error = inspect_bytes("missing-directory", "missing-directory.holo", &bytes)
+            .expect_err("application directory is required");
+        assert!(error
+            .to_string()
+            .contains("requires an embedded application directory"));
     }
 
     #[test]
@@ -664,8 +677,23 @@ mod tests {
         let requires = b"forged capabilities";
         let wasm = b"expected wasm";
         let manifest = test_manifest(wasm, requires);
+        let expected: [(hologram::space::KappaLabel71, &[u8]); 2] = [
+            (address_bytes(requires), requires),
+            (address_bytes(wasm), wasm),
+        ];
+        let directory = holo_directory::derive(
+            &manifest,
+            expected
+                .iter()
+                .map(|(kappa, content)| (kappa.as_bytes(), *content)),
+        )
+        .expect("directory");
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(manifest.canonicalize());
+        writer.add_extension(
+            DIRECTORY_EXTENSION_KEY,
+            holo_directory::encode(&directory).expect("encode directory"),
+        );
         writer.add_content_blob(address_bytes(requires).as_bytes(), requires);
         writer.add_content_blob(address_bytes(wasm).as_bytes(), b"different wasm");
 
@@ -739,32 +767,6 @@ mod tests {
         assert_eq!(result.outputs, vec![b"HELLO HOLO".to_vec()]);
         assert_eq!(result.completion, ApplicationCompletion::Returned);
         assert!(result.resident_bytes > 0);
-    }
-
-    #[tokio::test]
-    async fn one_shot_executor_runs_an_archive_with_legacy_empty_capabilities() {
-        let wasm_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("features/fixtures/wasm-app/transform.wat");
-        let wasm = std::fs::read(wasm_path).expect("fixture wasm");
-        let legacy_empty = b"";
-        let manifest = AppManifest {
-            primary: Some(0),
-            requires: address_bytes(legacy_empty),
-            layers: vec![Layer::wasm(address_bytes(&wasm), "holo_run")],
-            children: Vec::new(),
-        };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(legacy_empty).as_bytes(), legacy_empty);
-        writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
-        let archive = writer.finish().expect("legacy archive");
-
-        let result = HoloExecutor::default()
-            .execute(&archive, vec![b"legacy empty".to_vec()])
-            .await
-            .expect("execute legacy archive");
-        assert_eq!(result.outputs, vec![b"LEGACY EMPTY".to_vec()]);
-        assert_eq!(result.completion, ApplicationCompletion::Returned);
     }
 
     #[tokio::test]
@@ -855,17 +857,10 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: address_bytes(&capabilities),
-            layers: vec![Layer::wasm(address_bytes(&wasm), "holo_run")],
+            layers: vec![wasm_layer(address_bytes(&wasm), "holo_run")],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(
-            address_bytes(&capabilities).as_bytes(),
-            capabilities.as_slice(),
-        );
-        writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
-        let archive = writer.finish().expect("archive");
+        let archive = current_archive(&manifest, &[capabilities.as_slice(), wasm.as_slice()]);
 
         let directory = tempfile::tempdir().expect("tempdir");
         let audit_path = directory.path().join("audit.jsonl");
@@ -973,16 +968,12 @@ mod tests {
             primary: Some(0),
             requires: address_bytes(capabilities),
             layers: vec![
-                Layer::wasm(address_bytes(malformed_wasm), "run"),
+                wasm_layer(address_bytes(malformed_wasm), "run"),
                 Layer::view(address_bytes(missing_view), "portable"),
             ],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
-        writer.add_content_blob(address_bytes(malformed_wasm).as_bytes(), malformed_wasm);
-        let bytes = writer.finish().expect("partial archive");
+        let bytes = current_archive(&manifest, &[capabilities, malformed_wasm]);
 
         let error = HoloExecutor::default()
             .execute(&bytes, Vec::new())
@@ -1059,16 +1050,12 @@ mod tests {
             primary: Some(1),
             requires: address_bytes(capabilities),
             layers: vec![
-                Layer::wasm(address_bytes(&wasm), "support"),
-                Layer::wasm(address_bytes(&wasm), "holo_run"),
+                wasm_layer(address_bytes(&wasm), "support"),
+                wasm_layer(address_bytes(&wasm), "holo_run"),
             ],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
-        writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
-        let bytes = writer.finish().expect("multi-layer Wasm archive");
+        let bytes = current_archive(&manifest, &[capabilities, wasm.as_slice()]);
 
         let direct = HoloExecutor::default()
             .execute(&bytes, vec![b"direct".to_vec()])
@@ -1105,14 +1092,10 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: address_bytes(capabilities),
-            layers: vec![Layer::wasm(address_bytes(&wasm), "missing_entry")],
+            layers: vec![wasm_layer(address_bytes(&wasm), "missing_entry")],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
-        writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
-        let bytes = writer.finish().expect("archive");
+        let bytes = current_archive(&manifest, &[capabilities, wasm.as_slice()]);
 
         let direct = HoloExecutor::default()
             .execute(&bytes, Vec::new())
@@ -1159,11 +1142,7 @@ mod tests {
             )],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
-        writer.add_content_blob(address_bytes(bundle).as_bytes(), bundle);
-        let bytes = writer.finish().expect("model archive");
+        let bytes = current_archive(&manifest, &[capabilities, bundle]);
 
         let plan = plan_bytes(&bytes).expect("model plan remains inspectable");
         assert!(!plan.runnable);
@@ -1199,13 +1178,9 @@ mod tests {
             ],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
-        for payload in payloads {
-            writer.add_content_blob(address_bytes(payload).as_bytes(), payload);
-        }
-        let bytes = writer.finish().expect("multi-provider archive");
+        let mut contents = vec![capabilities];
+        contents.extend(payloads);
+        let bytes = current_archive(&manifest, &contents);
 
         let plan = plan_bytes(&bytes).expect("unsupported providers are explanatory");
 
@@ -1250,7 +1225,7 @@ mod tests {
         AppManifest {
             primary: Some(0),
             requires: address_bytes(requires),
-            layers: vec![Layer::wasm(address_bytes(wasm), "holo_run")],
+            layers: vec![wasm_layer(address_bytes(wasm), "holo_run")],
             children: Vec::new(),
         }
     }
@@ -1272,13 +1247,6 @@ mod tests {
             )],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(
-            address_bytes(&capabilities).as_bytes(),
-            capabilities.as_slice(),
-        );
-        writer.add_content_blob(address_bytes(component).as_bytes(), component);
-        writer.finish().expect("component fixture archive")
+        current_archive(&manifest, &[capabilities.as_slice(), component])
     }
 }

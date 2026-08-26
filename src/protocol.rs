@@ -125,7 +125,6 @@ pub struct HoloLayer {
     pub kind: String,
     pub content_kappa: String,
     pub entry: String,
-    #[serde(default)]
     pub contract: Option<String>,
     pub architecture: Option<String>,
     pub surface: Option<String>,
@@ -210,7 +209,6 @@ pub struct HoloPlanLayer {
     pub kind: String,
     pub content_kappa: String,
     pub entry: String,
-    #[serde(default)]
     pub contract: Option<String>,
     pub architecture: Option<String>,
     pub surface: Option<String>,
@@ -412,25 +410,17 @@ pub struct ResidentHolo {
     pub resident_bytes: usize,
     pub queued: usize,
     pub processed: usize,
-    #[serde(default)]
     pub requested_capabilities_kappa: String,
-    #[serde(default)]
     pub effective_grant_kappa: String,
-    #[serde(default)]
     pub grant_source: String,
-    #[serde(default)]
     pub authorization: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ApplicationCompletion {
-    #[default]
-    Unknown,
     Returned,
-    Exited {
-        code: i32,
-    },
+    Exited { code: i32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -439,15 +429,10 @@ pub struct HoloRunResult {
     pub outputs: Vec<Vec<u8>>,
     pub elapsed_micros: u64,
     pub resident_bytes: usize,
-    #[serde(default)]
     pub completion: ApplicationCompletion,
-    #[serde(default)]
     pub requested_capabilities_kappa: String,
-    #[serde(default)]
     pub effective_grant_kappa: String,
-    #[serde(default)]
     pub grant_source: String,
-    #[serde(default)]
     pub authorization: String,
 }
 
@@ -465,8 +450,6 @@ pub struct Conversation {
     pub created_at_millis: u64,
     pub updated_at_millis: u64,
     pub messages: Vec<ConversationMessage>,
-    /// Defaulted so conversations written before archiving existed still load.
-    #[serde(default)]
     pub archived: bool,
 }
 
@@ -555,7 +538,6 @@ pub enum RpcRequest {
         title: String,
     },
     HistoryList {
-        #[serde(default)]
         include_archived: bool,
     },
     HistoryGet {
@@ -707,15 +689,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn holo_completion_json_is_typed_and_legacy_results_default_to_unknown() {
-        let legacy: HoloRunResult = serde_json::from_value(serde_json::json!({
-            "kappa": "blake3:legacy",
+    fn holo_completion_json_is_typed_and_required() {
+        let incomplete = serde_json::from_value::<HoloRunResult>(serde_json::json!({
+            "kappa": "blake3:result",
             "outputs": [],
             "elapsed_micros": 0,
             "resident_bytes": 0
-        }))
-        .expect("decode legacy result");
-        assert_eq!(legacy.completion, ApplicationCompletion::Unknown);
+        }));
+        assert!(incomplete.is_err());
 
         let returned = serde_json::to_value(ApplicationCompletion::Returned)
             .expect("serialize returned completion");

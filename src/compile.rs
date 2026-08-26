@@ -7,7 +7,7 @@ use crate::holo_contract::{
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
 use crate::holo_python_component;
-use crate::holo_wasm::{validate_entry_name, CORE_WASM_V1_DEFAULT_ENTRY};
+use crate::holo_wasm::validate_entry_name;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
 use hologram::space::{address_bytes, AppManifest, KappaLabel71, Layer, Realization};
@@ -25,7 +25,6 @@ const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 4;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileManifest {
-    #[serde(default = "default_schema_version")]
     pub schema_version: u16,
     #[serde(default)]
     pub primary: Option<u32>,
@@ -59,7 +58,7 @@ pub struct CompileLayer {
     pub source: Option<CompileSource>,
     #[serde(default)]
     pub entry: Option<String>,
-    /// Canonical guest-contract selector for Wasm layers (schema v4).
+    /// Canonical guest-contract selector for Wasm layers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contract: Option<String>,
     #[serde(default)]
@@ -292,30 +291,15 @@ pub fn parse_compile_manifest(path: &Path, source: &[u8]) -> Result<CompileManif
 }
 
 pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> {
-    if !(1..=CURRENT_MANIFEST_SCHEMA_VERSION).contains(&specification.schema_version) {
+    if specification.schema_version != CURRENT_MANIFEST_SCHEMA_VERSION {
         return Err(LiveError::Config(format!(
-            "unsupported compile manifest schema {}; expected 1, 2, 3, or {CURRENT_MANIFEST_SCHEMA_VERSION}",
+            "unsupported compile manifest schema {}; expected {CURRENT_MANIFEST_SCHEMA_VERSION}",
             specification.schema_version
         )));
     }
-    if !specification.children.is_empty() && specification.schema_version < 3 {
-        return Err(LiveError::Config(
-            "child applications require schema_version 3".to_owned(),
-        ));
-    }
-    if specification.schema_version < 4
-        && specification
-            .layers
-            .iter()
-            .any(|layer| layer.contract.is_some())
-    {
-        return Err(LiveError::Config(
-            "Wasm guest contracts require schema_version 4".to_owned(),
-        ));
-    }
     let mut layers = Vec::with_capacity(specification.layers.len());
     for source_layer in &specification.layers {
-        validate_layer_source(specification.schema_version, source_layer)?;
+        validate_layer_source(source_layer)?;
         layers.push(build_layer(source_layer, address_bytes(&[]))?);
     }
     let manifest = AppManifest {
@@ -348,6 +332,7 @@ fn compile_child(root: &Path, child: &CompileChild) -> Result<CompiledChild> {
     let archive_path = root.join(&child.application);
     let archive_bytes =
         std::fs::read(&archive_path).map_err(|error| LiveError::io(&archive_path, error))?;
+    crate::holo_format::require_current(&archive_bytes)?;
     let loader = HoloLoader::from_bytes(&archive_bytes).map_err(|error| {
         LiveError::InvalidHolo(format!(
             "read child archive {}: {error}",
@@ -389,13 +374,22 @@ fn compile_child(root: &Path, child: &CompileChild) -> Result<CompiledChild> {
         )));
     }
 
+    let extensions = plan
+        .extensions()
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let directories = extensions
+        .iter()
+        .filter(|(key, _)| *key == DIRECTORY_EXTENSION_KEY)
+        .map(|(_, bytes)| *bytes);
+    let content_blobs = plan
+        .content_blobs()
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    holo_directory::verify_required(&manifest, directories, content_blobs.iter().copied())?;
+
     let application = address_bytes(&canonical);
     let mut blobs = BTreeMap::new();
     blobs.insert(application.as_bytes().to_vec(), canonical.clone());
-    for (label, content) in plan
-        .content_blobs()
-        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?
-    {
+    for (label, content) in content_blobs {
         let actual = address_bytes(content);
         if actual.as_bytes() != label {
             return Err(LiveError::InvalidHolo(format!(
@@ -449,12 +443,17 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
             reject_aux(source, "arch", source.arch.as_deref())?;
             reject_aux(source, "surface", source.surface.as_deref())?;
             reject_aux(source, "engine", source.engine.as_deref())?;
-            let entry = effective_entry(source).unwrap_or(CORE_WASM_V1_DEFAULT_ENTRY);
+            let entry = source.entry.as_deref().ok_or_else(|| {
+                layer_config_error(source, "Wasm layers require an explicit entry")
+            })?;
             validate_entry_name(entry).map_err(|reason| {
                 layer_config_error(source, &format!("invalid entry: {reason}"))
             })?;
             match source.contract.as_deref() {
-                None => Ok(Layer::wasm(kappa, entry)),
+                None => Err(layer_config_error(
+                    source,
+                    "Wasm layers require an explicit canonical contract",
+                )),
                 Some("") => Err(layer_config_error(
                     source,
                     "contract must be a non-empty canonical identifier",
@@ -578,13 +577,9 @@ fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<CompiledLa
     }
 }
 
-fn validate_layer_source(schema_version: u16, layer: &CompileLayer) -> Result<()> {
+fn validate_layer_source(layer: &CompileLayer) -> Result<()> {
     match (&layer.path, &layer.source) {
         (Some(path), None) if !path.as_os_str().is_empty() => Ok(()),
-        (None, Some(_)) if schema_version == 1 => Err(layer_config_error(
-            layer,
-            "source recipes require schema_version 2",
-        )),
         (None, Some(CompileSource::Python(source))) => match source.profile {
             holo_python::PythonProfile::Rootfs => {
                 if !matches!(layer.kind, CompileLayerKind::Rootfs) {
@@ -602,12 +597,6 @@ fn validate_layer_source(schema_version: u16, layer: &CompileLayer) -> Result<()
                 holo_python::validate_source(source, layer.arch.as_deref())
             }
             holo_python::PythonProfile::WasiComponent => {
-                if schema_version < 4 {
-                    return Err(layer_config_error(
-                        layer,
-                        "Python wasi-component sources require schema_version 4",
-                    ));
-                }
                 if !matches!(layer.kind, CompileLayerKind::Wasm) {
                     return Err(layer_config_error(
                         layer,
@@ -692,10 +681,6 @@ const fn kind(layer: &CompileLayer) -> &'static str {
     }
 }
 
-const fn default_schema_version() -> u16 {
-    1
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -703,22 +688,43 @@ mod tests {
     use crate::holo::{inspect_bytes, plan_bytes};
     use crate::holo_capability;
 
+    fn wasm_layer(content: KappaLabel71, entry: &str) -> Layer {
+        Layer::wasm_with_contract(content, entry, crate::holo_contract::WASM_CONTRACT_CORE_V1)
+    }
+
     fn write_child_archive(directory: &Path, include_blobs: bool) -> (PathBuf, KappaLabel71) {
         let capabilities = holo_capability::empty_canonical();
         let wasm = b"child wasm";
         let manifest = AppManifest {
             primary: Some(0),
             requires: address_bytes(&capabilities),
-            layers: vec![Layer::wasm(address_bytes(wasm), "holo_run")],
+            layers: vec![wasm_layer(address_bytes(wasm), "holo_run")],
             children: Vec::new(),
         };
         let canonical = manifest.canonicalize();
         let application = address_bytes(&canonical);
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(canonical);
+        let capabilities_kappa = address_bytes(&capabilities);
+        let wasm_kappa = address_bytes(wasm);
+        let directory_blobs: Vec<(&[u8], &[u8])> = if include_blobs {
+            vec![
+                (capabilities_kappa.as_bytes(), capabilities.as_slice()),
+                (wasm_kappa.as_bytes(), wasm.as_slice()),
+            ]
+        } else {
+            Vec::new()
+        };
+        let application_directory =
+            crate::holo_directory::derive(&manifest, directory_blobs.iter().copied())
+                .expect("child directory");
+        writer.add_extension(
+            crate::holo_directory::DIRECTORY_EXTENSION_KEY,
+            crate::holo_directory::encode(&application_directory).expect("encode child directory"),
+        );
         if include_blobs {
-            writer.add_content_blob(address_bytes(&capabilities).as_bytes(), capabilities);
-            writer.add_content_blob(address_bytes(wasm).as_bytes(), wasm);
+            writer.add_content_blob(capabilities_kappa.as_bytes(), capabilities);
+            writer.add_content_blob(wasm_kappa.as_bytes(), wasm);
         }
         let path = directory.join("worker.holo");
         std::fs::write(&path, writer.finish().expect("child archive")).expect("write child");
@@ -732,7 +738,7 @@ mod tests {
         std::fs::write(
             directory.path().join("hologram.json"),
             r#"{
-                "schema_version": 1,
+                "schema_version": 4,
                 "layers": [{"kind":"view","path":"view.html","surface":"portable"}]
             }"#,
         )
@@ -780,7 +786,7 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"{
-                "schema_version": 1,
+                "schema_version": 4,
                 "layers": [{"kind":"view","path":"view.html","surface":"portable"}]
             }"#,
         )
@@ -849,10 +855,10 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"{
-                "schema_version": 1,
+                "schema_version": 4,
                 "primary": 0,
                 "requires": "capabilities.json",
-                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run","contract":"hologram:guest/core-wasm@1"}]
             }"#,
         )
         .expect("manifest");
@@ -892,9 +898,10 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"{
+                "schema_version": 4,
                 "primary": 0,
                 "requires": "capabilities.json",
-                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run","contract":"hologram:guest/core-wasm@1"}]
             }"#,
         )
         .expect("manifest");
@@ -905,10 +912,10 @@ mod tests {
     }
 
     #[test]
-    fn schema_two_accepts_a_python_rootfs_source() {
+    fn current_schema_accepts_a_python_rootfs_source() {
         let manifest: CompileManifest = serde_json::from_str(
             r#"{
-                "schema_version": 2,
+                "schema_version": 4,
                 "primary": 0,
                 "layers": [{
                     "kind": "rootfs",
@@ -965,31 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_one_rejects_source_recipes() {
-        let manifest: CompileManifest = serde_json::from_str(
-            r#"{
-                "schema_version": 1,
-                "primary": 0,
-                "layers": [{
-                    "kind": "rootfs",
-                    "source": {
-                        "language": "python",
-                        "project": ".",
-                        "entry": "analytics:main",
-                        "lock": "uv.lock",
-                        "profile": "rootfs"
-                    },
-                    "arch": "arm64"
-                }]
-            }"#,
-        )
-        .expect("parse");
-        let error = validate_compile_manifest(&manifest).expect_err("schema mismatch");
-        assert!(error.to_string().contains("schema_version 2"), "{error}");
-    }
-
-    #[test]
-    fn schema_three_embeds_a_verified_child_archive_and_delegated_capabilities() {
+    fn current_schema_embeds_a_verified_child_archive_and_delegated_capabilities() {
         let directory = tempfile::tempdir().expect("tempdir");
         let (_, child_application) = write_child_archive(directory.path(), true);
         std::fs::write(directory.path().join("parent.wasm"), b"parent wasm").expect("parent");
@@ -1002,9 +985,9 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"{
-                "schema_version": 3,
+                "schema_version": 4,
                 "primary": 0,
-                "layers": [{"kind":"wasm","path":"parent.wasm","entry":"holo_run"}],
+                "layers": [{"kind":"wasm","path":"parent.wasm","entry":"holo_run","contract":"hologram:guest/core-wasm@1"}],
                 "children": [{
                     "application": "worker.holo",
                     "capabilities": "worker-capabilities.json"
@@ -1049,19 +1032,7 @@ mod tests {
     }
 
     #[test]
-    fn child_sources_require_schema_three_and_a_self_contained_archive() {
-        let schema_two: CompileManifest = serde_json::from_str(
-            r#"{
-                "schema_version": 2,
-                "primary": 0,
-                "layers": [{"kind":"wasm","path":"parent.wasm"}],
-                "children": [{"application":"worker.holo","capabilities":"caps.json"}]
-            }"#,
-        )
-        .expect("parse schema two");
-        let error = validate_compile_manifest(&schema_two).expect_err("schema mismatch");
-        assert!(error.to_string().contains("schema_version 3"), "{error}");
-
+    fn child_sources_require_a_self_contained_archive() {
         let directory = tempfile::tempdir().expect("tempdir");
         write_child_archive(directory.path(), false);
         std::fs::write(directory.path().join("parent.wasm"), b"parent wasm").expect("parent");
@@ -1074,9 +1045,9 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"{
-                "schema_version": 3,
+                "schema_version": 4,
                 "primary": 0,
-                "layers": [{"kind":"wasm","path":"parent.wasm"}],
+                "layers": [{"kind":"wasm","path":"parent.wasm","entry":"holo_run","contract":"hologram:guest/core-wasm@1"}],
                 "children": [{"application":"worker.holo","capabilities":"caps.json"}]
             }"#,
         )
@@ -1097,7 +1068,7 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"{
-                "schema_version": 1,
+                "schema_version": 4,
                 "layers": [{
                     "kind": "inference-model",
                     "path": "model.bundle",
@@ -1120,31 +1091,29 @@ mod tests {
     }
 
     #[test]
-    fn wasm_layers_default_to_the_core_v1_entry_and_reject_empty_names() {
+    fn wasm_layers_require_explicit_entry_and_contract() {
         let directory = tempfile::tempdir().expect("tempdir");
         std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
         let manifest_path = directory.path().join("hologram.json");
         std::fs::write(
             &manifest_path,
             r#"{
-                "schema_version": 1,
+                "schema_version": 4,
                 "primary": 0,
                 "layers": [{"kind":"wasm","path":"app.wasm"}]
             }"#,
         )
         .expect("manifest");
-        let compiled = compile_manifest(&manifest_path).expect("compile default entry");
-        let inspection = inspect_bytes("wasm", "app.holo", &compiled.bytes).expect("inspect");
-        assert_eq!(
-            inspection.directory.expect("directory").layers[0].entry,
-            CORE_WASM_V1_DEFAULT_ENTRY
-        );
+        let Err(error) = compile_manifest(&manifest_path) else {
+            panic!("entry and contract are required")
+        };
+        assert!(error.to_string().contains("require an explicit entry"));
 
         let empty: CompileManifest = serde_json::from_str(
             r#"{
-                "schema_version": 1,
+                "schema_version": 4,
                 "primary": 0,
-                "layers": [{"kind":"wasm","path":"app.wasm","entry":""}]
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"","contract":"hologram:guest/core-wasm@1"}]
             }"#,
         )
         .expect("parse empty entry");
@@ -1161,13 +1130,13 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"{
-                "schema_version": 1,
+                "schema_version": 4,
                 "primary": 0,
-                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
+                "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run","contract":"hologram:guest/core-wasm@1"}]
             }"#,
         )
-        .expect("legacy manifest");
-        let legacy = compile_manifest(&manifest_path).expect("compile legacy");
+        .expect("core manifest");
+        let core = compile_manifest(&manifest_path).expect("compile core");
 
         std::fs::write(
             &manifest_path,
@@ -1185,7 +1154,7 @@ mod tests {
         .expect("component manifest");
         let component = compile_manifest(&manifest_path).expect("compile component");
         assert_ne!(
-            legacy.identity.application_kappa,
+            core.identity.application_kappa,
             component.identity.application_kappa
         );
         let inspection = inspect_bytes("component", "component.holo", &component.bytes)
@@ -1208,25 +1177,21 @@ mod tests {
         );
         assert!(plan.blockers.is_empty());
 
-        std::fs::write(
-            &manifest_path,
+        let omitted: CompileManifest = serde_json::from_str(
             r#"{
                 "schema_version": 4,
                 "primary": 0,
                 "layers": [{"kind":"wasm","path":"app.wasm","entry":"holo_run"}]
             }"#,
         )
-        .expect("schema four compatibility manifest");
-        let omitted = compile_manifest(&manifest_path).expect("compile omitted contract");
-        assert_eq!(
-            legacy.identity.application_kappa,
-            omitted.identity.application_kappa
-        );
+        .expect("parse omitted contract");
+        let error = validate_compile_manifest(&omitted).expect_err("contract is required");
+        assert!(error.to_string().contains("explicit canonical contract"));
     }
 
     #[test]
-    fn wasm_contract_source_schema_and_identifier_fail_closed() {
-        let schema_three: CompileManifest = serde_json::from_str(
+    fn noncurrent_source_schema_and_unknown_contract_fail_closed() {
+        let noncurrent: CompileManifest = serde_json::from_str(
             r#"{
                 "schema_version": 3,
                 "primary": 0,
@@ -1237,9 +1202,9 @@ mod tests {
                 }]
             }"#,
         )
-        .expect("parse schema three");
-        let error = validate_compile_manifest(&schema_three).expect_err("schema mismatch");
-        assert!(error.to_string().contains("schema_version 4"), "{error}");
+        .expect("parse noncurrent schema");
+        let error = validate_compile_manifest(&noncurrent).expect_err("schema mismatch");
+        assert!(error.to_string().contains("expected 4"), "{error}");
 
         let unknown: CompileManifest = serde_json::from_str(
             r#"{
@@ -1248,6 +1213,7 @@ mod tests {
                 "layers": [{
                     "kind":"wasm",
                     "path":"app.wasm",
+                    "entry":"holo_run",
                     "contract":"hologram:guest/core-wasm@2"
                 }]
             }"#,
@@ -1281,6 +1247,7 @@ mod tests {
     fn inference_model_layers_require_an_entry_and_engine() {
         let missing_engine: CompileManifest = serde_json::from_str(
             r#"{
+                "schema_version": 4,
                 "layers": [{
                     "kind": "inference-model",
                     "path": "model.bundle",
@@ -1294,6 +1261,7 @@ mod tests {
 
         let missing_entry: CompileManifest = serde_json::from_str(
             r#"{
+                "schema_version": 4,
                 "layers": [{
                     "kind": "inference-model",
                     "path": "model.bundle",

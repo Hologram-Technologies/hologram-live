@@ -129,7 +129,9 @@ hologram --json history unarchive <conversation-id>
 
 In the desktop app, hovering a thread reveals an archive button, and archived threads collapse into an `ARCHIVED` group at the bottom of the thread list.
 
-Existing schema-v1 configurations that used the original default modules are migrated automatically to enable Chat and the inference module. Custom module selections remain unchanged. The desktop also recovers safely when an older background service is still running by restarting onto its bundled sidecar before retrying a `chat.send` capability miss.
+Configuration files use schema version 2. Hologram validates the complete current
+schema at startup and rejects missing fields or any other schema version instead
+of guessing defaults or rewriting the file.
 
 ### Files
 
@@ -203,7 +205,7 @@ frontend. A failed rebuild is shown on the watched project while the last good
 immutable archive stays available. **Stop watching** removes only the persisted
 watch registration; it does not delete the last cataloged `.holo` archive.
 
-The stable build creates and validates real v4 `.holo` archives while retaining v2/v3 read compatibility. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ.
+The stable build creates and validates v4 `.holo` archives and rejects every other physical version. The physical file starts with `HOLO`, a version and section count, then fixed 24-byte section-table entries containing each section's kind, offset, and length. Logical layers do not have separate physical headers: their ordered descriptors live in the canonical `AppManifest` section and refer to payloads by κ. Every application archive contains exactly one verified application-directory extension.
 
 ```text
 .holo v4
@@ -243,7 +245,7 @@ empty request. A request describes what an application needs—it is never itsel
 a grant. In the upstream capability contract, a scalar budget of `0` means
 unbounded; use a nonzero value to request a finite ceiling. Runtime grant
 enforcement now decodes this canonical request and authorizes it before any
-provider prepares. Schema-v3 source manifests may pair a self-contained child
+provider prepares. Schema-v4 source manifests may pair a self-contained child
 `.holo` archive with a delegated capability document; compilation binds both
 canonical κ values into the parent and embeds the verified child closure in a
 fat build. The planner verifies that recursive child closure—including every
@@ -255,12 +257,9 @@ order under their delegated grants and stop or roll back in exact reverse
 order. The current call invokes only the root primary; child primaries are
 lifecycle-managed dependencies rather than independent resident applications.
 
-Archives emitted by the early Live compiler used the content-addressed
-zero-byte object (`blake3:af1349b9…`) for an omitted request. The runtime accepts
-only that verified legacy representation and interprets it as the same deny-all
-empty request, preserving the archive's original κ. New compiles, trusted
-grants, and every nonempty capability object still require canonical
-`CapabilitySet` bytes.
+Capability objects always use canonical `CapabilitySet` bytes. The canonical
+empty set represents a deny-all request; zero-byte or otherwise malformed
+objects are rejected even when their content address is correct.
 
 Ordinary local execution uses the built-in baseline grant: no storage roots,
 publish/subscribe channels, or network flags. A non-empty request therefore
@@ -310,8 +309,8 @@ hologram run ./my-app.holo --input ./payload.bin
 
 Wasm layers use the import-free `core-wasm-v1` contract. The module exports
 `memory`, `holo_alloc(i32) -> i32`, and the function named by the layer's
-manifest `entry` with signature `(i32, i32) -> i64`. `holo_run` is the compiler
-and generator default, not a runtime hard-code; an archive may declare another
+manifest `entry` with signature `(i32, i32) -> i64`. `holo_run` is a generator
+default, not a runtime hard-code; an archive may declare another
 export such as `transform`. The packed `i64` identifies one byte output. V1 has
 no WASI imports and no numeric process exit status: returning bytes is
 successful completion, while a trap is `LIVE_PROTOCOL_ERROR`. Direct and
@@ -319,10 +318,9 @@ resident providers validate the declared entry during preparation and use a
 fresh instance for each input.
 
 The callable `entry` stays separate from guest-contract selection. Source
-manifest schema v4 adds `contract` for Wasm layers; the compiler writes it to
-the canonical, identity-bearing `aux` tag. Omitting it retains the legacy empty
-tag and the same application κ, normalized at inspection and planning time to
-`hologram:guest/core-wasm@1`. The other accepted identifier is
+manifest schema v4 requires `contract` for Wasm layers; the compiler writes it
+to the canonical, identity-bearing `aux` tag. Empty or omitted contracts are
+rejected. The other accepted identifier is
 `hologram:guest/component@1`:
 
 ```json
@@ -401,7 +399,7 @@ inspection adds `application_kappa` when an application manifest is present.
 
 Importing the fat archive verifies and caches its content blobs. A subsequently imported thin archive can resolve those payloads from the local κ store and use the same resident load/run commands. Direct file execution requires a fat archive because it deliberately has no external content resolver.
 
-Compiled archives include a versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the physical `kappa`, canonical `application_kappa`, footer fingerprint, ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is verified against the manifest and blob contents on import; older archives without it are still inspected by deriving the same view, and pre-application structural archives report no application κ.
+Compiled application archives include exactly one versioned application directory over their canonical manifest. `hologram --json holo inspect ./application.holo` inspects a local archive without importing it or starting the service; the command also accepts an imported `blake3:...` object ID. It exposes the physical `kappa`, canonical `application_kappa`, footer fingerprint, ordered layers, child applications, required capability set, model engine tags, and embedded κ-addressed blobs. The directory is re-derived and verified against the manifest and blob contents on import; missing, duplicate, malformed, or disagreeing directories are rejected. Structural v4 archives without an application manifest report no application κ and may omit the directory.
 
 Use `holo plan` to explain whether an application can run before starting any provider. Local paths plan without the service; imported κ values plan against the local content cache. The payload-free report includes all three identities, fat/thin/hybrid packaging, the capability object, ordered layers, resolution sources, provider availability, planning limits, and stable typed blockers:
 
@@ -430,7 +428,7 @@ For low-level archive assembly, a source manifest can package an already-built p
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 4,
   "layers": [{
     "kind": "inference-model",
     "path": "model.bundle",
@@ -535,7 +533,7 @@ Run the repeatable direct-and-resident proof with:
 just python-component-holo-demo
 ```
 
-For the dependency-aware rootfs profile, source-manifest schema v2 turns a
+For the dependency-aware rootfs profile, source-manifest schema v4 turns a
 locked project into an architecture-specific `rootfs` layer containing CPython,
 the application, dependencies, and required Linux libraries.
 
@@ -607,9 +605,9 @@ normalized for byte-identical clean builds.
 The raw envelope keeps output and completion distinct. Core-Wasm v1 returns
 `"completion":{"kind":"returned"}` because its callable returned bytes but has
 no process exit code. A provider with a real process status may return
-`"completion":{"kind":"exited","code":0}`. `unknown` appears only when
-decoding an older peer that did not carry completion. Traps, nonzero processes,
-failures remain typed errors rather than successful results with invented
+`"completion":{"kind":"exited","code":0}`. Completion and authorization
+evidence are required on every current result. Traps, nonzero processes, and
+other failures remain typed errors rather than successful results with invented
 status values.
 
 Generate the same schema without hand-writing JSON:
@@ -781,7 +779,7 @@ Run the complete server verification path with:
 just verify
 ```
 
-That includes formatting, source-size policy, checks, unit tests, Clippy, public-boundary BDD scenarios, a release build, and an isolated end-to-end smoke test. The smoke test covers legacy configuration migration, module discovery, file storage and renaming, `.holo` operations including resident Wasm execution, chat persistence through the default echo engine, model listing, the OpenAI/Ollama compatibility endpoints, OpenAPI generation, and shutdown.
+That includes formatting, source-size policy, checks, unit tests, Clippy, public-boundary BDD scenarios, a release build, and an isolated end-to-end smoke test. The smoke test covers strict configuration validation, module discovery, file storage and renaming, `.holo` operations including resident Wasm execution, chat persistence through the default echo engine, model listing, the OpenAI/Ollama compatibility endpoints, OpenAPI generation, and shutdown.
 
 Useful development commands:
 

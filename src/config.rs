@@ -6,16 +6,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 const CURRENT_SCHEMA_VERSION: u32 = 2;
-const CHAT_MODULE_ID: &str = "dev.hologram.live.chat";
-const INFERENCE_MODULE_ID: &str = "dev.hologram.live.inference";
-const V1_DEFAULT_MODULES: &[&str] = &[
-    "dev.hologram.live.system",
-    "dev.hologram.live.kappa-registry",
-    "dev.hologram.live.files",
-    "dev.hologram.live.holo",
-    "dev.hologram.live.history",
-    "dev.hologram.live.control-plane",
-];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -41,7 +31,7 @@ pub enum TargetPreference {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct AppConfig {
     pub schema_version: u32,
     pub role: ServerRole,
@@ -59,7 +49,7 @@ pub struct AppConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct PathsConfig {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,
@@ -68,7 +58,7 @@ pub struct PathsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub listen: String,
     pub max_rpc_bytes: usize,
@@ -78,7 +68,7 @@ pub struct ServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct ClientConfig {
     pub preference: TargetPreference,
     pub local_endpoint: String,
@@ -88,14 +78,14 @@ pub struct ClientConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     pub required: bool,
     pub token_env: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct TracingConfig {
     pub filter: String,
     pub format: String,
@@ -104,7 +94,7 @@ pub struct TracingConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct TelemetryConfig {
     /// Enables creation of application metrics and trace context.
     pub enabled: bool,
@@ -115,20 +105,20 @@ pub struct TelemetryConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct ModulesConfig {
     pub enabled: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateConfig {
     pub manifest_url: Option<String>,
     pub channel: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct InferenceConfig {
     /// echo | weightc | ollama
     pub engine: String,
@@ -146,7 +136,7 @@ pub struct InferenceConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct HoloConfig {
     /// Explicit development-only effective grant for resident applications.
     /// Relative paths resolve from `paths.config_dir`.
@@ -154,7 +144,7 @@ pub struct HoloConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct PluginsConfig {
     /// Master switch for subprocess plugin modules. Defaults to off.
     pub enabled: bool,
@@ -164,7 +154,7 @@ pub struct PluginsConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct PluginModuleConfig {
     /// Stable module id the plugin must declare in its `Describe` handshake.
     /// Must not collide with a builtin module id.
@@ -325,10 +315,6 @@ impl AppConfig {
         } else {
             Self::default()
         };
-        if config.migrate()? && exists {
-            let bytes = toml::to_string_pretty(&config)?;
-            atomic_write(&path, bytes.as_bytes())?;
-        }
         config.apply_environment()?;
         config.expand_paths();
         config.validate()?;
@@ -481,23 +467,6 @@ impl AppConfig {
         env::var(&self.auth.token_env).ok()
     }
 
-    fn migrate(&mut self) -> Result<bool> {
-        match self.schema_version {
-            CURRENT_SCHEMA_VERSION => Ok(false),
-            1 => {
-                if is_v1_default_module_set(&self.modules.enabled) {
-                    self.modules.enabled.push(CHAT_MODULE_ID.to_owned());
-                    self.modules.enabled.push(INFERENCE_MODULE_ID.to_owned());
-                }
-                self.schema_version = CURRENT_SCHEMA_VERSION;
-                Ok(true)
-            }
-            other => Err(LiveError::Config(format!(
-                "unsupported configuration schema {other}"
-            ))),
-        }
-    }
-
     fn apply_environment(&mut self) -> Result<()> {
         if let Ok(value) = env::var("HOLOGRAM_LISTEN") {
             self.server.listen = value;
@@ -556,13 +525,6 @@ fn is_loopback(ip: IpAddr) -> bool {
     ip.is_loopback()
 }
 
-fn is_v1_default_module_set(enabled: &[String]) -> bool {
-    enabled.len() == V1_DEFAULT_MODULES.len()
-        && V1_DEFAULT_MODULES
-            .iter()
-            .all(|expected| enabled.iter().any(|actual| actual == expected))
-}
-
 fn validate_endpoint(endpoint: &str, local: bool) -> Result<()> {
     if endpoint.starts_with("https://") {
         return Ok(());
@@ -604,35 +566,29 @@ mod tests {
     }
 
     #[test]
-    fn v1_default_config_migrates_to_enable_chat() {
-        let directory = tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("live.toml");
-        let mut legacy = AppConfig {
+    fn noncurrent_configuration_schema_is_rejected() {
+        let config = AppConfig {
             schema_version: 1,
             ..AppConfig::default()
         };
-        legacy.modules.enabled = V1_DEFAULT_MODULES
-            .iter()
-            .map(|value| (*value).to_owned())
-            .collect();
-        std::fs::write(
-            &path,
-            toml::to_string_pretty(&legacy).expect("encode legacy"),
-        )
-        .expect("write legacy");
+        let error = config.validate().expect_err("old schema");
+        assert!(error
+            .to_string()
+            .contains("unsupported configuration schema 1"));
+    }
 
-        let (loaded, _) = AppConfig::load(Some(&path)).expect("load migrated config");
-
-        assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
-        assert!(loaded.modules.enabled.iter().any(|id| id == CHAT_MODULE_ID));
-        assert!(loaded
-            .modules
-            .enabled
-            .iter()
-            .any(|id| id == INFERENCE_MODULE_ID));
-        let persisted = std::fs::read_to_string(path).expect("read migrated config");
-        assert!(persisted.contains("schema_version = 2"));
-        assert!(persisted.contains(CHAT_MODULE_ID));
+    #[test]
+    fn missing_current_configuration_fields_are_rejected() {
+        let mut value = toml::Value::try_from(AppConfig::default()).expect("serialize config");
+        value
+            .get_mut("server")
+            .and_then(toml::Value::as_table_mut)
+            .expect("server table")
+            .remove("max_rpc_bytes");
+        let source = toml::to_string(&value).expect("encode config");
+        let error =
+            toml::from_str::<AppConfig>(&source).expect_err("missing current field must fail");
+        assert!(error.to_string().contains("max_rpc_bytes"), "{error}");
     }
 
     #[test]
@@ -667,28 +623,19 @@ mod tests {
     }
 
     #[test]
-    fn v1_custom_module_selection_is_preserved_during_migration() {
-        let mut legacy = AppConfig {
-            schema_version: 1,
-            ..AppConfig::default()
-        };
-        legacy.modules.enabled = vec!["dev.hologram.live.system".to_owned()];
-
-        assert!(legacy.migrate().expect("migrate"));
-        assert_eq!(legacy.schema_version, CURRENT_SCHEMA_VERSION);
-        assert_eq!(
-            legacy.modules.enabled,
-            vec!["dev.hologram.live.system".to_owned()]
-        );
-    }
-
-    #[test]
-    fn v2_config_can_intentionally_disable_chat() {
+    fn current_config_can_intentionally_disable_chat() {
         let mut config = AppConfig::default();
-        config.modules.enabled.retain(|id| id != CHAT_MODULE_ID);
+        config
+            .modules
+            .enabled
+            .retain(|id| id != "dev.hologram.live.chat");
 
-        assert!(!config.migrate().expect("already current"));
-        assert!(!config.modules.enabled.iter().any(|id| id == CHAT_MODULE_ID));
+        config.validate().expect("current config");
+        assert!(!config
+            .modules
+            .enabled
+            .iter()
+            .any(|id| id == "dev.hologram.live.chat"));
     }
 
     #[test]
@@ -697,16 +644,6 @@ mod tests {
         assert!(!config.plugins.enabled);
         assert!(config.plugins.modules.is_empty());
         config.validate().expect("default config validates");
-
-        // Configs written before the plugins section existed still parse. The
-        // plugins section serializes last, so truncating it reproduces a
-        // pre-plugin config file.
-        let source = toml::to_string_pretty(&config).expect("encode default config");
-        let (source, _) = source
-            .split_once("\n[plugins]")
-            .expect("plugins section is serialized");
-        let reparsed: AppConfig = toml::from_str(source).expect("parse without plugins section");
-        assert!(!reparsed.plugins.enabled);
     }
 
     #[test]

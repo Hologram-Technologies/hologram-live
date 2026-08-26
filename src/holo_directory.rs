@@ -1,4 +1,4 @@
-//! Queryable application-directory projection for `.holo` v3/v4 archives.
+//! Queryable application-directory projection for `.holo` v4 archives.
 
 use crate::error::{LiveError, Result};
 use crate::holo_contract::normalize_wasm_contract;
@@ -129,8 +129,12 @@ pub fn decode(bytes: &[u8]) -> Result<HoloDirectory> {
     }
     for layer in &mut directory.layers {
         if layer.kind == "wasm" {
-            let normalized = normalize_wasm_contract(layer.contract.as_deref().unwrap_or(""))
-                .map_err(LiveError::InvalidHolo)?;
+            let contract = layer.contract.as_deref().ok_or_else(|| {
+                LiveError::InvalidHolo(
+                    "Wasm directory layers require an explicit guest contract".to_owned(),
+                )
+            })?;
+            let normalized = normalize_wasm_contract(contract).map_err(LiveError::InvalidHolo)?;
             layer.contract = Some(normalized.to_owned());
         } else if layer.contract.is_some() {
             return Err(LiveError::InvalidHolo(format!(
@@ -142,10 +146,45 @@ pub fn decode(bytes: &[u8]) -> Result<HoloDirectory> {
     Ok(directory)
 }
 
+/// Require and verify the single directory carried by a current application.
+pub fn verify_required<'a, D, B>(
+    manifest: &AppManifest,
+    directories: D,
+    blobs: B,
+) -> Result<HoloDirectory>
+where
+    D: IntoIterator<Item = &'a [u8]>,
+    B: IntoIterator<Item = (&'a [u8], &'a [u8])>,
+{
+    let mut directories = directories.into_iter();
+    let encoded = directories.next().ok_or_else(|| {
+        LiveError::InvalidHolo(
+            "v4 application archive requires an embedded application directory".to_owned(),
+        )
+    })?;
+    if directories.next().is_some() {
+        return Err(LiveError::InvalidHolo(
+            "archive contains more than one application directory".to_owned(),
+        ));
+    }
+    let declared = decode(encoded)?;
+    let derived = derive(manifest, blobs)?;
+    if declared != derived {
+        return Err(LiveError::InvalidHolo(
+            "application directory does not match the manifest and embedded blobs".to_owned(),
+        ));
+    }
+    Ok(derived)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use hologram::space::Layer;
+
+    fn wasm_layer(content: hologram::space::KappaLabel71, entry: &str) -> Layer {
+        Layer::wasm_with_contract(content, entry, crate::holo_contract::WASM_CONTRACT_CORE_V1)
+    }
 
     #[test]
     fn directory_is_normalized_and_blob_order_is_deterministic() {
@@ -154,7 +193,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: address_bytes(first),
-            layers: vec![Layer::wasm(address_bytes(second), "holo_run")],
+            layers: vec![wasm_layer(address_bytes(second), "holo_run")],
             children: Vec::new(),
         };
 
@@ -188,7 +227,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: kappa,
-            layers: vec![Layer::wasm(kappa, "holo_run")],
+            layers: vec![wasm_layer(kappa, "holo_run")],
             children: Vec::new(),
         };
         let error = derive(&manifest, [(kappa.as_bytes(), content.as_slice()); 2])
@@ -210,8 +249,8 @@ mod tests {
     }
 
     #[test]
-    fn pre_v4_directory_rows_without_engine_remain_readable() {
-        let directory = decode(
+    fn wasm_directory_rows_require_an_explicit_contract() {
+        let error = decode(
             br#"{
                 "schema_version":1,
                 "primary_layer":0,
@@ -228,12 +267,7 @@ mod tests {
                 "blobs":[]
             }"#,
         )
-        .expect("legacy directory");
-
-        assert_eq!(directory.layers[0].engine, None);
-        assert_eq!(
-            directory.layers[0].contract.as_deref(),
-            Some(crate::holo_contract::WASM_CONTRACT_CORE_V1)
-        );
+        .expect_err("missing contract must fail");
+        assert!(error.to_string().contains("contract"));
     }
 }

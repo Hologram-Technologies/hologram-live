@@ -48,9 +48,9 @@ must be introduced by a versioned contract and linked only from the admitted
 effective grant.
 
 ADR 011 assigns Wasm contracts through the canonical, identity-bearing layer
-`aux` tag. Source schema v4 exposes the tag as `contract`; empty means legacy
-core-Wasm v1. The runtime normalizes the selector before exact `(kind,
-contract)` provider lookup. An unknown non-empty contract fails closed without
+`aux` tag. Source schema v4 exposes the required tag as `contract`; core-Wasm
+v1 is `hologram:guest/core-wasm@1`. The runtime validates the selector before
+exact `(kind, contract)` provider lookup. An empty or unknown contract fails closed without
 reaching core Wasm or ambient WASI. Component v1 executes through a dedicated import-free
 provider with fixed memory, fuel, input/output, and wall-time ceilings. It uses
 a fresh store per input and an isolated epoch-interruptible engine so timeout,

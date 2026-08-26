@@ -1,4 +1,82 @@
-# Current sprint: M4.1 rootfs base-digest binding
+# Current sprint: strict pre-release contract
+
+## Sprint status
+
+- State: ready for review
+- Started: 2026-08-26
+- Last reviewed: 2026-08-26
+- Durable milestone: [M8 — Conformance and release hardening](plans/holo-application-runtime.md#m8--conformance-and-release-hardening)
+- Decision: [ADR 016](adrs/016-strict-pre-release-contract.md)
+- Goal: remove speculative compatibility paths before the first public release
+- Exit signal: one explicit current format is enforced across compiler,
+  runtime, configuration, persistence, RPC, fixtures, and documentation; all
+  verification gates pass and the change is merged
+
+## Contract boundary
+
+- [x] Accept physical `.holo` version 4 only.
+- [x] Require exactly one verified application directory for every application
+  archive.
+- [x] Accept source-manifest schema version 4 only.
+- [x] Require explicit Wasm entry and canonical guest contract.
+- [x] Require canonical capability objects; reject the zero-byte sentinel.
+- [x] Accept Python rootfs bundle schema version 2 only.
+- [x] Accept configuration schema version 2 only without automatic rewriting.
+- [x] Require complete history, resident, and run records.
+- [x] Keep OpenAI and Ollama compatibility APIs as supported integrations.
+
+## Implementation
+
+- [x] Add a Live-owned physical-version gate at inspect, import/cache, compile-
+  child, and planning boundaries.
+- [x] Replace optional application-directory derivation with required
+  verification.
+- [x] Remove source-schema feature gates and Wasm contract normalization.
+- [x] Remove capability, rootfs, configuration, history, and RPC decode
+  fallbacks.
+- [x] Update generated examples and fixtures to the current manifest schema.
+- [x] Finish strict current-archive test helpers and remove stale assertions.
+- [x] Confirm public archive, manifest, configuration, persistence, and RPC
+  boundaries return typed errors for noncurrent or incomplete input.
+
+## Tests and evidence
+
+- [x] Add focused rejection tests for physical version, source schema,
+  configuration schema, missing application directory, missing Wasm contract,
+  malformed capability objects, and incomplete result records.
+- [x] Pass Rust formatting, unit tests, checks, and Clippy.
+- [x] Pass public-boundary BDD and isolated smoke tests.
+- [x] Pass desktop and documentation builds.
+- [x] Record the exact verification commands and outcomes here.
+
+Verification evidence (2026-08-26): `just verify` passed formatting, source-size
+and product-boundary checks, locked workspace check/tests, Clippy with warnings
+denied, 12 BDD scenarios with 123 steps, the optimized server build, and the
+isolated smoke test. `just docs` regenerated OpenAPI and built all 13 static
+pages. `npm --prefix apps/desktop ci && npm --prefix apps/desktop run build`
+produced the release sidecar, frontend bundle, macOS application, and arm64 DMG.
+
+## Documentation and delivery
+
+- [x] Record the decision in ADR 016 and supersede conflicting ADR clauses.
+- [x] Update README, architecture, security, actual-capability, and website
+  documentation.
+- [x] Keep `specs/plans/holo-application-runtime.md` synchronized.
+- [ ] Commit, open and merge the PR, remove only this worktree, and leave the
+  primary checkout clean on synchronized `main`.
+
+## Next prioritized work
+
+- [ ] `DISC-019b` — Define a normalized OCI/rootfs representation and prove
+  byte-identical layer κ values across clean supported hosts.
+- [ ] `DISC-017d` — Supply deterministic Python Component build randomness and
+  prove clean supported-host equality.
+- [ ] Add authenticated private-registry integration coverage without exposing
+  credentials in build provenance.
+
+---
+
+# Previous sprint: M4.1 rootfs base-digest binding
 
 ## Sprint status
 
@@ -13,9 +91,9 @@
   identities in provenance, executes successfully, passes all gates, and is
   merged
 
-Completed legacy empty-capability compatibility remains in Git history and the
-durable runtime plan. Rootfs provenance remains governed by ADR 014; this
-sprint adds the binding decision in ADR 015.
+Rootfs provenance remains governed by ADR 014 and the binding decision in ADR
+015. The later strict-contract decision in ADR 016 supersedes experimental
+format compatibility from this period.
 
 ## Acceptance boundary
 
@@ -50,7 +128,7 @@ sprint adds the binding decision in ADR 015.
 
 - [x] Prove raw schema-2 manifest bytes produce the expected SHA-256 reference.
 - [x] Prove repository parsing handles a registry port and a tag.
-- [x] Prove malformed, empty, and legacy registry manifests fail closed.
+- [x] Prove malformed, empty, and unsupported registry manifests fail closed.
 - [x] Prove an already pinned reference returns unchanged without registry
   access.
 - [x] Prove the generated Dockerfile uses the resolved reference.

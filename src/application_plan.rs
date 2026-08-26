@@ -785,6 +785,7 @@ pub fn explain_application<F>(
 where
     F: FnMut(&str) -> Result<Option<Vec<u8>>>,
 {
+    crate::holo_format::require_current(archive_bytes)?;
     let loader = HoloLoader::from_bytes(archive_bytes)
         .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     let archive_fingerprint = hex(&loader.fingerprint());
@@ -816,10 +817,18 @@ where
     );
 
     let layers = planned_layers(&manifest);
-
-    let embedded = archive
+    let extensions = archive
+        .extensions()
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    let directories = extensions
+        .iter()
+        .filter(|(key, _)| *key == crate::holo_directory::DIRECTORY_EXTENSION_KEY)
+        .map(|(_, bytes)| *bytes);
+    let embedded_blobs = archive
         .content_blobs()
-        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?
+        .map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
+    crate::holo_directory::verify_required(&manifest, directories, embedded_blobs.iter().copied())?;
+    let embedded = embedded_blobs
         .into_iter()
         .map(|(label, bytes)| {
             let kappa = std::str::from_utf8(label).map_err(|_| {
@@ -1130,6 +1139,10 @@ mod tests {
     use hologram::archive::HoloWriter;
     use hologram::space::{KappaLabel71, Layer};
 
+    fn wasm_layer(content: KappaLabel71, entry: &str) -> Layer {
+        Layer::wasm_with_contract(content, entry, crate::holo_contract::WASM_CONTRACT_CORE_V1)
+    }
+
     fn test_capabilities() -> &'static [u8] {
         static CAPABILITIES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
         CAPABILITIES.get_or_init(crate::holo_capability::empty_canonical)
@@ -1138,6 +1151,17 @@ mod tests {
     fn write_archive(manifest: &AppManifest, blobs: &[(&KappaLabel71, &[u8])]) -> Vec<u8> {
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(manifest.canonicalize());
+        let directory = crate::holo_directory::derive(
+            manifest,
+            blobs
+                .iter()
+                .map(|(kappa, bytes)| (kappa.as_bytes(), *bytes)),
+        )
+        .expect("directory");
+        writer.add_extension(
+            crate::holo_directory::DIRECTORY_EXTENSION_KEY,
+            crate::holo_directory::encode(&directory).expect("encode directory"),
+        );
         for (kappa, bytes) in blobs {
             writer.add_content_blob(kappa.as_bytes(), *bytes);
         }
@@ -1158,8 +1182,8 @@ mod tests {
             primary: Some(0),
             requires: shared_kappa,
             layers: vec![
-                Layer::wasm(shared_kappa, "primary"),
-                Layer::wasm(shared_kappa, "secondary"),
+                wasm_layer(shared_kappa, "primary"),
+                wasm_layer(shared_kappa, "secondary"),
             ],
             children: Vec::new(),
         };
@@ -1204,7 +1228,7 @@ mod tests {
             primary: Some(0),
             requires: capabilities_kappa,
             layers: vec![
-                Layer::wasm(primary_kappa, "run"),
+                wasm_layer(primary_kappa, "run"),
                 Layer::view(secondary_kappa, "portable"),
             ],
             children: Vec::new(),
@@ -1245,7 +1269,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "run")],
+            layers: vec![wasm_layer(layer_kappa, "run")],
             children: Vec::new(),
         };
         let bytes = write_archive(
@@ -1271,40 +1295,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_empty_capability_object_is_a_runnable_deny_all_request() {
-        let capabilities = b"";
-        let layer = b"wasm";
-        let capabilities_kappa = address_bytes(capabilities);
-        let layer_kappa = address_bytes(layer);
-        let manifest = AppManifest {
-            primary: Some(0),
-            requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "run")],
-            children: Vec::new(),
-        };
-        let bytes = write_archive(
-            &manifest,
-            &[(&capabilities_kappa, capabilities), (&layer_kappa, layer)],
-        );
-
-        let mut report =
-            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("explain");
-        report.evaluate_providers(available);
-        assert!(report.runnable());
-
-        let plan = report.into_application_plan().expect("legacy plan");
-        assert_eq!(
-            *plan.requested_capabilities.capabilities,
-            crate::holo_capability::empty_capabilities()
-        );
-        assert!(plan.requested_capabilities.canonical.is_empty());
-        assert_eq!(
-            plan.requested_capabilities.kappa,
-            capabilities_kappa.to_string()
-        );
-    }
-
-    #[test]
     fn forged_local_content_is_a_typed_mismatch_blocker() {
         let capabilities = test_capabilities();
         let layer = b"declared layer";
@@ -1313,7 +1303,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "run")],
+            layers: vec![wasm_layer(layer_kappa, "run")],
             children: Vec::new(),
         };
         let bytes = write_archive(&manifest, &[]);
@@ -1351,7 +1341,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "run")],
+            layers: vec![wasm_layer(layer_kappa, "run")],
             children: Vec::new(),
         };
         let fat = write_archive(
@@ -1468,7 +1458,7 @@ mod tests {
         let child_manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(child_layer_kappa, "child_run")],
+            layers: vec![wasm_layer(child_layer_kappa, "child_run")],
             children: Vec::new(),
         };
         let child_manifest_bytes = child_manifest.canonicalize();
@@ -1476,7 +1466,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "run")],
+            layers: vec![wasm_layer(layer_kappa, "run")],
             children: vec![(child_kappa, capabilities_kappa)],
         };
         let bytes = write_archive(
@@ -1543,7 +1533,7 @@ mod tests {
         let grandchild_manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(grandchild_layer_kappa, "grandchild_run")],
+            layers: vec![wasm_layer(grandchild_layer_kappa, "grandchild_run")],
             children: Vec::new(),
         };
         let grandchild_bytes = grandchild_manifest.canonicalize();
@@ -1551,7 +1541,7 @@ mod tests {
         let child_manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(child_layer_kappa, "child_run")],
+            layers: vec![wasm_layer(child_layer_kappa, "child_run")],
             children: vec![(grandchild_kappa, capabilities_kappa)],
         };
         let child_bytes = child_manifest.canonicalize();
@@ -1559,7 +1549,7 @@ mod tests {
         let root_manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(root_layer_kappa, "root_run")],
+            layers: vec![wasm_layer(root_layer_kappa, "root_run")],
             children: vec![(child_kappa, capabilities_kappa)],
         };
         let archive = write_archive(
@@ -1608,7 +1598,7 @@ mod tests {
         let leaf_manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "leaf")],
+            layers: vec![wasm_layer(layer_kappa, "leaf")],
             children: Vec::new(),
         };
         let leaf_bytes = leaf_manifest.canonicalize();
@@ -1616,7 +1606,7 @@ mod tests {
         let child_manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "child")],
+            layers: vec![wasm_layer(layer_kappa, "child")],
             children: vec![(leaf_kappa, capabilities_kappa)],
         };
         let child_bytes = child_manifest.canonicalize();
@@ -1624,7 +1614,7 @@ mod tests {
         let root_manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "root")],
+            layers: vec![wasm_layer(layer_kappa, "root")],
             children: vec![(child_kappa, capabilities_kappa)],
         };
         let archive = write_archive(
@@ -1699,7 +1689,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(layer_kappa, "run")],
+            layers: vec![wasm_layer(layer_kappa, "run")],
             children: Vec::new(),
         };
         let bytes = write_archive(

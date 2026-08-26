@@ -4,7 +4,7 @@ import { sitePath } from '../../lib/site';
 ---
 <DocsLayout title=".holo files" description="The physical layout, logical layers, identity model, packaging profiles, and verification rules of Hologram v4 application archives.">
   <h1><code>.holo</code> files</h1>
-  <p>A <code>.holo</code> file is Hologram's native executable and application archive. Version 4 represents a Wasm program, tensor plan, root filesystem, view, callable inference model, or a composed application containing several of those layers. Readers retain v2/v3 compatibility.</p>
+  <p>A <code>.holo</code> file is Hologram's native executable and application archive. Version 4 represents a Wasm program, tensor plan, root filesystem, view, callable inference model, or a composed application containing several of those layers. Live accepts only version 4.</p>
 
   <div class="note"><strong>Sections are not layers</strong>The physical file has a header and section table. Logical application layers live inside the canonical <code>AppManifest</code> section and point to content by κ. A layer does not receive a second physical header of its own.</div>
 
@@ -101,7 +101,7 @@ import { sitePath } from '../../lib/site';
   <p>The checked-in <code>hologram:application@1.0.0</code> WIT world exports one stateless binary <code>run</code> and imports nothing. Component archives compile, inspect, plan, and execute directly or resident through an exact-contract provider; they never route to core Wasm. Compiled code stays warm, but each input uses a fresh store. The host caps memory at 64 MiB, fuel at 100 million units per input, input and output at 1 MiB each, and each invocation at two seconds. Nonzero admitted memory and CPU-time scalars can only tighten those ceilings. Timeout and cancellation interrupt only the prepared component's engine. Unknown source identifiers are rejected before archive emission; an unknown canonical tag makes the archive invalid. Future storage, channel, and mediated network imports must be linked only from admitted canonical capability fields.</p>
 
   <h2>Completion and exit</h2>
-  <p>A run result carries output bytes and typed completion independently. <code>returned</code> means a callable such as core-Wasm v1 returned normally without a numeric process status. <code>exited</code> carries a code only when the provider observed a real process exit. <code>unknown</code> is a legacy decode value and is never emitted by a new provider. Traps, nonzero process exits, protocol violations, and cleanup failures are operation errors, not successful completion values.</p>
+  <p>A run result carries output bytes and typed completion independently. <code>returned</code> means a callable such as core-Wasm v1 returned normally without a numeric process status. <code>exited</code> carries a code only when the provider observed a real process exit. Completion is required. Traps, nonzero process exits, protocol violations, and cleanup failures are operation errors, not successful completion values.</p>
   <p>Only the root primary supplies application completion. Child primaries and non-primary layers are lifecycle-managed dependencies. Wasm and rootfs may be exit-bearing; View, Tensor, and InferenceModel layers are non-exit-bearing and cannot become the runtime primary. Direct execution publishes completion only after reverse-order cleanup succeeds. Resident completion ends the current call but leaves the application loaded.</p>
 
   <h3>Capability requests</h3>
@@ -119,7 +119,7 @@ import { sitePath } from '../../lib/site';
   "priority_weight": 0
 &#125;</code></pre>
   <p>κ arrays must be strictly sorted, contain no duplicates, and use canonical <code>blake3:&lt;64 lowercase hex&gt;</code> labels. Unknown fields and schema versions fail during both <code>compile --check</code> and <code>compile</code>, with the source path and invalid field/index in the diagnostic. Omitting <code>requires</code> produces the same canonical empty set as the document above. The upstream budget convention uses <code>0</code> for unbounded; set a nonzero budget to request a finite ceiling.</p>
-  <p>Archives emitted by the early Live compiler may contain its content-addressed zero-byte sentinel for an omitted request. After verifying that object's κ, the runtime preserves its historical meaning as an empty, deny-all request and retains the original bytes and identity. This narrow compatibility rule does not apply to new compilation, trusted grants, or any nonempty malformed object.</p>
+  <p>Capability objects must always be canonical upstream <code>CapabilitySet</code> bytes. The canonical empty set is the only deny-all representation. Zero-byte and otherwise malformed objects are rejected even when their content address matches.</p>
   <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Live decodes and admits the root request against a trusted effective grant, then proves every delegated child grant attenuates its parent's admitted grant and admits that child's request. Any failure occurs before provider preparation.</div>
   <p>The default local grant contains no storage roots, channels, or network flags. A broader request fails with <code>LIVE_AUTHORIZATION_DENIED</code> before a provider prepares. Direct local demos may opt in with <code>hologram run application.holo --development-grant development-grant.json</code>. Resident applications use only <code>holo.development_grant</code> from trusted service configuration; callers cannot attach self-asserted grants to a remote request.</p>
   <pre><code>hologram --json run application.holo \
@@ -151,7 +151,7 @@ import { sitePath } from '../../lib/site';
   "children": [],
   "blobs": [&#123; "kappa": "blake3:…", "byte_length": 842 &#125;]
 &#125;</code></pre>
-  <p>The directory is a read model, not a second source of truth. During import and inspection, Live decodes the canonical manifest, hashes every embedded blob, derives this directory again, and rejects disagreement. Legacy archives without the extension remain valid; Live derives the same view and reports <code>directory_embedded: false</code>. Model rows use the optional <code>engine</code> field.</p>
+  <p>The directory is a read model, not a second source of truth. Every v4 application archive must contain exactly one directory extension. During import and inspection, Live decodes the canonical manifest, hashes every embedded blob, derives this directory again, and rejects a missing, duplicate, malformed, or disagreeing directory. Structural archives without an application manifest may omit it. Model rows use the optional <code>engine</code> field.</p>
 
   <h2>Identity and verification</h2>
   <ul>
@@ -191,7 +191,7 @@ hologram --json holo plan blake3:… |
 
   <h2>Build, inspect, and run</h2>
   <p>Layer, capability, and child paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
-  <div class="note"><strong>Four source schemas</strong>Schema v1 reads a prebuilt <code>path</code> for every layer, including an opaque provider bundle for <code>inference-model</code>. Schema v2 retains that compatibility and additionally accepts a typed Python <code>source</code> recipe for a rootfs layer. Schema v3 adds ordered child application archives and delegated capability documents. Schema v4 adds the Wasm guest-contract selector and permits Python <code>profile: "wasi-component"</code> to compile into an ordinary Component v1 <code>WasmCodemodule</code>. Every version produces the same canonical v4 <code>AppManifest</code>; the build recipe is retained as archive metadata.</div>
+  <div class="note"><strong>One source schema</strong>Schema v4 is required. It supports prebuilt layer paths, typed Python rootfs and Component source recipes, ordered child application archives, delegated capability documents, and explicit Wasm guest contracts. The build recipe is retained as archive metadata.</div>
   <pre><code>&#123;
   "schema_version": 1,
   "primary": 0,
@@ -219,12 +219,12 @@ hologram run blake3:… --input payload.bin
 hologram holo unload blake3:…</code></pre>
 
   <h3>Compose a child application</h3>
-  <p>Compile the child first, then reference its self-contained archive from a schema-v3 parent. The compiler verifies the child archive, extracts its canonical application manifest, compiles the delegated capability source, and embeds the child manifest and verified content blobs in a fat parent. A thin parent retains the identical canonical application identity without embedding blobs.</p>
+  <p>Compile the child first, then reference its self-contained archive from a schema-v4 parent. The compiler verifies the child archive, extracts its canonical application manifest, compiles the delegated capability source, and embeds the child manifest and verified content blobs in a fat parent. A thin parent retains the identical canonical application identity without embedding blobs.</p>
   <pre><code>&#123;
-  "schema_version": 3,
+  "schema_version": 4,
   "primary": 0,
   "layers": [
-    &#123; "kind": "wasm", "path": "parent.wasm", "entry": "holo_run" &#125;
+    &#123; "kind": "wasm", "path": "parent.wasm", "entry": "holo_run", "contract": "hologram:guest/core-wasm@1" &#125;
   ],
   "children": [
     &#123;

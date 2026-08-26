@@ -13,9 +13,9 @@
 //!   `out_ptr << 32 | out_len`; the host reads `out_len` bytes at `out_ptr`
 //!   from `memory`.
 //!
-//! `holo_run` is only the default entry used when generating a manifest or by
-//! compatibility helpers that do not receive one. Runtime providers always
-//! use the entry bound into the canonical application manifest. V1 accepts no
+//! `holo_run` is only the default entry used when generating a manifest.
+//! Runtime providers always use the entry bound into the canonical application
+//! manifest. V1 accepts no
 //! imports or WASI functions and exposes no numeric process exit status: a
 //! returned byte value is successful completion, while a trap is a typed
 //! protocol failure.

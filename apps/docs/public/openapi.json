@@ -10,6 +10,168 @@
     "version": "1.0.0"
   },
   "paths": {
+    "/api/chat": {
+      "post": {
+        "tags": [],
+        "operationId": "chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generate": {
+      "post": {
+        "tags": [],
+        "operationId": "generate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/show": {
+      "post": {
+        "tags": [],
+        "operationId": "show_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShowResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "tags": [],
+        "operationId": "list_tags",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/capabilities": {
       "get": {
         "tags": [],
@@ -587,6 +749,52 @@
         }
       }
     },
+    "/api/v1/models": {
+      "get": {
+        "tags": [],
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "remove_model",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Model ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        }
+      }
+    },
     "/api/v1/modules": {
       "get": {
         "tags": [],
@@ -764,6 +972,72 @@
           }
         }
       }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": [],
+        "operationId": "chat_completions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCompletion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [],
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -800,20 +1074,6 @@
       },
       "ApplicationCompletion": {
         "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "unknown"
-                ]
-              }
-            }
-          },
           {
             "type": "object",
             "required": [
@@ -905,6 +1165,125 @@
           }
         }
       },
+      "ChatChoice": {
+        "type": "object",
+        "required": [
+          "index",
+          "message",
+          "finish_reason"
+        ],
+        "properties": {
+          "finish_reason": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "message": {
+            "$ref": "#/components/schemas/ChatMessage"
+          }
+        }
+      },
+      "ChatCompletion": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "created",
+          "model",
+          "choices",
+          "usage"
+        ],
+        "properties": {
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatChoice"
+            }
+          },
+          "created": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        }
+      },
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "properties": {
+          "max_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            }
+          },
+          "model": {
+            "type": "string",
+            "description": "Catalog model id or name; falls back to `inference.default_model`."
+          },
+          "seed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "stream": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "temperature": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
       "ChatRequest": {
         "type": "object",
         "required": [
@@ -916,6 +1295,29 @@
           }
         }
       },
+      "ChatResponse": {
+        "type": "object",
+        "required": [
+          "model",
+          "created_at",
+          "message",
+          "done"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "message": {
+            "$ref": "#/components/schemas/OllamaMessage"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
       "Conversation": {
         "type": "object",
         "required": [
@@ -923,12 +1325,12 @@
           "title",
           "created_at_millis",
           "updated_at_millis",
-          "messages"
+          "messages",
+          "archived"
         ],
         "properties": {
           "archived": {
-            "type": "boolean",
-            "description": "Defaulted so conversations written before archiving existed still load."
+            "type": "boolean"
           },
           "created_at_millis": {
             "type": "integer",
@@ -982,6 +1384,60 @@
         ],
         "properties": {
           "title": {
+            "type": "string"
+          }
+        }
+      },
+      "GenerateRequest": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Catalog model id or name; falls back to `inference.default_model`."
+          },
+          "options": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OllamaOptions"
+              }
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "stream": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "GenerateResponse": {
+        "type": "object",
+        "required": [
+          "model",
+          "created_at",
+          "response",
+          "done"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          },
+          "response": {
             "type": "string"
           }
         }
@@ -1536,7 +1992,12 @@
           "kappa",
           "outputs",
           "elapsed_micros",
-          "resident_bytes"
+          "resident_bytes",
+          "completion",
+          "requested_capabilities_kappa",
+          "effective_grant_kappa",
+          "grant_source",
+          "authorization"
         ],
         "properties": {
           "authorization": {
@@ -1599,6 +2060,114 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "ModelDetails": {
+        "type": "object",
+        "required": [
+          "format",
+          "family",
+          "families",
+          "parameter_size",
+          "quantization_level"
+        ],
+        "properties": {
+          "families": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "family": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "parameter_size": {
+            "type": "string"
+          },
+          "quantization_level": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "engine",
+          "source",
+          "size",
+          "created_at_millis"
+        ],
+        "properties": {
+          "created_at_millis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "engine": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelObject"
+            }
+          },
+          "object": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelObject": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "created",
+          "owned_by"
+        ],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "owned_by": {
+            "type": "string"
           }
         }
       },
@@ -1704,6 +2273,92 @@
           }
         }
       },
+      "OllamaErrorBody": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "OllamaMessage": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "OllamaOptions": {
+        "type": "object",
+        "properties": {
+          "num_predict": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "seed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "temperature": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
+      "OpenAiErrorBody": {
+        "type": "object",
+        "required": [
+          "message",
+          "type"
+        ],
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "OpenAiErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/OpenAiErrorBody"
+          }
+        }
+      },
       "OperationInfo": {
         "type": "object",
         "required": [
@@ -1751,7 +2406,11 @@
           "output_count",
           "resident_bytes",
           "queued",
-          "processed"
+          "processed",
+          "requested_capabilities_kappa",
+          "effective_grant_kappa",
+          "grant_source",
+          "authorization"
         ],
         "properties": {
           "authorization": {
@@ -1793,6 +2452,111 @@
             "type": "string"
           }
         }
+      },
+      "ShowRequest": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Ollama renamed this field from `name` to `model`; accept both."
+          }
+        }
+      },
+      "ShowResponse": {
+        "type": "object",
+        "required": [
+          "modelfile",
+          "parameters",
+          "template",
+          "details"
+        ],
+        "properties": {
+          "details": {
+            "$ref": "#/components/schemas/ModelDetails"
+          },
+          "modelfile": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          }
+        }
+      },
+      "TagModel": {
+        "type": "object",
+        "required": [
+          "name",
+          "model",
+          "modified_at",
+          "size",
+          "digest"
+        ],
+        "properties": {
+          "digest": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modified_at": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "TagsResponse": {
+        "type": "object",
+        "required": [
+          "models"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagModel"
+            }
+          }
+        }
+      },
+      "Usage": {
+        "type": "object",
+        "description": "The engine does not report token counts yet, so every field is null.",
+        "properties": {
+          "completion_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "prompt_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "total_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       }
     }
   },
@@ -1828,6 +2592,18 @@
     {
       "name": "holo",
       "description": "Hologram application archives"
+    },
+    {
+      "name": "models",
+      "description": "Imported inference models"
+    },
+    {
+      "name": "ollama-compat",
+      "description": "Ollama-compatible API (non-streaming)"
+    },
+    {
+      "name": "openai-compat",
+      "description": "OpenAI-compatible API (non-streaming)"
     }
   ]
 }

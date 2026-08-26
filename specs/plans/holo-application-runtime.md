@@ -4,18 +4,18 @@
 
 - State: active
 - Created: 2026-08-25
-- Format target: `.holo` v4 with v2/v3 read compatibility
+- Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M4.1, Python rootfs registry base-digest binding
+- Current delivery: M8 strict pre-release contract enforcement (ADR 016)
 - Next delivery: M4.2, normalized OCI/rootfs construction and clean-build κ proof
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
-This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the current v4 baseline, compatibility requirements, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
+This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
 
 ## Product principles
 
-- [x] Keep one append-only `.holo` application format; v4 adds `InferenceModel` without renumbering prior layer kinds and retains v2/v3 reads.
+- [x] Keep one `.holo` application format; v4 includes `InferenceModel` without renumbering prior layer kinds and rejects all other physical versions.
 - [x] Keep the canonical `AppManifest` as application identity and execution truth.
 - [x] Keep the application-directory extension a verified projection, never a second manifest.
 - [x] Keep physical archive identity distinct from canonical application identity.
@@ -27,7 +27,7 @@ This is the living implementation plan for turning `.holo` archives into complet
 
 ## Completed baseline
 
-- [x] Read v2/v3 and read/write verified `.holo` v4 archives using the pinned upstream format implementation.
+- [x] Read and write verified `.holo` v4 archives using the pinned upstream format implementation; reject all other versions at Live boundaries.
 - [x] Compile `hologram.json` into a canonical `AppManifest` plus κ-addressed layer payloads.
 - [x] Emit self-contained fat archives by default.
 - [x] Emit thin archives with `hologram compile --thin` while preserving identical canonical manifest bytes.
@@ -66,7 +66,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Refuse to prompt in non-interactive environments unless all required choices are supplied as flags.
 - [x] Add non-interactive flags for layer kind, layer path, entrypoint, architecture, surface, primary layer, and capability file.
 - [x] Support repeated layer flags or a repeatable interactive “add another layer” step.
-- [x] Support schema-v3 child application archives and delegated capability
+- [x] Support schema-v4 child application archives and delegated capability
   files through paired flags or a repeatable interactive prompt.
 - [x] Show the resulting compile and run commands after generation.
 - [x] Return a machine-readable creation report when global `--json` is active.
@@ -151,8 +151,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Accept project directories and `hologram.json` manifests in `hologram run`, with file and UTF-8 text inputs.
 - [x] Expose fixed desktop import/verify/download/direct-run commands and an Applications input/output panel for watched builds and existing archives.
 - [x] Give the Desktop-owned local transport enough room for documented rootfs
-  archives, with a bounded restart/retry migration for an already-running
-  service that retained the former message limit.
+  archives, with one bounded restart/retry for a transport-size failure.
 
 ### M1 acceptance criteria
 
@@ -195,7 +194,7 @@ M0 may land before M1 because it is isolated. M2 must land before executing chil
 - [x] Define parent/child lifecycle ownership, exit propagation, and rollback behavior.
 - [x] Apply closure and resource limits across the entire application tree, not independently per child.
 
-Compiler evidence (2026-08-25): source-manifest schema v3 accepts child entries
+Compiler evidence (updated 2026-08-26): source-manifest schema v4 accepts child entries
 that pair a verified, self-contained child `.holo` archive with a canonical
 delegated-capability document. Fat parents embed the canonical child manifest,
 its verified closure blobs, and the delegated capability object. Thin parents
@@ -220,35 +219,15 @@ dependencies until an explicit child invocation contract is introduced.
 - [x] Capability checks are covered by unit, BDD, audit, native API, and HTTP/OpenAPI tests.
 - [x] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
 
-### M2.1 Legacy empty-capability compatibility
+### M2.1 Strict capability objects
 
-The early Live compiler represented an omitted capability request with a
-content-addressed zero-byte object (`blake3:af1349b9…`). Once canonical
-`CapabilitySet` validation landed, those otherwise valid archives resolved the
-object successfully but failed planning as malformed. The compatibility rule
-is deliberately narrower than canonical decoding: only verified zero-length
-archive bytes retain their historical deny-all meaning. New compiles and
-explicit grants continue to require canonical `CapabilitySet` bytes, every
-nonempty malformed object still fails closed, and the legacy κ/source bytes
-remain unchanged in application and audit identity.
-
-- [x] Define the zero-byte sentinel as a legacy empty request with no authority.
-- [x] Verify object κ before applying compatibility semantics.
-- [x] Apply one archive decoder to root requests and delegated child grants.
-- [x] Keep source compilation, trusted grant decoding, and nonempty objects on
-  strict canonical decoding.
-- [x] Prove unit, planner, direct Wasm, and reported Python rootfs compatibility.
-- [x] Document the legacy rule in `.holo`, security, and actual-capability docs.
-- [x] Pass full repository, release, smoke, and documentation gates.
-
-Compatibility evidence (2026-08-26): decoder tests prove both requested and
-delegated zero-byte objects produce the empty typed set only after exact κ
-verification, while a content-addressed nonempty malformed object remains
-`LIVE_HOLO_INVALID`. Planner and direct-Wasm tests preserve the legacy κ/source
-bytes and execute successfully. The untouched 101 MiB August 25
-`target/numpy-pandas.holo` that exposed the regression also executed through
-the direct rootfs provider and returned three rows, mean `20.0`, and sum
-`60.0` without recompilation.
+- [x] Require canonical `CapabilitySet` bytes for requested and delegated
+  capability objects.
+- [x] Use the canonical empty set as the only deny-all representation.
+- [x] Reject zero-byte and other malformed objects after κ verification.
+- [x] Keep source compilation and trusted grant decoding on the same canonical
+  contract.
+- [x] Document the strict rule in `.holo`, security, and capability docs.
 
 ## M3 — Real multi-layer providers
 
@@ -264,8 +243,8 @@ the direct rootfs provider and returned three rows, mean `20.0`, and sum
   `holo_run` compatibility entry while permitting another declared export.
 - [x] Introduce a typed provider completion model that does not conflate byte
   output, successful completion, and a future explicit exit status.
-- [x] Expose `returned`, provider-observed `exited { code }`, and legacy-only
-  `unknown` completion additively through JSON/HTTP and Protobuf/gRPC.
+- [x] Require `returned` or provider-observed `exited { code }` completion
+  through JSON/HTTP and Protobuf/gRPC.
 - [x] Select canonical Wasm `Layer.aux` as the namespaced guest-contract
   identifier, retaining empty as the byte-compatible core-Wasm v1 alias.
 - [x] Define exact-major contract negotiation, the import-free Component Model
@@ -277,11 +256,9 @@ the direct rootfs provider and returned three rows, mean `20.0`, and sum
 ### M3.1a Component-model and Python/WASI proof
 
 - [x] Define a versioned, import-free Hologram WIT world beginning with one byte input and one byte output.
-- [x] Land upstream canonical validation for the legacy empty Wasm tag plus
-  explicit `hologram:guest/core-wasm@1` and
+- [x] Require explicit canonical `hologram:guest/core-wasm@1` and
   `hologram:guest/component@1` selectors without changing the codec.
-- [x] Add source-manifest schema v4 `contract`, `app init --contract`, and
-  preserve omitted-contract application identity across schemas v1-v4.
+- [x] Add required source-manifest schema v4 `contract` and `app init --contract`.
 - [x] Expose the normalized contract through verified directory, inspect,
   plan, JSON/HTTP, OpenAPI, and Protobuf/gRPC surfaces.
 - [x] Select providers by exact `(LayerKind, contract)`; the selector slice
@@ -403,7 +380,7 @@ selection/binding boundary; normalized OCI output remains the next M4 slice.
 
 ### M3.3 Inference-model provider
 
-- [x] Upgrade the archive/space boundary to additive `.holo` v4 while retaining v2/v3 reads.
+- [x] Upgrade the archive/space boundary to `.holo` v4 and reject every other physical version.
 - [x] Represent `InferenceModel` as a non-exit-bearing service layer with required entry and engine tags.
 - [x] Include model entry, engine, content κ, and embedded size in verified inspection output.
 - [x] Add `hologram ai inspect` as a metadata-only operation that never initializes an engine.
@@ -513,8 +490,8 @@ cataloged the locked `examples/python-hello` project as a verified 57.0 MiB v4
 archive, inspected its `python_hello_holo:main` rootfs layer, and rendered
 `{"message":"Hello, Grace!","name":"Grace","runtime":"python"}` from the Run
 panel. Desktop sidecars use a 256 MiB local RPC limit, and the watched import
-performs one restart/retry only for a transport-size failure so existing
-32 MiB local configurations migrate without weakening the server default. Full
+performs one restart/retry only for a transport-size failure without weakening
+the server default. Full
 repository verification, Desktop Clippy, documentation, and packaged macOS
 application/DMG builds pass.
 
@@ -528,7 +505,7 @@ application/DMG builds pass.
 
 ### Python source compilation
 
-- [x] Add source-manifest schema v2 with a typed source recipe while retaining schema-v1 prebuilt `path` compatibility.
+- [x] Add typed source recipes and prebuilt `path` layers to the required source-manifest schema v4.
 - [x] Add `hologram app init --template python` and non-interactive flags for project, entrypoint, lock file, and execution profile. Interactive Python-specific prompting remains a UX follow-up.
 - [x] Keep a minimal locked standard-library Python project as a fast teaching example alongside the NumPy/pandas dependency proof.
 - [x] Support a portable `wasi-component` profile that emits a `WasmCodemodule`, not a new layer kind.
@@ -658,11 +635,28 @@ application/DMG builds pass.
 
 ## M8 — Conformance and release hardening
 
-### Golden and compatibility fixtures
+### Strict pre-release baseline (ADR 016)
 
-- [ ] Maintain golden v3/v4 archives for Wasm, tensor, rootfs, view, inference-model, multi-layer, child-app, fat, thin, signed, and legacy-without-directory cases.
+- [x] Admit physical `.holo` v4 and source-manifest schema v4 only.
+- [x] Require one verified application directory per application archive.
+- [x] Require explicit Wasm entry/contract, canonical capability objects, and
+  complete configuration, history, resident, and run records.
+- [x] Remove speculative migrations and decode defaults from production code,
+  tests, examples, smoke coverage, and documentation.
+- [x] Verify the server, public BDD surface, static documentation, and packaged
+  desktop application on the current macOS release host.
+
+Evidence (2026-08-26): `just verify` passed the locked workspace tests, Clippy,
+12 BDD scenarios/123 steps, optimized server build, and isolated smoke test;
+`just docs` built 13 static pages; the Tauri release build produced the macOS
+application and arm64 DMG. Cross-platform coverage remains in the portability
+work below.
+
+### Golden and conformance fixtures
+
+- [ ] Maintain golden v4 archives for Wasm, tensor, rootfs, view, inference-model, multi-layer, child-app, fat, thin, and signed cases.
 - [ ] Prove fat/thin application-identity equivalence and physical-fingerprint difference.
-- [ ] Test supported v2/v3 read compatibility and v4 write behavior.
+- [x] Test rejection of non-v4 archives and v4 read/write behavior.
 - [ ] Verify Live-produced archives with upstream Hologram tooling and upstream-produced archives with Live.
 - [ ] Add round-trip tests that ensure unknown extension bytes survive tooling that claims to preserve them.
 
@@ -679,9 +673,9 @@ application/DMG builds pass.
 - [ ] Run compile, inspect, plan, and direct Wasm execution on macOS, Linux, and Windows.
 - [ ] Run architecture-specific rootfs planning tests on supported host architectures.
 - [ ] Add desktop Wasm + View coverage once the View provider lands.
-- [ ] Keep unit tests, Clippy, formatting, source-size, BDD, optimized build, and isolated smoke tests mandatory.
+- [x] Keep unit tests, Clippy, formatting, source-size, BDD, optimized build, and isolated smoke tests mandatory.
 - [ ] Add performance baselines for archive verification, closure resolution, Wasm preparation, resident invocation, and cache lookup.
-- [ ] Define backwards-compatibility and migration checks before changing source-manifest, directory, guest-contract, or certificate schema versions.
+- [ ] Define an explicit version transition only when a shipped release creates a real compatibility requirement.
 
 ### M8 acceptance criteria
 
@@ -693,14 +687,14 @@ application/DMG builds pass.
 ## Cross-cutting API and guest-contract work
 
 - [x] Define version negotiation for the core-Wasm and Component Model guest contracts.
-- [x] Carry canonical guest-contract selection from authoring through identity,
-  inspection, planning, and provider lookup with legacy decode defaults.
+- [x] Carry required canonical guest-contract selection from authoring through
+  identity, inspection, planning, and provider lookup.
 - [ ] Move beyond fixed anonymous one-input/one-output execution with typed, named ports.
 - [x] Define application completion and exit status separately from byte outputs.
 - [ ] Add structured logs and diagnostics without treating stdout as a protocol.
 - [ ] Define streaming output only after provider cancellation and backpressure are in place.
 - [ ] Define stateful sessions as an explicit API rather than silently changing per-run fresh-instance behavior.
-- [ ] Preserve v1 guest compatibility while introducing any v2 contract.
+- [ ] Introduce any future guest contract as an explicit, independently selected version.
 
 ## Open decisions to record as ADRs
 

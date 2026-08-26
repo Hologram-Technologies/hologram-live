@@ -140,6 +140,16 @@ fn assert_compiled_provenance(
     assert_eq!(layer.layer_index, 0);
     assert_eq!(layer.language, "python");
     assert_eq!(layer.source.dependencies.len(), dependency_count);
+    let distribution = layer
+        .source
+        .componentizer
+        .distribution
+        .as_ref()
+        .expect("componentizer distribution");
+    assert!(std::path::Path::new(distribution.url)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("whl")));
+    assert_eq!(distribution.sha256.len(), 64);
     assert_eq!(
         layer
             .source

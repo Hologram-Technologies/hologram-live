@@ -38,6 +38,14 @@ pub struct BuildTool {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_revision: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<ToolDistribution>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ToolDistribution {
+    pub url: &'static str,
+    pub sha256: &'static str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -154,12 +162,28 @@ pub fn compile(root: &Path, source: &PythonRootfsSource) -> Result<CompiledCompo
         provenance.dependency_installer = Some(tool_version("uv")?);
     }
 
-    let tool = format!("componentize-py=={COMPONENTIZE_PY_VERSION}");
+    let distribution = provenance
+        .componentizer
+        .distribution
+        .as_ref()
+        .ok_or_else(|| {
+            LiveError::Conflict("componentizer distribution pin is missing".to_owned())
+        })?;
+    let tool = format!(
+        "componentize-py @ {}#sha256={}",
+        distribution.url, distribution.sha256
+    );
+    let tool_label = format!(
+        "componentize-py {COMPONENTIZE_PY_VERSION} {}/{} wheel sha256:{}",
+        provenance.build_host.os, provenance.build_host.arch, distribution.sha256
+    );
     let mut command = Command::new("uvx");
     command
         .args([
             "--isolated",
             "--no-config",
+            "--no-index",
+            "--no-build",
             "--from",
             &tool,
             "componentize-py",
@@ -189,15 +213,15 @@ pub fn compile(root: &Path, source: &PythonRootfsSource) -> Result<CompiledCompo
     let result = command.output().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             LiveError::Capability(format!(
-                "Python wasi-component compilation requires uvx and pinned {tool}: {error}"
+                "Python wasi-component compilation requires uvx and pinned {tool_label}: {error}"
             ))
         } else {
-            LiveError::Io(format!("start pinned {tool}: {error}"))
+            LiveError::Io(format!("start pinned {tool_label}: {error}"))
         }
     })?;
     if !result.status.success() {
         return Err(LiveError::Config(format!(
-            "pinned {tool} failed: {}",
+            "pinned {tool_label} failed: {}",
             diagnostic(&result.stderr)
         )));
     }
@@ -215,6 +239,9 @@ fn build_provenance(
     inputs: &SourceInputs,
     dependencies: Vec<PortableDependency>,
 ) -> Result<BuildProvenance> {
+    let host_os = std::env::consts::OS;
+    let host_arch = std::env::consts::ARCH;
+    let componentizer_distribution = componentizer_distribution(host_os, host_arch)?;
     let project = logical_path(&source.project)?;
     let input = |role: &'static str,
                  suffix: &Path,
@@ -250,23 +277,26 @@ fn build_provenance(
         guest_contract: GUEST_CONTRACT,
         target_abi: TARGET_ABI,
         build_host: BuildHost {
-            os: std::env::consts::OS,
-            arch: std::env::consts::ARCH,
+            os: host_os,
+            arch: host_arch,
         },
         compiler: BuildTool {
             name: "hologram-live",
             version: env!("CARGO_PKG_VERSION").to_owned(),
             source_revision: None,
+            distribution: None,
         },
         runtime: BuildTool {
             name: "cpython",
             version: COMPONENT_PYTHON_VERSION.to_owned(),
             source_revision: None,
+            distribution: None,
         },
         componentizer: BuildTool {
             name: "componentize-py",
             version: COMPONENTIZE_PY_VERSION.to_owned(),
             source_revision: Some(COMPONENTIZE_PY_SOURCE_REVISION),
+            distribution: Some(componentizer_distribution),
         },
         componentizer_runner: None,
         dependency_installer: None,
@@ -309,7 +339,39 @@ fn tool_version(name: &'static str) -> Result<BuildTool> {
         name,
         version: version.to_owned(),
         source_revision: None,
+        distribution: None,
     })
+}
+
+fn componentizer_distribution(os: &str, arch: &str) -> Result<ToolDistribution> {
+    let distribution = match (os, arch) {
+        ("macos", "x86_64") => ToolDistribution {
+            url: "https://files.pythonhosted.org/packages/da/2a/d1b06f3411e59b38441b70826546d4efd6185f7132e6c3cfad2b7309e6fe/componentize_py-0.25.0-cp39-abi3-macosx_10_12_x86_64.whl",
+            sha256: "9940df0d2408ec7e9c1a7d3645fd7c25926759867b28709b89fca007fc879d0e",
+        },
+        ("macos", "aarch64") => ToolDistribution {
+            url: "https://files.pythonhosted.org/packages/34/73/e6452722dc1eaca59437ef6f40c0bdeb99a2917d14f98c346062811ceb2d/componentize_py-0.25.0-cp39-abi3-macosx_11_0_arm64.whl",
+            sha256: "cc085b1b92213aa2f0747e80c144a7e80922430c0d4caa787045bf6ae58935d1",
+        },
+        ("linux", "x86_64") => ToolDistribution {
+            url: "https://files.pythonhosted.org/packages/e2/e8/9d123bb8e156edb600c8aba3bdca91a44be510857ee5f1b66bc9f476967c/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_x86_64.whl",
+            sha256: "d40832bc690ef244f219ae7e2d428c7b8754d23e011db99892205642a243ecda",
+        },
+        ("linux", "aarch64") => ToolDistribution {
+            url: "https://files.pythonhosted.org/packages/3e/f6/c8b89a74bc90869fb0ef62e50d140dc372353f2f0071f9815c6cf18aab65/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_aarch64.whl",
+            sha256: "7a3c378af2fe9026c07899e9b92a94725346355185c247d28570a359f05373cb",
+        },
+        ("windows", "x86_64") => ToolDistribution {
+            url: "https://files.pythonhosted.org/packages/f6/d6/cb05fe58ee38343836e61e8d323a135a03e6f9e9729aa941f836396cdd45/componentize_py-0.25.0-cp39-abi3-win_amd64.whl",
+            sha256: "a5f0c0ec5c451d3d9f238aa41b00ab91af1f340054b7f5e3e8b0c04d5c77e10c",
+        },
+        _ => {
+            return Err(LiveError::Capability(format!(
+                "Python wasi-component compilation has no pinned componentize-py {COMPONENTIZE_PY_VERSION} wheel for host {os}/{arch}; supported hosts are macos/aarch64, macos/x86_64, linux/aarch64, linux/x86_64, and windows/x86_64"
+            )));
+        }
+    };
+    Ok(distribution)
 }
 
 fn logical_path(path: &Path) -> Result<String> {
@@ -891,6 +953,15 @@ mod tests {
         assert_eq!(provenance.target_abi, TARGET_ABI);
         assert_eq!(provenance.runtime.version, COMPONENT_PYTHON_VERSION);
         assert_eq!(provenance.componentizer.version, COMPONENTIZE_PY_VERSION);
+        let distribution = provenance
+            .componentizer
+            .distribution
+            .as_ref()
+            .expect("host distribution");
+        assert!(distribution
+            .url
+            .starts_with("https://files.pythonhosted.org/"));
+        assert_eq!(distribution.sha256.len(), 64);
         assert!(provenance.componentizer_runner.is_none());
         assert!(provenance.dependency_installer.is_none());
         assert!(provenance.output.is_none());
@@ -905,6 +976,35 @@ mod tests {
             .inputs
             .iter()
             .all(|input| input.sha256.len() == 64));
+    }
+
+    #[test]
+    fn every_release_host_has_an_exact_componentizer_wheel() {
+        let targets = [
+            ("linux", "x86_64", "manylinux_2_28_x86_64.whl"),
+            ("linux", "aarch64", "manylinux_2_28_aarch64.whl"),
+            ("macos", "x86_64", "macosx_10_12_x86_64.whl"),
+            ("macos", "aarch64", "macosx_11_0_arm64.whl"),
+            ("windows", "x86_64", "win_amd64.whl"),
+        ];
+        for (os, arch, wheel_suffix) in targets {
+            let distribution =
+                componentizer_distribution(os, arch).expect("release host distribution");
+            assert!(distribution.url.ends_with(wheel_suffix));
+            assert_eq!(distribution.sha256.len(), 64);
+            assert!(distribution
+                .sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
+        }
+    }
+
+    #[test]
+    fn unsupported_componentizer_host_fails_closed() {
+        let error = componentizer_distribution("freebsd", "x86_64")
+            .expect_err("unsupported host must fail");
+        assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
+        assert!(error.to_string().contains("freebsd/x86_64"), "{error}");
     }
 
     #[test]

@@ -165,7 +165,7 @@ import { sitePath } from '../../lib/site';
 hologram --json holo inspect application.holo |
   jq '&#123;kappa, archive_fingerprint, application_kappa&#125;'</code></pre>
   <p>Catalog lookup, import, verification, resident records, and run results identify a particular physical archive with <code>kappa</code>. Planning and manifest-graph diagnostics use <code>application_kappa</code>. Existing <code>kappa</code> fields keep their physical meaning.</p>
-  <p>Source compilers may add <code>build_provenance</code> to their command result. Python Component provenance is schema-versioned and explicitly <code>canonical: false</code>: it records source/tool/artifact evidence and the generated layer κ, but it is not a <code>.holo</code> section, directory field, content blob, or part of any identity above.</p>
+  <p>Source compilers may add <code>build_provenance</code> to their command result. Python Component provenance is schema-versioned and explicitly <code>canonical: false</code>: it records source hashes, dependency artifacts, the exact host-specific componentizer wheel URL/SHA-256, observed tools, and the generated layer κ, but it is not a <code>.holo</code> section, directory field, content blob, or part of any identity above.</p>
   <p>Live rejects a bad footer, truncated or out-of-bounds payloads when accessed, an invalid manifest, duplicate blob labels, a blob whose κ does not match its bytes, duplicate application directories, unknown directory schema versions, and a directory that disagrees with the manifest.</p>
 
   <h2>Explain an execution plan</h2>

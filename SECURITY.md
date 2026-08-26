@@ -62,6 +62,15 @@ clocks, random, environment, process control, secrets, inference, and raw
 sockets remain unavailable while no sufficiently scoped capability exists.
 Under-granted imports must fail before linker construction.
 
+Python Component compilation selects `componentize-py 0.25.0` from a closed
+set of exact upstream wheel URLs and SHA-256 hashes covering the server release
+matrix. uvx runs that direct reference with indexes and source builds disabled;
+unsupported hosts fail with `LIVE_CAPABILITY_MISSING` rather than resolving a
+different artifact. The non-canonical compile report records the selected
+distribution. This is a supply-chain pin, not a reproducibility claim: the
+componentizer's uncontrolled pre-initialization randomness still changes clean
+build output bytes.
+
 ## Desktop sidecar
 
 The Tauri application invokes a bundled `hologram` sidecar through fixed lifecycle and status commands. It does not expose a general-purpose shell command to the webview.

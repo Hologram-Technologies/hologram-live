@@ -181,19 +181,41 @@ def main(request: bytes) -&gt; bytes:
   <p>The convenience default is <code>python:3.12-slim</code>. Tags are mutable; replace it with the registry's <code>repository@sha256:digest</code> form when reproducibility matters. Hologram validates that value but does not yet resolve or record a tag's digest automatically.</p>
 
   <h3>4. Validate without building</h3>
-  <pre><code>hologram --json compile hologram.json --check</code></pre>
+  <pre><code>hologram --json compile hologram.json --check \
+  | jq '.build_provenance'</code></pre>
   <pre><code>&#123;
-  "manifest": "hologram.json",
-  "layer_count": 1,
-  "schema_version": 2,
-  "valid": true
+  "schema_version": 1,
+  "canonical": false,
+  "layers": [
+    &#123;
+      "layer_index": 0,
+      "language": "python",
+      "source": &#123;
+        "profile": "rootfs",
+        "target_platform": "linux/arm64",
+        "base_image": &#123;
+          "reference": "python:3.12-slim",
+          "digest_pinned": false
+        &#125;,
+        "dependency_installer": &#123; "name": "uv", "version": "0.11.8" &#125;,
+        "inputs": [
+          &#123; "role": "project-metadata", "path": "pyproject.toml", "sha256": "..." &#125;,
+          &#123; "role": "lock", "path": "uv.lock", "sha256": "..." &#125;,
+          &#123; "role": "source-tree", "path": "src", "sha256": "..." &#125;
+        ],
+        "reproducibility": &#123; "reproducible": false, "blocker": "..." &#125;
+      &#125;
+    &#125;
+  ]
 &#125;</code></pre>
-  <p>This parses the schema, validates the primary layer and entrypoint, and verifies that <code>pyproject.toml</code>, <code>uv.lock</code>, and <code>src/</code> exist. It does not contact the container engine or write an archive.</p>
+  <p>This parses the schema, validates the primary layer and entrypoint, and hashes <code>pyproject.toml</code>, <code>uv.lock</code>, and the normalized <code>src/</code> tree. It does not contact the container engine or write an archive. The full report includes each logical input path and SHA-256; the shortened output above shows the important shape.</p>
 
   <h3>5. Compile a self-contained archive</h3>
   <pre><code>hologram --json compile hologram.json \
-  --output numpy-pandas.holo</code></pre>
+  --output numpy-pandas.holo \
+  | jq '.build_provenance' &gt; numpy-pandas.provenance.json</code></pre>
   <p>The compiler builds a clean Linux image for the selected architecture, installs the pinned <code>uv</code> build tool, runs <code>uv sync --locked --no-dev --no-editable</code>, adds the generated launcher, saves the OCI image, compresses it with Zstandard, and embeds it as a content-addressed rootfs blob. The resulting archive contains the source manifest as metadata and the canonical runtime manifest as its application identity.</p>
+  <p>A completed provenance report adds the observed Docker client/server versions, locally observed base-image identity when available, exact output image ID, rootfs layer κ, and output sizes. The report is <code>canonical: false</code> and stays outside the archive, so build-host evidence cannot alter application identity. It is observational evidence, not a reproducibility claim.</p>
 
   <h3>6. Execute the <code>.holo</code></h3>
   <pre><code>hologram run numpy-pandas.holo --input request.json \
@@ -251,9 +273,9 @@ target/release/hologram run target/numpy-pandas.holo \
     <li>The rootfs profile supports only direct execution of a self-contained fat archive. The Python Component profile is a Wasm layer and supports <code>holo load</code>.</li>
     <li>The provider requires a local Docker-compatible engine and leaves its content-derived, image-ID-verified image in the engine cache.</li>
     <li>Container isolation is useful for a local demo, but this provider is not advertised as an untrusted or multi-tenant security boundary.</li>
-    <li>Base digest resolution, byte-for-byte reproducible OCI output, build provenance, SBOMs, signatures, and the microVM provider remain milestone work.</li>
+    <li>Build validation and compilation now report non-canonical rootfs provenance. Automatic registry base-digest resolution, byte-for-byte reproducible OCI output, dependency SBOMs, signed attestations, and the microVM provider remain milestone work.</li>
     <li>Python Component v1 runs dependency-free projects and locked platform-independent wheels directly and resident. Native/source-only packages require rootfs; deterministic Component output and any real capability-gated WASI profile remain planned.</li>
   </ul>
 
-  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, <code>specs/adrs/012-locked-python-component-dependencies.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider decisions, and remaining milestone checklist.</p>
+  <p>See the <a href={sitePath('/docs/holo-files')}><code>.holo</code> format guide</a>, <code>specs/adrs/008-python-rootfs-oci-provider.md</code>, <code>specs/adrs/012-locked-python-component-dependencies.md</code>, <code>specs/adrs/014-python-rootfs-build-provenance.md</code>, and <code>specs/plans/holo-application-runtime.md</code> for the archive contract, provider and provenance decisions, and remaining milestone checklist.</p>
 </DocsLayout>

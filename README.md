@@ -565,6 +565,32 @@ $ hologram run numpy-pandas.holo \
 }
 ```
 
+Both validation and compilation expose non-canonical rootfs build evidence in
+JSON. Validation hashes the declared project inputs without contacting Docker:
+
+```bash
+hologram --json compile examples/python-numpy-pandas/hologram.json --check \
+  | jq '.build_provenance.layers[0].source | {
+      profile, target_platform, base_image, dependency_installer, inputs,
+      reproducibility
+    }'
+```
+
+A real compile additionally records observed Docker client/server versions and
+the emitted rootfs layer κ, exact image ID, and sizes. The report is deliberately
+`canonical: false` and is not embedded in the `.holo` file; save it separately
+when needed:
+
+```bash
+hologram --json compile examples/python-numpy-pandas/hologram.json \
+  --output numpy-pandas.holo \
+  | jq '.build_provenance' > numpy-pandas.provenance.json
+```
+
+`reproducible` remains `false`: a digest-pinned `source.base` removes the
+mutable-tag blocker, but Docker's exported OCI representation is not yet
+normalized for byte-identical clean builds.
+
 `hologram run` preserves the binary-safe `HoloRunResult` envelope by default. Add `--output-format text` for UTF-8 application output or `--output-format json` for JSON application output. One decoded result prints directly; results from multiple `--input` arguments print in order, with JSON results collected into an array. Invalid text or JSON returns a typed protocol error instead of changing the bytes.
 
 The raw envelope keeps output and completion distinct. Core-Wasm v1 returns
@@ -585,7 +611,7 @@ hologram app init ./my-python-app \
 
 Compilation stages only `pyproject.toml`, the declared `uv.lock`, and `src/`, then runs `uv sync --locked` in a clean Linux image. It does not read or copy the host `.venv`. Direct execution validates the archive and target architecture, disables networking, mounts the container filesystem read-only, drops Linux capabilities, enables `no-new-privileges`, and applies CPU, memory, PID, temporary-storage, input/output, and 30-second wall-clock limits.
 
-This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. New archives record the exact image ID, so a warm local run skips decompression and `docker image load` only when that trusted ID is already present; a cold machine still restores the image from the archive. Compile once with an optimized release binary and reuse the resulting `.holo`; debug builds spend substantially longer hashing the roughly 100 MiB archive. `just python-holo-demo` builds and uses the release CLI, with a one-time optimized link on the first invocation. Use a digest-pinned value for `source.base` when reproducibility matters. Capability-gated WASI and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps), [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md), and [ADR 012](specs/adrs/012-locked-python-component-dependencies.md).
+This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. New archives record the exact image ID, so a warm local run skips decompression and `docker image load` only when that trusted ID is already present; a cold machine still restores the image from the archive. Compile once with an optimized release binary and reuse the resulting `.holo`; debug builds spend substantially longer hashing the roughly 100 MiB archive. `just python-holo-demo` builds and uses the release CLI, with a one-time optimized link on the first invocation. Use a digest-pinned value for `source.base` to pin base selection; byte-for-byte rootfs reproducibility remains open. Capability-gated WASI and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps), [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md), [ADR 012](specs/adrs/012-locked-python-component-dependencies.md), and [ADR 014](specs/adrs/014-python-rootfs-build-provenance.md).
 
 The demo writes one JSON document to stdout; progress and failures use stderr:
 

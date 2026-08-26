@@ -1,102 +1,99 @@
-# Current sprint: M3.1d exact Python Component tool artifact
+# Current sprint: M3.1e Python rootfs build provenance
 
 ## Sprint status
 
 - State: ready for review
 - Started: 2026-08-26
 - Last reviewed: 2026-08-26
-- Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
-- Goal: remove mutable version-only componentizer resolution from Python
-  Component builds while preserving the honest boundary between supply-chain
-  pinning and reproducible output
-- Exit signal: every server-release host selects one reviewed
-  `componentize-py 0.25.0` wheel URL/SHA-256, uvx cannot consult an index or
-  build a source distribution, provenance reports the selected artifact,
-  unsupported hosts fail closed, and direct/resident execution still passes
+- Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
+- Goal: make Python rootfs validation and compilation produce useful,
+  machine-readable build evidence without overstating reproducibility or
+  changing canonical `.holo` identity
+- Exit signal: the NumPy/pandas `compile --check` report is selectable with
+  `jq`, a real Docker build adds observed builder/image/output identities, the
+  end-to-end archive still executes, docs explain planned versus completed
+  evidence, and all repository/release gates pass
 
-The completed dependency admission and provenance trackers remain in Git
-history. Durable requirements stay in
+Completed Component dependency, provenance, and exact-tool-artifact work is
+retained in Git history and ADRs 012–013. Durable runtime requirements remain in
 [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md).
-Dependency admission is ADR 012; provenance identity and artifact reporting
-are ADR 013.
+Rootfs evidence and its identity boundary are recorded in ADR 014.
 
 ## Acceptance boundary
 
-- This slice pins the componentizer distribution artifact. It does not claim
-  that uvx, its host interpreter, or generated component bytes are
-  reproducible.
 - Keep `build_provenance.schema_version: 1` additive, non-canonical, and
-  outside every archive, manifest, directory, and content blob.
-- Select artifacts only for the five published server targets: macOS arm64 and
-  x86_64, Linux arm64 and x86_64, and Windows x86_64.
-- Use upstream wheel URLs and PyPI-published SHA-256 digests. Do not admit the
-  source distribution or fall back to a package index.
-- Continue reporting `reproducible: false` until controlled componentizer
-  randomness and clean cross-host equality are proven.
+  outside every archive, manifest, application directory, and content blob.
+- `compile --check` may read and hash declared project files but must not
+  require, contact, pull from, or execute Docker.
+- Distinguish the requested base reference, a digest-pinned request, a locally
+  observed image identity, and registry digest resolution. Do not conflate
+  these identities.
+- Completed evidence identifies the emitted bytes; it does not claim another
+  clean build will produce the same bytes.
+- Continue reporting `reproducible: false` until OCI normalization and clean
+  supported-host equality are proven.
+- Preserve the experimental, trusted-local, direct-fat-only rootfs support
+  boundary from ADR 008.
 
 ## Compiler and provenance
 
-- [x] Map each server-release OS/architecture pair to one exact
-  `componentize-py 0.25.0` wheel.
-- [x] Pass a PEP 508 direct URL with `#sha256=` to isolated uvx.
-- [x] Disable registry lookup and source builds for the componentizer
-  invocation.
-- [x] Add the selected distribution URL/hash to the declared componentizer in
-  both check and completed provenance.
-- [x] Return typed `LIVE_CAPABILITY_MISSING` for an unmapped host.
-- [x] Keep runner observation separate: `compile --check` does not execute uvx,
-  while a real compile records the observed uvx version.
-- [x] Keep the exact artifact report outside canonical `.holo` identity.
+- [x] Include source-compiled rootfs layers in the existing versioned
+  `build_provenance` envelope.
+- [x] Report normalized Linux target, build host, compiler version, requested
+  base, digest-pin status, pinned uv, and Docker as the planned builder.
+- [x] Reuse the versioned Component source-input hashing contract for
+  `pyproject.toml`, `uv.lock`, and the normalized source tree.
+- [x] Keep check provenance independent from Docker and omit observations and
+  output until a build actually occurs.
+- [x] Record observed Docker client/server versions after a successful build.
+- [x] Record the locally observed requested-base image ID when Docker exposes
+  one without claiming it is a registry-resolved digest.
+- [x] Record exact output layer κ, rootfs-envelope length, final image ID, and
+  uncompressed image archive size.
+- [x] Report a mutable-base blocker only for tag-based base requests and retain
+  the unnormalized-OCI blocker for digest-pinned requests.
+- [x] Preserve Component provenance JSON while admitting both Python profiles
+  through one untagged per-layer report boundary.
 
-## Tests and release evidence
+## Tests and execution evidence
 
-- [x] Cover all five release host mappings and validate wheel suffix/hash
-  shape.
-- [x] Cover an unsupported host and its typed diagnostic.
-- [x] Exercise `compile --check --json` and assert the artifact URL/hash is
-  selectable with jq.
-- [x] Execute the exact direct-reference form with `--no-index --no-build` on
-  macOS arm64.
-- [x] Compile the dependency-free Python Component with the exact wheel and
-  execute it directly and resident.
-- [x] Run formatting, source-size, all-target tests, Clippy, BDD, optimized
-  build, release smoke, all Component demos, WIT conformance, and docs.
-- [x] Align CI and server-release workspace tests with the existing serialized
-  subprocess-test contract after GitHub exposed a Linux `ETXTBSY` race.
+- [x] Add an integration test proving rootfs `compile --check` returns planned
+  provenance without Docker observations or output.
+- [x] Cover strict lowercase `repository@sha256:<64 hex>` pin detection.
+- [x] Keep existing Component provenance assertions intact after the shared
+  report accepts both profiles.
+- [x] Verify the user's exact NumPy/pandas `--check | jq
+  '.build_provenance'` workflow locally.
+- [x] Run the real Docker-backed NumPy/pandas compile and execution proof and
+  assert completed provenance has builder versions and output identity.
+- [x] Run formatting, workspace checks/tests, Clippy with warnings denied,
+  BDD/release/smoke verification, and the Astro documentation build.
 
 ## Documentation and delivery
 
-- [x] Update README, website Python/CLI/security pages, architecture, security,
-  actual capabilities, and ADR 013.
+- [x] Add ADR 014 for observational rootfs provenance and amend ADRs 008/013
+  so their follow-up boundaries agree.
+- [x] Update README, Python website guide, architecture, security, and actual
+  capabilities with planned/completed examples and remaining limitations.
 - [x] Keep `specs/plans/holo-application-runtime.md` synchronized with proven
   and still-open acceptance.
-- [ ] Land the reviewable PR, remove the feature worktree, and return the
-  primary repository to clean, synchronized `main`.
-
-## Reproducibility investigation retained from M3.1c
-
-- [x] Confirm componentize-py 0.25.0 exposes no deterministic seed option.
-- [x] Inspect release revision `c0949b1`: pre-initialization owns a private
-  `WasiCtxBuilder`, so the caller cannot inject deterministic random.
-- [x] Prove non-stubbed outputs also differ in length and SHA-256, ruling out
-  the stub adapter as the only source.
-- [x] Reject output byte patching because snapshot layout and total length
-  differ.
-- [x] Reject cache reuse as clean-build reproducibility evidence.
-- [ ] Obtain or maintain a componentizer with explicit deterministic
-  pre-initialization randomness.
-- [ ] Prove byte-identical component, application κ, and archive κ values
-  across clean macOS, Linux, and Windows builds.
+- [ ] Commit the reviewable milestone, open and merge its PR, remove only this
+  feature worktree, and return the primary repository to clean synchronized
+  `main`.
 
 ## Deferred discoveries
 
-- [ ] `DISC-017d` — Patch or replace the componentizer so its build-time WASI
-  context receives deterministic randomness, then make clean supported-host
-  output equality a release gate.
-- [x] `DISC-017e` — Pin and report the exact componentizer distribution
-  artifact instead of relying on version plus upstream source revision.
-- [ ] `DISC-017f` — Decide whether uvx and its host Python must become an
-  independently distributed, digest-pinned Hologram toolchain bundle before
-  build provenance can graduate to a signed attestation.
+- [ ] `DISC-017d` — Patch or replace the Component compiler so its build-time
+  WASI context receives deterministic randomness, then gate clean supported-
+  host output equality.
+- [ ] `DISC-017f` — Decide whether uvx and host Python become an independently
+  distributed, digest-pinned toolchain bundle before Component provenance can
+  graduate to a signed attestation.
+- [ ] `DISC-019a` — Resolve mutable rootfs base tags through a registry and
+  bind the selected manifest digest into build execution and evidence.
+- [ ] `DISC-019b` — Define a normalized OCI/rootfs representation and prove
+  byte-identical layer κ values across clean supported hosts.
+- [ ] `DISC-019c` — Generate dependency inventory/SBOM material for the actual
+  installed rootfs closure and define signed-attestation retention.
 - [ ] `DISC-018` — Define capability-gated WASI only when an application needs
   real host interfaces; do not broaden the import-free base world.

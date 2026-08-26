@@ -3,7 +3,7 @@
 //! This is ignored by the hermetic default suite because a cold run downloads
 //! `componentize-py` through `uvx`. Run it with `just python-component-holo-demo`.
 
-use hologram_live::compile::compile_manifest;
+use hologram_live::compile::{compile_manifest, PythonBuildProvenance};
 use hologram_live::holo::{HoloCatalog, HoloExecutor, HoloRuntime};
 use hologram_live::store::ObjectStore;
 use serde_json::Value;
@@ -139,9 +139,11 @@ fn assert_compiled_provenance(
     };
     assert_eq!(layer.layer_index, 0);
     assert_eq!(layer.language, "python");
-    assert_eq!(layer.source.dependencies.len(), dependency_count);
-    let distribution = layer
-        .source
+    let PythonBuildProvenance::Component(source) = &layer.source else {
+        panic!("expected Python Component provenance");
+    };
+    assert_eq!(source.dependencies.len(), dependency_count);
+    let distribution = source
         .componentizer
         .distribution
         .as_ref()
@@ -151,22 +153,14 @@ fn assert_compiled_provenance(
         .is_some_and(|extension| extension.eq_ignore_ascii_case("whl")));
     assert_eq!(distribution.sha256.len(), 64);
     assert_eq!(
-        layer
-            .source
-            .componentizer_runner
-            .as_ref()
-            .map(|tool| tool.name),
+        source.componentizer_runner.as_ref().map(|tool| tool.name),
         Some("uvx")
     );
     assert_eq!(
-        layer
-            .source
-            .dependency_installer
-            .as_ref()
-            .map(|tool| tool.name),
+        source.dependency_installer.as_ref().map(|tool| tool.name),
         (dependency_count > 0).then_some("uv")
     );
-    let output = layer.source.output.as_ref().expect("component output");
+    let output = source.output.as_ref().expect("component output");
     assert_eq!(
         output.layer_kappa,
         hologram::space::address_bytes(
@@ -183,7 +177,7 @@ fn assert_compiled_provenance(
         )
         .to_string()
     );
-    assert!(!layer.source.reproducibility.reproducible);
+    assert!(!source.reproducibility.reproducible);
 }
 
 fn assert_response(outputs: &[Vec<u8>], expected_name: &str) {

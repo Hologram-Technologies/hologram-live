@@ -242,36 +242,7 @@ fn build_provenance(
     let host_os = std::env::consts::OS;
     let host_arch = std::env::consts::ARCH;
     let componentizer_distribution = componentizer_distribution(host_os, host_arch)?;
-    let project = logical_path(&source.project)?;
-    let input = |role: &'static str,
-                 suffix: &Path,
-                 path: &Path,
-                 sha256: fn(&Path) -> Result<String>|
-     -> Result<BuildInput> {
-        Ok(BuildInput {
-            role,
-            path: logical_path(&source.project.join(suffix))?,
-            sha256: sha256(path)?,
-        })
-    };
-    let inputs = vec![
-        input(
-            "project-metadata",
-            Path::new("pyproject.toml"),
-            &inputs.pyproject,
-            sha256_file,
-        )?,
-        input("lock", &source.lock, &inputs.lock, sha256_file)?,
-        BuildInput {
-            role: "source-tree",
-            path: if project == "." {
-                "src".to_owned()
-            } else {
-                format!("{project}/src")
-            },
-            sha256: sha256_source_tree(&inputs.source_dir)?,
-        },
-    ];
+    let inputs = source_build_inputs(source, inputs)?;
     Ok(BuildProvenance {
         profile: "wasi-component",
         guest_contract: GUEST_CONTRACT,
@@ -308,6 +279,42 @@ fn build_provenance(
             blocker: REPRODUCIBILITY_BLOCKER,
         },
     })
+}
+
+pub(crate) fn source_build_inputs(
+    source: &PythonRootfsSource,
+    inputs: &SourceInputs,
+) -> Result<Vec<BuildInput>> {
+    let project = logical_path(&source.project)?;
+    let input = |role: &'static str,
+                 suffix: &Path,
+                 path: &Path,
+                 sha256: fn(&Path) -> Result<String>|
+     -> Result<BuildInput> {
+        Ok(BuildInput {
+            role,
+            path: logical_path(&source.project.join(suffix))?,
+            sha256: sha256(path)?,
+        })
+    };
+    Ok(vec![
+        input(
+            "project-metadata",
+            Path::new("pyproject.toml"),
+            &inputs.pyproject,
+            sha256_file,
+        )?,
+        input("lock", &source.lock, &inputs.lock, sha256_file)?,
+        BuildInput {
+            role: "source-tree",
+            path: if project == "." {
+                "src".to_owned()
+            } else {
+                format!("{project}/src")
+            },
+            sha256: sha256_source_tree(&inputs.source_dir)?,
+        },
+    ])
 }
 
 fn tool_version(name: &'static str) -> Result<BuildTool> {

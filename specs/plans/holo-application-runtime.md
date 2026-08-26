@@ -6,7 +6,8 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Next delivery: M3.1d, deterministic Python Component toolchain and clean-build equality
+- Current delivery: M3.1e, observational Python rootfs build provenance
+- Next delivery: M4 rootfs base-digest resolution and normalized OCI construction
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -274,7 +275,9 @@ existing `module:function` byte entrypoint through a generated private adapter.
 import/load/run/unload with bundled CPython 3.14.0. The opt-in
 `just python-component-holo-demo` gate repeats both paths. That initial slice
 rejected every non-project package in `uv.lock`; the follow-up below admits a
-bounded portable subset. Reproducible output and build provenance remain open.
+bounded portable subset. Reproducible Component output remains open; its
+non-canonical build provenance and exact tool-artifact selection are now
+implemented below.
 
 Locked dependency follow-up (2026-08-26): the compiler now admits registry
 packages only through HTTPS, SHA-256-pinned Python 3 `*-none-any.whl` artifacts
@@ -329,6 +332,18 @@ The exact arm64 macOS wheel compiled the dependency-free proof and preserved
 direct and resident execution. This closes distribution selection, not output
 determinism: uvx/host-Python bundling and deterministic pre-initialization
 randomness remain separate follow-ups.
+
+Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
+`canonical: false` envelope now covers source-compiled Python rootfs layers.
+`compile --check` hashes `pyproject.toml`, `uv.lock`, and the normalized source
+tree and reports the target, build host, requested base/digest-pin status,
+compiler, pinned uv, and planned Docker builder without contacting Docker. A
+completed build additionally records observed Docker client/server versions,
+the locally observed requested-base image identity when available, final image
+ID, rootfs layer κ, and byte sizes. ADR 014 keeps these observations outside
+the archive and explicitly distinguishes them from registry digest resolution
+or byte-reproducible OCI output. The NumPy/pandas demo asserts both completed
+provenance and execution.
 
 ### M3.2 View provider
 
@@ -480,6 +495,9 @@ application/DMG builds pass.
 - [ ] Promote the experimental `rootfs` Python profile to supported status only after digest pinning, reproducibility, and the microVM provider are ready. The current direct OCI provider is demo-only.
 - [ ] Normalize file order, paths, permissions, timestamps, generated bindings, and source epoch for reproducible layer κ values.
 - [x] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
+- [x] Report planned and completed Python rootfs evidence without requiring
+  Docker during `compile --check` or claiming the emitted OCI bytes are
+  reproducible.
 - [ ] Keep fat/thin archive packaging independent from source-language compilation.
 
 ### Manifest features
@@ -652,6 +670,12 @@ application/DMG builds pass.
 - [x] Python build-provenance schema and non-canonical identity boundary (ADR 013).
 - [x] Exact platform componentizer distribution selection and fail-closed host
   coverage (ADR 013).
+- [x] Observational Python rootfs build provenance and its non-canonical
+  identity boundary (ADR 014).
+- [ ] Resolve mutable rootfs base tags to a registry manifest digest and bind
+  the selected digest to the build.
+- [ ] Normalize rootfs OCI output and prove byte-identical layer κ values
+  across clean supported hosts.
 - [ ] Deterministic Python Component output and clean-build equality proof.
 
 ## Per-milestone definition of done
@@ -701,6 +725,9 @@ application/DMG builds pass.
   output identity, and an explicit reproducibility status.
 - [x] Pin the exact componentizer wheel URL/SHA-256 for all five server release
   hosts, report it, disable registry/source fallback, and fail unpinned hosts.
+- [x] Emit planned/completed Python rootfs provenance with hashed inputs,
+  requested/observed image identities, observed Docker versions, output layer
+  κ, and explicit reproducibility blockers.
 - [ ] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.

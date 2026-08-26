@@ -34,7 +34,7 @@ The executor does not mount the source project and does not invoke host Python. 
 
 This provider is a working demo for trusted local applications, not the production untrusted-workload boundary. It supports direct execution of fat archives only. Resident catalog execution, thin-file resolution, arbitrary rootfs formats, and cross-architecture emulation are not advertised.
 
-The default base `python:3.12-slim` is convenient but mutable. Users who need repeatable input resolution should supply a registry digest through `source.base`. Full byte-for-byte OCI reproducibility and automatic digest/provenance recording remain follow-up work.
+The default base `python:3.12-slim` is convenient but mutable. Users who need repeatable input resolution should supply a registry digest through `source.base`. ADR 014 adds non-canonical, observational build provenance for requested inputs, observed tools and images, and output identity. Full byte-for-byte OCI reproducibility and automatic registry digest resolution remain follow-up work.
 
 ## Consequences
 
@@ -47,7 +47,7 @@ The default base `python:3.12-slim` is convenient but mutable. Users who need re
 
 ## Follow-up
 
-- Resolve and record base image digests, toolchain identity, dependency inventory, build provenance, and SBOMs.
+- Resolve registry base-image digests and add dependency inventory, SBOMs, and signed provenance attestations. ADR 014 already reports requested/observed build evidence without claiming registry resolution.
 - Normalize the OCI representation and prove byte-for-byte reproducible layer κ values.
 - Move rootfs execution behind the planned microVM provider while preserving the layer and launcher contracts where practical.
 - Add resident lifecycle, cancellation, cleanup, metrics, and architecture-specific CI.

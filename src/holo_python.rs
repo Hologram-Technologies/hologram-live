@@ -12,7 +12,7 @@ use crate::holo_provider::{
     LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
     PreparedLayer, ProviderTarget,
 };
-use hologram::space::LayerKind;
+use hologram::space::{address_bytes, LayerKind};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
@@ -35,6 +35,9 @@ const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES: usize = 64 * 1024;
 const MAX_IMAGE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
+const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "Python rootfs builds do not yet resolve mutable base references or produce a normalized byte-reproducible OCI representation";
+const ROOTFS_OUTPUT_BLOCKER: &str =
+    "Python rootfs builds do not yet produce a normalized byte-reproducible OCI representation";
 static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,6 +77,63 @@ pub struct PythonRunOutcome {
     pub resident_bytes: usize,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildTool {
+    pub name: &'static str,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DockerBuilder {
+    pub name: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BaseImageProvenance {
+    pub reference: String,
+    pub digest_pinned: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_image_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildOutput {
+    pub layer_kappa: String,
+    pub byte_length: u64,
+    pub image_id: String,
+    pub image_uncompressed_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Reproducibility {
+    pub reproducible: bool,
+    pub blocker: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildProvenance {
+    pub profile: &'static str,
+    pub target_platform: String,
+    pub build_host: crate::holo_python_component::BuildHost,
+    pub compiler: BuildTool,
+    pub base_image: BaseImageProvenance,
+    pub dependency_installer: BuildTool,
+    pub builder: DockerBuilder,
+    pub inputs: Vec<crate::holo_python_component::BuildInput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<BuildOutput>,
+    pub reproducibility: Reproducibility,
+}
+
+pub struct CompiledRootfs {
+    pub bytes: Vec<u8>,
+    pub provenance: BuildProvenance,
+}
+
 #[derive(Debug)]
 pub(crate) struct SourceInputs {
     pub(crate) pyproject: PathBuf,
@@ -100,10 +160,11 @@ pub fn validate_source(source: &PythonRootfsSource, arch: Option<&str>) -> Resul
     Ok(())
 }
 
-pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<Vec<u8>> {
+pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<CompiledRootfs> {
     validate_source(source, Some(arch))?;
     ensure_docker("compile a Python rootfs")?;
     let inputs = resolve_inputs(root, source)?;
+    let mut provenance = build_provenance(source, &inputs, arch)?;
 
     let staging = tempfile::tempdir().map_err(LiveError::from)?;
     fs::copy(&inputs.pyproject, staging.path().join("pyproject.toml"))
@@ -144,6 +205,8 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<V
         .output()
         .map_err(|error| LiveError::Io(format!("start Docker build: {error}")))?;
     command_succeeded("Docker build", &build)?;
+    provenance.builder = observed_docker_builder()?;
+    provenance.base_image.observed_image_id = inspect_image_id(&source.base)?;
 
     let image_path = staging.path().join("image.tar");
     let save = Command::new("docker")
@@ -164,23 +227,77 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<V
             "Docker build completed but image {image_tag} is unavailable"
         ))
     })?;
-    encode_bundle(
-        &BundleMetadata {
-            schema_version: BUNDLE_SCHEMA_VERSION,
-            provider: "oci-docker-zstd-v1".to_owned(),
-            image_tag,
-            image_id: Some(image_id),
-            entry: source.entry.clone(),
-            arch: normalize_arch(arch)?.to_owned(),
-            image_uncompressed_bytes: image_bytes,
-        },
-        &compressed,
-    )
+    let metadata = BundleMetadata {
+        schema_version: BUNDLE_SCHEMA_VERSION,
+        provider: "oci-docker-zstd-v1".to_owned(),
+        image_tag,
+        image_id: Some(image_id.clone()),
+        entry: source.entry.clone(),
+        arch: normalize_arch(arch)?.to_owned(),
+        image_uncompressed_bytes: image_bytes,
+    };
+    let bytes = encode_bundle(&metadata, &compressed)?;
+    provenance.output = Some(BuildOutput {
+        layer_kappa: address_bytes(&bytes).to_string(),
+        byte_length: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        image_id,
+        image_uncompressed_bytes: image_bytes,
+    });
+    Ok(CompiledRootfs { bytes, provenance })
 }
 
-pub fn check_source(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<()> {
+pub fn check_source(
+    root: &Path,
+    source: &PythonRootfsSource,
+    arch: &str,
+) -> Result<BuildProvenance> {
     validate_source(source, Some(arch))?;
-    resolve_inputs(root, source).map(|_| ())
+    let inputs = resolve_inputs(root, source)?;
+    build_provenance(source, &inputs, arch)
+}
+
+fn build_provenance(
+    source: &PythonRootfsSource,
+    inputs: &SourceInputs,
+    arch: &str,
+) -> Result<BuildProvenance> {
+    let digest_pinned = digest_pinned_base(&source.base);
+    Ok(BuildProvenance {
+        profile: "rootfs",
+        target_platform: docker_platform(arch)?.to_owned(),
+        build_host: crate::holo_python_component::BuildHost {
+            os: std::env::consts::OS,
+            arch: std::env::consts::ARCH,
+        },
+        compiler: BuildTool {
+            name: "hologram-live",
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+        },
+        base_image: BaseImageProvenance {
+            reference: source.base.clone(),
+            digest_pinned,
+            observed_image_id: None,
+        },
+        dependency_installer: BuildTool {
+            name: "uv",
+            version: UV_VERSION.to_owned(),
+        },
+        builder: DockerBuilder {
+            name: "docker",
+            client_version: None,
+            server_version: None,
+        },
+        inputs: crate::holo_python_component::source_build_inputs(source, inputs)?,
+        output: None,
+        reproducibility: Reproducibility {
+            reproducible: false,
+            blocker: if digest_pinned {
+                ROOTFS_OUTPUT_BLOCKER
+            } else {
+                ROOTFS_MUTABLE_BASE_BLOCKER
+            },
+        },
+    })
 }
 
 pub fn execute(
@@ -589,6 +706,32 @@ fn ensure_docker(action: &str) -> Result<()> {
     Ok(())
 }
 
+fn observed_docker_builder() -> Result<DockerBuilder> {
+    Ok(DockerBuilder {
+        name: "docker",
+        client_version: Some(docker_version("Client")?),
+        server_version: Some(docker_version("Server")?),
+    })
+}
+
+fn docker_version(component: &str) -> Result<String> {
+    let format = format!("{{{{.{component}.Version}}}}");
+    let output = Command::new("docker")
+        .args(["version", "--format", &format])
+        .output()
+        .map_err(|error| LiveError::Io(format!("query Docker {component} version: {error}")))?;
+    command_succeeded(&format!("query Docker {component} version"), &output)?;
+    let version = String::from_utf8(output.stdout)
+        .map_err(|error| LiveError::Protocol(format!("decode Docker version: {error}")))?;
+    let version = version.trim();
+    if version.is_empty() {
+        return Err(LiveError::Protocol(format!(
+            "Docker returned an empty {component} version"
+        )));
+    }
+    Ok(version.to_owned())
+}
+
 fn cached_image_matches(metadata: &BundleMetadata) -> Result<bool> {
     let Some(expected) = metadata.image_id.as_deref() else {
         return Ok(false);
@@ -804,6 +947,15 @@ fn validate_base(base: &str) -> Result<()> {
     Ok(())
 }
 
+fn digest_pinned_base(base: &str) -> bool {
+    base.rsplit_once("@sha256:").is_some_and(|(_, digest)| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
+}
+
 fn valid_image_id(image_id: &str) -> bool {
     image_id.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -991,6 +1143,20 @@ mod tests {
         assert!(valid_image_id(&format!("sha256:{}", "a".repeat(64))));
         assert!(!valid_image_id("126a833f0669"));
         assert!(!valid_image_id(&format!("sha256:{}", "z".repeat(64))));
+    }
+
+    #[test]
+    fn base_digest_pin_requires_a_lowercase_sha256() {
+        assert!(digest_pinned_base(&format!(
+            "python@sha256:{}",
+            "a".repeat(64)
+        )));
+        assert!(!digest_pinned_base("python:3.12-slim"));
+        assert!(!digest_pinned_base(&format!(
+            "python@sha256:{}",
+            "A".repeat(64)
+        )));
+        assert!(!digest_pinned_base("python@sha256:abc"));
     }
 
     #[test]

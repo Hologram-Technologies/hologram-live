@@ -47,13 +47,26 @@ manifest="$repo_root/examples/python-numpy-pandas/hologram.json"
 request="$repo_root/examples/python-numpy-pandas/request.json"
 
 "$binary" --json compile "$manifest" --check >/dev/null
-"$binary" --json compile "$manifest" --output "$archive" >/dev/null
+compile_json=$("$binary" --json compile "$manifest" --output "$archive")
 run_json=$("$binary" --json run "$archive" --input "$request")
 python3 -c '
 import json
 import sys
 
 run = json.load(sys.stdin)
+compile_report = json.loads(sys.argv[3])
+provenance = compile_report["build_provenance"]
+source = provenance["layers"][0]["source"]
+if provenance["canonical"] or source["profile"] != "rootfs":
+    print(f"unexpected rootfs provenance: {provenance!r}", file=sys.stderr)
+    raise SystemExit(1)
+if not source["builder"].get("client_version") or not source["builder"].get("server_version"):
+    print(f"rootfs provenance is missing Docker versions: {source!r}", file=sys.stderr)
+    raise SystemExit(1)
+build_output = source.get("output", {})
+if not build_output.get("layer_kappa", "").startswith("blake3:"):
+    print(f"rootfs provenance is missing layer identity: {source!r}", file=sys.stderr)
+    raise SystemExit(1)
 output = json.loads(bytes(run["outputs"][0]).decode())
 expected = {
     "columns": ["label", "value"],
@@ -78,7 +91,13 @@ summary = {
     "archive_bytes": run["resident_bytes"],
     "archive": sys.argv[2] if sys.argv[1] == "true" else None,
     "archive_persisted": sys.argv[1] == "true",
+    "build": {
+        "target_platform": source["target_platform"],
+        "image_id": build_output["image_id"],
+        "layer_kappa": build_output["layer_kappa"],
+        "reproducible": source["reproducibility"]["reproducible"],
+    },
 }
 json.dump(summary, sys.stdout, separators=(",", ":"))
 sys.stdout.write("\n")
-' "$archive_persisted" "$archive" <<<"$run_json"
+' "$archive_persisted" "$archive" "$compile_json" <<<"$run_json"

@@ -29,9 +29,10 @@ making a clean build reproducible.
 
 Every `hologram compile` and `hologram compile --check` result contains a
 `build_provenance` report with `schema_version: 1` and `canonical: false`.
-Reports contain one entry for each source-compiled Python Component layer and
-identify its manifest layer index. Prebuilt layers and the experimental Python
-rootfs path are outside this first schema slice.
+Reports initially contained one entry for each source-compiled Python Component
+layer and identified its manifest layer index. ADR 014 extends the same
+versioned, non-canonical envelope to experimental Python rootfs builds without
+changing the Component entry schema. Prebuilt layers remain outside the report.
 
 A Python Component entry records:
 
@@ -97,7 +98,8 @@ hologram --json compile hologram.json --output application.holo \
 - Obtain or maintain a componentizer that accepts an explicit deterministic
   pre-initialization random source, then verify byte-identical components and
   `.holo` archives across clean builds and supported hosts.
-- Extend the schema to rootfs inputs only after base-image digest resolution,
-  reproducible OCI construction, and the microVM execution boundary land.
+- Rootfs observational evidence is implemented by ADR 014. Registry digest
+  resolution, reproducible OCI construction, and the microVM execution
+  boundary remain prerequisites for a rootfs reproducibility claim.
 - Define signing and retention if provenance becomes a supply-chain
   attestation rather than ephemeral compiler output.

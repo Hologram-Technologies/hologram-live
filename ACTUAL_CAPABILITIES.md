@@ -29,7 +29,7 @@ This document is deliberately strict about what the current stable build does an
   `exited { code }` process status; legacy peers decode as `unknown` without
   fabricating an exit code.
 - `.holo` v4 inference-model packaging, import, verified application-directory metadata, and metadata-only `hologram ai inspect`.
-- Direct execution of locked Python OCI rootfs archives through the experimental local container provider.
+- Direct execution of locked Python OCI rootfs archives through the experimental local container provider, with non-canonical planned/completed build provenance covering hashed source inputs, requested base, pinned uv, observed Docker/image identities, output layer κ, and explicit reproducibility blockers.
 - Durable local conversation history.
 - Conversation-backed chat over a configurable inference engine (`echo` by default; `weightc` one-shot CLI or an Ollama-compatible HTTP endpoint via `live.toml`), with independent, switchable threads in the desktop app.
 - Optional resident per-conversation weightc sessions (`resident_sessions = true`): a supervised `weightc enter --jsonl` process per conversation with KV continuity, LRU-capped and lazily respawned on failure.

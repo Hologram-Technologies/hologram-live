@@ -20,7 +20,7 @@ Add a schema-v2 Python source recipe that compiles into the existing `RootfsImag
 5. Embed that envelope as the rootfs content blob in a fat `.holo` archive.
 6. For direct execution, verify the archive and architecture, load the embedded image, and invoke the launcher once per input.
 
-Bundle schema v2 also records the exact OCI image ID. Direct execution may reuse a local image only when both its content-derived tag and inspected image ID match the archive metadata. Legacy schema-v1 bundles and cache misses always load the embedded bytes. A tag match alone is never trusted.
+Bundle schema v2 also records the exact OCI image ID. Direct execution may reuse a local image only when both its content-derived tag and inspected image ID match the archive metadata. Every other bundle schema is rejected; cache misses load the embedded bytes. A tag match alone is never trusted.
 
 The launcher contract is:
 

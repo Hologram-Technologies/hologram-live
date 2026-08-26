@@ -231,30 +231,6 @@ mod tests {
     }
 
     #[test]
-    fn conversations_written_before_archiving_still_load() {
-        let root = std::env::temp_dir().join(format!("hologram-legacy-{}", now_millis()));
-        let history = HistoryService::open(&root).expect("open");
-        let conversation = history.create("legacy".to_owned()).expect("create");
-
-        // Rewrite the record without the `archived` field, as older builds stored it.
-        let path = history.path_for(&conversation.id).expect("path");
-        let legacy = serde_json::json!({
-            "id": conversation.id,
-            "title": conversation.title,
-            "created_at_millis": conversation.created_at_millis,
-            "updated_at_millis": conversation.updated_at_millis,
-            "messages": [],
-        });
-        std::fs::write(&path, serde_json::to_vec(&legacy).expect("encode")).expect("write");
-
-        let loaded = history.get(&conversation.id).expect("get legacy");
-        assert!(!loaded.archived);
-        assert_eq!(history.list(false).expect("list").len(), 1);
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
     fn exchanges_persist_both_sides_of_a_chat_turn() {
         let root = std::env::temp_dir().join(format!("hologram-chat-history-{}", now_millis()));
         let history = HistoryService::open(&root).expect("open");

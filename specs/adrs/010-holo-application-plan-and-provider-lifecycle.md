@@ -144,10 +144,8 @@ completion. The current connected non-primary providers do not yet expose an
 autonomous failure callback, so that notification mechanism must land with the
 first such provider rather than being simulated.
 
-`HoloRunResult` exposes completion additively as `{ "kind": "returned" }`,
-`{ "kind": "exited", "code": N }`, or `{ "kind": "unknown" }`. `unknown` is
-reserved for decoding legacy JSON or Protobuf results that predate the field.
-New providers must emit `returned` or `exited`; they may not emit `unknown`.
+`HoloRunResult` requires completion as `{ "kind": "returned" }` or
+`{ "kind": "exited", "code": N }`. Missing completion is a protocol error.
 
 Provider-owned resident handles remain opaque and are stored by the runtime.
 Shared status reports expose lifecycle state, resident bytes, and typed failure
@@ -163,13 +161,10 @@ host context and applies upstream `Capabilities::admits` after complete
 non-child resolution but before any provider `prepare` call. Providers receive
 only that effective grant.
 
-Compatibility amendment (2026-08-26): archives from the early Live compiler
-may use its content-addressed zero-byte object for an omitted request. After κ
-verification, archive decoding preserves that one historical value as the
-deny-all empty request. The legacy κ and bytes remain unchanged in identity and
-audit evidence. This exception does not apply to source compilation or trusted
-grants, and every nonempty archive object still requires canonical upstream
-encoding. Requested and delegated objects share the same archive decoder.
+Strict-contract amendment (2026-08-26): requested and delegated capability
+objects always require canonical upstream encoding. The canonical empty set is
+the deny-all representation; a zero-byte object is malformed even when its κ
+matches.
 
 Ordinary direct and local-service execution use the canonical empty local
 baseline, which grants no storage roots, channels, or network flags. A direct

@@ -24,7 +24,7 @@ DELETE /api/v1/holo/&#123;kappa&#125;/load
 POST   /api/v1/holo/&#123;kappa&#125;/run
 
 &#123; "inputs": [[104, 101, 108, 108, 111]] &#125;</code></pre>
-  <p>Load returns a resident record and run returns a binary-safe result. Both surfaces expose the request and effective-grant κ values, trusted grant source, and authorization outcome without exposing capability documents. Run results also separate byte <code>outputs</code> from typed <code>completion</code>: <code>returned</code>, <code>exited</code> with a real code, or legacy <code>unknown</code>. Resident authorization is audited against the authenticated service principal before provider preparation.</p>
+  <p>Load returns a resident record and run returns a binary-safe result. Both surfaces require and expose the request and effective-grant κ values, trusted grant source, and authorization outcome without exposing capability documents. Run results also separate byte <code>outputs</code> from typed <code>completion</code>: <code>returned</code> or <code>exited</code> with a real code. Resident authorization is audited against the authenticated service principal before provider preparation.</p>
 
   <h2>Native gRPC surface</h2>
   <p>The CLI and desktop client use the versioned schema at <code>proto/hologram/live/v1/live.proto</code>. Generated tonic clients call:</p>

@@ -648,9 +648,28 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
 
+    fn wasm_layer(content: hologram::space::KappaLabel71, entry: &str) -> Layer {
+        Layer::wasm_with_contract(content, entry, crate::holo_contract::WASM_CONTRACT_CORE_V1)
+    }
+
     fn test_capabilities() -> &'static [u8] {
         static CAPABILITIES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
         CAPABILITIES.get_or_init(crate::holo_capability::empty_canonical)
+    }
+
+    fn finish_archive(manifest: &AppManifest, blobs: &[(&[u8], &[u8])]) -> Vec<u8> {
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        let directory =
+            crate::holo_directory::derive(manifest, blobs.iter().copied()).expect("directory");
+        writer.add_extension(
+            crate::holo_directory::DIRECTORY_EXTENSION_KEY,
+            crate::holo_directory::encode(&directory).expect("encode directory"),
+        );
+        for (kappa, bytes) in blobs {
+            writer.add_content_blob(*kappa, *bytes);
+        }
+        writer.finish().expect("archive")
     }
 
     struct SyntheticProvider {
@@ -908,17 +927,22 @@ mod tests {
             primary: Some(1),
             requires: address_bytes(capabilities),
             layers: vec![
-                Layer::wasm(address_bytes(first), "first"),
-                Layer::wasm(address_bytes(second), "second"),
+                wasm_layer(address_bytes(first), "first"),
+                wasm_layer(address_bytes(second), "second"),
             ],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
-        writer.add_content_blob(address_bytes(first).as_bytes(), first);
-        writer.add_content_blob(address_bytes(second).as_bytes(), second);
-        let bytes = writer.finish().expect("archive");
+        let capabilities_kappa = address_bytes(capabilities);
+        let first_kappa = address_bytes(first);
+        let second_kappa = address_bytes(second);
+        let bytes = finish_archive(
+            &manifest,
+            &[
+                (capabilities_kappa.as_bytes(), capabilities),
+                (first_kappa.as_bytes(), first),
+                (second_kappa.as_bytes(), second),
+            ],
+        );
         let mut report =
             explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan report");
         registry.evaluate(&mut report);
@@ -936,7 +960,7 @@ mod tests {
         let child_manifest = AppManifest {
             primary: Some(0),
             requires: address_bytes(child_request),
-            layers: vec![Layer::wasm(address_bytes(child_layer), "child")],
+            layers: vec![wasm_layer(address_bytes(child_layer), "child")],
             children: Vec::new(),
         };
         let child_manifest_bytes = child_manifest.canonicalize();
@@ -944,7 +968,7 @@ mod tests {
         let manifest = AppManifest {
             primary: Some(0),
             requires: address_bytes(root_request),
-            layers: vec![Layer::wasm(address_bytes(root_layer), "root")],
+            layers: vec![wasm_layer(address_bytes(root_layer), "root")],
             children: vec![(child_kappa, address_bytes(delegated))],
         };
         let mut blobs = std::collections::BTreeMap::new();
@@ -958,12 +982,11 @@ mod tests {
         ] {
             blobs.insert(address_bytes(bytes).to_string(), bytes);
         }
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        for (kappa, bytes) in blobs {
-            writer.add_content_blob(kappa.as_bytes(), bytes);
-        }
-        let bytes = writer.finish().expect("child archive");
+        let blob_refs = blobs
+            .iter()
+            .map(|(kappa, bytes)| (kappa.as_bytes(), *bytes))
+            .collect::<Vec<_>>();
+        let bytes = finish_archive(&manifest, &blob_refs);
         let mut report =
             explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("child plan");
         registry.evaluate(&mut report);
@@ -980,28 +1003,28 @@ mod tests {
         let grandchild = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(address_bytes(grandchild_layer), "grandchild")],
+            layers: vec![wasm_layer(address_bytes(grandchild_layer), "grandchild")],
             children: Vec::new(),
         };
         let grandchild_bytes = grandchild.canonicalize();
         let first = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(address_bytes(first_layer), "first-child")],
+            layers: vec![wasm_layer(address_bytes(first_layer), "first-child")],
             children: vec![(address_bytes(&grandchild_bytes), capabilities_kappa)],
         };
         let first_bytes = first.canonicalize();
         let second = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(address_bytes(second_layer), "second-child")],
+            layers: vec![wasm_layer(address_bytes(second_layer), "second-child")],
             children: Vec::new(),
         };
         let second_bytes = second.canonicalize();
         let root = AppManifest {
             primary: Some(0),
             requires: capabilities_kappa,
-            layers: vec![Layer::wasm(address_bytes(root_layer), "root")],
+            layers: vec![wasm_layer(address_bytes(root_layer), "root")],
             children: vec![
                 (address_bytes(&first_bytes), capabilities_kappa),
                 (address_bytes(&second_bytes), capabilities_kappa),
@@ -1020,12 +1043,11 @@ mod tests {
         ] {
             blobs.insert(address_bytes(bytes).to_string(), bytes);
         }
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(root.canonicalize());
-        for (kappa, bytes) in blobs {
-            writer.add_content_blob(kappa.as_bytes(), bytes);
-        }
-        let bytes = writer.finish().expect("nested archive");
+        let blob_refs = blobs
+            .iter()
+            .map(|(kappa, bytes)| (kappa.as_bytes(), *bytes))
+            .collect::<Vec<_>>();
+        let bytes = finish_archive(&root, &blob_refs);
         let mut report =
             explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("nested plan");
         registry.evaluate(&mut report);
@@ -1067,11 +1089,15 @@ mod tests {
             )],
             children: Vec::new(),
         };
-        let mut writer = HoloWriter::new();
-        writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(capabilities).as_bytes(), capabilities);
-        writer.add_content_blob(address_bytes(payload).as_bytes(), payload);
-        let bytes = writer.finish().expect("archive");
+        let capabilities_kappa = address_bytes(capabilities);
+        let payload_kappa = address_bytes(payload);
+        let bytes = finish_archive(
+            &manifest,
+            &[
+                (capabilities_kappa.as_bytes(), capabilities),
+                (payload_kappa.as_bytes(), payload),
+            ],
+        );
         let mut report =
             explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan");
 

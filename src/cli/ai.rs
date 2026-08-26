@@ -99,9 +99,10 @@ mod tests {
     #[test]
     fn inspection_lists_model_service_metadata() {
         let bundle = b"deterministic model bundle";
+        let capabilities = hologram_live::holo_capability::empty_canonical();
         let manifest = AppManifest {
             primary: None,
-            requires: address_bytes(&[]),
+            requires: address_bytes(&capabilities),
             layers: vec![Layer::inference_model(
                 address_bytes(bundle),
                 "ai.default",
@@ -111,7 +112,22 @@ mod tests {
         };
         let mut writer = HoloWriter::new();
         writer.set_app_manifest(manifest.canonicalize());
-        writer.add_content_blob(address_bytes(bundle).as_bytes(), bundle);
+        let capabilities_kappa = address_bytes(&capabilities);
+        let bundle_kappa = address_bytes(bundle);
+        let directory = hologram_live::holo_directory::derive(
+            &manifest,
+            [
+                (capabilities_kappa.as_bytes(), capabilities.as_slice()),
+                (bundle_kappa.as_bytes(), &bundle[..]),
+            ],
+        )
+        .expect("directory");
+        writer.add_extension(
+            hologram_live::holo_directory::DIRECTORY_EXTENSION_KEY,
+            hologram_live::holo_directory::encode(&directory).expect("encode directory"),
+        );
+        writer.add_content_blob(capabilities_kappa.as_bytes(), capabilities);
+        writer.add_content_blob(bundle_kappa.as_bytes(), bundle);
         let archive = writer.finish().expect("archive");
 
         let report = inspect_model_archive(Path::new("model.holo"), &archive).expect("inspect");

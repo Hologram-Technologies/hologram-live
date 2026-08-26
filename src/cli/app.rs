@@ -5,7 +5,9 @@ use hologram_live::compile::{
     CompileSource,
 };
 use hologram_live::error::{LiveError, Result};
-use hologram_live::holo_contract::{COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_V1};
+use hologram_live::holo_contract::{
+    COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V1,
+};
 use hologram_live::holo_python::{PythonProfile, PythonRootfsSource};
 use hologram_live::holo_wasm::CORE_WASM_V1_DEFAULT_ENTRY;
 use hologram_live::util::atomic_write;
@@ -215,15 +217,7 @@ fn initialize<R: BufRead, W: Write>(
     };
 
     let specification = CompileManifest {
-        schema_version: if layers.iter().any(|layer| layer.contract.is_some()) {
-            4
-        } else if !children.is_empty() {
-            3
-        } else if python {
-            2
-        } else {
-            1
-        },
+        schema_version: 4,
         primary,
         requires,
         layers: std::mem::take(&mut layers),
@@ -321,15 +315,19 @@ fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
                     .to_owned(),
             )
         })?;
+    let contract = args
+        .contract
+        .clone()
+        .or_else(|| matches!(kind, LayerKindArg::Wasm).then(|| WASM_CONTRACT_CORE_V1.to_owned()));
     Ok(CompileLayer {
         kind: kind.into(),
         path: Some(path),
         source: None,
         entry: args.entry.clone().or_else(|| {
             matches!(kind, LayerKindArg::Wasm)
-                .then(|| default_wasm_entry(args.contract.as_deref()).to_owned())
+                .then(|| default_wasm_entry(contract.as_deref()).to_owned())
         }),
-        contract: args.contract.clone(),
+        contract,
         arch: args.arch.clone(),
         surface: args.surface.clone(),
         engine: args.engine.clone(),
@@ -420,13 +418,9 @@ fn interactive_layers<R: BufRead, W: Write>(
         )?);
         let (entry, contract, arch, surface, engine) = match kind {
             LayerKindArg::Wasm => {
-                let contract = prompt(
-                    input,
-                    output,
-                    "Guest contract (blank for core-Wasm v1 compatibility)",
-                    Some(""),
-                )?;
-                let contract = (!contract.is_empty()).then_some(contract);
+                let contract =
+                    prompt(input, output, "Guest contract", Some(WASM_CONTRACT_CORE_V1))?;
+                let contract = Some(contract);
                 let entry = prompt(
                     input,
                     output,
@@ -731,8 +725,11 @@ mod tests {
             manifest.layers[0].entry.as_deref(),
             Some(CORE_WASM_V1_DEFAULT_ENTRY)
         );
-        assert_eq!(manifest.schema_version, 1);
-        assert!(manifest.layers[0].contract.is_none());
+        assert_eq!(manifest.schema_version, 4);
+        assert_eq!(
+            manifest.layers[0].contract.as_deref(),
+            Some(WASM_CONTRACT_CORE_V1)
+        );
     }
 
     #[test]
@@ -837,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn python_template_generates_a_schema_two_rootfs_source() {
+    fn python_template_generates_a_schema_four_rootfs_source() {
         let directory = tempfile::tempdir().expect("tempdir");
         let mut options = args(directory.path().to_path_buf());
         options.template = Some(TemplateArg::Python);
@@ -849,7 +846,7 @@ mod tests {
             &std::fs::read(directory.path().join("hologram.json")).expect("manifest"),
         )
         .expect("parse");
-        assert_eq!(manifest.schema_version, 2);
+        assert_eq!(manifest.schema_version, 4);
         assert_eq!(manifest.primary, Some(0));
         assert!(matches!(
             manifest.layers[0].source,
@@ -891,7 +888,7 @@ mod tests {
     }
 
     #[test]
-    fn child_flags_generate_a_schema_three_manifest() {
+    fn child_flags_generate_a_schema_four_manifest() {
         let directory = tempfile::tempdir().expect("tempdir");
         let mut options = args(directory.path().to_path_buf());
         options.kind = Some(LayerKindArg::Wasm);
@@ -907,7 +904,7 @@ mod tests {
         .expect("parse");
 
         assert_eq!(report.child_count, 1);
-        assert_eq!(manifest.schema_version, 3);
+        assert_eq!(manifest.schema_version, 4);
         assert_eq!(
             manifest.children,
             vec![CompileChild {
@@ -933,7 +930,7 @@ mod tests {
         )
         .expect("parse");
 
-        assert_eq!(manifest.schema_version, 3);
+        assert_eq!(manifest.schema_version, 4);
         assert_eq!(manifest.children.len(), 1);
         assert_eq!(
             manifest.children[0].application,

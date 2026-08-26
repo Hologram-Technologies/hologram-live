@@ -52,32 +52,10 @@ HOME="$HOME_DIR" json_output "$BIN" --json doctor >/dev/null
 mkdir -p "$TMP/generated-app"
 HOME="$HOME_DIR" json_output "$BIN" --json app init "$TMP/generated-app" --yes >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json compile --check "$ROOT/features/fixtures/wasm-app/hologram.json" >/dev/null
-# Emulate a genuine schema-v1 config: strip every module added since v1 so the
-# enabled set matches the v1 defaults and the migration path triggers.
-sed -i.bak 's/schema_version = 2/schema_version = 1/' "$CONFIG"
-rm -f "$CONFIG.bak"
-sed -i.bak '/dev.hologram.live.chat/d' "$CONFIG"
-rm -f "$CONFIG.bak"
-sed -i.bak '/dev.hologram.live.inference/d' "$CONFIG"
-rm -f "$CONFIG.bak"
-sed -i.bak '/dev.hologram.live.openai-compat/d' "$CONFIG"
-rm -f "$CONFIG.bak"
-sed -i.bak '/dev.hologram.live.ollama-compat/d' "$CONFIG"
-rm -f "$CONFIG.bak"
 sed -i.bak "s/127\.0\.0\.1:11435/127.0.0.1:$PORT/g" "$CONFIG"
 rm -f "$CONFIG.bak"
 
 HOME="$HOME_DIR" json_output "$BIN" --json start >/dev/null
-grep -q 'schema_version = 2' "$CONFIG"
-grep -q 'dev.hologram.live.chat' "$CONFIG"
-grep -q 'dev.hologram.live.inference' "$CONFIG"
-# Migration restores chat + inference only; re-enable the compatibility modules
-# and restart so their endpoints are exercised below.
-sed -i.bak '/dev.hologram.live.inference/a\
-    "dev.hologram.live.openai-compat",\
-    "dev.hologram.live.ollama-compat",' "$CONFIG"
-rm -f "$CONFIG.bak"
-HOME="$HOME_DIR" json_output "$BIN" --json restart >/dev/null
 HOME="$HOME_DIR" json_output "$BIN" --json status >/dev/null
 curl -fsS "http://127.0.0.1:$PORT/docs" | grep -q 'Scalar.createApiReference'
 curl -fsS "http://127.0.0.1:$PORT/docs/scalar.js" >/dev/null

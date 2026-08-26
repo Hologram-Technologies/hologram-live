@@ -17,6 +17,7 @@ pub mod holo_capability;
 pub mod holo_component;
 pub mod holo_contract;
 pub mod holo_directory;
+pub mod holo_format;
 pub mod holo_provider;
 pub mod holo_python;
 pub mod holo_python_component;

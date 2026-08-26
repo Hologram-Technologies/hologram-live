@@ -628,18 +628,21 @@ impl From<HoloLayer> for pb::HoloLayer {
     }
 }
 
-impl From<pb::HoloLayer> for HoloLayer {
-    fn from(value: pb::HoloLayer) -> Self {
-        Self {
+impl TryFrom<pb::HoloLayer> for HoloLayer {
+    type Error = LiveError;
+
+    fn try_from(value: pb::HoloLayer) -> Result<Self> {
+        let contract = validate_wire_contract(&value.kind, value.contract)?;
+        Ok(Self {
             position: value.position,
             kind: value.kind,
             content_kappa: value.content_kappa,
             entry: value.entry,
-            contract: value.contract,
+            contract,
             architecture: value.architecture,
             surface: value.surface,
             engine: value.engine,
-        }
+        })
     }
 }
 
@@ -708,11 +711,22 @@ impl TryFrom<pb::HoloDirectory> for HoloDirectory {
     type Error = LiveError;
 
     fn try_from(value: pb::HoloDirectory) -> Result<Self> {
+        let schema_version = narrow(value.schema_version, "directory schema_version")?;
+        if schema_version != crate::holo_directory::DIRECTORY_SCHEMA_VERSION {
+            return Err(LiveError::Protocol(format!(
+                "unsupported application directory schema {schema_version}; expected {}",
+                crate::holo_directory::DIRECTORY_SCHEMA_VERSION
+            )));
+        }
         Ok(Self {
-            schema_version: narrow(value.schema_version, "directory schema_version")?,
+            schema_version,
             primary_layer: value.primary_layer,
             requires_kappa: value.requires_kappa,
-            layers: value.layers.into_iter().map(Into::into).collect(),
+            layers: value
+                .layers
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_>>()?,
             children: value.children.into_iter().map(Into::into).collect(),
             blobs: value.blobs.into_iter().map(Into::into).collect(),
         })
@@ -740,16 +754,29 @@ impl TryFrom<pb::HoloInspection> for HoloInspection {
     type Error = LiveError;
 
     fn try_from(value: pb::HoloInspection) -> Result<Self> {
+        let format_version = narrow(value.format_version, "format_version")?;
+        if format_version != crate::holo_format::CURRENT_HOLO_VERSION {
+            return Err(LiveError::Protocol(format!(
+                "unsupported .holo format version {format_version}; expected {}",
+                crate::holo_format::CURRENT_HOLO_VERSION
+            )));
+        }
+        let directory = value.directory.map(TryInto::try_into).transpose()?;
+        if value.application_kappa.is_some() && (!value.directory_embedded || directory.is_none()) {
+            return Err(LiveError::Protocol(
+                "application inspection requires an embedded application directory".to_owned(),
+            ));
+        }
         Ok(Self {
             kappa: value.kappa,
             application_kappa: value.application_kappa,
             name: value.name,
-            format_version: narrow(value.format_version, "format_version")?,
+            format_version,
             byte_length: value.byte_length,
             archive_fingerprint: value.archive_fingerprint,
             footer_verified: value.footer_verified,
             sections: value.sections.into_iter().map(Into::into).collect(),
-            directory: value.directory.map(TryInto::try_into).transpose()?,
+            directory,
             directory_embedded: value.directory_embedded,
         })
     }
@@ -818,12 +845,13 @@ impl TryFrom<pb::HoloPlanLayer> for HoloPlanLayer {
     type Error = LiveError;
 
     fn try_from(value: pb::HoloPlanLayer) -> Result<Self> {
+        let contract = validate_wire_contract(&value.kind, value.contract)?;
         Ok(Self {
             position: value.position,
             kind: value.kind,
             content_kappa: value.content_kappa,
             entry: value.entry,
-            contract: value.contract,
+            contract,
             architecture: value.architecture,
             surface: value.surface,
             engine: value.engine,
@@ -838,6 +866,23 @@ impl TryFrom<pb::HoloPlanLayer> for HoloPlanLayer {
                 .into(),
         })
     }
+}
+
+fn validate_wire_contract(kind: &str, contract: Option<String>) -> Result<Option<String>> {
+    if kind == "wasm" {
+        let contract = contract.ok_or_else(|| {
+            LiveError::Protocol("gRPC Wasm layer has no guest contract".to_owned())
+        })?;
+        let normalized = crate::holo_contract::normalize_wasm_contract(&contract)
+            .map_err(LiveError::Protocol)?;
+        return Ok(Some(normalized.to_owned()));
+    }
+    if contract.is_some() {
+        return Err(LiveError::Protocol(format!(
+            "gRPC {kind} layer cannot carry a Wasm guest contract"
+        )));
+    }
+    Ok(None)
 }
 
 impl From<HoloPlanLimits> for pb::HoloPlanLimits {
@@ -966,13 +1011,17 @@ impl TryFrom<pb::ResidentHolo> for ResidentHolo {
     type Error = LiveError;
 
     fn try_from(value: pb::ResidentHolo) -> Result<Self> {
+        require_nonempty(&value.state, "resident state")?;
+        require_nonempty(
+            &value.requested_capabilities_kappa,
+            "requested capabilities kappa",
+        )?;
+        require_nonempty(&value.effective_grant_kappa, "effective grant kappa")?;
+        require_nonempty(&value.grant_source, "grant source")?;
+        require_nonempty(&value.authorization, "authorization decision")?;
         Ok(Self {
             kappa: value.kappa,
-            state: if value.state.is_empty() {
-                "unknown".to_owned()
-            } else {
-                value.state
-            },
+            state: value.state,
             input_count: narrow(value.input_count, "input_count")?,
             output_count: narrow(value.output_count, "output_count")?,
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
@@ -1006,6 +1055,13 @@ impl TryFrom<pb::HoloRunResult> for HoloRunResult {
     type Error = LiveError;
 
     fn try_from(value: pb::HoloRunResult) -> Result<Self> {
+        require_nonempty(
+            &value.requested_capabilities_kappa,
+            "requested capabilities kappa",
+        )?;
+        require_nonempty(&value.effective_grant_kappa, "effective grant kappa")?;
+        require_nonempty(&value.grant_source, "grant source")?;
+        require_nonempty(&value.authorization, "authorization decision")?;
         Ok(Self {
             kappa: value.kappa,
             outputs: value.outputs,
@@ -1013,9 +1069,8 @@ impl TryFrom<pb::HoloRunResult> for HoloRunResult {
             resident_bytes: narrow(value.resident_bytes, "resident_bytes")?,
             completion: value
                 .completion
-                .map(ApplicationCompletion::try_from)
-                .transpose()?
-                .unwrap_or_default(),
+                .ok_or_else(|| LiveError::Protocol("missing application completion".to_owned()))
+                .and_then(ApplicationCompletion::try_from)?,
             requested_capabilities_kappa: value.requested_capabilities_kappa,
             effective_grant_kappa: value.effective_grant_kappa,
             grant_source: value.grant_source,
@@ -1024,13 +1079,16 @@ impl TryFrom<pb::HoloRunResult> for HoloRunResult {
     }
 }
 
+fn require_nonempty(value: &str, field: &str) -> Result<()> {
+    if value.is_empty() {
+        return Err(LiveError::Protocol(format!("missing {field}")));
+    }
+    Ok(())
+}
+
 impl From<ApplicationCompletion> for pb::ApplicationCompletion {
     fn from(value: ApplicationCompletion) -> Self {
         match value {
-            ApplicationCompletion::Unknown => Self {
-                kind: "unknown".to_owned(),
-                code: None,
-            },
             ApplicationCompletion::Returned => Self {
                 kind: "returned".to_owned(),
                 code: None,
@@ -1048,7 +1106,6 @@ impl TryFrom<pb::ApplicationCompletion> for ApplicationCompletion {
 
     fn try_from(value: pb::ApplicationCompletion) -> Result<Self> {
         match (value.kind.as_str(), value.code) {
-            ("" | "unknown", None) => Ok(Self::Unknown),
             ("returned", None) => Ok(Self::Returned),
             ("exited", Some(code)) => Ok(Self::Exited { code }),
             (kind, code) => Err(LiveError::Protocol(format!(
@@ -1363,13 +1420,49 @@ mod tests {
                 && layers[0].engine.as_deref() == Some("uor-r4")
                 && blobs[0].byte_length == 42
         ));
+
+        let error = HoloDirectory::try_from(pb::HoloDirectory {
+            schema_version: 1,
+            primary_layer: Some(0),
+            requires_kappa: "blake3:capabilities".to_owned(),
+            layers: vec![pb::HoloLayer {
+                position: 0,
+                kind: "wasm".to_owned(),
+                content_kappa: "blake3:wasm".to_owned(),
+                entry: "holo_run".to_owned(),
+                contract: None,
+                architecture: None,
+                surface: None,
+                engine: None,
+            }],
+            children: Vec::new(),
+            blobs: Vec::new(),
+        })
+        .expect_err("Wasm contract is required");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
     }
 
     #[test]
-    fn older_holo_inspection_without_application_identity_decodes() {
+    fn structural_holo_inspection_without_application_identity_decodes() {
         let decoded = HoloInspection::try_from(pb::HoloInspection {
             kappa: "blake3:archive".to_owned(),
-            name: "legacy.holo".to_owned(),
+            name: "structural.holo".to_owned(),
+            format_version: 4,
+            byte_length: 64,
+            archive_fingerprint: "fingerprint".to_owned(),
+            footer_verified: true,
+            sections: Vec::new(),
+            directory: None,
+            directory_embedded: false,
+            application_kappa: None,
+        })
+        .expect("decode structural inspection");
+
+        assert!(decoded.application_kappa.is_none());
+
+        let error = HoloInspection::try_from(pb::HoloInspection {
+            kappa: "blake3:archive".to_owned(),
+            name: "noncurrent.holo".to_owned(),
             format_version: 3,
             byte_length: 64,
             archive_fingerprint: "fingerprint".to_owned(),
@@ -1379,13 +1472,12 @@ mod tests {
             directory_embedded: false,
             application_kappa: None,
         })
-        .expect("decode legacy inspection");
-
-        assert!(decoded.application_kappa.is_none());
+        .expect_err("noncurrent archive version must be rejected");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
     }
 
     #[test]
-    fn resident_lifecycle_state_round_trips_and_defaults_for_older_peers() {
+    fn resident_lifecycle_state_and_authorization_are_required() {
         let resident = ResidentHolo {
             kappa: "blake3:archive".to_owned(),
             state: "running".to_owned(),
@@ -1404,8 +1496,8 @@ mod tests {
         assert_eq!(decoded.authorization, "allowed");
         assert_eq!(decoded.grant_source, "service_development_file");
 
-        let legacy = ResidentHolo::try_from(pb::ResidentHolo {
-            kappa: "blake3:legacy".to_owned(),
+        let incomplete = ResidentHolo::try_from(pb::ResidentHolo {
+            kappa: "blake3:incomplete".to_owned(),
             input_count: 1,
             output_count: 1,
             resident_bytes: 42,
@@ -1417,13 +1509,12 @@ mod tests {
             grant_source: String::new(),
             authorization: String::new(),
         })
-        .expect("decode legacy resident");
-        assert_eq!(legacy.state, "unknown");
-        assert!(legacy.authorization.is_empty());
+        .expect_err("incomplete resident must be rejected");
+        assert_eq!(incomplete.code(), "LIVE_PROTOCOL_ERROR");
     }
 
     #[test]
-    fn holo_run_authorization_metadata_round_trips_and_defaults_for_older_peers() {
+    fn holo_run_authorization_metadata_and_completion_are_required() {
         let result = HoloRunResult {
             kappa: "blake3:archive".to_owned(),
             outputs: vec![b"ok".to_vec()],
@@ -1442,8 +1533,8 @@ mod tests {
         assert_eq!(decoded.authorization, "allowed");
         assert_eq!(decoded.completion, ApplicationCompletion::Returned);
 
-        let legacy = HoloRunResult::try_from(pb::HoloRunResult {
-            kappa: "blake3:legacy".to_owned(),
+        let incomplete = HoloRunResult::try_from(pb::HoloRunResult {
+            kappa: "blake3:incomplete".to_owned(),
             outputs: Vec::new(),
             elapsed_micros: 0,
             resident_bytes: 0,
@@ -1453,10 +1544,8 @@ mod tests {
             authorization: String::new(),
             completion: None,
         })
-        .expect("decode legacy result");
-        assert!(legacy.authorization.is_empty());
-        assert!(legacy.grant_source.is_empty());
-        assert_eq!(legacy.completion, ApplicationCompletion::Unknown);
+        .expect_err("incomplete result must be rejected");
+        assert_eq!(incomplete.code(), "LIVE_PROTOCOL_ERROR");
 
         let exited = ApplicationCompletion::try_from(pb::ApplicationCompletion {
             kind: "exited".to_owned(),

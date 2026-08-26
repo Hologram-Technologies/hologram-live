@@ -27,7 +27,6 @@ use std::time::{Duration, Instant};
 
 const MAGIC: &[u8; 8] = b"HOLOPYR1";
 const BUNDLE_SCHEMA_VERSION: u16 = 2;
-const LEGACY_BUNDLE_SCHEMA_VERSION: u16 = 1;
 const UV_VERSION: &str = "0.11.8";
 const OCI_COMPRESSION_LEVEL: i32 = 3;
 const MAX_METADATA_BYTES: usize = 64 * 1024;
@@ -651,10 +650,7 @@ fn decode_bundle(bundle: &[u8]) -> Result<(BundleMetadata, &[u8])> {
     let start = MAGIC.len() + 4;
     let metadata: BundleMetadata = serde_json::from_slice(&bundle[start..start + length])
         .map_err(|error| LiveError::InvalidHolo(format!("decode Python metadata: {error}")))?;
-    if !matches!(
-        metadata.schema_version,
-        LEGACY_BUNDLE_SCHEMA_VERSION | BUNDLE_SCHEMA_VERSION
-    ) || metadata.provider != "oci-docker-zstd-v1"
+    if metadata.schema_version != BUNDLE_SCHEMA_VERSION || metadata.provider != "oci-docker-zstd-v1"
     {
         return Err(LiveError::Capability(format!(
             "unsupported Python rootfs provider {} schema {}",
@@ -663,9 +659,7 @@ fn decode_bundle(bundle: &[u8]) -> Result<(BundleMetadata, &[u8])> {
     }
     validate_entry(&metadata.entry).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
     normalize_arch(&metadata.arch).map_err(|error| LiveError::InvalidHolo(error.to_string()))?;
-    if metadata.schema_version == BUNDLE_SCHEMA_VERSION
-        && !metadata.image_id.as_deref().is_some_and(valid_image_id)
-    {
+    if !metadata.image_id.as_deref().is_some_and(valid_image_id) {
         return Err(LiveError::InvalidHolo(
             "Python rootfs bundle is missing a valid Docker image ID".to_owned(),
         ));
@@ -1187,17 +1181,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_bundle_without_an_image_id_still_decodes() {
-        let mut legacy = metadata();
-        legacy.schema_version = LEGACY_BUNDLE_SCHEMA_VERSION;
-        legacy.image_id = None;
-        let compressed = zstd::stream::encode_all(b"image tar".as_slice(), 1).expect("compress");
-        let bundle = encode_bundle(&legacy, &compressed).expect("encode");
-        let (decoded, _) = decode_bundle(&bundle).expect("decode");
-        assert_eq!(decoded, legacy);
-    }
-
-    #[test]
     fn entrypoint_requires_module_and_function() {
         assert!(validate_entry("analytics.app:main").is_ok());
         assert!(validate_entry("analytics-app:main").is_err());
@@ -1267,14 +1250,14 @@ mod tests {
     }
 
     #[test]
-    fn registry_manifest_resolution_rejects_invalid_or_legacy_manifests() {
+    fn registry_manifest_resolution_rejects_invalid_or_unsupported_manifests() {
         let empty = resolved_base_reference("python:latest", b"").expect_err("empty");
         assert_eq!(empty.code(), "LIVE_PROTOCOL_ERROR");
         let invalid = resolved_base_reference("python:latest", b"not json").expect_err("invalid");
         assert_eq!(invalid.code(), "LIVE_PROTOCOL_ERROR");
-        let legacy = resolved_base_reference("python:latest", br#"{"schemaVersion":1}"#)
-            .expect_err("legacy");
-        assert_eq!(legacy.code(), "LIVE_PROTOCOL_ERROR");
+        let unsupported = resolved_base_reference("python:latest", br#"{"schemaVersion":1}"#)
+            .expect_err("unsupported schema");
+        assert_eq!(unsupported.code(), "LIVE_PROTOCOL_ERROR");
     }
 
     #[test]

@@ -742,6 +742,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn one_shot_executor_runs_an_archive_with_legacy_empty_capabilities() {
+        let wasm_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("features/fixtures/wasm-app/transform.wat");
+        let wasm = std::fs::read(wasm_path).expect("fixture wasm");
+        let legacy_empty = b"";
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(legacy_empty),
+            layers: vec![Layer::wasm(address_bytes(&wasm), "holo_run")],
+            children: Vec::new(),
+        };
+        let mut writer = HoloWriter::new();
+        writer.set_app_manifest(manifest.canonicalize());
+        writer.add_content_blob(address_bytes(legacy_empty).as_bytes(), legacy_empty);
+        writer.add_content_blob(address_bytes(&wasm).as_bytes(), wasm.as_slice());
+        let archive = writer.finish().expect("legacy archive");
+
+        let result = HoloExecutor::default()
+            .execute(&archive, vec![b"legacy empty".to_vec()])
+            .await
+            .expect("execute legacy archive");
+        assert_eq!(result.outputs, vec![b"LEGACY EMPTY".to_vec()]);
+        assert_eq!(result.completion, ApplicationCompletion::Returned);
+    }
+
+    #[tokio::test]
     async fn one_shot_executor_runs_component_v1() {
         let archive = component_fixture_archive();
         let result = HoloExecutor::default()

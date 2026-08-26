@@ -1271,6 +1271,40 @@ mod tests {
     }
 
     #[test]
+    fn legacy_empty_capability_object_is_a_runnable_deny_all_request() {
+        let capabilities = b"";
+        let layer = b"wasm";
+        let capabilities_kappa = address_bytes(capabilities);
+        let layer_kappa = address_bytes(layer);
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: capabilities_kappa,
+            layers: vec![Layer::wasm(layer_kappa, "run")],
+            children: Vec::new(),
+        };
+        let bytes = write_archive(
+            &manifest,
+            &[(&capabilities_kappa, capabilities), (&layer_kappa, layer)],
+        );
+
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("explain");
+        report.evaluate_providers(available);
+        assert!(report.runnable());
+
+        let plan = report.into_application_plan().expect("legacy plan");
+        assert_eq!(
+            *plan.requested_capabilities.capabilities,
+            crate::holo_capability::empty_capabilities()
+        );
+        assert!(plan.requested_capabilities.canonical.is_empty());
+        assert_eq!(
+            plan.requested_capabilities.kappa,
+            capabilities_kappa.to_string()
+        );
+    }
+
+    #[test]
     fn forged_local_content_is_a_typed_mismatch_blocker() {
         let capabilities = test_capabilities();
         let layer = b"declared layer";

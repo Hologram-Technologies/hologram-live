@@ -255,6 +255,13 @@ order under their delegated grants and stop or roll back in exact reverse
 order. The current call invokes only the root primary; child primaries are
 lifecycle-managed dependencies rather than independent resident applications.
 
+Archives emitted by the early Live compiler used the content-addressed
+zero-byte object (`blake3:af1349b9…`) for an omitted request. The runtime accepts
+only that verified legacy representation and interprets it as the same deny-all
+empty request, preserving the archive's original κ. New compiles, trusted
+grants, and every nonempty capability object still require canonical
+`CapabilitySet` bytes.
+
 Ordinary local execution uses the built-in baseline grant: no storage roots,
 publish/subscribe channels, or network flags. A non-empty request therefore
 fails with `LIVE_AUTHORIZATION_DENIED`. For an explicit local demo, provide a

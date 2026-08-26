@@ -6,7 +6,7 @@
 - Created: 2026-08-25
 - Format target: `.holo` v4 with v2/v3 read compatibility
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M3.1e, observational Python rootfs build provenance
+- Current delivery: M2.1, legacy empty-capability archive compatibility
 - Next delivery: M4 rootfs base-digest resolution and normalized OCI construction
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
@@ -219,6 +219,36 @@ dependencies until an explicit child invocation contract is introduced.
 - [x] Child attenuation succeeds; attempted amplification fails deterministically.
 - [x] Capability checks are covered by unit, BDD, audit, native API, and HTTP/OpenAPI tests.
 - [x] Security and `.holo` documentation distinguish requested, granted, delegated, and enforced capabilities.
+
+### M2.1 Legacy empty-capability compatibility
+
+The early Live compiler represented an omitted capability request with a
+content-addressed zero-byte object (`blake3:af1349b9…`). Once canonical
+`CapabilitySet` validation landed, those otherwise valid archives resolved the
+object successfully but failed planning as malformed. The compatibility rule
+is deliberately narrower than canonical decoding: only verified zero-length
+archive bytes retain their historical deny-all meaning. New compiles and
+explicit grants continue to require canonical `CapabilitySet` bytes, every
+nonempty malformed object still fails closed, and the legacy κ/source bytes
+remain unchanged in application and audit identity.
+
+- [x] Define the zero-byte sentinel as a legacy empty request with no authority.
+- [x] Verify object κ before applying compatibility semantics.
+- [x] Apply one archive decoder to root requests and delegated child grants.
+- [x] Keep source compilation, trusted grant decoding, and nonempty objects on
+  strict canonical decoding.
+- [x] Prove unit, planner, direct Wasm, and reported Python rootfs compatibility.
+- [x] Document the legacy rule in `.holo`, security, and actual-capability docs.
+- [x] Pass full repository, release, smoke, and documentation gates.
+
+Compatibility evidence (2026-08-26): decoder tests prove both requested and
+delegated zero-byte objects produce the empty typed set only after exact κ
+verification, while a content-addressed nonempty malformed object remains
+`LIVE_HOLO_INVALID`. Planner and direct-Wasm tests preserve the legacy κ/source
+bytes and execute successfully. The untouched 101 MiB August 25
+`target/numpy-pandas.holo` that exposed the regression also executed through
+the direct rootfs provider and returned three rows, mean `20.0`, and sum
+`60.0` without recompilation.
 
 ## M3 — Real multi-layer providers
 

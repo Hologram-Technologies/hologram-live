@@ -70,6 +70,19 @@ pub fn decode_canonical(bytes: &[u8]) -> Result<Capabilities> {
     Ok(capabilities)
 }
 
+/// Decode capability bytes read from an application archive.
+///
+/// Early Hologram Live compilers used the content-addressed zero-byte object
+/// as an empty request. Preserve that deny-all meaning without weakening the
+/// canonical requirement for any nonempty object or for newly compiled input.
+fn decode_archive(bytes: &[u8]) -> Result<Capabilities> {
+    if bytes.is_empty() {
+        Ok(empty_capabilities())
+    } else {
+        decode_canonical(bytes)
+    }
+}
+
 pub fn empty_capabilities() -> Capabilities {
     Capabilities {
         storage_roots: Vec::new(),
@@ -98,7 +111,7 @@ impl RequestedCapabilities {
                 "required CapabilitySet bytes do not match declared κ {kappa}"
             )));
         }
-        let capabilities = Arc::new(decode_canonical(&bytes)?);
+        let capabilities = Arc::new(decode_archive(&bytes)?);
         Ok(Self {
             kappa: kappa.to_owned(),
             canonical: bytes,
@@ -125,7 +138,7 @@ impl DelegatedCapabilities {
                 "delegated CapabilitySet bytes do not match declared κ {kappa}"
             )));
         }
-        let capabilities = Arc::new(decode_canonical(&bytes)?);
+        let capabilities = Arc::new(decode_archive(&bytes)?);
         Ok(Self {
             kappa: kappa.to_owned(),
             canonical: bytes,
@@ -531,6 +544,34 @@ mod tests {
             decode_canonical(&explicit).expect("decode"),
             empty_capabilities()
         );
+    }
+
+    #[test]
+    fn archive_decoders_accept_only_the_addressed_legacy_empty_sentinel() {
+        let legacy = Arc::<[u8]>::from([]);
+        let legacy_kappa = address_bytes(&legacy).to_string();
+
+        let requested = RequestedCapabilities::decode(&legacy_kappa, legacy.clone())
+            .expect("legacy empty request");
+        assert_eq!(*requested.capabilities, empty_capabilities());
+        assert!(requested.canonical.is_empty());
+
+        let delegated = DelegatedCapabilities::decode(&legacy_kappa, legacy.clone())
+            .expect("legacy empty delegation");
+        assert_eq!(*delegated.capabilities, empty_capabilities());
+        assert!(delegated.canonical.is_empty());
+
+        let wrong_kappa = address_bytes(b"not empty").to_string();
+        let error = RequestedCapabilities::decode(&wrong_kappa, legacy)
+            .expect_err("legacy sentinel must remain content addressed");
+        assert!(error.to_string().contains("do not match declared"));
+
+        let malformed = Arc::<[u8]>::from(&b"malformed"[..]);
+        let malformed_kappa = address_bytes(&malformed).to_string();
+        let error = RequestedCapabilities::decode(&malformed_kappa, malformed)
+            .expect_err("nonempty malformed object must remain invalid");
+        assert!(error.to_string().contains("Malformed"));
+        assert!(decode_canonical(&[]).is_err());
     }
 
     #[test]

@@ -163,6 +163,14 @@ host context and applies upstream `Capabilities::admits` after complete
 non-child resolution but before any provider `prepare` call. Providers receive
 only that effective grant.
 
+Compatibility amendment (2026-08-26): archives from the early Live compiler
+may use its content-addressed zero-byte object for an omitted request. After κ
+verification, archive decoding preserves that one historical value as the
+deny-all empty request. The legacy κ and bytes remain unchanged in identity and
+audit evidence. This exception does not apply to source compilation or trusted
+grants, and every nonempty archive object still requires canonical upstream
+encoding. Requested and delegated objects share the same archive decoder.
+
 Ordinary direct and local-service execution use the canonical empty local
 baseline, which grants no storage roots, channels, or network flags. A direct
 local file may opt into a source-schema grant through the explicit

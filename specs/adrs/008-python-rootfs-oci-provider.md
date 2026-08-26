@@ -51,4 +51,4 @@ The default base `python:3.12-slim` is convenient but mutable. Users who need re
 - Normalize the OCI representation and prove byte-for-byte reproducible layer κ values.
 - Move rootfs execution behind the planned microVM provider while preserving the layer and launcher contracts where practical.
 - Add resident lifecycle, cancellation, cleanup, metrics, and architecture-specific CI.
-- Add the portable Python/WASI Component Model profile as a `WasmCodemodule` provider.
+- Extend the now-available dependency-free Python Component Model profile with locked portable dependencies without broadening its import-free runtime contract.

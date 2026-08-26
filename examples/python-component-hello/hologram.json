@@ -1,0 +1,18 @@
+{
+  "schema_version": 4,
+  "primary": 0,
+  "layers": [
+    {
+      "kind": "wasm",
+      "source": {
+        "language": "python",
+        "project": ".",
+        "entry": "python_component_hello:main",
+        "lock": "uv.lock",
+        "profile": "wasi-component"
+      },
+      "entry": "run",
+      "contract": "hologram:guest/component@1"
+    }
+  ]
+}

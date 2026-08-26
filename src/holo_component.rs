@@ -21,6 +21,9 @@ mod bindings {
 }
 
 pub const COMPONENT_MEMORY_MAX_BYTES: usize = 64 * 1024 * 1024;
+pub const COMPONENT_INSTANCE_MAX: usize = 128;
+pub const COMPONENT_TABLE_MAX: usize = 32;
+pub const COMPONENT_MEMORY_COUNT_MAX: usize = 32;
 pub const COMPONENT_FUEL_PER_INPUT: u64 = 100_000_000;
 pub const COMPONENT_INPUT_MAX_BYTES: usize = 1024 * 1024;
 pub const COMPONENT_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
@@ -245,9 +248,9 @@ impl PreparedComponent {
 fn new_store(engine: &Engine, limits: ComponentLimits) -> Result<Store<ComponentStore>> {
     let store_limits = StoreLimitsBuilder::new()
         .memory_size(limits.memory_max_bytes)
-        .instances(32)
-        .tables(32)
-        .memories(32)
+        .instances(COMPONENT_INSTANCE_MAX)
+        .tables(COMPONENT_TABLE_MAX)
+        .memories(COMPONENT_MEMORY_COUNT_MAX)
         .build();
     let mut store = Store::new(
         engine,

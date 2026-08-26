@@ -1,74 +1,79 @@
-# Current sprint: M3.1a bounded Component v1 execution
+# Current sprint: M3.1a Python Component v1 packaging
 
 ## Sprint status
 
 - State: active
-- Started: 2026-08-25
-- Last reviewed: 2026-08-25
+- Started: 2026-08-26
+- Last reviewed: 2026-08-26
 - Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
-- Goal: execute the import-free `hologram:guest/component@1` contract directly
-  and resident without weakening core-Wasm v1 or granting ambient WASI
-- Exit signal: a valid Component v1 echo application executes on both targets,
-  malformed components and guest errors are typed, and memory, fuel, input,
-  output, deadline, and cancellation bounds are enforced before the provider is
-  advertised as available
+- Goal: compile a dependency-free, locked Python project into an import-free
+  `hologram:guest/component@1` Wasm layer and execute the resulting `.holo`
+  directly and resident
+- Exit signal: `hologram compile` invokes a pinned isolated Python component
+  toolchain, the emitted component passes the exact existing world check, and
+  a teaching example executes on both runtime targets without Docker or
+  ambient WASI
 
-The completed selector tracker remains in Git history. Durable requirements
-stay in [`plans/holo-application-runtime.md`](plans/holo-application-runtime.md),
-and the accepted negotiation design is
+The completed bounded-Component tracker remains in Git history. Durable
+requirements stay in
+[`plans/holo-application-runtime.md`](plans/holo-application-runtime.md), and
+the accepted negotiation design is
 [`adrs/011-holo-guest-contract-negotiation.md`](adrs/011-holo-guest-contract-negotiation.md).
 
-## Runtime policy
+## Packaging policy
 
-- Component v1 is the exact exported
-  `hologram:application/application@1.0.0` world and has no imports.
-- Each input is instantiated in a fresh Wasmtime store; compiled components may
-  remain warm, but guest memory and state never cross invocation boundaries.
-- Runtime-owned ceilings apply even when capability scalar `0` means
-  unspecified: 64 MiB linear memory, 100 million fuel units, 1 MiB input, 1 MiB
-  output, and a two-second wall deadline per invocation.
-- A nonzero admitted `memory_max_bytes` or `cpu_time_per_event_ms` may only
-  tighten the runtime ceiling; archive requests never expand host authority.
-- Fuel is the deterministic compute bound. Epoch interruption terminates a
-  timed-out or cancelled synchronous call, and each prepared component owns an
-  engine plus serialization boundary so interruption is isolated.
-- No WASI, filesystem, network, clock, randomness, environment, or Hologram
-  host interface is linked in this slice.
-- Legacy `hologram:guest/core-wasm@1` execution and canonical bytes remain
-  unchanged.
+- The source profile is `wasi-component`, but this slice uses
+  `componentize-py --stub-wasi`: every WASI import is replaced inside the guest
+  and the emitted component still has the import-free Component v1 contract.
+- Pin `componentize-py` to `0.25.0`; invoke it through an isolated `uvx`
+  environment with the developer virtual environment, user site, and
+  `PYTHONPATH` withheld.
+- Require `pyproject.toml`, `uv.lock`, and `src/` under the declared project;
+  reject escaping paths and symlinks using the existing Python source boundary.
+- Accept dependency-free locks only in this slice. A lock containing an
+  additional package fails before componentization with guidance to the next
+  pure-Python dependency milestone or the explicit rootfs profile.
+- Generate the WIT adapter in a private temporary directory. Application code
+  keeps the existing `module:function`, `bytes -> bytes` entrypoint instead of
+  importing generated Hologram bindings.
+- The output is an ordinary `WasmCodemodule` with entry `run` and contract
+  `hologram:guest/component@1`; `.holo` canonical identity and the runtime
+  provider registry need no new layer kind or selector.
+- `--stub-wasi` makes Python randomness deterministic and unsuitable for
+  security-sensitive randomness. Filesystem, network, clocks, environment,
+  arguments, stdio, DNS, secrets, and process control remain unavailable.
 
-## Implementation
+## Compiler and schema
 
-- [x] Add the generated Component v1 host bindings to the runtime crate.
-- [x] Add a Component provider selected only by the exact Component v1 tag.
-- [x] Register the provider for direct and resident plans.
-- [x] Compile and type-check the component during transactional preparation.
-- [x] Execute one WIT `run` call per input and preserve one output per input.
-- [x] Map guest-declared errors, malformed components, and traps to typed Live
-  errors without exposing payload bytes.
-- [x] Keep resident components compiled and warm while giving every input a
-  fresh store.
+- [x] Add `wasi-component` to the Python source profile and validate it only on
+  schema-v4 Component v1 Wasm layers.
+- [x] Add `hologram app init --template python --profile wasi-component` with
+  the exact generated layer kind, entry, and contract.
+- [x] Compile through pinned `componentize-py 0.25.0 --stub-wasi` and emit its
+  component bytes directly as the Wasm layer payload.
+- [x] Refuse dependency-bearing locks and ambient Python search paths with
+  actionable typed diagnostics.
+- [x] Keep `rootfs` source manifests and their OCI compiler behavior compatible.
 
-## Resource and cancellation gates
+## Runtime and conformance
 
-- [x] Enforce the memory ceiling with Wasmtime's store limiter.
-- [x] Enforce fuel for every fresh store.
-- [x] Reject oversized inputs before guest allocation.
-- [x] Reject oversized outputs before returning them to the application.
-- [x] Enforce the wall deadline and interrupt the guest on expiry.
-- [x] Interrupt in-flight guest execution when the invocation future is
-  cancelled.
-- [x] Prove a timed-out/cancelled call cannot interrupt another application or
-  the core-Wasm provider.
+- [x] Admit the bounded internal instance/table/memory counts required by the
+  bundled CPython component without increasing its 64 MiB byte ceiling.
+- [x] Prove the emitted component has no imports and exports the exact
+  `hologram:application/application@1.0.0` world.
+- [x] Execute the dependency-free Python example directly.
+- [x] Import, load, invoke, and unload the same archive resident.
+- [x] Prove a dependency lock and malformed Python entry fail before archive
+  emission with typed diagnostics.
+- [x] Preserve core-Wasm v1 and the Rust Component v1 conformance suite.
 
-## Conformance and delivery
+## Documentation and delivery
 
-- [x] Add a valid echo Component fixture and direct execution proof.
-- [x] Add resident load/invoke/unload execution proof.
-- [x] Add malformed contract, guest error, input/output, fuel, memory, deadline,
-  and cancellation tests.
-- [x] Update README, architecture, security, actual-capabilities, and website
-  Component documentation.
+- [x] Add the dependency-free Python Component example and a repeatable demo
+  command.
+- [x] Update README, website Python guide, architecture/security capability
+  matrices, and `.holo` format documentation where the new compiler profile is
+  user-visible.
 - [x] Keep `specs/plans/holo-application-runtime.md` synchronized.
 - [x] Run formatting, focused tests, all-target tests, Clippy, BDD, optimized
   build, release smoke, WIT conformance, and docs.
@@ -76,7 +81,8 @@ and the accepted negotiation design is
 
 ## Deferred discoveries
 
-- [ ] `DISC-017` — Package and execute dependency-free Python through the
-  Component v1 provider once the bounded host contract is proven.
-- [ ] `DISC-018` — Define a capability-gated WASI profile only after the
-  import-free provider works directly and resident.
+- [ ] `DISC-017b` — Resolve and package a locked pure-Python dependency into an
+  isolated Component v1 build path.
+- [ ] `DISC-018` — Define a capability-gated WASI profile only when an
+  application needs real host interfaces; do not broaden the import-free base
+  world.

@@ -31,6 +31,10 @@ python-hello-demo:
     ./target/release/hologram --json compile examples/python-hello/hologram.json --check >/dev/null
     ./target/release/hologram --json run examples/python-hello --input-text Ada --output-format json
 
+# Compile the dependency-free Python Component example and prove direct + resident execution.
+python-component-holo-demo:
+    cargo test --release --locked --test python_component -- --ignored --nocapture
+
 # Compile, verify, and retain the NumPy + pandas .holo artifact.
 python-holo-package output="target/numpy-pandas.holo":
     ./scripts/check-python-holo-demo.sh --output "{{output}}"

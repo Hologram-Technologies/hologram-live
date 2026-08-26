@@ -10,17 +10,93 @@
 
 use crate::error::{LiveError, Result};
 use crate::holo_python::{self, PythonProfile, PythonRootfsSource, SourceInputs};
+use crate::util::hex;
+use hologram::space::address_bytes;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::fs;
-use std::path::Path;
+use std::io::Read as _;
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 pub const COMPONENTIZE_PY_VERSION: &str = "0.25.0";
-pub const COMPONENT_PYTHON_VERSION: &str = "3.14";
+pub const COMPONENT_PYTHON_VERSION: &str = "3.14.0";
+const COMPONENT_PYTHON_INSTALL_VERSION: &str = "3.14";
+const COMPONENTIZE_PY_SOURCE_REVISION: &str = "c0949b19d464f5d70bc1051195a3ae0e6a012df9";
+const TARGET_ABI: &str = "wasm32-wasip2-component";
+const GUEST_CONTRACT: &str = "hologram:guest/component@1";
+const REPRODUCIBILITY_BLOCKER: &str = "componentize-py 0.25.0 pre-initialization obtains build-time randomness from a private WASI context and exposes no deterministic seed control";
 const ADAPTER_MODULE: &str = "_hologram_guest";
 const DEFAULT_ROOTFS_BASE: &str = "python:3.12-slim";
 const APPLICATION_WIT: &str = include_str!("../specs/wit/hologram-application-v1.wit");
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildTool {
+    pub name: &'static str,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_revision: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildHost {
+    pub os: &'static str,
+    pub arch: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildInput {
+    pub role: &'static str,
+    pub path: String,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PortableDependency {
+    pub name: String,
+    pub version: String,
+    pub wheel_url: String,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildOutput {
+    pub layer_kappa: String,
+    pub byte_length: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Reproducibility {
+    pub reproducible: bool,
+    pub blocker: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildProvenance {
+    pub profile: &'static str,
+    pub guest_contract: &'static str,
+    pub target_abi: &'static str,
+    pub build_host: BuildHost,
+    pub compiler: BuildTool,
+    pub runtime: BuildTool,
+    pub componentizer: BuildTool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub componentizer_runner: Option<BuildTool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependency_installer: Option<BuildTool>,
+    pub inputs: Vec<BuildInput>,
+    pub dependencies: Vec<PortableDependency>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<BuildOutput>,
+    pub reproducibility: Reproducibility,
+}
+
+pub struct CompiledComponent {
+    pub bytes: Vec<u8>,
+    pub provenance: BuildProvenance,
+}
 
 pub fn validate_source(source: &PythonRootfsSource) -> Result<()> {
     if source.profile != PythonProfile::WasiComponent {
@@ -42,27 +118,40 @@ pub fn validate_source(source: &PythonRootfsSource) -> Result<()> {
     Ok(())
 }
 
-pub fn check_source(root: &Path, source: &PythonRootfsSource) -> Result<()> {
-    validate_source(source)?;
-    let inputs = holo_python::resolve_inputs(root, source)?;
-    dependency_plan(&inputs).map(|_| ())
-}
-
-pub fn compile(root: &Path, source: &PythonRootfsSource) -> Result<Vec<u8>> {
+pub fn check_source(root: &Path, source: &PythonRootfsSource) -> Result<BuildProvenance> {
     validate_source(source)?;
     let inputs = holo_python::resolve_inputs(root, source)?;
     let dependencies = dependency_plan(&inputs)?;
+    build_provenance(source, &inputs, dependencies)
+}
+
+pub fn compile(root: &Path, source: &PythonRootfsSource) -> Result<CompiledComponent> {
+    validate_source(source)?;
+    let inputs = holo_python::resolve_inputs(root, source)?;
+    let dependencies = dependency_plan(&inputs)?;
+    let mut provenance = build_provenance(source, &inputs, dependencies.clone())?;
 
     let staging = tempfile::tempdir().map_err(LiveError::from)?;
     let wit = staging.path().join("hologram-application-v1.wit");
     let adapter = staging.path().join(format!("{ADAPTER_MODULE}.py"));
+    let source_dir = staging.path().join("application-source");
     let site_packages = staging.path().join("site-packages");
     let output = staging.path().join("application.component.wasm");
     fs::write(&wit, APPLICATION_WIT).map_err(|error| LiveError::io(&wit, error))?;
     fs::write(&adapter, adapter_source(&source.entry))
         .map_err(|error| LiveError::io(&adapter, error))?;
+    copy_source_tree(&inputs.source_dir, &source_dir)?;
+    let source_input = provenance
+        .inputs
+        .iter_mut()
+        .find(|input| input.role == "source-tree")
+        .ok_or_else(|| {
+            LiveError::Conflict("Python Component provenance lost its source-tree input".to_owned())
+        })?;
+    source_input.sha256 = sha256_source_tree(&source_dir)?;
     if !dependencies.is_empty() {
         install_dependencies(staging.path(), &site_packages, &dependencies)?;
+        provenance.dependency_installer = Some(tool_version("uv")?);
     }
 
     let tool = format!("componentize-py=={COMPONENTIZE_PY_VERSION}");
@@ -87,7 +176,7 @@ pub fn compile(root: &Path, source: &PythonRootfsSource) -> Result<Vec<u8>> {
         ])
         .arg(staging.path())
         .arg("--python-path")
-        .arg(&inputs.source_dir);
+        .arg(&source_dir);
     if !dependencies.is_empty() {
         command.arg("--python-path").arg(&site_packages);
     }
@@ -112,15 +201,240 @@ pub fn compile(root: &Path, source: &PythonRootfsSource) -> Result<Vec<u8>> {
             diagnostic(&result.stderr)
         )));
     }
-    fs::read(&output).map_err(|error| LiveError::io(&output, error))
+    let bytes = fs::read(&output).map_err(|error| LiveError::io(&output, error))?;
+    provenance.componentizer_runner = Some(tool_version("uvx")?);
+    provenance.output = Some(BuildOutput {
+        layer_kappa: address_bytes(&bytes).to_string(),
+        byte_length: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+    });
+    Ok(CompiledComponent { bytes, provenance })
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct PortableDependency {
-    name: String,
-    version: String,
-    wheel_url: String,
-    sha256: String,
+fn build_provenance(
+    source: &PythonRootfsSource,
+    inputs: &SourceInputs,
+    dependencies: Vec<PortableDependency>,
+) -> Result<BuildProvenance> {
+    let project = logical_path(&source.project)?;
+    let input = |role: &'static str,
+                 suffix: &Path,
+                 path: &Path,
+                 sha256: fn(&Path) -> Result<String>|
+     -> Result<BuildInput> {
+        Ok(BuildInput {
+            role,
+            path: logical_path(&source.project.join(suffix))?,
+            sha256: sha256(path)?,
+        })
+    };
+    let inputs = vec![
+        input(
+            "project-metadata",
+            Path::new("pyproject.toml"),
+            &inputs.pyproject,
+            sha256_file,
+        )?,
+        input("lock", &source.lock, &inputs.lock, sha256_file)?,
+        BuildInput {
+            role: "source-tree",
+            path: if project == "." {
+                "src".to_owned()
+            } else {
+                format!("{project}/src")
+            },
+            sha256: sha256_source_tree(&inputs.source_dir)?,
+        },
+    ];
+    Ok(BuildProvenance {
+        profile: "wasi-component",
+        guest_contract: GUEST_CONTRACT,
+        target_abi: TARGET_ABI,
+        build_host: BuildHost {
+            os: std::env::consts::OS,
+            arch: std::env::consts::ARCH,
+        },
+        compiler: BuildTool {
+            name: "hologram-live",
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            source_revision: None,
+        },
+        runtime: BuildTool {
+            name: "cpython",
+            version: COMPONENT_PYTHON_VERSION.to_owned(),
+            source_revision: None,
+        },
+        componentizer: BuildTool {
+            name: "componentize-py",
+            version: COMPONENTIZE_PY_VERSION.to_owned(),
+            source_revision: Some(COMPONENTIZE_PY_SOURCE_REVISION),
+        },
+        componentizer_runner: None,
+        dependency_installer: None,
+        inputs,
+        dependencies,
+        output: None,
+        reproducibility: Reproducibility {
+            reproducible: false,
+            blocker: REPRODUCIBILITY_BLOCKER,
+        },
+    })
+}
+
+fn tool_version(name: &'static str) -> Result<BuildTool> {
+    let output = Command::new(name)
+        .arg("--version")
+        .output()
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                LiveError::Capability(format!(
+                    "Python wasi-component compilation requires {name}: {error}"
+                ))
+            } else {
+                LiveError::Io(format!("query {name} version: {error}"))
+            }
+        })?;
+    if !output.status.success() {
+        return Err(LiveError::Config(format!(
+            "query {name} version: {}",
+            diagnostic(&output.stderr)
+        )));
+    }
+    let text = std::str::from_utf8(&output.stdout)
+        .map_err(|error| LiveError::Config(format!("{name} version is not UTF-8: {error}")))?;
+    let version = text
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| LiveError::Config(format!("unrecognized {name} version: {text:?}")))?;
+    Ok(BuildTool {
+        name,
+        version: version.to_owned(),
+        source_revision: None,
+    })
+}
+
+fn logical_path(path: &Path) -> Result<String> {
+    if path.as_os_str().is_empty() {
+        return Ok(".".to_owned());
+    }
+    let mut normalized = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(value) => normalized.push(value.to_str().ok_or_else(|| {
+                LiveError::Config(format!(
+                    "Python source path {} is not UTF-8",
+                    path.display()
+                ))
+            })?),
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(LiveError::Config(format!(
+                    "Python source path {} is not a normalized relative path",
+                    path.display()
+                )));
+            }
+        }
+    }
+    Ok(if normalized.is_empty() {
+        ".".to_owned()
+    } else {
+        normalized.join("/")
+    })
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path).map_err(|error| LiveError::io(path, error))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|error| LiveError::io(path, error))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hex(&hasher.finalize()))
+}
+
+fn source_files(root: &Path) -> Result<Vec<(PathBuf, String)>> {
+    fn visit(root: &Path, directory: &Path, files: &mut Vec<(PathBuf, String)>) -> Result<()> {
+        for entry in fs::read_dir(directory).map_err(|error| LiveError::io(directory, error))? {
+            let entry = entry.map_err(|error| LiveError::io(directory, error))?;
+            let path = entry.path();
+            let metadata =
+                fs::symlink_metadata(&path).map_err(|error| LiveError::io(&path, error))?;
+            if metadata.file_type().is_symlink() {
+                return Err(LiveError::Config(format!(
+                    "Python source tree contains a symlink at {}; source inputs must be regular files and directories",
+                    path.strip_prefix(root).unwrap_or(&path).display()
+                )));
+            }
+            if metadata.is_dir() {
+                visit(root, &path, files)?;
+            } else if metadata.is_file() {
+                let relative = path.strip_prefix(root).map_err(|error| {
+                    LiveError::Config(format!(
+                        "Python source {} escapes {}: {error}",
+                        path.display(),
+                        root.display()
+                    ))
+                })?;
+                files.push((path.clone(), logical_path(relative)?));
+            } else {
+                return Err(LiveError::Config(format!(
+                    "Python source tree contains unsupported input {}",
+                    path.display()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    let mut files = Vec::new();
+    visit(root, root, &mut files)?;
+    files.sort_by(|left, right| left.1.cmp(&right.1));
+    Ok(files)
+}
+
+fn sha256_source_tree(root: &Path) -> Result<String> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"hologram-python-source-tree-v1\0");
+    for (path, relative) in source_files(root)? {
+        let path_bytes = relative.as_bytes();
+        hasher.update(
+            u64::try_from(path_bytes.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        hasher.update(path_bytes);
+        let metadata = fs::metadata(&path).map_err(|error| LiveError::io(&path, error))?;
+        hasher.update(metadata.len().to_le_bytes());
+        let mut file = fs::File::open(&path).map_err(|error| LiveError::io(&path, error))?;
+        let mut buffer = vec![0_u8; 64 * 1024];
+        loop {
+            let count = file
+                .read(&mut buffer)
+                .map_err(|error| LiveError::io(&path, error))?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+    }
+    Ok(hex(&hasher.finalize()))
+}
+
+fn copy_source_tree(source: &Path, destination: &Path) -> Result<()> {
+    fs::create_dir_all(destination).map_err(|error| LiveError::io(destination, error))?;
+    for (path, relative) in source_files(source)? {
+        let destination = destination.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|error| LiveError::io(parent, error))?;
+        }
+        fs::copy(&path, &destination).map_err(|error| LiveError::io(&path, error))?;
+    }
+    Ok(())
 }
 
 fn dependency_plan(inputs: &SourceInputs) -> Result<Vec<PortableDependency>> {
@@ -407,7 +721,7 @@ fn install_dependencies(
             "--only-binary",
             ":all:",
             "--python-version",
-            COMPONENT_PYTHON_VERSION,
+            COMPONENT_PYTHON_INSTALL_VERSION,
             "--link-mode",
             "copy",
             "--target",
@@ -571,7 +885,26 @@ mod tests {
         let root = project(
             "version = 1\n[[package]]\nname='demo'\nversion='0.1.0'\nsource={editable='.'}\ndependencies=[{name='six'}]\n[[package]]\nname='six'\nversion='1.17.0'\nsource={registry='https://pypi.org/simple'}\nwheels=[{url='https://files.pythonhosted.org/six-1.17.0-py2.py3-none-any.whl',hash='sha256:0000000000000000000000000000000000000000000000000000000000000000'}]\n",
         );
-        check_source(root.path(), &source()).expect("portable dependency");
+        let provenance = check_source(root.path(), &source()).expect("portable dependency");
+        assert_eq!(provenance.profile, "wasi-component");
+        assert_eq!(provenance.guest_contract, GUEST_CONTRACT);
+        assert_eq!(provenance.target_abi, TARGET_ABI);
+        assert_eq!(provenance.runtime.version, COMPONENT_PYTHON_VERSION);
+        assert_eq!(provenance.componentizer.version, COMPONENTIZE_PY_VERSION);
+        assert!(provenance.componentizer_runner.is_none());
+        assert!(provenance.dependency_installer.is_none());
+        assert!(provenance.output.is_none());
+        assert!(!provenance.reproducibility.reproducible);
+        assert_eq!(provenance.dependencies.len(), 1);
+        assert_eq!(provenance.dependencies[0].name, "six");
+        assert_eq!(provenance.inputs.len(), 3);
+        assert_eq!(provenance.inputs[0].path, "project/pyproject.toml");
+        assert_eq!(provenance.inputs[1].path, "project/uv.lock");
+        assert_eq!(provenance.inputs[2].path, "project/src");
+        assert!(provenance
+            .inputs
+            .iter()
+            .all(|input| input.sha256.len() == 64));
     }
 
     #[test]
@@ -636,5 +969,48 @@ mod tests {
         assert!(adapter.contains("import_module(\"package.worker\")"));
         assert!(adapter.contains("\"main\""));
         assert!(adapter.contains("must return bytes"));
+    }
+
+    #[test]
+    fn source_tree_digest_is_ordered_and_content_addressed() {
+        let first = tempfile::tempdir().expect("first tree");
+        let second = tempfile::tempdir().expect("second tree");
+        for root in [first.path(), second.path()] {
+            fs::create_dir_all(root.join("package/nested")).expect("nested source");
+        }
+        fs::write(first.path().join("package/z.py"), b"z = 1\n").expect("z first");
+        fs::write(first.path().join("package/nested/a.py"), b"a = 1\n").expect("a first");
+        fs::write(second.path().join("package/nested/a.py"), b"a = 1\n").expect("a second");
+        fs::write(second.path().join("package/z.py"), b"z = 1\n").expect("z second");
+
+        let first_hash = sha256_source_tree(first.path()).expect("hash first");
+        let second_hash = sha256_source_tree(second.path()).expect("hash second");
+        assert_eq!(first_hash, second_hash);
+
+        let staged = tempfile::tempdir().expect("staged tree");
+        copy_source_tree(first.path(), staged.path()).expect("stage source tree");
+        assert_eq!(
+            first_hash,
+            sha256_source_tree(staged.path()).expect("hash staged tree")
+        );
+
+        fs::write(second.path().join("package/z.py"), b"z = 2\n").expect("change source");
+        assert_ne!(
+            first_hash,
+            sha256_source_tree(second.path()).expect("hash changed tree")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_source_symlink_is_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("source tree");
+        fs::write(root.path().join("target.py"), b"value = 1\n").expect("target");
+        symlink("target.py", root.path().join("alias.py")).expect("source symlink");
+        let error = sha256_source_tree(root.path()).expect_err("symlink rejected");
+        assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
+        assert!(error.to_string().contains("alias.py"), "{error}");
     }
 }

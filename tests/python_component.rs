@@ -15,6 +15,7 @@ async fn dependency_free_python_runs_direct_and_resident() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples/python-component-hello/hologram.json");
     let compiled = compile_manifest(&manifest).expect("compile Python component .holo");
+    assert_compiled_provenance(&compiled, 0);
 
     let direct = HoloExecutor::default()
         .execute(&compiled.bytes, vec![b"Ada".to_vec()])
@@ -48,6 +49,7 @@ async fn locked_pure_python_dependency_runs_direct_and_resident() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples/python-component-dependency/hologram.json");
     let compiled = compile_manifest(&manifest).expect("compile dependency Python component .holo");
+    assert_compiled_provenance(&compiled, 1);
 
     let direct = HoloExecutor::default()
         .execute(&compiled.bytes, vec![b"Ada".to_vec()])
@@ -97,6 +99,7 @@ async fn ambient_python_path_cannot_replace_locked_dependency() {
     let output = temporary.path().join("application.holo");
 
     let command = std::process::Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
         .arg("compile")
         .arg(&manifest)
         .arg("--output")
@@ -110,6 +113,12 @@ async fn ambient_python_path_cannot_replace_locked_dependency() {
         "compile failed: {}",
         String::from_utf8_lossy(&command.stderr)
     );
+    let report: Value = serde_json::from_slice(&command.stdout).expect("JSON compile report");
+    assert_eq!(report["build_provenance"]["schema_version"], 1);
+    assert_eq!(
+        report["build_provenance"]["layers"][0]["source"]["dependencies"][0]["name"],
+        "six"
+    );
 
     let archive = std::fs::read(&output).expect("compiled archive");
     let direct = HoloExecutor::default()
@@ -117,6 +126,54 @@ async fn ambient_python_path_cannot_replace_locked_dependency() {
         .await
         .expect("run dependency Python component");
     assert_dependency_response(&direct.outputs, "Ada");
+}
+
+fn assert_compiled_provenance(
+    compiled: &hologram_live::compile::CompiledHolo,
+    dependency_count: usize,
+) {
+    assert_eq!(compiled.build_provenance.schema_version, 1);
+    assert!(!compiled.build_provenance.canonical);
+    let [layer] = compiled.build_provenance.layers.as_slice() else {
+        panic!("expected one provenance layer");
+    };
+    assert_eq!(layer.layer_index, 0);
+    assert_eq!(layer.language, "python");
+    assert_eq!(layer.source.dependencies.len(), dependency_count);
+    assert_eq!(
+        layer
+            .source
+            .componentizer_runner
+            .as_ref()
+            .map(|tool| tool.name),
+        Some("uvx")
+    );
+    assert_eq!(
+        layer
+            .source
+            .dependency_installer
+            .as_ref()
+            .map(|tool| tool.name),
+        (dependency_count > 0).then_some("uv")
+    );
+    let output = layer.source.output.as_ref().expect("component output");
+    assert_eq!(
+        output.layer_kappa,
+        hologram::space::address_bytes(
+            hologram::archive::HoloLoader::from_bytes(&compiled.bytes)
+                .expect("compiled archive")
+                .into_plan()
+                .expect("archive plan")
+                .content_blobs()
+                .expect("content blobs")
+                .into_iter()
+                .max_by_key(|(_, content)| content.len())
+                .expect("component blob")
+                .1
+        )
+        .to_string()
+    );
+    assert!(!layer.source.reproducibility.reproducible);
 }
 
 fn assert_response(outputs: &[Vec<u8>], expected_name: &str) {

@@ -93,12 +93,28 @@ pub struct CompiledHolo {
     pub packaging: HoloPackaging,
     pub identity: HoloIdentity,
     pub capabilities_kappa: String,
+    pub build_provenance: BuildProvenanceReport,
 }
 
 #[derive(Debug)]
 pub struct CheckedManifest {
     pub specification: CompileManifest,
     pub capabilities_kappa: String,
+    pub build_provenance: BuildProvenanceReport,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildProvenanceReport {
+    pub schema_version: u16,
+    pub canonical: bool,
+    pub layers: Vec<LayerBuildProvenance>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LayerBuildProvenance {
+    pub layer_index: usize,
+    pub language: &'static str,
+    pub source: holo_python_component::BuildProvenance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,7 +133,8 @@ pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
     validate_compile_manifest(&specification)?;
     let root = path.parent().unwrap_or_else(|| Path::new("."));
     let capabilities = compile_capabilities(root, specification.requires.as_deref())?;
-    for layer in &specification.layers {
+    let mut provenance = Vec::new();
+    for (layer_index, layer) in specification.layers.iter().enumerate() {
         match (&layer.path, &layer.source) {
             (Some(path), None) => {
                 let _ = read_required(root, path)?;
@@ -128,7 +145,11 @@ pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
                     holo_python::check_source(root, source, arch)?;
                 }
                 holo_python::PythonProfile::WasiComponent => {
-                    holo_python_component::check_source(root, source)?;
+                    provenance.push(LayerBuildProvenance {
+                        layer_index,
+                        language: "python",
+                        source: holo_python_component::check_source(root, source)?,
+                    });
                 }
             },
             _ => {
@@ -145,6 +166,11 @@ pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
     Ok(CheckedManifest {
         specification,
         capabilities_kappa: address_bytes(&capabilities).to_string(),
+        build_provenance: BuildProvenanceReport {
+            schema_version: 1,
+            canonical: false,
+            layers: provenance,
+        },
     })
 }
 
@@ -160,8 +186,17 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
     blobs.insert(requires.as_bytes().to_vec(), requires_bytes);
 
     let mut layers = Vec::with_capacity(specification.layers.len());
-    for source_layer in &specification.layers {
-        let content = compile_layer_content(root, source_layer)?;
+    let mut provenance = Vec::new();
+    for (layer_index, source_layer) in specification.layers.iter().enumerate() {
+        let compiled_layer = compile_layer_content(root, source_layer)?;
+        if let Some(source) = compiled_layer.provenance {
+            provenance.push(LayerBuildProvenance {
+                layer_index,
+                language: "python",
+                source,
+            });
+        }
+        let content = compiled_layer.bytes;
         let kappa = address_bytes(&content);
         blobs.insert(kappa.as_bytes().to_vec(), content);
         layers.push(build_layer(source_layer, kappa)?);
@@ -224,6 +259,11 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
         packaging,
         identity,
         capabilities_kappa: requires.to_string(),
+        build_provenance: BuildProvenanceReport {
+            schema_version: 1,
+            canonical: false,
+            layers: provenance,
+        },
     })
 }
 
@@ -486,16 +526,31 @@ fn read_required(root: &Path, path: &Path) -> Result<Vec<u8>> {
     std::fs::read(&resolved).map_err(|error| LiveError::io(&resolved, error))
 }
 
-fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<Vec<u8>> {
+struct CompiledLayerContent {
+    bytes: Vec<u8>,
+    provenance: Option<holo_python_component::BuildProvenance>,
+}
+
+fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<CompiledLayerContent> {
     match (&layer.path, &layer.source) {
-        (Some(path), None) => read_required(root, path),
+        (Some(path), None) => Ok(CompiledLayerContent {
+            bytes: read_required(root, path)?,
+            provenance: None,
+        }),
         (None, Some(CompileSource::Python(source))) => match source.profile {
             holo_python::PythonProfile::Rootfs => {
                 let arch = required_field(layer, "arch", layer.arch.as_deref())?;
-                holo_python::compile(root, source, arch)
+                Ok(CompiledLayerContent {
+                    bytes: holo_python::compile(root, source, arch)?,
+                    provenance: None,
+                })
             }
             holo_python::PythonProfile::WasiComponent => {
-                holo_python_component::compile(root, source)
+                let compiled = holo_python_component::compile(root, source)?;
+                Ok(CompiledLayerContent {
+                    bytes: compiled.bytes,
+                    provenance: Some(compiled.provenance),
+                })
             }
         },
         _ => Err(layer_config_error(

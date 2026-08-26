@@ -311,6 +311,15 @@ successful completion, while a trap is `LIVE_PROTOCOL_ERROR`. Direct and
 resident providers validate the declared entry during preparation and use a
 fresh instance for each input.
 
+The accepted next ABI design keeps the callable `entry` separate from contract
+selection. A Wasm layer's canonical `aux` tag carries a namespaced contract
+identifier; empty remains the byte-compatible alias for
+`hologram:guest/core-wasm@1`, while a future Component Model archive declares
+`hologram:guest/component@1`. The checked-in Component v1 WIT world accepts and
+returns one byte list and imports nothing. Component execution is not yet
+implemented: unknown contracts and unavailable or under-granted imports must
+fail during preparation without falling back to core Wasm or ambient WASI.
+
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as
 fat archives in memory and are not written or imported. Repeat `--input` for

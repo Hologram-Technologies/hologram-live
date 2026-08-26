@@ -1,17 +1,17 @@
-# Current sprint: M3.1 typed Wasm entry and exit contracts
+# Current sprint: M3.1 guest-contract negotiation
 
 ## Sprint status
 
-- State: active
+- State: complete
 - Started: 2026-08-25
 - Last reviewed: 2026-08-25
 - Durable milestone: [M3.1 — Wasm provider migration](plans/holo-application-runtime.md#m31-wasm-provider-migration)
-- Goal: make the manifest-declared Wasm entry authoritative under an explicit,
-  backward-compatible core-Wasm v1 contract, then define typed application
-  completion before introducing a new guest ABI
-- Exit signal: direct and resident execution invoke the declared entry, invalid
-  contracts fail during provider preparation, and v1 completion semantics are
-  explicit across provider and public result boundaries
+- Goal: finish the core-Wasm v1 entry and completion contracts, then define the
+  canonical version-negotiation and capability-gated host boundary required
+  before implementing a Component Model guest ABI
+- Exit signal: the canonical contract selector, compatibility rules, first WIT
+  world, host-import admission table, and typed diagnostics are accepted without
+  advertising Component Model or WASI execution prematurely
 
 This short-lived tracker replaces the completed M2 tracker, which remains in
 Git history. Durable requirements stay in
@@ -24,18 +24,24 @@ accepted decisions stay in [`adrs/`](adrs/).
   therefore into canonical application identity.
 - [x] `ResolvedLayer` and `LayerPrepareContext` preserve that entry through
   planning and provider selection.
-- [x] `src/holo_wasm.rs` ignores the resolved entry and hard-codes the exported
-  function name `holo_run` during validation and invocation.
-- [x] The compiler and non-interactive app generator default an omitted Wasm
-  entry to `_start`, while the implemented byte-transform contract requires
-  `(i32, i32) -> i64` and a separate `holo_alloc` export.
+- [x] Slice 1 removed the original `holo_run` runtime hard-code: direct and
+  resident preparation now resolve the canonical manifest entry.
+- [x] The compiler and non-interactive app generator now default an omitted
+  Wasm entry to `holo_run`, matching the implemented `(i32, i32) -> i64`
+  transform and separate `holo_alloc` export.
 - [x] Core-Wasm guest contract v1 has no imports, no WASI, one byte input and
   one byte output per invocation, and a fresh instance for each input.
-- [x] `LayerInvocation` currently returns output bytes and elapsed time but no
-  typed completion or exit status.
+- [x] Slice 2 separates `LayerInvocation` output bytes from typed `Returned` or
+  provider-observed `Exited` completion.
 - [x] The current `.holo` manifest has no independent Wasm ABI-version field;
   adding one requires an upstream-compatible format decision rather than an
   undocumented entry-name convention.
+- [x] The pinned upstream `Layer.aux` string is canonical, identity-bearing,
+  kind-specific, and already encoded for every Wasm layer, but current upstream
+  validation requires it to be empty for portable layers.
+- [x] Older upstream validators fail closed on a non-empty Wasm `aux`, so using
+  that slot for explicit future contract identifiers cannot silently select the
+  legacy runtime.
 
 ## Contract guardrails
 
@@ -132,18 +138,39 @@ build.
 
 ## Slice 3 — Version negotiation and host-interface design
 
-- [ ] Decide where a future Wasm ABI identifier is canonically represented;
+- [x] Decide where a future Wasm ABI identifier is canonically represented;
   do not overload the callable entry name.
-- [ ] Define compatibility negotiation between core-Wasm v1 and a component
+- [x] Define compatibility negotiation between core-Wasm v1 and a component
   model / WIT contract.
-- [ ] Define the first Hologram WIT world with one byte input and one byte output.
-- [ ] Inventory every proposed WASI or Hologram host import and map it to a
+- [x] Define the first Hologram WIT world with one byte input and one byte output.
+- [x] Inventory every proposed WASI or Hologram host import and map it to a
   specific admitted capability field.
-- [ ] Define unavailable-import and under-granted-import diagnostics before
+- [x] Define unavailable-import and under-granted-import diagnostics before
   linking any host interface.
-- [ ] Record the accepted design in a dedicated guest-contract ADR.
-- [ ] Keep component-model implementation and Python/WASI proof in M3.1a after
+- [x] Record the accepted design in a dedicated guest-contract ADR.
+- [x] Compile the checked-in WIT through Wasmtime bindgen and guard that the v1
+  world remains import-free.
+- [x] Keep component-model implementation and Python/WASI proof in M3.1a after
   the design and resource limits are accepted.
+
+Slice 3 evidence (2026-08-25): ADR 011 selects the existing canonical
+`Layer.aux` slot as the Wasm guest-contract identifier. Empty remains the
+byte-compatible alias for `hologram:guest/core-wasm@1`; explicit
+`hologram:guest/component@1` archives fail closed on older runtimes. Exact-major
+registry negotiation never falls back across contracts. The checked-in
+`hologram:application@1.0.0` WIT world exports one stateless binary `run` and
+imports nothing. The host-interface inventory maps storage, channels, network,
+and scalar limits to current canonical fields while withholding clocks, random,
+environment, process, secrets, inference, and raw ambient WASI authority until
+the capability schema can represent them. A Wasmtime-bindgen conformance test
+parses the checked-in world and guards its import-free boundary. Unknown
+contracts, malformed worlds, and under-granted imports have distinct typed
+preparation failures. Upstream validation, runtime implementation, enforced
+resource limits, and Python/WASI proof remain explicitly routed to M3.1a.
+Full verification passes formatting, source-size and product-boundary gates,
+all-target checks, 154 library tests, 21 CLI tests, the WIT conformance test,
+Clippy with warnings denied, all 11 BDD scenarios / 115 steps, the optimized
+release build, release smoke, and the 13-page Astro documentation build.
 
 ## Documentation and conformance
 
@@ -164,9 +191,14 @@ build.
   separately from byte outputs and does not fabricate a numeric status. The
   additive public type can carry a real provider-observed exit code; a future
   guest-visible exit contract remains part of versioned ABI design.
-- [ ] `DISC-015` — **Next** — The canonical manifest has no Wasm ABI-version
-  field. Route to Slice 3 and upstream format review; do not encode versioning
-  in filenames or entry strings.
-- [ ] `DISC-016` — **Later** — Provider receipt of scalar budgets does not yet
-  enforce fuel, memory, output size, or deadlines. Route to M5 before enabling
-  untrusted host interfaces or advertising Python/WASI execution.
+- [x] `DISC-015` — **Resolved in Slice 3 design** — Use the existing canonical
+  Wasm `Layer.aux` tag for namespaced contract identifiers, with empty as the
+  legacy core-Wasm v1 alias. Coordinate the validation change upstream before
+  emitting a non-empty tag; do not encode versioning in filenames or entries.
+- [ ] `DISC-016` — **Next gate** — Provider receipt of scalar budgets does not yet
+  enforce fuel, memory, output size, or deadlines. Land the minimum component
+  limits in M3.1a before advertising Python/WASI execution and retain broader
+  provider hardening in M5.
+- [ ] `DISC-017` — **Next** — The pinned upstream validator rejects every
+  non-empty Wasm `aux`. Land the namespaced contract-tag validation upstream
+  and pin it here before the compiler can emit Component Model archives.

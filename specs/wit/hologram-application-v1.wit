@@ -1,0 +1,22 @@
+package hologram:application@1.0.0;
+
+/// The import-free Hologram Component Model v1 guest interface.
+interface guest {
+  enum error-code {
+    invalid-input,
+    failed,
+  }
+
+  record guest-error {
+    code: error-code,
+    message: string,
+  }
+
+  /// Run one stateless invocation over one binary input and output.
+  run: func(input: list<u8>) -> result<list<u8>, guest-error>;
+}
+
+/// A component exports this world and receives no ambient host interfaces.
+world application {
+  export guest;
+}

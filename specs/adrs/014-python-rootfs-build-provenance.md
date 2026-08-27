@@ -13,8 +13,8 @@ between the requested recipe, observed Docker environment, emitted rootfs
 layer, and final image identity.
 
 That gap is especially confusing because the default base
-`python:3.12-slim` is mutable and Docker's exported OCI archive is not
-normalized for byte-for-byte reproducibility. ADR 015 subsequently closed the
+`python:3.12-slim` is mutable and Docker's exported archive was not normalized.
+ADR 015 subsequently closed the
 mutable-tag build race by binding real builds to a registry manifest digest.
 Reporting observations is still useful, but those observations must not be
 mistaken for either canonical application identity or a reproducibility claim.
@@ -33,8 +33,8 @@ A rootfs entry from `compile --check` records:
 - normalized logical paths and SHA-256 values for `pyproject.toml`, `uv.lock`,
   and the versioned source-tree digest;
 - Docker as the requested builder, without claiming an observed version; and
-- `reproducible: false` with the unresolved mutable-base and/or unnormalized
-  OCI-output blocker.
+- `reproducible: false` with the unresolved mutable-base and/or remaining
+  clean-supported-host proof blocker.
 
 `compile --check` remains read-only and does not require or contact Docker. A
 completed compile adds the registry-resolved reference that ADR 015 passes to
@@ -69,7 +69,8 @@ hologram --json compile hologram.json --output application.holo \
   absent until compilation.
 - Planned checks expose an unresolved mutable base without contacting a
   registry; completed builds expose its digest binding. Docker export
-  nondeterminism remains a machine-readable blocker.
+  normalization is reported explicitly, while clean-build equality remains a
+  machine-readable blocker under ADR 017.
 - Provenance stays additive and may evolve independently of the archive codec.
 - The report is not yet a signed attestation or an SBOM.
 
@@ -77,7 +78,7 @@ hologram --json compile hologram.json --output application.holo \
 
 - Keep ADR 015's registry resolver compatible with authenticated registries and
   future OCI-native builders.
-- Define and implement a normalized, byte-reproducible OCI/rootfs construction
-  path, then prove equal layer κ values across clean supported hosts.
+- Complete ADR 017's uncached cross-host proof and close any remaining
+  build-content differences before setting `reproducible: true`.
 - Add dependency inventory and SBOM material for the installed rootfs closure.
 - Define retention and signing when this evidence graduates to an attestation.

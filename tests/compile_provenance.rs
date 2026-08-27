@@ -95,6 +95,11 @@ fn rootfs_compile_check_reports_planned_provenance_without_docker() {
     assert_eq!(source["dependency_installer"]["name"], "uv");
     assert_eq!(source["dependency_installer"]["version"], "0.11.8");
     assert_eq!(source["builder"]["name"], "docker");
+    assert_eq!(
+        source["builder"]["archive_format"],
+        "normalized-docker-archive-v1"
+    );
+    assert_eq!(source["builder"]["source_date_epoch"], 0);
     assert!(source["builder"].get("client_version").is_none());
     assert!(source["builder"].get("server_version").is_none());
     assert!(source.get("output").is_none());
@@ -108,5 +113,5 @@ fn rootfs_compile_check_reports_planned_provenance_without_docker() {
     assert!(source["reproducibility"]["blocker"]
         .as_str()
         .is_some_and(|blocker| blocker.contains("not resolved until compilation")
-            && blocker.contains("OCI representation")));
+            && blocker.contains("clean builds")));
 }

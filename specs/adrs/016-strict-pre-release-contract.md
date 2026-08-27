@@ -21,7 +21,8 @@ Live supports one complete current contract:
 - source-manifest schema version 4 only;
 - explicit Wasm `entry` and canonical `contract` tags;
 - canonical `CapabilitySet` objects only, including the canonical empty set;
-- Python rootfs bundle schema version 2 only;
+- Python rootfs bundle schema version 3 only, using ADR 017's normalized Docker
+  archive;
 - configuration schema version 2 only; and
 - complete history, resident, and run records, including typed completion and
   authorization evidence.

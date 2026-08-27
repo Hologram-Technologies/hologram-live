@@ -1,4 +1,93 @@
-# Current sprint: M4.2 normalized Python rootfs archives
+# Current sprint: M4.2 clean Python rootfs equality
+
+## Sprint status
+
+- State: active
+- Started: 2026-08-26
+- Last reviewed: 2026-08-26
+- Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
+- Decision: [ADR 017](adrs/017-normalized-python-rootfs-archive.md)
+- Goal: prove that uncached rootfs compilation is byte-identical on independent
+  clean builders for both supported Linux target architectures
+- Exit signal: the release gate compares two clean replicas each for
+  `linux/amd64` and `linux/arm64`, all target-local identities match, and any
+  generated filesystem differences have been eliminated
+
+## Builder contract
+
+- [x] Distinguish the five standalone-server release hosts from the Linux
+  container-engine contract required to compile a rootfs.
+- [x] Compare independent builder replicas within one target architecture;
+  never require an amd64 artifact and an arm64 artifact to share identity.
+- [x] Add `compile --no-build-cache` and pass Docker `--no-cache` without
+  weakening the normal cached developer path.
+- [x] Record `builder.cache_disabled` in non-canonical completed provenance.
+- [x] Keep `compile --check` offline and report that no build cache was disabled.
+
+## Reproducibility evidence
+
+- [x] Add `just python-rootfs-repro` with one JSON document on stdout and
+  progress on stderr so every result can be queried with `jq`.
+- [x] Compare image ID, rootfs layer κ/size, application κ, archive κ/size, and
+  footer fingerprint.
+- [x] Add two independent clean GitHub runners per architecture and a
+  target-aware aggregate comparison artifact.
+- [x] Make the clean-builder matrix a prerequisite of every server release.
+- [x] Run the local two-build uncached probe and record its identities here.
+- [ ] Run the clean GitHub matrix and record the workflow evidence here.
+- [ ] If either comparison fails, identify and normalize the differing image
+  config or generated filesystem bytes, then rerun both proofs.
+
+Local evidence (2026-08-26): the first uncached comparison exposed unstable
+timestamps in every generated Docker layer. A two-stage recipe reduced that
+to the local-project `uv_cache.json`, whose nanosecond source timestamp also
+changed its `RECORD` hash. The final recipe installs only locked dependencies,
+runs the already-staged source through `PYTHONPATH`, normalizes the runtime
+tree to epoch zero, and copies only that tree onto the pinned base. Two
+uncached macOS-arm64/Linux-arm64-engine builds then matched exactly: image ID
+`sha256:a4d4ad759567e43ebec5bcc84d5dae5a52a0a5f3fcce74cd7fe1e756f97e2271`,
+rootfs layer κ
+`blake3:64f53c4cf1f721a7efa857e3397589034eea565adb89dc93ce3db8799062f538`,
+application κ
+`blake3:9b20b3cb7f6a9fcabcd9888b54a05bad6b7f9c50a396ecfdf5cbdd4aae30b451`,
+archive κ
+`blake3:e31387403074e0e7546de124012764c6b389222d881d50d66e48447260ca0048`,
+and footer fingerprint
+`f4638af9a5d3e5c95d3c1170b558e82796095cec5773e9e2cfb16a5c5f0c9e25`.
+The resulting archive executed NumPy/pandas successfully and returned three
+rows, mean `20.0`, and sum `60.0` from an isolated current configuration.
+
+## Verification and delivery
+
+- [x] Add focused CLI/provenance and report-comparison tests.
+- [x] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
+  documentation, and desktop gates.
+- [x] Update README, website Python guidance, ADR 017, and the durable runtime
+  plan with the rootfs-builder boundary and exact commands.
+- [ ] Commit, open and merge the PR, remove only this worktree, and leave the
+  primary checkout clean on synchronized `main`.
+
+Repository evidence (2026-08-26): `just verify` passed formatting, source-size
+and product-boundary checks, locked workspace check/tests (including 198
+library tests, 23 CLI tests, and four provenance/comparator tests), Clippy with
+warnings denied, 12 BDD scenarios with 123 steps, the optimized server build,
+and isolated smoke. `just docs` regenerated OpenAPI and built all 13 pages.
+The Tauri release gate reported zero npm vulnerabilities and produced the
+macOS application and arm64 DMG. The docs audit continues to report the
+existing one low and two high findings.
+
+## Next prioritized work
+
+- [ ] `DISC-017d` — Supply deterministic Python Component build randomness and
+  prove clean supported-host equality.
+- [ ] Add authenticated private-registry integration coverage without exposing
+  credentials in build provenance.
+- [ ] Continue M4 deterministic compiler work after both Python profiles have
+  clean-build evidence.
+
+---
+
+# Previous sprint: M4.2 normalized Python rootfs archives
 
 ## Sprint status
 
@@ -25,8 +114,8 @@
 - [x] Set `SOURCE_DATE_EPOCH=0` for the build and disable injected provenance.
 - [x] Reject unsafe paths, duplicate or non-file members, missing references,
   oversized archives, and image-ID mismatches.
-- [x] Keep build provenance non-canonical and `reproducible: false` until clean
-  builds match across every supported release host.
+- [x] Keep build provenance non-canonical and `reproducible: false` until the
+  current clean Linux builder matrix passes for both rootfs target architectures.
 
 ## Tests and evidence
 
@@ -37,8 +126,8 @@
   application, archive, and footer identities.
 - [x] Remove the generated local image tag, cold-load from the `.holo`, and
   recover three rows, mean `20.0`, and sum `60.0`.
-- [ ] Run uncached clean builds on macOS arm64/x86_64, Linux arm64/x86_64, and
-  Windows x86_64 and compare config, layer, application, and archive identities.
+- [x] Hand uncached equality to the current sprint, with release-binary hosts
+  separated from the Docker-compatible Linux builder contract.
 - [x] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
   documentation, and desktop gates.
 

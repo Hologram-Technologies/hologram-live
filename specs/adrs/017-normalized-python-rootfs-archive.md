@@ -45,7 +45,26 @@ archive with `docker image load` and verifies the loaded tag has that exact ID.
 
 Build provenance names `normalized-docker-archive-v1`, source epoch zero,
 bundle schema 3, and the provider. It remains `canonical: false` and outside
-application identity.
+application identity. `compile --no-build-cache` adds Docker's `--no-cache`
+build option and records `builder.cache_disabled: true`; `compile --check`
+remains offline and records `false` because no build occurred.
+
+The rootfs build contract requires a Docker-compatible Linux engine. That is
+separate from the five operating-system/architecture combinations on which the
+standalone server binary is released. The reproducibility release gate uses
+two independent clean Linux runners for each output architecture
+(`linux/amd64` and `linux/arm64`) and compares replicas within the target.
+Cross-architecture κ equality is neither expected nor required.
+
+The application image is a two-stage build. The disposable builder installs
+the pinned `uv` tool and locked third-party dependencies. It does not install
+the local project as a wheel: `uv_cache.json` embeds the source directory's
+nanosecond timestamp and `RECORD` then hashes that unstable value. Instead the
+runtime imports the compiler-staged source through `PYTHONPATH=/app/src`.
+Before the final stage, every application and launcher filesystem timestamp is
+set to epoch zero. The final image starts from the same digest-bound base and
+copies only the normalized application and launcher trees, excluding `uv`, its
+cache, and all transient build layers.
 
 ## Consequences
 
@@ -77,10 +96,21 @@ and archive κ
 After removing the local tag, direct execution restored the embedded image and
 returned three rows, mean `20.0`, and sum `60.0`.
 
+The first uncached comparison found that all generated layers differed. The
+two-stage build isolated the remaining difference to the local project's
+timestamped `uv_cache.json` and its `RECORD` row. After removing that
+installation from the runtime image, two uncached arm64 builds produced image
+ID `sha256:a4d4ad759567e43ebec5bcc84d5dae5a52a0a5f3fcce74cd7fe1e756f97e2271`
+and equal rootfs layer κ
+`blake3:64f53c4cf1f721a7efa857e3397589034eea565adb89dc93ce3db8799062f538`.
+The complete application and archive identities also matched, and the archive
+executed successfully. The independent Linux runner matrix remains required
+before provenance may claim reproducibility.
+
 ## Follow-up
 
-- Run uncached clean builds on every supported release host and compare config,
-  layer, application, and archive identities.
+- Run the uncached two-replica Linux builder matrix for both supported target
+  architectures and compare config, layer, application, and archive identities.
 - Pin every build-time acquisition, including the uv installer artifact, and
   eliminate or normalize any differing generated filesystem content.
 - Add authenticated private-registry coverage and signed SBOM/attestation

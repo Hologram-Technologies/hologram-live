@@ -35,7 +35,7 @@ cleanup() {
   if [[ "$archive_persisted" == false ]]; then
     rm -f "$archive"
   fi
-  rmdir "$demo_dir"
+  rm -rf -- "$demo_dir"
 }
 trap cleanup EXIT
 
@@ -45,10 +45,17 @@ cargo build --release --locked --package hologram-live --bin hologram --manifest
 binary="$repo_root/target/release/hologram"
 manifest="$repo_root/examples/python-numpy-pandas/hologram.json"
 request="$repo_root/examples/python-numpy-pandas/request.json"
+isolated_env=(
+  env
+  "HOLOGRAM_CONFIG_DIR=$demo_dir/config"
+  "HOLOGRAM_DATA_DIR=$demo_dir/data"
+  "HOLOGRAM_STATE_DIR=$demo_dir/state"
+  "HOLOGRAM_CACHE_DIR=$demo_dir/cache"
+)
 
-"$binary" --json compile "$manifest" --check >/dev/null
-compile_json=$("$binary" --json compile "$manifest" --output "$archive")
-run_json=$("$binary" --json run "$archive" --input "$request")
+"${isolated_env[@]}" "$binary" --json compile "$manifest" --check >/dev/null
+compile_json=$("${isolated_env[@]}" "$binary" --json compile "$manifest" --output "$archive")
+run_json=$("${isolated_env[@]}" "$binary" --json run "$archive" --input "$request")
 python3 -c '
 import json
 import sys

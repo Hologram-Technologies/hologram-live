@@ -614,13 +614,32 @@ hologram --json compile examples/python-numpy-pandas/hologram.json \
   | jq '.build_provenance' > numpy-pandas.provenance.json
 ```
 
+Pass `--no-build-cache` to make Docker rebuild every generated rootfs layer.
+Completed provenance records `builder.cache_disabled: true`, so saved evidence
+can distinguish an uncached build from the normal developer path. Compare two
+uncached builds locally with one machine-readable report:
+
+```bash
+just python-rootfs-repro | jq .
+just python-rootfs-repro | jq '.equal, .identities'
+```
+
+The release gate runs one uncached build on each of two independent clean
+Linux runners for both `linux/amd64` and `linux/arm64`, then compares image,
+rootfs-layer, application, archive, and footer identities within each target.
+The architectures are intentionally not compared with each other because they
+are different application artifacts. macOS and Windows server binaries can
+drive a configured Docker-compatible Linux engine, but GitHub's hosted runners
+do not supply one; they are release hosts, not additional rootfs build
+platforms.
+
 `compile --check` remains offline, so a mutable tag has no
 `resolved_reference` until a real compile. A digest-pinned `source.base` is
 already resolved and bypasses the registry lookup. Completed builds identify
 the normalized Docker archive, source epoch zero, bundle schema 3, and exact
-output. They still say `reproducible: false` until uncached clean builds
-produce byte-identical image config and layer blobs on every supported release
-host.
+output. They still say `reproducible: false` until the clean Linux builder
+matrix proves byte-identical image config and layer blobs for both supported
+target architectures.
 
 `hologram run` preserves the binary-safe `HoloRunResult` envelope by default. Add `--output-format text` for UTF-8 application output or `--output-format json` for JSON application output. One decoded result prints directly; results from multiple `--input` arguments print in order, with JSON results collected into an array. Invalid text or JSON returns a typed protocol error instead of changing the bytes.
 
@@ -640,7 +659,7 @@ hologram app init ./my-python-app \
   --project . --entry my_package:main --lock uv.lock --arch arm64
 ```
 
-Compilation stages only `pyproject.toml`, the declared `uv.lock`, and `src/`, then runs `uv sync --locked` in a clean Linux image. It does not read or copy the host `.venv`. Direct execution validates the archive and target architecture, disables networking, mounts the container filesystem read-only, drops Linux capabilities, enables `no-new-privileges`, and applies CPU, memory, PID, temporary-storage, input/output, and 30-second wall-clock limits.
+Compilation stages only `pyproject.toml`, the declared `uv.lock`, and `src/`, then installs the locked third-party dependencies in a disposable Linux builder. It does not read or copy the host `.venv`, and it does not install the local project as a wheel because uv's local-project cache metadata contains source timestamps. The final image imports the already-staged application through `/app/src`, normalizes its filesystem timestamps to epoch zero, and excludes uv and transient build layers. Direct execution validates the archive and target architecture, disables networking, mounts the container filesystem read-only, drops Linux capabilities, enables `no-new-privileges`, and applies CPU, memory, PID, temporary-storage, input/output, and 30-second wall-clock limits.
 
 This is an intentionally explicit demo provider, not the final untrusted-workload boundary: it requires a local Docker-compatible engine with Buildx registry inspection, supports direct fat archives only, and leaves cached OCI images behind for repeat runs. Bundle schema 3 re-addresses the exact image config and ordered layers as SHA-256 blobs, emits a canonical manifest and fixed tar headers, then applies fixed-level Zstandard compression. New archives record the exact image ID, so a warm local run skips decompression and `docker image load` only when that trusted ID is already present; a cold machine still restores the image from the archive. Compile once with an optimized release binary and reuse the resulting `.holo`; debug builds spend substantially longer hashing the roughly 100 MiB archive. `just python-holo-demo` builds and uses the release CLI, with a one-time optimized link on the first invocation. Mutable `source.base` tags are resolved and bound to a registry manifest digest before the build; an already digest-pinned value skips that lookup. Repeated exports of identical config/layer bytes are now byte-identical, but uncached clean-build equality across the release matrix remains open. Capability-gated WASI and hardware-backed microVM rootfs execution remain planned. See the [Python application guide](https://hologram-technologies.github.io/hologram-live/docs/python-apps), [ADR 008](specs/adrs/008-python-rootfs-oci-provider.md), [ADR 012](specs/adrs/012-locked-python-component-dependencies.md), [ADR 014](specs/adrs/014-python-rootfs-build-provenance.md), [ADR 015](specs/adrs/015-python-rootfs-base-digest-binding.md), and [ADR 017](specs/adrs/017-normalized-python-rootfs-archive.md).
 

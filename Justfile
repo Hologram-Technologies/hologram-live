@@ -40,6 +40,10 @@ python-component-holo-demo:
 python-holo-package output="target/numpy-pandas.holo":
     ./scripts/check-python-holo-demo.sh --output "{{output}}"
 
+# Build the NumPy/pandas rootfs without Docker's build cache and compare identities.
+python-rootfs-repro builds="2":
+    ./scripts/check-python-rootfs-reproducibility.sh --build-count "{{builds}}"
+
 # Keep production source files small enough to review and refactor.
 file-size:
     ./scripts/check-file-size.sh

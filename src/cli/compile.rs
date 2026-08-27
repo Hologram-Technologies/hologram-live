@@ -1,7 +1,8 @@
 use super::{helpers, Cli};
 use clap::Args;
 use hologram_live::compile::{
-    check_manifest, compile_manifest_with, BuildProvenanceReport, HoloPackaging,
+    check_manifest, compile_manifest_with_options, BuildProvenanceReport, CompileOptions,
+    HoloPackaging,
 };
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::inspect_bytes;
@@ -21,6 +22,9 @@ pub struct CompileArgs {
     /// Validate the manifest and its source inputs without writing an archive.
     #[arg(long)]
     pub check: bool,
+    /// Ignore reusable source-builder caches for this compilation.
+    #[arg(long)]
+    pub no_build_cache: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -50,9 +54,10 @@ struct CheckReport {
 
 pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
     if args.check {
-        if args.output.is_some() || args.thin {
+        if args.output.is_some() || args.thin || args.no_build_cache {
             return Err(LiveError::Config(
-                "compile --check cannot be combined with --output or --thin".to_owned(),
+                "compile --check cannot be combined with --output, --thin, or --no-build-cache"
+                    .to_owned(),
             ));
         }
         let manifest = args.manifest.clone();
@@ -78,9 +83,14 @@ pub async fn run(cli: Cli, args: CompileArgs) -> Result<()> {
     } else {
         HoloPackaging::Fat
     };
-    let compiled = tokio::task::spawn_blocking(move || compile_manifest_with(&manifest, packaging))
-        .await
-        .map_err(|error| LiveError::Conflict(format!("compile task failed: {error}")))??;
+    let options = CompileOptions {
+        no_build_cache: args.no_build_cache,
+    };
+    let compiled = tokio::task::spawn_blocking(move || {
+        compile_manifest_with_options(&manifest, packaging, options)
+    })
+    .await
+    .map_err(|error| LiveError::Conflict(format!("compile task failed: {error}")))??;
     let output = args
         .output
         .unwrap_or_else(|| args.manifest.with_extension("holo"));

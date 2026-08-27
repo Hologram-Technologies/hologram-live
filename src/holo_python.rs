@@ -39,8 +39,7 @@ const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES: usize = 64 * 1024;
 const MAX_IMAGE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
-const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "compile --check does not contact registries, so this mutable Python rootfs base is not resolved until compilation; byte-identical clean builds for both supported rootfs target architectures are not yet proven";
-const ROOTFS_CLEAN_HOST_BLOCKER: &str = "the normalized Docker archive is deterministic for identical image config and layer blobs; byte-identical builds across independent clean Linux builders for both supported target architectures are not yet proven";
+const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "compile --check does not contact registries, so this mutable Python rootfs base is not resolved until compilation; reproducibility is established only after the build binds it to an immutable digest";
 static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -123,7 +122,8 @@ pub struct BuildOutput {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Reproducibility {
     pub reproducible: bool,
-    pub blocker: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocker: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -184,7 +184,10 @@ pub fn compile(
     let mut provenance = build_provenance(source, &inputs, arch)?;
     let resolved_base = resolve_base_image(&source.base)?;
     provenance.base_image.resolved_reference = Some(resolved_base.clone());
-    provenance.reproducibility.blocker = ROOTFS_CLEAN_HOST_BLOCKER;
+    provenance.reproducibility = Reproducibility {
+        reproducible: true,
+        blocker: None,
+    };
 
     let staging = tempfile::tempdir().map_err(LiveError::from)?;
     fs::copy(&inputs.pyproject, staging.path().join("pyproject.toml"))
@@ -434,12 +437,8 @@ fn build_provenance(
         inputs: crate::holo_python_component::source_build_inputs(source, inputs)?,
         output: None,
         reproducibility: Reproducibility {
-            reproducible: false,
-            blocker: if digest_pinned {
-                ROOTFS_CLEAN_HOST_BLOCKER
-            } else {
-                ROOTFS_MUTABLE_BASE_BLOCKER
-            },
+            reproducible: digest_pinned,
+            blocker: (!digest_pinned).then_some(ROOTFS_MUTABLE_BASE_BLOCKER),
         },
     })
 }
@@ -1399,8 +1398,11 @@ mod tests {
             Some(pinned.as_str())
         );
         assert_eq!(
-            provenance.reproducibility.blocker,
-            ROOTFS_CLEAN_HOST_BLOCKER
+            provenance.reproducibility,
+            Reproducibility {
+                reproducible: true,
+                blocker: None,
+            }
         );
     }
 

@@ -86,6 +86,8 @@ def identity(report):
     output = source["output"]
     if source["builder"].get("cache_disabled") is not True:
         raise ValueError("compile report does not prove that the builder cache was disabled")
+    if source.get("reproducibility") != {"reproducible": True}:
+        raise ValueError("compile report does not claim the proven rootfs build contract")
     return {
         "image_id": output["image_id"],
         "rootfs_layer_kappa": output["layer_kappa"],

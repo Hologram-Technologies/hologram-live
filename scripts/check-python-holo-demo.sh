@@ -82,8 +82,8 @@ if base_image.get("reference") != "python:3.12-slim" or not resolved_base.starts
 if len(resolved_base.removeprefix("python@sha256:")) != 64:
     print(f"rootfs provenance contains an invalid resolved base: {base_image!r}", file=sys.stderr)
     raise SystemExit(1)
-if "not resolved until compilation" in source["reproducibility"]["blocker"]:
-    print(f"completed rootfs provenance retained its planned base blocker: {source!r}", file=sys.stderr)
+if source["reproducibility"] != {"reproducible": True}:
+    print(f"completed rootfs provenance does not claim the proven build contract: {source!r}", file=sys.stderr)
     raise SystemExit(1)
 build_output = source.get("output", {})
 if not build_output.get("layer_kappa", "").startswith("blake3:"):

@@ -928,7 +928,9 @@ fn build_echo_example() -> PathBuf {
         .status()
         .expect("build echo-plugin example");
     assert!(status.success(), "cargo build --example echo-plugin failed");
-    root.join("target/debug/examples/echo-plugin")
+    std::env::var_os("CARGO_TARGET_DIR")
+        .map_or_else(|| root.join("target"), PathBuf::from)
+        .join("debug/examples/echo-plugin")
 }
 
 fn run_cli(world: &BddWorld, args: &[&str]) -> Output {

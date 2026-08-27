@@ -204,16 +204,45 @@ pub fn compile(
         source,
         arch,
     )?;
-    let dockerfile = dockerfile(&resolved_base, &source.entry);
-    fs::write(staging.path().join("Dockerfile"), dockerfile)
+    let builder_dockerfile = builder_dockerfile(&resolved_base);
+    fs::write(
+        staging.path().join("Builder.Dockerfile"),
+        builder_dockerfile,
+    )
+    .map_err(|error| LiveError::io(staging.path(), error))?;
+    let runtime_dockerfile = runtime_dockerfile(&resolved_base, &source.entry);
+    fs::write(staging.path().join("Dockerfile"), runtime_dockerfile)
         .map_err(|error| LiveError::io(staging.path(), error))?;
 
     let platform = docker_platform(arch)?;
     let source_date_epoch = format!("SOURCE_DATE_EPOCH={SOURCE_DATE_EPOCH}");
+    let builder_tag = format!("{image_tag}-builder");
+    let builder_build = Command::new("docker")
+        .args(docker_build_args(
+            platform,
+            &builder_tag,
+            "Builder.Dockerfile",
+            &source_date_epoch,
+            no_build_cache,
+        ))
+        .current_dir(staging.path())
+        .env("SOURCE_DATE_EPOCH", "0")
+        .output()
+        .map_err(|error| LiveError::Io(format!("start Docker builder image: {error}")))?;
+    command_succeeded("Docker builder image", &builder_build)?;
+    let runtime_copy = copy_image_file(
+        &builder_tag,
+        "/runtime.tar",
+        &staging.path().join("runtime.tar"),
+    );
+    remove_image_tag(&builder_tag);
+    runtime_copy?;
+
     let build = Command::new("docker")
         .args(docker_build_args(
             platform,
             &image_tag,
+            "Dockerfile",
             &source_date_epoch,
             no_build_cache,
         ))
@@ -276,6 +305,7 @@ pub fn compile(
 fn docker_build_args(
     platform: &str,
     image_tag: &str,
+    dockerfile: &str,
     source_date_epoch: &str,
     no_build_cache: bool,
 ) -> Vec<String> {
@@ -286,7 +316,7 @@ fn docker_build_args(
         "--tag".to_owned(),
         image_tag.to_owned(),
         "--file".to_owned(),
-        "Dockerfile".to_owned(),
+        dockerfile.to_owned(),
         "--build-arg".to_owned(),
         source_date_epoch.to_owned(),
         "--provenance=false".to_owned(),
@@ -296,6 +326,64 @@ fn docker_build_args(
     }
     args.push(".".to_owned());
     args
+}
+
+fn copy_image_file(image_tag: &str, source: &str, destination: &Path) -> Result<()> {
+    let created = Command::new("docker")
+        .args(["container", "create", "--", image_tag])
+        .output()
+        .map_err(|error| LiveError::Io(format!("create Docker builder container: {error}")))?;
+    command_succeeded("Docker builder container create", &created)?;
+    let container = String::from_utf8_lossy(&created.stdout).trim().to_owned();
+    if container.is_empty() {
+        return Err(LiveError::Protocol(
+            "Docker did not return a builder container ID".to_owned(),
+        ));
+    }
+
+    let copied = Command::new("docker")
+        .args(["container", "cp"])
+        .arg(format!("{container}:{source}"))
+        .arg(destination)
+        .output()
+        .map_err(|error| LiveError::Io(format!("copy Docker builder output: {error}")));
+    let removed = Command::new("docker")
+        .args(["container", "rm", "--", &container])
+        .output();
+    match removed {
+        Ok(removed) if !removed.status.success() => tracing::warn!(
+            container,
+            diagnostic = %diagnostic(&removed.stderr),
+            "failed to remove temporary Docker builder container"
+        ),
+        Err(error) => tracing::warn!(
+            container,
+            %error,
+            "failed to start temporary Docker builder container cleanup"
+        ),
+        Ok(_) => {}
+    }
+    let copied = copied?;
+    command_succeeded("Docker builder output copy", &copied)
+}
+
+fn remove_image_tag(image_tag: &str) {
+    match Command::new("docker")
+        .args(["image", "rm", "--", image_tag])
+        .output()
+    {
+        Ok(output) if !output.status.success() => tracing::warn!(
+            image_tag,
+            diagnostic = %diagnostic(&output.stderr),
+            "failed to remove temporary Docker builder image"
+        ),
+        Err(error) => tracing::warn!(
+            image_tag,
+            %error,
+            "failed to start temporary Docker builder image cleanup"
+        ),
+        Ok(_) => {}
+    }
 }
 
 pub fn check_source(
@@ -905,7 +993,7 @@ fn command_succeeded(name: &str, output: &std::process::Output) -> Result<()> {
     }
 }
 
-fn dockerfile(base: &str, entry: &str) -> String {
+fn builder_dockerfile(base: &str) -> String {
     format!(
         "FROM {base} AS builder\n\
          ARG SOURCE_DATE_EPOCH=0\n\
@@ -916,13 +1004,18 @@ fn dockerfile(base: &str, entry: &str) -> String {
          COPY src ./src\n\
          RUN uv sync --locked --no-dev --no-editable --no-install-project\n\
          COPY .hologram/runner.py /hologram/runner.py\n\
-         RUN find /app /hologram -exec touch -h -d '@0' {{}} +\n\
-         FROM {base}\n\
+         RUN find /app /hologram -exec touch -h -d '@0' {{}} + \\\n          && tar --sort=name --format=gnu --mtime='@0' --owner=0 --group=0 --numeric-owner \\\n            -cf /runtime.tar -C / app hologram \\\n          && touch -h -d '@0' /runtime.tar\n\
+"
+    )
+}
+
+fn runtime_dockerfile(base: &str, entry: &str) -> String {
+    format!(
+        "FROM {base}\n\
          ARG SOURCE_DATE_EPOCH=0\n\
          ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=0\n\
+         ADD runtime.tar /\n\
          WORKDIR /app\n\
-         COPY --from=builder /app /app\n\
-         COPY --from=builder /hologram /hologram\n\
          ENV PATH=\"/app/.venv/bin:$PATH\" PYTHONPATH=\"/app/src\" HOLOGRAM_PYTHON_ENTRY=\"{entry}\"\n\
          ENTRYPOINT [\"python\",\"/hologram/runner.py\"]\n"
     )
@@ -1197,8 +1290,9 @@ fn diagnostic(bytes: &[u8]) -> String {
     if trimmed.chars().count() <= 4_096 {
         trimmed.to_owned()
     } else {
-        let tail = trimmed.chars().rev().take(4_096).collect::<Vec<_>>();
-        format!("…{}", tail.into_iter().rev().collect::<String>())
+        let head = trimmed.chars().take(2_048).collect::<String>();
+        let tail = trimmed.chars().rev().take(2_048).collect::<Vec<_>>();
+        format!("{head}\n…\n{}", tail.into_iter().rev().collect::<String>())
     }
 }
 
@@ -1324,13 +1418,18 @@ mod tests {
     #[test]
     fn dockerfile_uses_the_resolved_base_reference() {
         let resolved = format!("python@sha256:{}", "a".repeat(64));
-        let file = dockerfile(&resolved, "example:main");
-        assert!(file.starts_with(&format!("FROM {resolved} AS builder\n")));
-        assert_eq!(file.matches(&format!("FROM {resolved}")).count(), 2);
-        assert!(file.contains("--no-install-project"));
-        assert!(file.contains("touch -h -d '@0'"));
-        assert!(file.contains("PYTHONPATH=\"/app/src\""));
-        assert!(!file.contains("python:3.12-slim"));
+        let builder = builder_dockerfile(&resolved);
+        assert!(builder.starts_with(&format!("FROM {resolved} AS builder\n")));
+        assert_eq!(builder.matches(&format!("FROM {resolved}")).count(), 1);
+        assert!(builder.contains("--no-install-project"));
+        assert!(builder.contains("touch -h -d '@0'"));
+        assert!(builder.contains("tar --sort=name --format=gnu"));
+
+        let runtime = runtime_dockerfile(&resolved, "example:main");
+        assert!(runtime.starts_with(&format!("FROM {resolved}\n")));
+        assert!(runtime.contains("ADD runtime.tar /"));
+        assert!(runtime.contains("PYTHONPATH=\"/app/src\""));
+        assert!(!format!("{builder}{runtime}").contains("python:3.12-slim"));
     }
 
     #[test]
@@ -1338,6 +1437,7 @@ mod tests {
         let cached = docker_build_args(
             "linux/arm64",
             "hologram-python-test:local",
+            "Dockerfile",
             "SOURCE_DATE_EPOCH=0",
             false,
         );
@@ -1346,11 +1446,22 @@ mod tests {
         let uncached = docker_build_args(
             "linux/arm64",
             "hologram-python-test:local",
+            "Dockerfile",
             "SOURCE_DATE_EPOCH=0",
             true,
         );
         assert_eq!(uncached[uncached.len() - 2], "--no-cache");
         assert_eq!(uncached.last().map(String::as_str), Some("."));
+    }
+
+    #[test]
+    fn long_diagnostics_preserve_the_command_context_and_final_error() {
+        let input = format!("context:{}:failure", "x".repeat(5_000));
+        let output = diagnostic(input.as_bytes());
+        assert!(output.starts_with("context:"));
+        assert!(output.ends_with(":failure"));
+        assert!(output.contains("\n…\n"));
+        assert!(output.chars().count() <= 4_099);
     }
 
     #[test]

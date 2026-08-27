@@ -1,0 +1,54 @@
+{
+  "node": {
+    "id": "gpu-a100-07",
+    "dcId": "tx-01",
+    "addr": [3, 17],
+    "utilisation": 0.85,
+    "utilisationEMA": 0.8,
+    "jobsCompleted": 4200,
+    "jobsFailed": 130,
+    "specialisation": { "llm-train": 0.84 },
+    "genome": {
+      "throughput": 0.78,
+      "convergenceRate": 0.71,
+      "faultResilience": 0.66,
+      "bandwidth": 0.6
+    },
+    "lineage": { "generation": 4 },
+    "health": {
+      "derate": 0.96,
+      "hazard": 0.02,
+      "correctableErrors": 1500,
+      "wear": 0.18
+    },
+    "hardware": {
+      "kind": "gpu",
+      "baseRate": 31.4,
+      "tdp": 700,
+      "lifeHours": 43800,
+      "magicCapable": false,
+      "thermalSensitivity": 1.0
+    }
+  },
+  "workloads": [
+    {
+      "id": "llm-train",
+      "magicBudget": 0,
+      "geneEmphasis": ["throughput", "convergenceRate"]
+    },
+    {
+      "id": "qft-64",
+      "magicBudget": 12,
+      "geneEmphasis": ["faultResilience"]
+    }
+  ],
+  "workloadId": "llm-train",
+  "anchorAddress": [3, 22],
+  "energy": {
+    "baseEnergy": 45.0,
+    "price": 62.0,
+    "carbon": 380.0,
+    "pue": 1.35
+  },
+  "balancerEnabled": true
+}

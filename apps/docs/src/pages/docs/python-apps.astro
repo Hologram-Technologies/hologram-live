@@ -201,7 +201,8 @@ def main(request: bytes) -&gt; bytes:
         "builder": &#123;
           "name": "docker",
           "archive_format": "normalized-docker-archive-v1",
-          "source_date_epoch": 0
+          "source_date_epoch": 0,
+          "cache_disabled": false
         &#125;,
         "inputs": [
           &#123; "role": "project-metadata", "path": "pyproject.toml", "sha256": "..." &#125;,
@@ -219,10 +220,16 @@ def main(request: bytes) -&gt; bytes:
   <pre><code>hologram --json compile hologram.json \
   --output numpy-pandas.holo \
   | jq '.build_provenance' &gt; numpy-pandas.provenance.json</code></pre>
-  <p>The compiler asks <code>docker buildx imagetools inspect --raw</code> for a mutable base's original registry manifest, verifies schema 2, hashes those exact bytes with SHA-256, and writes the resulting digest-qualified reference into the Dockerfile. It then builds a clean Linux image for the selected architecture with source epoch zero, installs the pinned <code>uv</code> build tool, runs <code>uv sync --locked --no-dev --no-editable</code>, and adds the generated launcher. A tag change after resolution cannot redirect that build because Docker consumes the fixed digest.</p>
-  <p>Bundle schema 3 does not embed Docker's save stream directly. It hashes the exact image config and ordered layer bytes, re-addresses them under <code>blobs/sha256/&lt;digest&gt;</code>, emits only those blobs and a canonical manifest in lexical order with fixed tar headers, then applies fixed-level Zstandard compression. A completed provenance report names that representation and adds <code>base_image.resolved_reference</code>, observed Docker client/server versions, locally observed base-image identity when available, bundle schema/provider, exact output image ID, rootfs layer κ, and sizes. The requested <code>base_image.reference</code> remains intact. The report is <code>canonical: false</code> and stays outside the archive. Repeated exports of identical config/layer bytes are byte-identical; uncached clean-build equality across every release host remains unproven, so <code>reproducible</code> remains false.</p>
+  <p>The compiler asks <code>docker buildx imagetools inspect --raw</code> for a mutable base's original registry manifest, verifies schema 2, hashes those exact bytes with SHA-256, and writes the resulting digest-qualified reference into the Dockerfile. A disposable Linux builder for the selected architecture installs pinned <code>uv</code> and the locked third-party dependencies, but does not install the local project as a wheel because uv's local-project cache records source timestamps. The final image imports the already-staged project through <code>/app/src</code>, copies only the application and launcher trees after normalizing their timestamps to epoch zero, and excludes uv and transient build layers. A tag change after resolution cannot redirect either stage because Docker consumes the fixed digest.</p>
+  <p>Bundle schema 3 does not embed Docker's save stream directly. It hashes the exact image config and ordered layer bytes, re-addresses them under <code>blobs/sha256/&lt;digest&gt;</code>, emits only those blobs and a canonical manifest in lexical order with fixed tar headers, then applies fixed-level Zstandard compression. A completed provenance report names that representation and adds <code>base_image.resolved_reference</code>, observed Docker client/server versions, locally observed base-image identity when available, bundle schema/provider, exact output image ID, rootfs layer κ, and sizes. The requested <code>base_image.reference</code> remains intact. The report is <code>canonical: false</code> and stays outside the archive.</p>
 
-  <h3>6. Execute the <code>.holo</code></h3>
+  <h3>6. Prove clean-build identities</h3>
+  <p>Use <code>--no-build-cache</code> when you need Docker to rebuild every generated rootfs layer. Completed provenance then records <code>builder.cache_disabled: true</code>. The repository probe performs two such compiles and emits one JSON document suitable for <code>jq</code>:</p>
+  <pre><code>just python-rootfs-repro | jq .
+just python-rootfs-repro | jq '.equal, .identities'</code></pre>
+  <p>The server release gate uses two independent clean Linux runners for each supported output target, <code>linux/amd64</code> and <code>linux/arm64</code>, and compares image, rootfs-layer, application, archive, and footer identities within each architecture. The two architectures are different artifacts and are not expected to share a κ. macOS and Windows server binaries may drive an available Docker-compatible Linux engine, but GitHub's hosted macOS and Windows runners do not provide one; release-host support and rootfs-builder support are separate contracts.</p>
+
+  <h3>7. Execute the <code>.holo</code></h3>
   <pre><code>hologram run numpy-pandas.holo --input request.json \
   --output-format json</code></pre>
   <pre><code>&#123;

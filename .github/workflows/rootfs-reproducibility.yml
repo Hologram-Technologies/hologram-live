@@ -1,0 +1,62 @@
+name: rootfs-reproducibility
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-build:
+    name: ${{ matrix.target }} clean build ${{ matrix.replica }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-amd64
+            replica: a
+          - runner: ubuntu-24.04
+            target: linux-amd64
+            replica: b
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            replica: a
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            replica: b
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - name: Compile once on a clean runner without source-builder caches
+        run: ./scripts/check-python-rootfs-reproducibility.sh --build-count 1 --report rootfs-report.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rootfs-${{ matrix.target }}-${{ matrix.replica }}
+          path: rootfs-report.json
+          if-no-files-found: error
+
+  compare:
+    needs: clean-build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: rootfs-*
+          path: rootfs-reports
+      - name: Compare identities by target architecture
+        run: |
+          python3 scripts/compare-python-rootfs-reports.py \
+            --expected-replicas 2 \
+            --expected-targets 2 \
+            rootfs-reports/*/rootfs-report.json > rootfs-matrix.json
+          jq . rootfs-matrix.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rootfs-reproducibility-matrix
+          path: rootfs-matrix.json
+          if-no-files-found: error

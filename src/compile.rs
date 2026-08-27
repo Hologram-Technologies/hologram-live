@@ -129,6 +129,12 @@ pub enum HoloPackaging {
     Thin,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CompileOptions {
+    /// Ask source builders to ignore reusable build caches.
+    pub no_build_cache: bool,
+}
+
 pub fn compile_manifest(path: &Path) -> Result<CompiledHolo> {
     compile_manifest_with(path, HoloPackaging::Fat)
 }
@@ -189,6 +195,14 @@ pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
 }
 
 pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<CompiledHolo> {
+    compile_manifest_with_options(path, packaging, CompileOptions::default())
+}
+
+pub fn compile_manifest_with_options(
+    path: &Path,
+    packaging: HoloPackaging,
+    options: CompileOptions,
+) -> Result<CompiledHolo> {
     let source = std::fs::read(path).map_err(|error| LiveError::io(path, error))?;
     let specification = parse_compile_manifest(path, &source)?;
     validate_compile_manifest(&specification)?;
@@ -202,7 +216,7 @@ pub fn compile_manifest_with(path: &Path, packaging: HoloPackaging) -> Result<Co
     let mut layers = Vec::with_capacity(specification.layers.len());
     let mut provenance = Vec::new();
     for (layer_index, source_layer) in specification.layers.iter().enumerate() {
-        let compiled_layer = compile_layer_content(root, source_layer)?;
+        let compiled_layer = compile_layer_content(root, source_layer, options)?;
         if let Some(source) = compiled_layer.provenance {
             provenance.push(LayerBuildProvenance {
                 layer_index,
@@ -545,7 +559,11 @@ struct CompiledLayerContent {
     provenance: Option<PythonBuildProvenance>,
 }
 
-fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<CompiledLayerContent> {
+fn compile_layer_content(
+    root: &Path,
+    layer: &CompileLayer,
+    options: CompileOptions,
+) -> Result<CompiledLayerContent> {
     match (&layer.path, &layer.source) {
         (Some(path), None) => Ok(CompiledLayerContent {
             bytes: read_required(root, path)?,
@@ -554,7 +572,7 @@ fn compile_layer_content(root: &Path, layer: &CompileLayer) -> Result<CompiledLa
         (None, Some(CompileSource::Python(source))) => match source.profile {
             holo_python::PythonProfile::Rootfs => {
                 let arch = required_field(layer, "arch", layer.arch.as_deref())?;
-                let compiled = holo_python::compile(root, source, arch)?;
+                let compiled = holo_python::compile(root, source, arch, options.no_build_cache)?;
                 Ok(CompiledLayerContent {
                     bytes: compiled.bytes,
                     provenance: Some(PythonBuildProvenance::Rootfs(Box::new(compiled.provenance))),

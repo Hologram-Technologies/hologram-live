@@ -633,6 +633,45 @@ fn service_uses_development_grant(world: &mut BddWorld) {
     .expect("write config");
 }
 
+#[when("the service declares the imported archive as a resident application")]
+fn declare_resident_application(world: &mut BddWorld) {
+    let kappa = world.kappa.clone().expect("kappa");
+    let config_path = home_path(world).join(".config/hologram/live.toml");
+    let source = std::fs::read_to_string(&config_path).expect("read config");
+    let mut config: toml::Value = toml::from_str(&source).expect("parse config");
+    let holo = config
+        .as_table_mut()
+        .expect("configuration table")
+        .entry("holo")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let resident = holo
+        .as_table_mut()
+        .expect("holo configuration table")
+        .entry("resident")
+        .or_insert_with(|| toml::Value::Array(Vec::new()));
+    let mut entry = toml::map::Map::new();
+    entry.insert("kappa".to_owned(), toml::Value::String(kappa));
+    resident
+        .as_array_mut()
+        .expect("resident declaration array")
+        .push(toml::Value::Table(entry));
+    std::fs::write(
+        config_path,
+        toml::to_string_pretty(&config).expect("encode config"),
+    )
+    .expect("write config");
+}
+
+#[when("I restart the local service")]
+fn restart_service(world: &mut BddWorld) {
+    let output = run_cli(world, &["restart"]);
+    assert!(
+        output.status.success(),
+        "restart failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .expect("bind ephemeral port")

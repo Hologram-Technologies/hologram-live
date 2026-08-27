@@ -375,6 +375,26 @@ inputs are JSON arrays of byte arrays. Native and HTTP resident records include
 `requested_capabilities_kappa`, `effective_grant_kappa`, `grant_source`, and
 `authorization` alongside lifecycle counters.
 
+Resident sessions live in the service process: a restart drops them, and the
+catalog alone does not bring them back. To run an archive as a persistent
+service, declare it in `live.toml` and the daemon loads it into a resident
+session during every startup, before it reports ready:
+
+```toml
+[[holo.resident]]
+kappa = "blake3:ad47a8206fa67ade51af75363b7677f50937c10e207f6a7394148c0db3f227af"
+```
+
+Each κ must name an archive already imported into the local catalog
+(`blake3:` plus 64 hex characters; duplicates are rejected at startup).
+Declared loads go through the same verified, audited capability admission as
+an explicit `holo load`, under the service's single effective grant and the
+`local-runtime` principal. A declaration that fails to load — an unknown κ or
+an under-granted archive — is logged with its reason and skipped without
+stopping the service or the other declarations; the failing archive is simply
+absent from `GET /api/v1/holo/resident`. Changes to `[[holo.resident]]` take
+effect on the next `hologram restart`.
+
 The compiler emits fat archives by default. `--thin` emits the same canonical application manifest without its κ-addressed payloads:
 
 ```bash

@@ -2,7 +2,7 @@
 
 ## Sprint status
 
-- State: ready for review
+- State: complete
 - Started: 2026-08-26
 - Last reviewed: 2026-08-26
 - Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
@@ -68,7 +68,7 @@ and two high findings.
 - [x] Update README, architecture, security, actual-capability, and website
   documentation.
 - [x] Keep `specs/plans/holo-application-runtime.md` synchronized.
-- [ ] Commit, open and merge the PR, remove only this worktree, and leave the
+- [x] Commit, open and merge PR #20, remove only its worktree, and leave the
   primary checkout clean on synchronized `main`.
 
 ## Next prioritized work

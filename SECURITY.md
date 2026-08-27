@@ -71,6 +71,16 @@ distribution. This is a supply-chain pin, not a reproducibility claim: the
 componentizer's uncontrolled pre-initialization randomness still changes clean
 build output bytes.
 
+Python rootfs compilation resolves mutable base tags to a registry manifest
+digest before Docker consumes `FROM`. Bundle schema 3 then rejects unsafe,
+duplicate, missing, non-file, oversized, or image-ID-mismatched Docker archive
+content and rewrites the exact config and ordered layer bytes into ADR 017's
+canonical SHA-256 blob layout with fixed tar metadata. This removes export
+metadata as an identity input, but does not make the experimental direct Docker
+provider an isolation boundary or prove uncached clean-build equality across
+hosts. Provenance therefore remains non-canonical and reports
+`reproducible: false`.
+
 ## Desktop sidecar
 
 The Tauri application invokes a bundled `hologram` sidecar through fixed lifecycle and status commands. It does not expose a general-purpose shell command to the webview.

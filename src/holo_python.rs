@@ -1,6 +1,7 @@
 //! Python rootfs compilation and direct execution.
 //!
-//! The payload is a small Hologram envelope around a Docker image archive.
+//! The payload is a small Hologram envelope around a normalized Docker image
+//! archive.
 //! Python and its locked dependencies execute in an OCI container, never in
 //! the Hologram host process. The `RootfsImage` layer keeps the archive contract
 //! independent from the current container provider so a microVM can consume
@@ -25,8 +26,11 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-const MAGIC: &[u8; 8] = b"HOLOPYR1";
-const BUNDLE_SCHEMA_VERSION: u16 = 2;
+const MAGIC: &[u8; 8] = b"HOLOPYR2";
+const BUNDLE_SCHEMA_VERSION: u16 = 3;
+const BUNDLE_PROVIDER: &str = "normalized-docker-archive-zstd-v1";
+const ROOTFS_REPRESENTATION: &str = "normalized-docker-archive-v1";
+const SOURCE_DATE_EPOCH: u64 = 0;
 const UV_VERSION: &str = "0.11.8";
 const OCI_COMPRESSION_LEVEL: i32 = 3;
 const MAX_METADATA_BYTES: usize = 64 * 1024;
@@ -35,9 +39,8 @@ const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES: usize = 64 * 1024;
 const MAX_IMAGE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
-const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "compile --check does not contact registries, so this mutable Python rootfs base is not resolved until compilation; Python rootfs builds do not yet produce a normalized byte-reproducible OCI representation";
-const ROOTFS_OUTPUT_BLOCKER: &str =
-    "Python rootfs builds do not yet produce a normalized byte-reproducible OCI representation";
+const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "compile --check does not contact registries, so this mutable Python rootfs base is not resolved until compilation; byte-identical clean builds across every supported host are not yet proven";
+const ROOTFS_CLEAN_HOST_BLOCKER: &str = "the normalized Docker archive is deterministic for identical image config and layer blobs; byte-identical clean builds across every supported host are not yet proven";
 static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,6 +89,8 @@ pub struct BuildTool {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DockerBuilder {
     pub name: &'static str,
+    pub archive_format: &'static str,
+    pub source_date_epoch: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -106,6 +111,8 @@ pub struct BaseImageProvenance {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct BuildOutput {
+    pub bundle_schema_version: u16,
+    pub provider: &'static str,
     pub layer_kappa: String,
     pub byte_length: u64,
     pub image_id: String,
@@ -171,7 +178,7 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
     let mut provenance = build_provenance(source, &inputs, arch)?;
     let resolved_base = resolve_base_image(&source.base)?;
     provenance.base_image.resolved_reference = Some(resolved_base.clone());
-    provenance.reproducibility.blocker = ROOTFS_OUTPUT_BLOCKER;
+    provenance.reproducibility.blocker = ROOTFS_CLEAN_HOST_BLOCKER;
 
     let staging = tempfile::tempdir().map_err(LiveError::from)?;
     fs::copy(&inputs.pyproject, staging.path().join("pyproject.toml"))
@@ -196,6 +203,7 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
         .map_err(|error| LiveError::io(staging.path(), error))?;
 
     let platform = docker_platform(arch)?;
+    let source_date_epoch = format!("SOURCE_DATE_EPOCH={SOURCE_DATE_EPOCH}");
     let build = Command::new("docker")
         .args([
             "build",
@@ -205,6 +213,9 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
             &image_tag,
             "--file",
             "Dockerfile",
+            "--build-arg",
+            &source_date_epoch,
+            "--provenance=false",
             ".",
         ])
         .current_dir(staging.path())
@@ -215,28 +226,36 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
     provenance.builder = observed_docker_builder()?;
     provenance.base_image.observed_image_id = inspect_image_id(&resolved_base)?;
 
-    let image_path = staging.path().join("image.tar");
+    let raw_image_path = staging.path().join("image.raw.tar");
     let save = Command::new("docker")
         .args(["image", "save", "--output"])
-        .arg(&image_path)
+        .arg(&raw_image_path)
         .arg(&image_tag)
         .output()
         .map_err(|error| LiveError::Io(format!("start Docker image save: {error}")))?;
     command_succeeded("Docker image save", &save)?;
-    let image_bytes = fs::metadata(&image_path)
-        .map_err(|error| LiveError::io(&image_path, error))?
-        .len();
-    let image = fs::File::open(&image_path).map_err(|error| LiveError::io(&image_path, error))?;
-    let compressed = zstd::stream::encode_all(image, OCI_COMPRESSION_LEVEL)
-        .map_err(|error| LiveError::Io(format!("compress Python OCI image: {error}")))?;
-    let image_id = inspect_image_id(&image_tag)?.ok_or_else(|| {
+    let observed_image_id = inspect_image_id(&image_tag)?.ok_or_else(|| {
         LiveError::Conflict(format!(
             "Docker build completed but image {image_tag} is unavailable"
         ))
     })?;
+    let raw_image =
+        fs::File::open(&raw_image_path).map_err(|error| LiveError::io(&raw_image_path, error))?;
+    let normalized = crate::holo_rootfs_archive::normalize(raw_image, &image_tag)?;
+    if normalized.image_id != observed_image_id {
+        return Err(LiveError::Protocol(format!(
+            "normalized Docker archive image {} does not match observed image {observed_image_id}",
+            normalized.image_id
+        )));
+    }
+    let image_bytes = u64::try_from(normalized.bytes.len()).unwrap_or(u64::MAX);
+    let compressed =
+        zstd::stream::encode_all(normalized.bytes.as_slice(), OCI_COMPRESSION_LEVEL)
+            .map_err(|error| LiveError::Io(format!("compress Python OCI image: {error}")))?;
+    let image_id = normalized.image_id;
     let metadata = BundleMetadata {
         schema_version: BUNDLE_SCHEMA_VERSION,
-        provider: "oci-docker-zstd-v1".to_owned(),
+        provider: BUNDLE_PROVIDER.to_owned(),
         image_tag,
         image_id: Some(image_id.clone()),
         entry: source.entry.clone(),
@@ -245,6 +264,8 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
     };
     let bytes = encode_bundle(&metadata, &compressed)?;
     provenance.output = Some(BuildOutput {
+        bundle_schema_version: BUNDLE_SCHEMA_VERSION,
+        provider: BUNDLE_PROVIDER,
         layer_kappa: address_bytes(&bytes).to_string(),
         byte_length: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
         image_id,
@@ -292,6 +313,8 @@ fn build_provenance(
         },
         builder: DockerBuilder {
             name: "docker",
+            archive_format: ROOTFS_REPRESENTATION,
+            source_date_epoch: SOURCE_DATE_EPOCH,
             client_version: None,
             server_version: None,
         },
@@ -300,7 +323,7 @@ fn build_provenance(
         reproducibility: Reproducibility {
             reproducible: false,
             blocker: if digest_pinned {
-                ROOTFS_OUTPUT_BLOCKER
+                ROOTFS_CLEAN_HOST_BLOCKER
             } else {
                 ROOTFS_MUTABLE_BASE_BLOCKER
             },
@@ -650,8 +673,7 @@ fn decode_bundle(bundle: &[u8]) -> Result<(BundleMetadata, &[u8])> {
     let start = MAGIC.len() + 4;
     let metadata: BundleMetadata = serde_json::from_slice(&bundle[start..start + length])
         .map_err(|error| LiveError::InvalidHolo(format!("decode Python metadata: {error}")))?;
-    if metadata.schema_version != BUNDLE_SCHEMA_VERSION || metadata.provider != "oci-docker-zstd-v1"
-    {
+    if metadata.schema_version != BUNDLE_SCHEMA_VERSION || metadata.provider != BUNDLE_PROVIDER {
         return Err(LiveError::Capability(format!(
             "unsupported Python rootfs provider {} schema {}",
             metadata.provider, metadata.schema_version
@@ -712,6 +734,8 @@ fn ensure_docker(action: &str) -> Result<()> {
 fn observed_docker_builder() -> Result<DockerBuilder> {
     Ok(DockerBuilder {
         name: "docker",
+        archive_format: ROOTFS_REPRESENTATION,
+        source_date_epoch: SOURCE_DATE_EPOCH,
         client_version: Some(docker_version("Client")?),
         server_version: Some(docker_version("Server")?),
     })
@@ -1159,7 +1183,7 @@ mod tests {
     fn metadata() -> BundleMetadata {
         BundleMetadata {
             schema_version: BUNDLE_SCHEMA_VERSION,
-            provider: "oci-docker-zstd-v1".to_owned(),
+            provider: BUNDLE_PROVIDER.to_owned(),
             image_tag: "hologram-python-test:local".to_owned(),
             image_id: Some(format!("sha256:{}", "a".repeat(64))),
             entry: "example:main".to_owned(),
@@ -1246,7 +1270,10 @@ mod tests {
             provenance.base_image.resolved_reference.as_deref(),
             Some(pinned.as_str())
         );
-        assert_eq!(provenance.reproducibility.blocker, ROOTFS_OUTPUT_BLOCKER);
+        assert_eq!(
+            provenance.reproducibility.blocker,
+            ROOTFS_CLEAN_HOST_BLOCKER
+        );
     }
 
     #[test]
@@ -1275,7 +1302,7 @@ mod tests {
 
     #[test]
     fn rejects_truncated_bundle() {
-        let error = decode_bundle(b"HOLOPYR1\xff\xff\xff\xff").expect_err("invalid");
+        let error = decode_bundle(b"HOLOPYR2\xff\xff\xff\xff").expect_err("invalid");
         assert_eq!(error.code(), "LIVE_HOLO_INVALID");
     }
 

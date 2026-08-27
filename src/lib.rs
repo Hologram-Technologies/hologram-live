@@ -21,6 +21,7 @@ pub mod holo_format;
 pub mod holo_provider;
 pub mod holo_python;
 pub mod holo_python_component;
+mod holo_rootfs_archive;
 pub mod holo_wasm;
 pub mod inference;
 pub mod models;

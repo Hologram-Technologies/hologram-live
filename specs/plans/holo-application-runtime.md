@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M8 strict pre-release contract enforcement (ADR 016)
-- Next delivery: M4.2, normalized OCI/rootfs construction and clean-build κ proof
+- Current delivery: M4.2 normalized Python rootfs archive (ADR 017)
+- Next delivery: M4.2 uncached supported-host κ equality proof
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -366,7 +366,20 @@ Dockerfile binding. The real NumPy/pandas compile resolved
 `sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17`,
 matched Docker's reported digest, emitted a 105,790,579-byte fat archive, and
 executed with three rows, mean `20.0`, and sum `60.0`. ADR 015 records the
-selection/binding boundary; normalized OCI output remains the next M4 slice.
+selection/binding boundary.
+
+Rootfs archive-normalization follow-up (2026-08-26): bundle schema 3 now
+re-addresses the exact Docker image config and ordered layer bytes under
+`blobs/sha256/<digest>`, emits only those blobs plus a canonical manifest, and
+writes lexical GNU-tar members with fixed mode, ownership, and timestamp before
+fixed-level Zstandard compression. The build receives source epoch zero and
+omits injected provenance. Unsafe, duplicate, missing, non-file, oversized, and
+image-ID-mismatched exports fail before archive assembly. Two local exports of
+the locked NumPy/pandas image produced identical layer, application, archive,
+and footer identities; removing the local tag proved the normalized archive
+can cold-load and execute. ADR 017 defines the current-only contract. Clean
+uncached equality across all five release hosts remains open, so provenance
+continues to report `reproducible: false`.
 
 ### M3.2 View provider
 
@@ -518,7 +531,11 @@ application/DMG builds pass.
 - [ ] Promote the experimental `rootfs` Python profile to supported status only
   after normalized reproducible output and the microVM provider are ready. Base
   inputs are now digest-bound, but the current direct OCI provider is demo-only.
-- [ ] Normalize file order, paths, permissions, timestamps, generated bindings, and source epoch for reproducible layer κ values.
+- [x] Normalize rootfs archive member order, blob paths, permissions,
+  ownership, timestamps, manifest encoding, compression, and source epoch for
+  identical Docker image config/layer inputs.
+- [ ] Normalize or eliminate clean-build differences inside generated image
+  config/layer bytes and prove equal κ values across supported release hosts.
 - [x] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
 - [x] Report planned and completed Python rootfs evidence without requiring
   Docker during `compile --check` or claiming the emitted OCI bytes are
@@ -719,8 +736,10 @@ work below.
   identity boundary (ADR 014).
 - [x] Resolve mutable rootfs base tags to a registry manifest digest and bind
   the selected digest to the build.
-- [ ] Normalize rootfs OCI output and prove byte-identical layer κ values
-  across clean supported hosts.
+- [x] Normalize the current Python rootfs Docker archive representation under
+  ADR 017.
+- [ ] Prove byte-identical rootfs layer κ values across uncached clean supported
+  hosts.
 - [ ] Deterministic Python Component output and clean-build equality proof.
 
 ## Per-milestone definition of done
@@ -773,6 +792,11 @@ work below.
 - [x] Emit planned/completed Python rootfs provenance with hashed inputs,
   requested/resolved/observed image identities, observed Docker versions,
   output layer κ, and explicit reproducibility blockers.
+- [x] Replace Docker-save byte identity with ADR 017's normalized schema-3
+  rootfs archive and prove repeated local export plus cold-load execution.
+- [ ] Run uncached rootfs builds across all supported release hosts, compare
+  config/layer/application/archive identities, and close every observed
+  difference before setting `reproducible: true`.
 - [ ] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.

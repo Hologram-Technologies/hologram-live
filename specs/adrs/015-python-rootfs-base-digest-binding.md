@@ -57,15 +57,13 @@ owns registry transport, authentication, and media negotiation.
 - Rootfs compilation now requires a Docker CLI with Buildx image-tools support
   for mutable references. Digest-pinned references retain the previous engine
   requirement but do not require registry inspection.
-- Registry manifest bytes are content-addressed, but Docker image export is
-  still not normalized. Completed provenance therefore remains
-  `reproducible: false` until clean supported hosts produce byte-identical layer
-  κ values.
+- ADR 017 now normalizes Docker image export. Completed provenance remains
+  `reproducible: false` until uncached clean supported hosts produce
+  byte-identical config, layer, application, and archive κ values.
 
 ## Follow-up
 
-- Normalize the OCI/rootfs representation, including archive ordering and
-  metadata, and prove byte-identical layer κ values across clean hosts.
+- Complete ADR 017's byte-identical clean-host build proof.
 - Add authenticated private-registry integration coverage without persisting
   credentials in provenance.
 - Produce SBOM and signed-attestation material over resolved inputs and output

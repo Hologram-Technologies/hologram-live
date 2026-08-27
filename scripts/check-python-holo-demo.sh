@@ -42,7 +42,8 @@ trap cleanup EXIT
 docker version --format '{{.Server.Version}}' >/dev/null
 cargo build --release --locked --package hologram-live --bin hologram --manifest-path "$repo_root/Cargo.toml"
 
-binary="$repo_root/target/release/hologram"
+target_dir=${CARGO_TARGET_DIR:-"$repo_root/target"}
+binary="$target_dir/release/hologram"
 manifest="$repo_root/examples/python-numpy-pandas/hologram.json"
 request="$repo_root/examples/python-numpy-pandas/request.json"
 isolated_env=(

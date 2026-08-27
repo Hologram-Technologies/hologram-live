@@ -56,15 +56,23 @@ two independent clean Linux runners for each output architecture
 (`linux/amd64` and `linux/arm64`) and compares replicas within the target.
 Cross-architecture κ equality is neither expected nor required.
 
-The application image is a two-stage build. The disposable builder installs
-the pinned `uv` tool and locked third-party dependencies. It does not install
-the local project as a wheel: `uv_cache.json` embeds the source directory's
-nanosecond timestamp and `RECORD` then hashes that unstable value. Instead the
-runtime imports the compiler-staged source through `PYTHONPATH=/app/src`.
-Before the final stage, every application and launcher filesystem timestamp is
-set to epoch zero. The final image starts from the same digest-bound base and
-copies only the normalized application and launcher trees, excluding `uv`, its
-cache, and all transient build layers.
+The application image uses separate builder and runtime builds. The disposable
+builder installs the pinned `uv` tool and locked third-party dependencies. It
+does not install the local project as a wheel: `uv_cache.json` embeds the
+source directory's nanosecond timestamp and `RECORD` then hashes that unstable
+value. Instead the runtime imports the compiler-staged source through
+`PYTHONPATH=/app/src`.
+
+The builder normalizes every application and launcher filesystem timestamp to
+epoch zero, then writes `/app` and `/hologram` into one lexically sorted GNU tar
+with epoch-zero headers, numeric root ownership, and stable GNU format. The
+compiler creates but does not start a container from that image, copies
+`/runtime.tar` to the host staging directory, and removes the disposable
+container and builder tag. The final image starts from the same digest-bound
+base and consumes the local tar with `ADD runtime.tar /`. This excludes `uv`,
+its cache, and transient build layers while preventing BuildKit from choosing
+the traversal order of a cross-stage directory copy. Creating and copying from
+the stopped container does not execute a foreign-architecture process.
 
 ## Consequences
 
@@ -106,6 +114,19 @@ and equal rootfs layer κ
 The complete application and archive identities also matched, and the archive
 executed successfully. The independent Linux runner matrix remains required
 before provenance may claim reproducibility.
+
+The first independent matrix, workflow run `33031626335`, then completed four
+clean builds with the same Docker 28.0.4 client/server and the same selected
+base digest but found different target-local identities. The amd64 replicas
+emitted rootfs layer κ values beginning `blake3:164e` and `blake3:49f9`; the
+arm64 replicas emitted `blake3:ad32` and `blake3:fece`. The only remaining
+engine-owned construction boundary was `COPY --from=builder` of the normalized
+directories, so the compiler replaced that copy with the canonical runtime tar
+described above. Two local uncached arm64 builds now agree on image ID
+`sha256:1f55f44f41af891e3464b056f6b0beefbf6be9d736611de1505d17fb9a8cd754`
+and rootfs layer κ
+`blake3:7466d21d435ec4d2a7da0efdd9e974f26ff58a471d579abfa04b3f6df4077b8b`.
+The clean matrix must be rerun before the reproducibility claim changes.
 
 ## Follow-up
 

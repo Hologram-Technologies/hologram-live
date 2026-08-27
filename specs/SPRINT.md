@@ -34,9 +34,11 @@
   target-aware aggregate comparison artifact.
 - [x] Make the clean-builder matrix a prerequisite of every server release.
 - [x] Run the local two-build uncached probe and record its identities here.
-- [ ] Run the clean GitHub matrix and record the workflow evidence here.
-- [ ] If either comparison fails, identify and normalize the differing image
-  config or generated filesystem bytes, then rerun both proofs.
+- [x] Run the first clean GitHub matrix and record the failure evidence here.
+- [x] Identify the first matrix's unstable generated layer and replace its
+  cross-stage directory copy with a canonical runtime tar artifact.
+- [ ] Rerun both clean target comparisons and record the passing workflow
+  evidence here.
 
 Local evidence (2026-08-26): the first uncached comparison exposed unstable
 timestamps in every generated Docker layer. A two-stage recipe reduced that
@@ -57,6 +59,32 @@ and footer fingerprint
 The resulting archive executed NumPy/pandas successfully and returned three
 rows, mean `20.0`, and sum `60.0` from an isolated current configuration.
 
+Clean-runner evidence (workflow run `33031626335`, 2026-08-26): all four
+uncached builds completed with Docker client/server `28.0.4` and the same
+digest-bound base. Each architecture still disagreed across its two replicas:
+amd64 emitted rootfs layer κ values beginning `blake3:164e` and
+`blake3:49f9`, while arm64 emitted `blake3:ad32` and `blake3:fece`. This ruled
+out tool and base selection drift and isolated the remaining instability to
+BuildKit's serialization of `COPY --from=builder` directory trees.
+
+The replacement builder writes `/app` and `/hologram` as one lexically sorted
+GNU tar with epoch-zero timestamps and numeric root ownership. Hologram copies
+that artifact from a stopped builder container and feeds it to the final
+digest-bound image through local `ADD`, so no foreign-architecture process is
+executed and BuildKit no longer chooses directory traversal order. Two local
+uncached arm64 builds now match at image ID
+`sha256:1f55f44f41af891e3464b056f6b0beefbf6be9d736611de1505d17fb9a8cd754`,
+rootfs layer κ
+`blake3:7466d21d435ec4d2a7da0efdd9e974f26ff58a471d579abfa04b3f6df4077b8b`,
+application κ
+`blake3:fdfc49a149a89b0fcce848515dd4aa3d5e85f9d6028ad2d28ae4efc23d943f2e`,
+archive κ
+`blake3:5c97573cf6df8a2fe4e538db32f1d5f3edddc24a049e0f7a776c0bdcd8ac7438`,
+and footer fingerprint
+`7e9e6308320a9d8428eee9700fb98bef3baa127db66dfb3ac3e94c6bfdd576a3`.
+The clean Linux matrix must still pass before provenance changes to
+`reproducible: true`.
+
 ## Verification and delivery
 
 - [x] Add focused CLI/provenance and report-comparison tests.
@@ -68,7 +96,7 @@ rows, mean `20.0`, and sum `60.0` from an isolated current configuration.
   primary checkout clean on synchronized `main`.
 
 Repository evidence (2026-08-26): `just verify` passed formatting, source-size
-and product-boundary checks, locked workspace check/tests (including 198
+and product-boundary checks, locked workspace check/tests (including 199
 library tests, 23 CLI tests, and four provenance/comparator tests), Clippy with
 warnings denied, 12 BDD scenarios with 123 steps, the optimized server build,
 and isolated smoke. `just docs` regenerated OpenAPI and built all 13 pages.

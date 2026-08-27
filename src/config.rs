@@ -141,6 +141,20 @@ pub struct HoloConfig {
     /// Explicit development-only effective grant for resident applications.
     /// Relative paths resolve from `paths.config_dir`.
     pub development_grant: Option<PathBuf>,
+    /// Archives the service loads into resident sessions during startup,
+    /// so declared applications are invocable immediately after boot or
+    /// restart without an explicit `holo load`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resident: Vec<HoloResidentConfig>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HoloResidentConfig {
+    /// Content κ (`blake3:` + 64 hex) of an archive already imported into
+    /// the local catalog. Load failures are logged and skip only the
+    /// failing entry; they do not stop the service from starting.
+    pub kappa: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -421,7 +435,31 @@ impl AppConfig {
                 "telemetry.export_timeout_secs must be greater than zero".to_owned(),
             ));
         }
+        self.validate_holo_resident()?;
         self.validate_plugins()?;
+        Ok(())
+    }
+
+    fn validate_holo_resident(&self) -> Result<()> {
+        let mut seen = std::collections::BTreeSet::new();
+        for entry in &self.holo.resident {
+            let kappa = entry.kappa.trim();
+            let digest = kappa.strip_prefix("blake3:").ok_or_else(|| {
+                LiveError::Config(format!(
+                    "holo.resident kappa {kappa:?} must start with \"blake3:\""
+                ))
+            })?;
+            if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err(LiveError::Config(format!(
+                    "holo.resident kappa {kappa:?} must be \"blake3:\" followed by 64 hex characters"
+                )));
+            }
+            if !seen.insert(kappa.to_owned()) {
+                return Err(LiveError::Config(format!(
+                    "duplicate holo.resident kappa {kappa}"
+                )));
+            }
+        }
         Ok(())
     }
 
@@ -672,6 +710,58 @@ mod tests {
             .validate()
             .expect_err("development grant must stay local");
         assert!(error.to_string().contains("loopback"), "{error}");
+    }
+
+    #[test]
+    fn holo_resident_declarations_parse_and_validate() {
+        let source = format!(
+            "{}\n[[holo.resident]]\nkappa = \"blake3:{}\"\n",
+            toml::to_string(&AppConfig::default()).expect("encode default config"),
+            "ab".repeat(32)
+        );
+        let config = toml::from_str::<AppConfig>(&source).expect("parse resident declaration");
+        assert_eq!(config.holo.resident.len(), 1);
+        assert_eq!(
+            config.holo.resident[0].kappa,
+            format!("blake3:{}", "ab".repeat(32))
+        );
+        config.validate().expect("resident declaration validates");
+    }
+
+    #[test]
+    fn holo_resident_declarations_default_to_empty() {
+        let config = AppConfig::default();
+        assert!(config.holo.resident.is_empty());
+        config.validate().expect("default config validates");
+    }
+
+    #[test]
+    fn holo_resident_kappas_must_be_well_formed() {
+        let mut config = AppConfig::default();
+        config.holo.resident.push(HoloResidentConfig {
+            kappa: "sha256:abc".to_owned(),
+        });
+        let error = config.validate().expect_err("prefix must fail");
+        assert!(error.to_string().contains("blake3:"), "{error}");
+
+        let mut config = AppConfig::default();
+        config.holo.resident.push(HoloResidentConfig {
+            kappa: "blake3:abc".to_owned(),
+        });
+        let error = config.validate().expect_err("length must fail");
+        assert!(error.to_string().contains("64 hex"), "{error}");
+    }
+
+    #[test]
+    fn holo_resident_kappas_must_be_unique() {
+        let mut config = AppConfig::default();
+        let kappa = format!("blake3:{}", "cd".repeat(32));
+        config.holo.resident.push(HoloResidentConfig {
+            kappa: kappa.clone(),
+        });
+        config.holo.resident.push(HoloResidentConfig { kappa });
+        let error = config.validate().expect_err("duplicate must fail");
+        assert!(error.to_string().contains("duplicate"), "{error}");
     }
 
     #[test]

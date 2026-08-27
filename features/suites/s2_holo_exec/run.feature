@@ -90,3 +90,17 @@ Feature: Resident .holo wasm execution
     And the run completion is returned without an exit code
     And the run reports allowed authorization from "local_baseline"
     And I stop the local service
+
+  Scenario: a declared resident application loads at service startup
+    Given the example wasm application manifest
+    When I compile the application
+    Then the compile command succeeds
+    Given a fresh Hologram home
+    And an initialized configuration on a test port
+    When I import the compiled archive
+    And the service declares the imported archive as a resident application
+    And I restart the local service
+    Then the archive appears in the resident list
+    When I run the archive with input "declared boot"
+    Then the run output is "DECLARED BOOT"
+    And I stop the local service

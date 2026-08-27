@@ -367,6 +367,30 @@ impl HoloRuntime {
         }
     }
 
+    /// Load operator-declared resident applications during service startup.
+    ///
+    /// Every κ goes through the same verified, audited path as an explicit
+    /// `holo load` (principal `local-runtime`). Failures are collected, not
+    /// propagated: one missing or under-granted declaration must not keep
+    /// the other declared applications — or the service itself — down. The
+    /// per-entry outcomes let the caller log a startup summary.
+    pub async fn load_declared(&self, kappas: &[String]) -> Vec<(String, Result<ResidentHolo>)> {
+        let mut outcomes = Vec::with_capacity(kappas.len());
+        for kappa in kappas {
+            let outcome = self.load_for(kappa, "local-runtime").await;
+            match &outcome {
+                Ok(_) => {
+                    tracing::info!(kappa = %kappa, "declared resident holo application loaded");
+                }
+                Err(error) => {
+                    tracing::error!(kappa = %kappa, error = %error, "declared resident holo application failed to load");
+                }
+            }
+            outcomes.push((kappa.clone(), outcome));
+        }
+        outcomes
+    }
+
     pub async fn run(&self, kappa: &str, inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
         let entry = self.entry(kappa)?.ok_or_else(|| not_resident(kappa))?;
         let outcome = entry.application.invoke(inputs).await?;
@@ -753,6 +777,37 @@ mod tests {
             .unload(&kappa)
             .await
             .expect("repeated unload is idempotent");
+    }
+
+    #[tokio::test]
+    async fn load_declared_loads_every_valid_kappa_and_skips_failures() {
+        let runtime = test_runtime("declared");
+        let kappa = import_fixture(&runtime, "wasm-app");
+        let missing = format!("blake3:{}", "ef".repeat(32));
+
+        let outcomes = runtime
+            .load_declared(&[kappa.clone(), missing.clone()])
+            .await;
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0].0, kappa);
+        assert!(outcomes[0].1.is_ok(), "fixture declaration loads");
+        assert_eq!(outcomes[1].0, missing);
+        assert!(outcomes[1].1.is_err(), "unknown κ is reported, not fatal");
+
+        let resident = runtime.list().await.expect("list");
+        assert_eq!(resident.len(), 1);
+        assert_eq!(resident[0].kappa, kappa);
+
+        // A repeated declaration pass is idempotent and still succeeds.
+        let repeated = runtime.load_declared(std::slice::from_ref(&kappa)).await;
+        assert!(repeated[0].1.is_ok());
+        assert_eq!(runtime.list().await.expect("list").len(), 1);
+
+        let result = runtime
+            .run(&kappa, vec![b"declared".to_vec()])
+            .await
+            .expect("declared application runs");
+        assert_eq!(result.outputs, vec![b"DECLARED".to_vec()]);
     }
 
     #[tokio::test]

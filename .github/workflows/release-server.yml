@@ -13,6 +13,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  rootfs-reproducibility:
+    uses: ./.github/workflows/rootfs-reproducibility.yml
+
   verify:
     runs-on: ubuntu-24.04
     steps:
@@ -24,7 +27,7 @@ jobs:
       - run: cargo test --workspace --all-targets --locked -- --test-threads=1
 
   build:
-    needs: verify
+    needs: [verify, rootfs-reproducibility]
     strategy:
       fail-fast: false
       matrix:

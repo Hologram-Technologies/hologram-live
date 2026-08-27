@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::process::Command;
 
 #[test]
@@ -100,6 +100,7 @@ fn rootfs_compile_check_reports_planned_provenance_without_docker() {
         "normalized-docker-archive-v1"
     );
     assert_eq!(source["builder"]["source_date_epoch"], 0);
+    assert_eq!(source["builder"]["cache_disabled"], false);
     assert!(source["builder"].get("client_version").is_none());
     assert!(source["builder"].get("server_version").is_none());
     assert!(source.get("output").is_none());
@@ -114,4 +115,76 @@ fn rootfs_compile_check_reports_planned_provenance_without_docker() {
         .as_str()
         .is_some_and(|blocker| blocker.contains("not resolved until compilation")
             && blocker.contains("clean builds")));
+}
+
+#[test]
+fn compile_check_rejects_the_no_build_cache_execution_option() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/python-numpy-pandas/hologram.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("compile")
+        .arg(&manifest)
+        .arg("--check")
+        .arg("--no-build-cache")
+        .output()
+        .expect("run compile check");
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stdout).expect("JSON error report");
+    assert_eq!(error["code"], "LIVE_CONFIG_INVALID");
+    assert!(error["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("--no-build-cache")));
+}
+
+#[test]
+fn rootfs_report_comparator_groups_clean_replicas_by_target() {
+    let directory = tempfile::tempdir().expect("temporary reports");
+    let targets = ["linux/amd64", "linux/amd64", "linux/arm64", "linux/arm64"];
+    for (index, target) in targets.iter().enumerate() {
+        let identity = if *target == "linux/amd64" {
+            "amd64-identity"
+        } else {
+            "arm64-identity"
+        };
+        let report = json!({
+            "status": "ok",
+            "target_platform": target,
+            "build_host": {"os": "linux", "arch": target},
+            "builder": {"cache_disabled": true},
+            "no_build_cache": true,
+            "equal": true,
+            "identities": {"image_id": identity},
+        });
+        std::fs::write(
+            directory.path().join(format!("report-{index}.json")),
+            serde_json::to_vec(&report).expect("encode report"),
+        )
+        .expect("write report");
+    }
+
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("scripts/compare-python-rootfs-reports.py");
+    let mut command = Command::new("python3");
+    command
+        .arg(script)
+        .arg("--expected-replicas")
+        .arg("2")
+        .arg("--expected-targets")
+        .arg("2");
+    for index in 0..targets.len() {
+        command.arg(directory.path().join(format!("report-{index}.json")));
+    }
+    let output = command.output().expect("compare reports");
+    assert!(
+        output.status.success(),
+        "comparison failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).expect("comparison JSON");
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["targets"].as_array().map(Vec::len), Some(2));
+    assert!(result["targets"]
+        .as_array()
+        .is_some_and(|targets| targets.iter().all(|target| target["equal"] == true)));
 }

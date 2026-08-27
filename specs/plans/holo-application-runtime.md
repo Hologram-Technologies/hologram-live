@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M4.2 normalized Python rootfs archive (ADR 017)
-- Next delivery: M4.2 uncached supported-host κ equality proof
+- Current delivery: M4.2 uncached Python rootfs clean-builder equality gate
+- Next delivery: M4.2 eliminate any config or filesystem differences exposed by the gate
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -535,7 +535,13 @@ application/DMG builds pass.
   ownership, timestamps, manifest encoding, compression, and source epoch for
   identical Docker image config/layer inputs.
 - [ ] Normalize or eliminate clean-build differences inside generated image
-  config/layer bytes and prove equal κ values across supported release hosts.
+  config/layer bytes and prove equal κ values across two independent clean
+  Linux builders for each supported rootfs target architecture.
+- [x] Add `compile --no-build-cache`, record its use in rootfs provenance, and
+  emit a `jq`-ready local identity comparison.
+- [x] Add a server-release matrix with two clean runners per Linux target and
+  compare image, layer, application, archive, and footer identities within
+  each architecture.
 - [x] Produce a dependency inventory and build provenance without making it part of canonical application identity unless the schema explicitly says so.
 - [x] Report planned and completed Python rootfs evidence without requiring
   Docker during `compile --check` or claiming the emitted OCI bytes are
@@ -738,8 +744,8 @@ work below.
   the selected digest to the build.
 - [x] Normalize the current Python rootfs Docker archive representation under
   ADR 017.
-- [ ] Prove byte-identical rootfs layer κ values across uncached clean supported
-  hosts.
+- [ ] Prove byte-identical rootfs layer κ values across uncached clean Linux
+  builder replicas for both supported target architectures.
 - [ ] Deterministic Python Component output and clean-build equality proof.
 
 ## Per-milestone definition of done
@@ -794,9 +800,10 @@ work below.
   output layer κ, and explicit reproducibility blockers.
 - [x] Replace Docker-save byte identity with ADR 017's normalized schema-3
   rootfs archive and prove repeated local export plus cold-load execution.
-- [ ] Run uncached rootfs builds across all supported release hosts, compare
-  config/layer/application/archive identities, and close every observed
-  difference before setting `reproducible: true`.
+- [ ] Run uncached rootfs builds on two independent clean Linux builders for
+  each supported target architecture, compare config/layer/application/archive
+  identities, and close every observed difference before setting
+  `reproducible: true`.
 - [ ] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.

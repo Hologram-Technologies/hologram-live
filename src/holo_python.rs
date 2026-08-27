@@ -39,8 +39,8 @@ const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES: usize = 64 * 1024;
 const MAX_IMAGE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
-const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "compile --check does not contact registries, so this mutable Python rootfs base is not resolved until compilation; byte-identical clean builds across every supported host are not yet proven";
-const ROOTFS_CLEAN_HOST_BLOCKER: &str = "the normalized Docker archive is deterministic for identical image config and layer blobs; byte-identical clean builds across every supported host are not yet proven";
+const ROOTFS_MUTABLE_BASE_BLOCKER: &str = "compile --check does not contact registries, so this mutable Python rootfs base is not resolved until compilation; byte-identical clean builds for both supported rootfs target architectures are not yet proven";
+const ROOTFS_CLEAN_HOST_BLOCKER: &str = "the normalized Docker archive is deterministic for identical image config and layer blobs; byte-identical builds across independent clean Linux builders for both supported target architectures are not yet proven";
 static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -91,6 +91,7 @@ pub struct DockerBuilder {
     pub name: &'static str,
     pub archive_format: &'static str,
     pub source_date_epoch: u64,
+    pub cache_disabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -171,7 +172,12 @@ pub fn validate_source(source: &PythonRootfsSource, arch: Option<&str>) -> Resul
     Ok(())
 }
 
-pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<CompiledRootfs> {
+pub fn compile(
+    root: &Path,
+    source: &PythonRootfsSource,
+    arch: &str,
+    no_build_cache: bool,
+) -> Result<CompiledRootfs> {
     validate_source(source, Some(arch))?;
     ensure_docker("compile a Python rootfs")?;
     let inputs = resolve_inputs(root, source)?;
@@ -205,25 +211,18 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
     let platform = docker_platform(arch)?;
     let source_date_epoch = format!("SOURCE_DATE_EPOCH={SOURCE_DATE_EPOCH}");
     let build = Command::new("docker")
-        .args([
-            "build",
-            "--platform",
+        .args(docker_build_args(
             platform,
-            "--tag",
             &image_tag,
-            "--file",
-            "Dockerfile",
-            "--build-arg",
             &source_date_epoch,
-            "--provenance=false",
-            ".",
-        ])
+            no_build_cache,
+        ))
         .current_dir(staging.path())
         .env("SOURCE_DATE_EPOCH", "0")
         .output()
         .map_err(|error| LiveError::Io(format!("start Docker build: {error}")))?;
     command_succeeded("Docker build", &build)?;
-    provenance.builder = observed_docker_builder()?;
+    provenance.builder = observed_docker_builder(no_build_cache)?;
     provenance.base_image.observed_image_id = inspect_image_id(&resolved_base)?;
 
     let raw_image_path = staging.path().join("image.raw.tar");
@@ -274,6 +273,31 @@ pub fn compile(root: &Path, source: &PythonRootfsSource, arch: &str) -> Result<C
     Ok(CompiledRootfs { bytes, provenance })
 }
 
+fn docker_build_args(
+    platform: &str,
+    image_tag: &str,
+    source_date_epoch: &str,
+    no_build_cache: bool,
+) -> Vec<String> {
+    let mut args = vec![
+        "build".to_owned(),
+        "--platform".to_owned(),
+        platform.to_owned(),
+        "--tag".to_owned(),
+        image_tag.to_owned(),
+        "--file".to_owned(),
+        "Dockerfile".to_owned(),
+        "--build-arg".to_owned(),
+        source_date_epoch.to_owned(),
+        "--provenance=false".to_owned(),
+    ];
+    if no_build_cache {
+        args.push("--no-cache".to_owned());
+    }
+    args.push(".".to_owned());
+    args
+}
+
 pub fn check_source(
     root: &Path,
     source: &PythonRootfsSource,
@@ -315,6 +339,7 @@ fn build_provenance(
             name: "docker",
             archive_format: ROOTFS_REPRESENTATION,
             source_date_epoch: SOURCE_DATE_EPOCH,
+            cache_disabled: false,
             client_version: None,
             server_version: None,
         },
@@ -731,11 +756,12 @@ fn ensure_docker(action: &str) -> Result<()> {
     Ok(())
 }
 
-fn observed_docker_builder() -> Result<DockerBuilder> {
+fn observed_docker_builder(cache_disabled: bool) -> Result<DockerBuilder> {
     Ok(DockerBuilder {
         name: "docker",
         archive_format: ROOTFS_REPRESENTATION,
         source_date_epoch: SOURCE_DATE_EPOCH,
+        cache_disabled,
         client_version: Some(docker_version("Client")?),
         server_version: Some(docker_version("Server")?),
     })
@@ -881,15 +907,23 @@ fn command_succeeded(name: &str, output: &std::process::Output) -> Result<()> {
 
 fn dockerfile(base: &str, entry: &str) -> String {
     format!(
-        "FROM {base}\n\
+        "FROM {base} AS builder\n\
+         ARG SOURCE_DATE_EPOCH=0\n\
          ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=0\n\
          WORKDIR /app\n\
          RUN python -m pip install --no-cache-dir uv=={UV_VERSION}\n\
          COPY pyproject.toml uv.lock ./\n\
          COPY src ./src\n\
-         RUN uv sync --locked --no-dev --no-editable\n\
+         RUN uv sync --locked --no-dev --no-editable --no-install-project\n\
          COPY .hologram/runner.py /hologram/runner.py\n\
-         ENV PATH=\"/app/.venv/bin:$PATH\" HOLOGRAM_PYTHON_ENTRY=\"{entry}\"\n\
+         RUN find /app /hologram -exec touch -h -d '@0' {{}} +\n\
+         FROM {base}\n\
+         ARG SOURCE_DATE_EPOCH=0\n\
+         ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=0\n\
+         WORKDIR /app\n\
+         COPY --from=builder /app /app\n\
+         COPY --from=builder /hologram /hologram\n\
+         ENV PATH=\"/app/.venv/bin:$PATH\" PYTHONPATH=\"/app/src\" HOLOGRAM_PYTHON_ENTRY=\"{entry}\"\n\
          ENTRYPOINT [\"python\",\"/hologram/runner.py\"]\n"
     )
 }
@@ -1291,8 +1325,32 @@ mod tests {
     fn dockerfile_uses_the_resolved_base_reference() {
         let resolved = format!("python@sha256:{}", "a".repeat(64));
         let file = dockerfile(&resolved, "example:main");
-        assert!(file.starts_with(&format!("FROM {resolved}\n")));
+        assert!(file.starts_with(&format!("FROM {resolved} AS builder\n")));
+        assert_eq!(file.matches(&format!("FROM {resolved}")).count(), 2);
+        assert!(file.contains("--no-install-project"));
+        assert!(file.contains("touch -h -d '@0'"));
+        assert!(file.contains("PYTHONPATH=\"/app/src\""));
         assert!(!file.contains("python:3.12-slim"));
+    }
+
+    #[test]
+    fn docker_build_cache_is_disabled_only_when_requested() {
+        let cached = docker_build_args(
+            "linux/arm64",
+            "hologram-python-test:local",
+            "SOURCE_DATE_EPOCH=0",
+            false,
+        );
+        assert!(!cached.iter().any(|argument| argument == "--no-cache"));
+
+        let uncached = docker_build_args(
+            "linux/arm64",
+            "hologram-python-test:local",
+            "SOURCE_DATE_EPOCH=0",
+            true,
+        );
+        assert_eq!(uncached[uncached.len() - 2], "--no-cache");
+        assert_eq!(uncached.last().map(String::as_str), Some("."));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
+cargo_target_dir := env_var_or_default("CARGO_TARGET_DIR", "target")
 
 default:
     @just --list
@@ -28,8 +29,8 @@ python-holo-demo:
 # Compile and execute the small standard-library Python example.
 python-hello-demo:
     cargo build --release --locked --package hologram-live --bin hologram
-    ./target/release/hologram --json compile examples/python-hello/hologram.json --check >/dev/null
-    ./target/release/hologram --json run examples/python-hello --input-text Ada --output-format json
+    "{{cargo_target_dir}}/release/hologram" --json compile examples/python-hello/hologram.json --check >/dev/null
+    "{{cargo_target_dir}}/release/hologram" --json run examples/python-hello --input-text Ada --output-format json
 
 # Compile both Python Component examples and prove direct + resident execution
 # plus isolation from the developer Python environment.
@@ -69,7 +70,7 @@ build: server-build
 
 # Verify code
 verify: fmt file-size product-boundary check test clippy bdd build
-    ./scripts/smoke.sh ./target/release/hologram
+    ./scripts/smoke.sh "{{cargo_target_dir}}/release/hologram"
 
 # Run project
 run *args:

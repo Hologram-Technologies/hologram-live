@@ -769,7 +769,9 @@ mod tests {
     /// bare `cargo test` run works without a prior `cargo build --examples`.
     fn example_plugin_path() -> PathBuf {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let binary = root.join("target/debug/examples/echo-plugin");
+        let target =
+            std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from);
+        let binary = target.join("debug/examples/echo-plugin");
         if !binary.exists() {
             let status = std::process::Command::new(env!("CARGO"))
                 .args(["build", "--locked", "--example", "echo-plugin"])

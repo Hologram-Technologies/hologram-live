@@ -43,9 +43,9 @@ resolved field and reports that resolution is deferred to compilation; an
 already pinned request reports itself as resolved. A completed compile always
 reports the exact reference used by Docker.
 
-The resolver does not mutate `hologram.json`, add registry evidence to the
-archive, or claim byte-reproducible OCI output. Docker's raw-manifest command
-owns registry transport, authentication, and media negotiation.
+The resolver does not mutate `hologram.json` or add registry evidence to the
+archive. Docker's raw-manifest command owns registry transport, authentication,
+and media negotiation.
 
 ## Consequences
 
@@ -57,13 +57,13 @@ owns registry transport, authentication, and media negotiation.
 - Rootfs compilation now requires a Docker CLI with Buildx image-tools support
   for mutable references. Digest-pinned references retain the previous engine
   requirement but do not require registry inspection.
-- ADR 017 now normalizes Docker image export. Completed provenance remains
-  `reproducible: false` until uncached clean supported hosts produce
-  byte-identical config, layer, application, and archive κ values.
+- ADR 017 normalizes Docker image export and proves byte-identical config,
+  layer, application, and archive identities on two clean runners for each
+  supported Linux target. Completed provenance therefore reports
+  `reproducible: true` after this resolver binds the base.
 
 ## Follow-up
 
-- Complete ADR 017's byte-identical clean-host build proof.
 - Add authenticated private-registry integration coverage without persisting
   credentials in provenance.
 - Produce SBOM and signed-attestation material over resolved inputs and output

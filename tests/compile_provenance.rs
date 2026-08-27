@@ -114,7 +114,7 @@ fn rootfs_compile_check_reports_planned_provenance_without_docker() {
     assert!(source["reproducibility"]["blocker"]
         .as_str()
         .is_some_and(|blocker| blocker.contains("not resolved until compilation")
-            && blocker.contains("clean builds")));
+            && blocker.contains("immutable digest")));
 }
 
 #[test]

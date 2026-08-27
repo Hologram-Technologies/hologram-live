@@ -2,7 +2,7 @@
 
 ## Sprint status
 
-- State: active
+- State: complete
 - Started: 2026-08-26
 - Last reviewed: 2026-08-26
 - Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
@@ -34,9 +34,11 @@
   target-aware aggregate comparison artifact.
 - [x] Make the clean-builder matrix a prerequisite of every server release.
 - [x] Run the local two-build uncached probe and record its identities here.
-- [ ] Run the clean GitHub matrix and record the workflow evidence here.
-- [ ] If either comparison fails, identify and normalize the differing image
-  config or generated filesystem bytes, then rerun both proofs.
+- [x] Run the first clean GitHub matrix and record the failure evidence here.
+- [x] Identify the first matrix's unstable generated layer and replace its
+  cross-stage directory copy with a canonical runtime tar artifact.
+- [x] Rerun both clean target comparisons and record the passing workflow
+  evidence here.
 
 Local evidence (2026-08-26): the first uncached comparison exposed unstable
 timestamps in every generated Docker layer. A two-stage recipe reduced that
@@ -57,6 +59,44 @@ and footer fingerprint
 The resulting archive executed NumPy/pandas successfully and returned three
 rows, mean `20.0`, and sum `60.0` from an isolated current configuration.
 
+Clean-runner evidence (workflow run `33031626335`, 2026-08-26): all four
+uncached builds completed with Docker client/server `28.0.4` and the same
+digest-bound base. Each architecture still disagreed across its two replicas:
+amd64 emitted rootfs layer κ values beginning `blake3:164e` and
+`blake3:49f9`, while arm64 emitted `blake3:ad32` and `blake3:fece`. This ruled
+out tool and base selection drift and isolated the remaining instability to
+BuildKit's serialization of `COPY --from=builder` directory trees.
+
+The replacement builder writes `/app` and `/hologram` as one lexically sorted
+GNU tar with epoch-zero timestamps and numeric root ownership. Hologram copies
+that artifact from a stopped builder container and feeds it to the final
+digest-bound image through local `ADD`, so no foreign-architecture process is
+executed and BuildKit no longer chooses directory traversal order. Two local
+uncached arm64 builds now match at image ID
+`sha256:1f55f44f41af891e3464b056f6b0beefbf6be9d736611de1505d17fb9a8cd754`,
+rootfs layer κ
+`blake3:7466d21d435ec4d2a7da0efdd9e974f26ff58a471d579abfa04b3f6df4077b8b`,
+application κ
+`blake3:fdfc49a149a89b0fcce848515dd4aa3d5e85f9d6028ad2d28ae4efc23d943f2e`,
+archive κ
+`blake3:5c97573cf6df8a2fe4e538db32f1d5f3edddc24a049e0f7a776c0bdcd8ac7438`,
+and footer fingerprint
+`7e9e6308320a9d8428eee9700fb98bef3baa127db66dfb3ac3e94c6bfdd576a3`.
+Passing clean-runner evidence (workflow run `33035209550`, 2026-08-26): the
+rebased PR repeated two uncached builds for each target and the aggregate
+comparison passed. Linux/amd64 matched at image ID
+`sha256:778bc5f5e4c66392b798ff8b6ad6178e42c80efff6a8ff44b18fbfc44573d31f`,
+rootfs layer κ
+`blake3:cae3233e0f062c839b0517de631e4d77774cdda3df341fc152b8776b919bb6c9`,
+application κ
+`blake3:2e4f56c955af32b361194b20b0d1c98bf55dfeacc933c995ec2e489570892ed1`,
+and archive κ
+`blake3:6b0c6b9b21aae5bfe30dfa5494a25b90b5dde598978928fe0182fe26fe63a068`.
+Linux/arm64 matched the local proof's image, rootfs, application, and archive
+identities exactly. Completed builds now report `reproducible: true`; an
+offline check of a mutable base remains false only until compilation resolves
+and binds its immutable digest.
+
 ## Verification and delivery
 
 - [x] Add focused CLI/provenance and report-comparison tests.
@@ -64,13 +104,15 @@ rows, mean `20.0`, and sum `60.0` from an isolated current configuration.
   documentation, and desktop gates.
 - [x] Update README, website Python guidance, ADR 017, and the durable runtime
   plan with the rootfs-builder boundary and exact commands.
-- [ ] Commit, open and merge the PR, remove only this worktree, and leave the
-  primary checkout clean on synchronized `main`.
+- [x] Commit, open and merge PR
+  [#26](https://github.com/Hologram-Technologies/hologram-live/pull/26), remove
+  only its worktree, and leave the primary checkout clean on synchronized
+  `main`.
 
 Repository evidence (2026-08-26): `just verify` passed formatting, source-size
-and product-boundary checks, locked workspace check/tests (including 198
+and product-boundary checks, locked workspace check/tests (including 204
 library tests, 23 CLI tests, and four provenance/comparator tests), Clippy with
-warnings denied, 12 BDD scenarios with 123 steps, the optimized server build,
+warnings denied, 13 BDD scenarios with 135 steps, the optimized server build,
 and isolated smoke. `just docs` regenerated OpenAPI and built all 13 pages.
 The Tauri release gate reported zero npm vulnerabilities and produced the
 macOS application and arm64 DMG. The docs audit continues to report the

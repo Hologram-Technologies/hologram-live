@@ -50,7 +50,8 @@ trap cleanup EXIT
 docker version --format '{{.Server.Version}}' >/dev/null
 cargo build --release --locked --package hologram-live --bin hologram --manifest-path "$repo_root/Cargo.toml"
 
-binary="$repo_root/target/release/hologram"
+target_dir=${CARGO_TARGET_DIR:-"$repo_root/target"}
+binary="$target_dir/release/hologram"
 manifest="$repo_root/examples/python-numpy-pandas/hologram.json"
 reports=()
 build=1
@@ -85,6 +86,8 @@ def identity(report):
     output = source["output"]
     if source["builder"].get("cache_disabled") is not True:
         raise ValueError("compile report does not prove that the builder cache was disabled")
+    if source.get("reproducibility") != {"reproducible": True}:
+        raise ValueError("compile report does not claim the proven rootfs build contract")
     return {
         "image_id": output["image_id"],
         "rootfs_layer_kappa": output["layer_kappa"],

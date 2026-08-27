@@ -42,7 +42,8 @@ trap cleanup EXIT
 docker version --format '{{.Server.Version}}' >/dev/null
 cargo build --release --locked --package hologram-live --bin hologram --manifest-path "$repo_root/Cargo.toml"
 
-binary="$repo_root/target/release/hologram"
+target_dir=${CARGO_TARGET_DIR:-"$repo_root/target"}
+binary="$target_dir/release/hologram"
 manifest="$repo_root/examples/python-numpy-pandas/hologram.json"
 request="$repo_root/examples/python-numpy-pandas/request.json"
 isolated_env=(
@@ -81,8 +82,8 @@ if base_image.get("reference") != "python:3.12-slim" or not resolved_base.starts
 if len(resolved_base.removeprefix("python@sha256:")) != 64:
     print(f"rootfs provenance contains an invalid resolved base: {base_image!r}", file=sys.stderr)
     raise SystemExit(1)
-if "not resolved until compilation" in source["reproducibility"]["blocker"]:
-    print(f"completed rootfs provenance retained its planned base blocker: {source!r}", file=sys.stderr)
+if source["reproducibility"] != {"reproducible": True}:
+    print(f"completed rootfs provenance does not claim the proven build contract: {source!r}", file=sys.stderr)
     raise SystemExit(1)
 build_output = source.get("output", {})
 if not build_output.get("layer_kappa", "").startswith("blake3:"):

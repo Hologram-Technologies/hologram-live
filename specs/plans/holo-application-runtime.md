@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M4.2 uncached Python rootfs clean-builder equality gate
-- Next delivery: M4.2 eliminate any config or filesystem differences exposed by the gate
+- Current delivery: M4.2 clean Python rootfs equality complete
+- Next delivery: M4.2 deterministic Python Component build randomness
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -378,8 +378,23 @@ image-ID-mismatched exports fail before archive assembly. Two local exports of
 the locked NumPy/pandas image produced identical layer, application, archive,
 and footer identities; removing the local tag proved the normalized archive
 can cold-load and execute. ADR 017 defines the current-only contract. Clean
-uncached equality across all five release hosts remains open, so provenance
-continues to report `reproducible: false`.
+uncached equality is now proven across both Linux target architectures.
+
+The first two-replica Linux matrix (workflow run `33031626335`) completed all
+four builds with Docker 28.0.4 and the same digest-bound base but produced a
+different image and rootfs κ on every runner. The target-local differences
+remained after application timestamps were normalized, identifying BuildKit's
+cross-stage directory serialization as the unstable boundary. The compiler
+now has the builder create one sorted GNU tar of `/app` and `/hologram` with
+epoch-zero timestamps and numeric root ownership. It copies that tar from a
+stopped builder container and uses local `ADD` in the final digest-bound
+image, avoiding both foreign-architecture execution and engine-selected tree
+ordering. Two local uncached arm64 builds match through the image, rootfs,
+application, archive, and footer identities. Workflow run `33035209550`
+repeated that proof on two clean Linux runners for each target: both amd64
+reports matched and both arm64 reports matched. Completed builds therefore
+report `reproducible: true`; offline checking of a mutable base remains false
+only until compilation resolves and binds its immutable digest.
 
 ### M3.2 View provider
 
@@ -534,9 +549,12 @@ application/DMG builds pass.
 - [x] Normalize rootfs archive member order, blob paths, permissions,
   ownership, timestamps, manifest encoding, compression, and source epoch for
   identical Docker image config/layer inputs.
-- [ ] Normalize or eliminate clean-build differences inside generated image
+- [x] Normalize or eliminate clean-build differences inside generated image
   config/layer bytes and prove equal κ values across two independent clean
   Linux builders for each supported rootfs target architecture.
+- [x] Diagnose the first clean matrix's target-local mismatch and replace
+  `COPY --from=builder` directory serialization with a canonical sorted runtime
+  tar consumed by the final image.
 - [x] Add `compile --no-build-cache`, record its use in rootfs provenance, and
   emit a `jq`-ready local identity comparison.
 - [x] Add a server-release matrix with two clean runners per Linux target and
@@ -744,7 +762,7 @@ work below.
   the selected digest to the build.
 - [x] Normalize the current Python rootfs Docker archive representation under
   ADR 017.
-- [ ] Prove byte-identical rootfs layer κ values across uncached clean Linux
+- [x] Prove byte-identical rootfs layer κ values across uncached clean Linux
   builder replicas for both supported target architectures.
 - [ ] Deterministic Python Component output and clean-build equality proof.
 
@@ -800,7 +818,7 @@ work below.
   output layer κ, and explicit reproducibility blockers.
 - [x] Replace Docker-save byte identity with ADR 017's normalized schema-3
   rootfs archive and prove repeated local export plus cold-load execution.
-- [ ] Run uncached rootfs builds on two independent clean Linux builders for
+- [x] Run uncached rootfs builds on two independent clean Linux builders for
   each supported target architecture, compare config/layer/application/archive
   identities, and close every observed difference before setting
   `reproducible: true`.

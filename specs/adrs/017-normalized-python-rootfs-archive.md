@@ -56,15 +56,23 @@ two independent clean Linux runners for each output architecture
 (`linux/amd64` and `linux/arm64`) and compares replicas within the target.
 Cross-architecture κ equality is neither expected nor required.
 
-The application image is a two-stage build. The disposable builder installs
-the pinned `uv` tool and locked third-party dependencies. It does not install
-the local project as a wheel: `uv_cache.json` embeds the source directory's
-nanosecond timestamp and `RECORD` then hashes that unstable value. Instead the
-runtime imports the compiler-staged source through `PYTHONPATH=/app/src`.
-Before the final stage, every application and launcher filesystem timestamp is
-set to epoch zero. The final image starts from the same digest-bound base and
-copies only the normalized application and launcher trees, excluding `uv`, its
-cache, and all transient build layers.
+The application image uses separate builder and runtime builds. The disposable
+builder installs the pinned `uv` tool and locked third-party dependencies. It
+does not install the local project as a wheel: `uv_cache.json` embeds the
+source directory's nanosecond timestamp and `RECORD` then hashes that unstable
+value. Instead the runtime imports the compiler-staged source through
+`PYTHONPATH=/app/src`.
+
+The builder normalizes every application and launcher filesystem timestamp to
+epoch zero, then writes `/app` and `/hologram` into one lexically sorted GNU tar
+with epoch-zero headers, numeric root ownership, and stable GNU format. The
+compiler creates but does not start a container from that image, copies
+`/runtime.tar` to the host staging directory, and removes the disposable
+container and builder tag. The final image starts from the same digest-bound
+base and consumes the local tar with `ADD runtime.tar /`. This excludes `uv`,
+its cache, and transient build layers while preventing BuildKit from choosing
+the traversal order of a cross-stage directory copy. Creating and copying from
+the stopped container does not execute a foreign-architecture process.
 
 ## Consequences
 
@@ -75,10 +83,11 @@ cache, and all transient build layers.
 - A cold machine can restore and execute the normalized archive through the
   existing direct Docker provider.
 - Rootfs bundle schema 2 is deliberately unsupported under ADR 016.
-- This does not yet prove clean-build reproducibility. Package installation,
-  generated filesystem contents, Docker/BuildKit behavior, and platform output
-  must still be compared across uncached clean release hosts. Provenance keeps
-  `reproducible: false` until that matrix is green.
+- Package installation, generated filesystem contents, Docker/BuildKit
+  behavior, and platform output are covered by two uncached clean replicas for
+  each supported Linux target. Completed provenance reports
+  `reproducible: true`; an offline mutable-base check remains false only until
+  compilation binds the base digest.
 
 ## Verification
 
@@ -104,13 +113,31 @@ ID `sha256:a4d4ad759567e43ebec5bcc84d5dae5a52a0a5f3fcce74cd7fe1e756f97e2271`
 and equal rootfs layer κ
 `blake3:64f53c4cf1f721a7efa857e3397589034eea565adb89dc93ce3db8799062f538`.
 The complete application and archive identities also matched, and the archive
-executed successfully. The independent Linux runner matrix remains required
-before provenance may claim reproducibility.
+executed successfully. This local proof preceded the independent runner gate.
+
+The first independent matrix, workflow run `33031626335`, then completed four
+clean builds with the same Docker 28.0.4 client/server and the same selected
+base digest but found different target-local identities. The amd64 replicas
+emitted rootfs layer κ values beginning `blake3:164e` and `blake3:49f9`; the
+arm64 replicas emitted `blake3:ad32` and `blake3:fece`. The only remaining
+engine-owned construction boundary was `COPY --from=builder` of the normalized
+directories, so the compiler replaced that copy with the canonical runtime tar
+described above. Two local uncached arm64 builds now agree on image ID
+`sha256:1f55f44f41af891e3464b056f6b0beefbf6be9d736611de1505d17fb9a8cd754`
+and rootfs layer κ
+`blake3:7466d21d435ec4d2a7da0efdd9e974f26ff58a471d579abfa04b3f6df4077b8b`.
+
+Workflow run `33035209550` then repeated two uncached builds on independent
+clean runners for each target and passed the aggregate comparison. Linux/amd64
+matched at image ID
+`sha256:778bc5f5e4c66392b798ff8b6ad6178e42c80efff6a8ff44b18fbfc44573d31f`
+and rootfs layer κ
+`blake3:cae3233e0f062c839b0517de631e4d77774cdda3df341fc152b8776b919bb6c9`.
+Linux/arm64 matched the local identities above. This closes the clean-builder
+proof for the current rootfs contract.
 
 ## Follow-up
 
-- Run the uncached two-replica Linux builder matrix for both supported target
-  architectures and compare config, layer, application, and archive identities.
 - Pin every build-time acquisition, including the uv installer artifact, and
   eliminate or normalize any differing generated filesystem content.
 - Add authenticated private-registry coverage and signed SBOM/attestation

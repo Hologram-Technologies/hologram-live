@@ -53,5 +53,9 @@ git -C "${componentizer_source}" apply --check \
   "${repository_root}/tools/componentize-py/deterministic-metadata-wiring.patch"
 git -C "${componentizer_source}" apply \
   "${repository_root}/tools/componentize-py/deterministic-metadata-wiring.patch"
+git -C "${componentizer_source}" apply --check \
+  "${repository_root}/tools/componentize-py/deterministic-metadata-preregistration.patch"
+git -C "${componentizer_source}" apply \
+  "${repository_root}/tools/componentize-py/deterministic-metadata-preregistration.patch"
 
 echo "prepared deterministic componentize-py ${componentizer_revision}" >&2

@@ -25,13 +25,13 @@ pub const COMPONENTIZE_PY_VERSION: &str = "0.25.0";
 pub const COMPONENT_PYTHON_VERSION: &str = "3.14.0";
 const COMPONENT_PYTHON_INSTALL_VERSION: &str = "3.14";
 const COMPONENTIZE_PY_SOURCE_REVISION: &str = "c0949b19d464f5d70bc1051195a3ae0e6a012df9";
-const COMPONENTIZER_RELEASE_TAG: &str = "componentizer-v0.25.0-hologram.2";
-const COMPONENTIZER_RELEASE_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.2";
-const COMPONENTIZER_PATCHSET_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/PATCHSET.sha256";
+const COMPONENTIZER_RELEASE_TAG: &str = "componentizer-v0.25.0-hologram.3";
+const COMPONENTIZER_RELEASE_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.3";
+const COMPONENTIZER_PATCHSET_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.3/PATCHSET.sha256";
 const COMPONENTIZER_PATCHSET_SHA256: &str =
-    "ce542742dfdd624bb25380bf042638a4e7caa5edb7e7560f0f8809343999c37c";
+    "d281c2667a893fffa7e7d64c3b34d6ef22d9f40b9b89ab643475705bd0eba9c7";
 const COMPONENTIZER_DETERMINISM_CONTRACT: &str =
-    "hologram:componentizer/preinitialization-determinism@2";
+    "hologram:componentizer/preinitialization-determinism@3";
 const TARGET_ABI: &str = "wasm32-wasip2-component";
 const GUEST_CONTRACT: &str = "hologram:guest/component@1";
 const REPRODUCIBILITY_BLOCKER: &str = "the deterministic componentizer is pinned, but two independent clean builds have not yet been compared on every supported host";
@@ -96,7 +96,8 @@ pub struct BuildOutput {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Reproducibility {
     pub reproducible: bool,
-    pub blocker: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocker: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -297,7 +298,7 @@ fn build_provenance(
         output: None,
         reproducibility: Reproducibility {
             reproducible: false,
-            blocker: REPRODUCIBILITY_BLOCKER,
+            blocker: Some(REPRODUCIBILITY_BLOCKER),
         },
     })
 }
@@ -385,24 +386,24 @@ fn componentizer_patch_set() -> ToolPatchSet {
 fn componentizer_distribution(os: &str, arch: &str) -> Result<ToolDistribution> {
     let distribution = match (os, arch) {
         ("macos", "x86_64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/componentize_py-0.25.0-cp39-abi3-macosx_10_12_x86_64.whl",
-            sha256: "e7894433494616b5e1baf13187785e15a192a6c3d453654cbf271569840f574f",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.3/componentize_py-0.25.0-cp39-abi3-macosx_10_12_x86_64.whl",
+            sha256: "b5cd49b8cb3d0a747b8a9220485be7c09d014926f1c8124172ac3bc33f08ddd5",
         },
         ("macos", "aarch64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/componentize_py-0.25.0-cp39-abi3-macosx_11_0_arm64.whl",
-            sha256: "551ae049489aaec812240a57104f92b3719d0f6ec1e22e2eb87891689f3dc2f4",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.3/componentize_py-0.25.0-cp39-abi3-macosx_11_0_arm64.whl",
+            sha256: "9c0c17852a5df0e9e0ed74e4dba3ee48208a1d74f46cddf8faad125e58aaf9f9",
         },
         ("linux", "x86_64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_x86_64.whl",
-            sha256: "2d95571b664bbe2cc2753017563a70892903a292fb753f5e743a16b12783a17b",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.3/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_x86_64.whl",
+            sha256: "6c134b401e1eac329b2361524f94831c07a335cf63efe42218bc4ab28fadac16",
         },
         ("linux", "aarch64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_aarch64.whl",
-            sha256: "b1553697e05fb4dd128632073a8b90493fea573dc5edbbc88b95bb9de5346bb3",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.3/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_aarch64.whl",
+            sha256: "229229552cd3d50732176c9e48b93a284153b73c7f9d4988f75736d3eb1a2c91",
         },
         ("windows", "x86_64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/componentize_py-0.25.0-cp39-abi3-win_amd64.whl",
-            sha256: "8830c98bac12d132959508d5b895deae9098fc75f3c51f10f110124f81ecb24a",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.3/componentize_py-0.25.0-cp39-abi3-win_amd64.whl",
+            sha256: "7df0ce6dc828ec7ae696e8f0f80ba871df4ab9f5a29305e6cb7689159d79a885",
         },
         _ => {
             return Err(LiveError::Capability(format!(
@@ -999,7 +1000,7 @@ mod tests {
             .expect("host distribution");
         assert!(distribution
             .url
-            .starts_with("https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/"));
+            .starts_with("https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.3/"));
         assert_eq!(distribution.sha256.len(), 64);
         assert_eq!(
             provenance.componentizer.patch_set,

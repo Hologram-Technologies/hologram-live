@@ -44,7 +44,7 @@
   pinned Rust, maturin-action, maturin, and WASI SDK inputs.
 - [x] Build the patch as five immutable wheel assets matching the server
   release matrix and publish their SHA-256 manifest under
-  [`componentizer-v0.25.0-hologram.2`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.2).
+  [`componentizer-v0.25.0-hologram.3`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.3).
 - [x] Replace every upstream componentizer URL/hash pin with the corresponding
   Hologram distribution asset; retain fail-closed host selection.
 - [x] Report the patch identity and deterministic build-randomness contract in
@@ -140,6 +140,28 @@ lexical mount/path order before guest execution and includes a regression test
 for opposite host file-creation orders. Provenance remains false while the
 six-patch distribution and replacement matrix are pending.
 
+Six-patch build evidence (run `33209572217`, 2026-08-28): after PR #35 merged
+as `533dd4c`, a workflow dispatch from merged `main` passed the shared
+CPython/WASI build, every native wheel builder, and both checksum manifests.
+Immutable tag `componentizer-v0.25.0-hologram.3` points to that exact commit.
+Tagged run `33211899065` rebuilt all five wheels and published the seven public
+assets. A fresh download verified every wheel against `SHA256SUMS`, all six
+local patches against `PATCHSET.sha256`, and patch-manifest digest
+`d281c2667a893fffa7e7d64c3b34d6ef22d9f40b9b89ab643475705bd0eba9c7`.
+PR #33 now pins the `.3` assets and determinism contract `@3`; the replacement
+matrix remains open and completed provenance is still false.
+
+Pinned `.3` local proof (2026-08-28): two isolated macOS arm64 builds executed
+successfully and matched layer
+`blake3:cadb16f50a4cef8fd992838fb20c5acb44b2a94e84b0f9a5a56212c32545d716`,
+application
+`blake3:86d4be4b4900263bde7c38e245379e41a20fa78562d966abf2e5298eae51d805`,
+archive
+`blake3:344d1e3d84e6c5a217eb63cdfef5a14ebe11ff5034ec7a59b5e47a7a6e025ba8`,
+footer `d47bbff76be502f6003211f9b14e7ba46478b40936abba158e5ddd1fab3adde0`,
+and complete-file SHA-256
+`67efc1a326e380a2fb6e35da7dc002396f0baeb1de4ffb7bf1261d9e680054d3`.
+
 ## Verification and delivery
 
 - [x] Validate the source preparation and workflow statically with ShellCheck,
@@ -165,6 +187,11 @@ six-patch distribution and replacement matrix are pending.
   `componentizer-v0.25.0-hologram.2`. A fresh download verified all wheel
   hashes and patch-set digest
   `ce542742dfdd624bb25380bf042638a4e7caa5edb7e7560f0f8809343999c37c`.
+- [x] Publish the metadata-preregistration correction. Untagged run
+  `33209572217` passed every build host; tagged run `33211899065` published
+  `componentizer-v0.25.0-hologram.3`; and a fresh download verified every
+  wheel plus patch-set digest
+  `d281c2667a893fffa7e7d64c3b34d6ef22d9f40b9b89ab643475705bd0eba9c7`.
 - [x] Add exact five-host distribution-selection and planned-provenance tests
   for the immutable release and patch contract.
 - [x] Add a fail-closed clean-host comparator and execute every compiled proof

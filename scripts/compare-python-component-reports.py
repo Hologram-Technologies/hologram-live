@@ -64,6 +64,7 @@ def main() -> int:
                 "equal": equal,
                 "same_contract": same_contract,
                 "identities": identities[0] if equal else None,
+                "builds": identities,
                 "build_hosts": [report.get("build_host") for report in reports],
                 "provenance_reproducible": [
                     report.get("provenance_reproducible") for report in reports

@@ -451,6 +451,15 @@ missing hosts, missing replicas, contract drift, or target-local identity
 drift. Server releases depend on the aggregate job. Completed provenance stays
 false until the first ten-runner matrix passes.
 
+First matrix result (2026-08-28): run `33196484166` compiled and executed all
+ten clean proofs. Both macOS arm64 and x86_64 replica pairs matched completely.
+Linux arm64, Linux x86_64, and Windows x86_64 produced equal-length components
+whose layer, application, archive, footer, and complete-file identities
+differed between replicas despite identical reported build contracts. The
+aggregate failed as designed. Diagnostic matrix artifacts now retain the
+`.holo` files and expose both mismatched identity sets for byte localization;
+the reproducibility claim remains false.
+
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
 `compile --check` hashes `pyproject.toml`, `uv.lock`, and the normalized source

@@ -71,11 +71,13 @@ jobs:
           enable-cache: false
       - name: Compile and execute once on a clean runner
         shell: bash
-        run: ./scripts/check-python-component-reproducibility.sh --build-count 1 --report component-report.json
+        run: ./scripts/check-python-component-reproducibility.sh --build-count 1 --report component-report.json --archive component.holo
       - uses: actions/upload-artifact@v7
         with:
           name: component-${{ matrix.target }}-${{ matrix.replica }}
-          path: component-report.json
+          path: |
+            component-report.json
+            component.holo
           if-no-files-found: error
 
   compare:
@@ -90,10 +92,14 @@ jobs:
           path: component-reports
       - name: Compare canonical and physical identities by native host
         run: |
+          set +e
           python3 scripts/compare-python-component-reports.py \
             --expected-replicas 2 \
             component-reports/*/component-report.json > component-matrix.json
+          comparison_status=$?
+          set -e
           jq . component-matrix.json
+          exit "${comparison_status}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

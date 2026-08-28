@@ -4,9 +4,10 @@ set -euo pipefail
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 build_count=2
 report_path=""
+archive_path=""
 
 usage() {
-  printf 'usage: %s [--build-count 1|2] [--report PATH]\n' "$0"
+  printf 'usage: %s [--build-count 1|2] [--report PATH] [--archive PATH]\n' "$0"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -19,6 +20,11 @@ while [[ $# -gt 0 ]]; do
     --report)
       [[ $# -ge 2 && -n "$2" ]] || { usage >&2; exit 2; }
       report_path=$2
+      shift 2
+      ;;
+    --archive)
+      [[ $# -ge 2 && -n "$2" ]] || { usage >&2; exit 2; }
+      archive_path=$2
       shift 2
       ;;
     --help|-h)
@@ -34,6 +40,10 @@ done
 
 if [[ "$build_count" != 1 && "$build_count" != 2 ]]; then
   usage >&2
+  exit 2
+fi
+if [[ -n "$archive_path" && "$build_count" != 1 ]]; then
+  printf '%s\n' '--archive requires --build-count 1' >&2
   exit 2
 fi
 
@@ -103,6 +113,10 @@ done
 
 if [[ -n "$report_path" ]]; then
   mkdir -p "$(dirname -- "$report_path")"
+fi
+if [[ -n "$archive_path" ]]; then
+  mkdir -p "$(dirname -- "$archive_path")"
+  cp "${archives[0]}" "$archive_path"
 fi
 
 "$python_bin" - "$report_path" "$manifest" "$build_count" \

@@ -97,6 +97,14 @@ and complete-file SHA-256
 This validates the command and one host locally; provenance remains false
 until the ten clean GitHub runners pass.
 
+First clean-host evidence (run `33196484166`, 2026-08-28): all ten independent
+builders compiled and executed the locked dependency example successfully,
+and both macOS host pairs matched every identity. The aggregate correctly
+failed because equal-length component bytes differed between replicas on both
+Linux architectures and Windows x86_64; their build contracts matched. The
+next diagnostic run retains each `.holo` artifact so the remaining component
+byte differences can be localized instead of weakening the gate.
+
 ## Verification and delivery
 
 - [x] Validate the source preparation and workflow statically with ShellCheck,

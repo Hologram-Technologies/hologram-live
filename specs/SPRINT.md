@@ -44,7 +44,7 @@
   pinned Rust, maturin-action, maturin, and WASI SDK inputs.
 - [x] Build the patch as five immutable wheel assets matching the server
   release matrix and publish their SHA-256 manifest under
-  [`componentizer-v0.25.0-hologram.1`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1).
+  [`componentizer-v0.25.0-hologram.2`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.2).
 - [x] Replace every upstream componentizer URL/hash pin with the corresponding
   Hologram distribution asset; retain fail-closed host selection.
 - [x] Report the patch identity and deterministic build-randomness contract in
@@ -114,8 +114,22 @@ preinitialized filesystem metadata region. PR #34 added lexical guest-directory
 enumeration to deterministic metadata mode and merged as `dec6a00`. Untagged
 release run `33200329304` then built the shared CPython/WASI payload, all five
 native wheels, `SHA256SUMS`, and `PATCHSET.sha256` successfully. Publishing the
-immutable `.2` tag remains an explicit release action; the ten-runner acceptance
-matrix and provenance claim remain open until that release exists and is pinned.
+immutable `.2` tag in run `33203476950` rebuilt and published all seven assets.
+A fresh download verified every wheel and the patch-set manifest; the compiler
+now pins the `.2` host wheels and contract
+`hologram:componentizer/preinitialization-determinism@2`. The ten-runner
+acceptance matrix and provenance claim remain open until the new release passes.
+
+Pinned `.2` local proof (2026-08-28): two isolated macOS arm64 builds executed
+successfully and matched layer
+`blake3:d647d38b165f9f11462791e5bc0df53b97c9f597e805b254eeada2224af72df8`,
+application
+`blake3:1a35dac18db1dcfa7697e4b67afd5214580c87205942f40c909f7e660a67e010`,
+archive
+`blake3:2c0cafa298460003ed25ca585e815c3e77c464c2fa9fe38c1cbd53afc22bbadc`,
+footer `cb60b3fea1cca459c0197fd0ff51e3b9b9d275c8ad0a56e0e3f0b26cea0e2e05`,
+and complete-file SHA-256
+`d150fa30cb5492473c5eacc797b5906512f81b99b47823012ebc5101d7f4c9fb`.
 
 ## Verification and delivery
 
@@ -137,6 +151,11 @@ matrix and provenance claim remain open until that release exists and is pinned.
   `SHA256SUMS` and `PATCHSET.sha256`, and published all seven assets. A fresh
   download verified every wheel against `SHA256SUMS` and every local patch
   against `PATCHSET.sha256`.
+- [x] Publish the directory-ordering correction. Untagged run `33200329304`
+  passed all five hosts, and tagged run `33203476950` published
+  `componentizer-v0.25.0-hologram.2`. A fresh download verified all wheel
+  hashes and patch-set digest
+  `ce542742dfdd624bb25380bf042638a4e7caa5edb7e7560f0f8809343999c37c`.
 - [x] Add exact five-host distribution-selection and planned-provenance tests
   for the immutable release and patch contract.
 - [x] Add a fail-closed clean-host comparator and execute every compiled proof

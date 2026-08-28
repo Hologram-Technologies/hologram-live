@@ -32,7 +32,7 @@ fn compile_check_reports_versioned_noncanonical_python_provenance() {
     assert!(source["componentizer"]["distribution"]["url"]
         .as_str()
         .is_some_and(|url| {
-            url.starts_with("https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.1/")
+            url.starts_with("https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/")
                 && std::path::Path::new(url)
                     .extension()
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("whl"))
@@ -44,22 +44,22 @@ fn compile_check_reports_versioned_noncanonical_python_provenance() {
         Some(64)
     );
     let patch_set = &source["componentizer"]["patch_set"];
-    assert_eq!(patch_set["release_tag"], "componentizer-v0.25.0-hologram.1");
+    assert_eq!(patch_set["release_tag"], "componentizer-v0.25.0-hologram.2");
     assert_eq!(
         patch_set["release_url"],
-        "https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1"
+        "https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.2"
     );
     assert_eq!(
         patch_set["manifest_url"],
-        "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.1/PATCHSET.sha256"
+        "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.2/PATCHSET.sha256"
     );
     assert_eq!(
         patch_set["manifest_sha256"],
-        "25e19905ce9a12c341741e1b5754307e1d6e07bdf3a1f7bcaa7739595dc82167"
+        "ce542742dfdd624bb25380bf042638a4e7caa5edb7e7560f0f8809343999c37c"
     );
     assert_eq!(
         patch_set["determinism_contract"],
-        "hologram:componentizer/preinitialization-determinism@1"
+        "hologram:componentizer/preinitialization-determinism@2"
     );
     assert!(source.get("componentizer_runner").is_none());
     assert!(source.get("dependency_installer").is_none());

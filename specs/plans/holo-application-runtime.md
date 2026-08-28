@@ -343,7 +343,7 @@ randomness remain separate follow-ups.
 Deterministic-componentizer work (started 2026-08-27): upstream revision
 `c0949b1` still creates a private WASI context with independently randomized
 secure bytes, insecure bytes, and insecure seed, and has no CLI or library seed
-control. Hologram now carries a reviewed four-patch source set under
+control. Hologram now carries a reviewed five-patch source set under
 `tools/componentize-py/`: it supplies
 separate fixed-domain streams for both byte interfaces, fixes the insecure
 seed, fixes wall and monotonic clocks at epoch zero, and sets
@@ -357,7 +357,7 @@ the published `wasmtime-wasi 46.0.1` crate against SHA-256
 and builds the same five native host wheels as the standalone-server matrix.
 Rust, maturin-action, maturin, and WASI SDK inputs are pinned, and the release
 contains wheel and patch-set SHA-256 manifests. The compiler now selects the
-five host wheels from immutable release `componentizer-v0.25.0-hologram.1`,
+five host wheels from immutable release `componentizer-v0.25.0-hologram.2`,
 verifies each exact SHA-256, and reports `reproducible: false` until the full
 clean-host equality gate passes.
 
@@ -459,6 +459,39 @@ differed between replicas despite identical reported build contracts. The
 aggregate failed as designed. Diagnostic matrix artifacts now retain the
 `.holo` files and expose both mismatched identity sets for byte localization;
 the reproducibility claim remains false.
+
+Directory-order correction and immutable `.2` publication (2026-08-28):
+retained-archive run `33198288139` repeated the host pattern while every one of
+the ten archives executed correctly. Extracting the component layer localized
+the replica differences to 17 bytes on Linux x86_64, 19 bytes on Linux arm64,
+and 7 bytes on Windows x86_64, all in preinitialized filesystem metadata. PR
+#34 (`dec6a00`) added lexical guest-directory enumeration whenever the private
+deterministic metadata policy is enabled. Untagged run `33200329304` proved
+the updated five-patch source on every native host. Annotated tag
+`componentizer-v0.25.0-hologram.2` then triggered tagged run `33203476950`,
+which rebuilt all five wheels, generated both manifests, and published the
+non-draft, non-prerelease
+[immutable release](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.2).
+A fresh download verified all five wheels against `SHA256SUMS`; the independently
+computed `PATCHSET.sha256` digest is
+`ce542742dfdd624bb25380bf042638a4e7caa5edb7e7560f0f8809343999c37c`.
+The compiler now pins those `.2` assets and reports contract
+`hologram:componentizer/preinitialization-determinism@2`. Completed provenance
+remains false until the new ten-runner acceptance matrix passes.
+
+Pinned `.2` local proof (2026-08-28): two macOS arm64 compiles used separate
+Hologram and uv caches, executed successfully, and matched component layer
+`blake3:d647d38b165f9f11462791e5bc0df53b97c9f597e805b254eeada2224af72df8`,
+application
+`blake3:1a35dac18db1dcfa7697e4b67afd5214580c87205942f40c909f7e660a67e010`,
+archive
+`blake3:2c0cafa298460003ed25ca585e815c3e77c464c2fa9fe38c1cbd53afc22bbadc`,
+footer `cb60b3fea1cca459c0197fd0ff51e3b9b9d275c8ad0a56e0e3f0b26cea0e2e05`,
+and complete-file SHA-256
+`d150fa30cb5492473c5eacc797b5906512f81b99b47823012ebc5101d7f4c9fb`.
+The 19,548,031-byte archives both returned the expected locked `six==1.17.0`
+response. This closes the new-release local gate only; the five-host matrix is
+still authoritative.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
@@ -958,7 +991,7 @@ work below.
     directory enumeration in PR #34 (`dec6a00`).
   - [x] Prove the updated five-patch source builds all five native wheels and
     both checksum manifests in untagged release run `33200329304`.
-  - [ ] Publish and pin the immutable
+  - [x] Publish and pin the immutable
     `componentizer-v0.25.0-hologram.2` release.
   - [ ] Compare two clean builds per host before changing the reproducibility
     claim.

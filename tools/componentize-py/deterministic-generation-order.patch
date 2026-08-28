@@ -1,0 +1,274 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 4a9442c..ce207d9 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -472,6 +472,7 @@ dependencies = [
+  "clap",
+  "component-init-transform",
+  "componentize-py-test-generator",
++ "filetime",
+  "flate2",
+  "fs_extra",
+  "futures",
+@@ -485,6 +486,7 @@ dependencies = [
+  "proptest",
+  "pyo3",
+  "reqwest",
++ "rustc-hash",
+  "semver",
+  "serde",
+  "tar",
+diff --git a/Cargo.toml b/Cargo.toml
+index 79e5fc7..d4273a6 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -16,6 +16,7 @@ clap = { version = "4.5.20", features = ["derive"] }
+ tar = "0.4.42"
+ tempfile = "3.13.0"
+ filetime = "0.2.29"
++rustc-hash = "2.1.2"
+ zstd = "0.13.2"
+ wasm-encoder = { version = "0.245.0", features = ["wasmparser"] }
+ wit-dylib = "0.245.0"
+diff --git a/src/lib.rs b/src/lib.rs
+index 3f03a4c..7989b92 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -7,10 +7,10 @@ use {
+     component_init_transform::Invoker,
+     futures::future::FutureExt,
+     indexmap::{IndexMap, IndexSet},
++    rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet},
+     serde::Deserialize,
+     std::{
+         borrow::Cow,
+-        collections::{HashMap, HashSet},
+         fs,
+         io::Cursor,
+         iter,
+@@ -255,9 +255,9 @@ impl BindingsGenerator<'_> {
+             worlds => union_world(&mut resolve, "union", worlds, &mut CloneMaps::default())?,
+         };
+ 
+-        let import_function_indexes = &HashMap::new();
+-        let export_function_indexes = &HashMap::new();
+-        let stream_and_future_indexes = &HashMap::new();
++        let import_function_indexes = &HashMap::default();
++        let export_function_indexes = &HashMap::default();
++        let stream_and_future_indexes = &HashMap::default();
+         let summary = Summary::try_new(
+             &resolve,
+             &iter::once((world, Naming::from_full(self.full_names))).collect(),
+@@ -615,7 +615,7 @@ impl ComponentGenerator<'_> {
+             .map(|(index, func)| ((func.interface.as_deref(), func.name.as_str()), index))
+             .collect();
+ 
+-        let mut reverse_cloned_types = HashMap::new();
++        let mut reverse_cloned_types = HashMap::default();
+         for (&original, &clone) in clone_maps.types() {
+             assert!(reverse_cloned_types.insert(clone, original).is_none());
+         }
+@@ -1094,7 +1094,7 @@ fn add_wasi_and_stubs(
+         Resource(&'a String),
+     }
+ 
+-    let mut stubs = HashMap::<_, Vec<_>>::new();
++    let mut stubs = HashMap::<_, Vec<_>>::default();
+     for &world in worlds {
+         for (key, item) in &resolve.worlds[world].imports {
+             match item {
+diff --git a/src/prelink.rs b/src/prelink.rs
+index 3aac57a..5873d2e 100644
+--- a/src/prelink.rs
++++ b/src/prelink.rs
+@@ -1,7 +1,6 @@
+ #![deny(warnings)]
+ 
+ use std::{
+-    collections::{HashMap, HashSet},
+     fs::{self},
+     io::Cursor,
+     ops::Deref,
+@@ -10,6 +9,7 @@ use std::{
+ 
+ use anyhow::{Context, Result, anyhow, bail};
+ use indexmap::IndexMap;
++use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+ use tar::Archive;
+ use tempfile::TempDir;
+ use zstd::Decoder;
+@@ -176,7 +176,7 @@ pub fn search_for_libraries_and_configs<'a>(
+             Path::new(path),
+             &mut libraries,
+             &mut raw_configs,
+-            &mut HashSet::new(),
++            &mut HashSet::default(),
+         )?;
+         library_path.push((*path, libraries));
+     }
+diff --git a/src/stubwasi.rs b/src/stubwasi.rs
+index 70366f6..2e42635 100644
+--- a/src/stubwasi.rs
++++ b/src/stubwasi.rs
+@@ -1,6 +1,5 @@
+-use std::collections::HashMap;
+-
+ use anyhow::{Error, bail};
++use rustc_hash::FxHashMap as HashMap;
+ use wasm_encoder::{
+     CodeSection, ExportKind, ExportSection, Function, FunctionSection, Instruction as Ins, Module,
+     TypeSection,
+@@ -12,7 +11,7 @@ use crate::Library;
+ type LinkedStubModules = Option<(Vec<u8>, Box<dyn Fn(u32) -> u32>)>;
+ 
+ pub fn link_stub_modules(libraries: Vec<Library>) -> Result<LinkedStubModules, Error> {
+-    let mut wasi_imports = HashMap::new();
++    let mut wasi_imports = HashMap::default();
+     let mut linker = wit_component::Linker::default()
+         .validate(true)
+         .use_built_in_libdl(true);
+diff --git a/src/summary.rs b/src/summary.rs
+index ddce5d7..99f5044 100644
+--- a/src/summary.rs
++++ b/src/summary.rs
+@@ -9,9 +9,10 @@ use {
+     anyhow::{Result, bail},
+     heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase},
+     indexmap::{IndexMap, IndexSet},
++    rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet},
+     semver::Version,
+     std::{
+-        collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::Entry},
++        collections::{BTreeMap, BTreeSet, hash_map::Entry},
+         fmt::Write as _,
+         fs::{self, File},
+         io::Write as _,
+@@ -175,27 +176,27 @@ impl<'a> Summary<'a> {
+             resolve,
+             functions: Vec::new(),
+             types: IndexSet::new(),
+-            exported_interfaces: HashMap::new(),
+-            imported_interfaces: HashMap::new(),
+-            tuple_types: HashMap::new(),
++            exported_interfaces: HashMap::default(),
++            imported_interfaces: HashMap::default(),
++            tuple_types: HashMap::default(),
+             option_type: None,
+             nesting_option_type: None,
+             result_type: None,
+             resource_state: None,
+             resource_directions: im_rc::HashMap::new(),
+-            resource_info: HashMap::new(),
+-            world_types: HashMap::new(),
+-            world_keys: HashMap::new(),
+-            imported_interface_names: HashMap::new(),
+-            exported_interface_names: HashMap::new(),
++            resource_info: HashMap::default(),
++            world_types: HashMap::default(),
++            world_keys: HashMap::default(),
++            imported_interface_names: HashMap::default(),
++            exported_interface_names: HashMap::default(),
+             imported_function_indexes,
+             exported_function_indexes,
+             stream_and_future_indexes,
+             need_async: false,
+         };
+ 
+-        let mut import_keys_seen = HashSet::new();
+-        let mut export_keys_seen = HashSet::new();
++        let mut import_keys_seen = HashSet::default();
++        let mut export_keys_seen = HashSet::default();
+         for (&world, &naming) in worlds {
+             me.visit_functions(
+                 &resolve.worlds[world].imports,
+@@ -666,7 +667,7 @@ impl<'a> Summary<'a> {
+         metadata: &Metadata,
+         clone_maps: &CloneMaps,
+     ) -> Symbols {
+-        let mut map = HashMap::new();
++        let mut map = HashMap::default();
+         for function in &self.functions {
+             if let FunctionKind::Export = function.kind {
+                 let scope = if let Some(interface) = &function.interface {
+@@ -749,7 +750,7 @@ impl<'a> Summary<'a> {
+ 
+         assert!(map.is_empty());
+ 
+-        let mut reverse_cloned_types = HashMap::new();
++        let mut reverse_cloned_types = HashMap::default();
+         for (&original, &clone) in clone_maps.types() {
+             assert!(reverse_cloned_types.insert(clone, original).is_none());
+         }
+@@ -764,7 +765,7 @@ impl<'a> Summary<'a> {
+ 
+         let module = |ty| &locations.types.get(&ty).unwrap().module;
+ 
+-        let mut reverse_cloned_interfaces = HashMap::new();
++        let mut reverse_cloned_interfaces = HashMap::default();
+         for (&original, &clone) in clone_maps.interfaces() {
+             assert!(reverse_cloned_interfaces.insert(clone, original).is_none());
+         }
+@@ -1179,7 +1180,7 @@ impl<'a> Summary<'a> {
+ 
+     fn types_sorted(&self) -> IndexSet<TypeId> {
+         let mut sorted = IndexSet::new();
+-        let mut visited = HashSet::new();
++        let mut visited = HashSet::default();
+         for id in &self.types {
+             self.sort(Type::Id(*id), &mut sorted, &mut visited);
+         }
+@@ -1191,7 +1192,7 @@ impl<'a> Summary<'a> {
+         ids: impl Iterator<Item = InterfaceId>,
+         interface_names: &HashMap<&str, &str>,
+     ) -> HashMap<InterfaceId, String> {
+-        let mut tree = HashMap::<_, HashMap<_, HashMap<_, _>>>::new();
++        let mut tree = HashMap::<_, HashMap<_, HashMap<_, _>>>::default();
+         for id in ids {
+             let info = if let Some(info) = self.imported_interfaces.get(&id) {
+                 info
+@@ -1211,7 +1212,7 @@ impl<'a> Summary<'a> {
+             );
+         }
+ 
+-        let mut names = HashMap::new();
++        let mut names = HashMap::default();
+         for (name, packages) in &tree {
+             for (package, versions) in packages {
+                 if let Some((package_namespace, package_name)) = package {
+@@ -1413,13 +1414,13 @@ impl<'a> Summary<'a> {
+ # It is not intended for manual editing.
+ ";
+ 
+-        let mut interface_imports = HashMap::<InterfaceId, Definitions>::new();
+-        let mut interface_exports = HashMap::<InterfaceId, Definitions>::new();
++        let mut interface_imports = HashMap::<InterfaceId, Definitions>::default();
++        let mut interface_exports = HashMap::<InterfaceId, Definitions>::default();
+         let mut world_imports = Definitions::default();
+         let mut world_exports = Definitions::default();
+-        let mut seen = HashSet::new();
+-        let mut stream_payloads = HashSet::new();
+-        let mut future_payloads = HashSet::new();
++        let mut seen = HashSet::default();
++        let mut stream_payloads = HashSet::default();
++        let mut future_payloads = HashSet::default();
+         let mut types = Types::default();
+         types.analyze(self.resolve);
+         types.collect_equal_types(self.resolve, &|_| true);
+@@ -2144,7 +2145,7 @@ from componentize_py_types import Result, Ok, Err, Some
+             let dir = path.join("exports");
+             fs::create_dir(&dir)?;
+ 
+-            let mut protocol_imports = HashSet::new();
++            let mut protocol_imports = HashSet::default();
+             let mut protocols = String::new();
+             for (id, code) in interface_exports.into_iter().collect::<BTreeMap<_, _>>() {
+                 let name = self.exported_interface_names.get(&id).unwrap();
+@@ -2381,7 +2382,7 @@ impl<'a> TypeNames<'a> {
+         Self {
+             summary,
+             owner,
+-            imports: HashSet::new(),
++            imports: HashSet::default(),
+         }
+     }
+ 

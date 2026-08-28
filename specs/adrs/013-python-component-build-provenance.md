@@ -2,6 +2,7 @@
 
 - Status: accepted and implemented
 - Date: 2026-08-26
+- Updated: 2026-08-28
 
 ## Context
 
@@ -13,7 +14,7 @@ host-specific tool details to `AppManifest` would make those observations part
 of application identity. It would also require a `.holo` format change before
 the report has proven stable.
 
-Pinned `componentize-py 0.25.0` remains nondeterministic. Its pre-initializer
+Upstream `componentize-py 0.25.0` is nondeterministic. Its pre-initializer
 creates a private WASI context and obtains build-time randomness without a seed
 control. Controlled dependency-free builds showed that this is not limited to
 the `--stub-wasi` adapter: two non-stubbed outputs from identical inputs were
@@ -42,13 +43,15 @@ A Python Component entry records:
 - Hologram compiler version, CPython `3.14.0`, componentize-py `0.25.0`, its
   release source revision, and the exact host-specific distribution URL and
   SHA-256;
+- Hologram's immutable componentizer release tag/URL, the published patch-set
+  manifest URL/SHA-256, and deterministic preinitialization contract;
 - normalized logical paths plus SHA-256 for `pyproject.toml`, `uv.lock`, and a
   versioned source-tree digest;
 - every selected dependency name, version, HTTPS wheel URL, and SHA-256 from
   the runtime lock closure;
 - for a completed build, the observed uvx version, the uv dependency-installer
   version when dependencies exist, and the generated layer κ and byte length;
-- `reproducible: false` plus the current deterministic-seed blocker.
+- `reproducible: false` plus the remaining clean-host equality blocker.
 
 The source-tree digest uses domain `hologram-python-source-tree-v1`, lexical
 UTF-8 `/`-separated paths, file lengths, and file bytes. It deliberately ignores
@@ -62,10 +65,19 @@ toolchain pins and complete locked dependency inventory remain available.
 
 The componentizer distribution is selected from a closed mapping for the five
 server release hosts: macOS arm64/x86_64, Linux arm64/x86_64, and Windows
-x86_64. Each entry is an upstream wheel URL and PyPI-published SHA-256. The
-compiler passes that direct reference to uvx with registry lookup and source
-builds disabled. A host outside the mapping returns
-`LIVE_CAPABILITY_MISSING`; it never falls back to version-only resolution.
+x86_64. Each entry is an exact wheel URL and SHA-256 from immutable Hologram
+release `componentizer-v0.25.0-hologram.1`. The compiler passes that direct
+reference to uvx with registry lookup and source builds disabled. A host
+outside the mapping returns `LIVE_CAPABILITY_MISSING`; it never falls back to
+version-only resolution.
+
+Every planned and completed Component report records the componentizer patch
+identity as release tag/URL, `PATCHSET.sha256` URL and SHA-256, and contract
+`hologram:componentizer/preinitialization-determinism@1`. That contract fixes
+the build tool's private random streams and insecure seed, clocks, preopened
+filesystem metadata and access mode, Python hash seed, debug allocator fills,
+ambient package discovery, and generated collection ordering. It controls
+build-time snapshot inputs only; it does not grant secure runtime randomness.
 
 The report is CLI result data. It is not embedded in archive metadata, the
 application directory, a content blob, or the canonical `AppManifest`. It does
@@ -90,14 +102,14 @@ hologram --json compile hologram.json --output application.holo \
 - Provenance schema evolution can proceed independently and may later become a
   signed attestation. Embedding it would require a separate format and identity
   decision.
-- Byte-identical Python Component output remains unclaimed. The report exposes
-  this as machine-readable state instead of hiding it in documentation.
+- Byte-identical Python Component output remains unclaimed until two clean
+  builders agree on every supported host. The report exposes this as
+  machine-readable state instead of hiding it in documentation.
 
 ## Follow-up
 
-- Obtain or maintain a componentizer that accepts an explicit deterministic
-  pre-initialization random source, then verify byte-identical components and
-  `.holo` archives across clean builds and supported hosts.
+- Verify byte-identical components and `.holo` archives across two clean builds
+  for every supported host, then update the reproducibility claim.
 - Rootfs observational evidence is implemented by ADR 014. Registry digest
   resolution, reproducible OCI construction, and the microVM execution
   boundary remain prerequisites for a rootfs reproducibility claim.

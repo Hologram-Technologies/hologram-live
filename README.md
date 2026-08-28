@@ -492,14 +492,16 @@ $ hologram run python-component-hello.holo \
 }
 ```
 
-This compiler invokes `componentize-py 0.25.0` through an isolated `uvx` tool
-environment, removes the developer virtual environment and Python search path,
-and uses `--stub-wasi`. It selects one exact wheel URL and SHA-256 for each of
-the five server-release hosts, disables package indexes and source builds, and
-fails with `LIVE_CAPABILITY_MISSING` on an unpinned host. The emitted component
-therefore imports no WASI and runs under the existing Component v1 limits.
-Install `uv`; the first compile downloads the hash-verified wheel and later
-compiles may reuse its cache.
+This compiler invokes Hologram's deterministic `componentize-py 0.25.0`
+distribution through an isolated `uvx` tool environment, removes the developer
+virtual environment and Python search path, and uses `--stub-wasi`. It selects
+one exact wheel URL and SHA-256 from the immutable
+[`componentizer-v0.25.0-hologram.1`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1)
+release for each of the five server-release hosts, disables package indexes and
+source builds, and fails with `LIVE_CAPABILITY_MISSING` on an unpinned host.
+The emitted component therefore imports no WASI and runs under the existing
+Component v1 limits. Install `uv`; the first compile downloads the
+hash-verified wheel and later compiles may reuse its cache.
 For external packages, the portable profile accepts registry records only when
 `uv.lock` contains an HTTPS, SHA-256-pinned Python 3 `*-none-any.whl`. It
 installs those exact wheels into a private path with indexes, dependency
@@ -519,11 +521,12 @@ $ hologram --json compile \
 
 The schema records normalized SHA-256 source inputs, the complete selected
 dependency-wheel inventory, CPython and componentizer pins, the exact
-host-specific componentizer wheel URL/hash, build host, and target ABI. A
-completed compile additionally records the observed `uvx`/`uv` versions and
-the generated layer κ and byte length. `canonical: false` is deliberate: the
-report is not embedded in `.holo`, so host evidence cannot silently change the
-canonical application identity. Save a durable copy with
+host-specific componentizer wheel URL/hash, immutable release and patch-set
+manifest identity, deterministic preinitialization contract, build host, and
+target ABI. A completed compile additionally records the observed `uvx`/`uv`
+versions and the generated layer κ and byte length. `canonical: false` is
+deliberate: the report is not embedded in `.holo`, so host evidence cannot
+silently change the canonical application identity. Save a durable copy with
 `jq '.build_provenance' > application.provenance.json`.
 
 `examples/python-component-dependency/` demonstrates `six==1.17.0`:
@@ -541,11 +544,13 @@ $ hologram run python-component-dependency.holo \
 }
 ```
 
-Stubbed randomness repeats one build-time seed inside an emitted component and
-is not suitable for security-sensitive randomness. The pinned tool does not
-offer deterministic seed control, so byte-identical component builds are not
-yet claimed; the same blocker appears in the provenance report as
-`reproducible: false`. Real capability-gated WASI remains a later milestone.
+Stubbed randomness repeats deterministic build-time state inside an emitted
+component and is not suitable for security-sensitive runtime randomness. The
+pinned Hologram tool controls its private preinitialization randomness, clocks,
+filesystem metadata, hash seed, allocator fills, and generated ordering.
+Byte-identical output is still reported as `reproducible: false` until two
+independent clean builds agree on every supported host. Real capability-gated
+WASI remains a later milestone.
 
 Run the repeatable direct-and-resident proof with:
 

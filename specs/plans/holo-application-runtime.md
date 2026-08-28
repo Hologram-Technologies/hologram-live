@@ -356,10 +356,10 @@ the published `wasmtime-wasi 46.0.1` crate against SHA-256
 `e9f65ef30a2c5478873cdb619085a7a649d3ce41cc3eaf298a7ce3dee96a8e11`,
 and builds the same five native host wheels as the standalone-server matrix.
 Rust, maturin-action, maturin, and WASI SDK inputs are pinned, and the release
-contains wheel and patch-set SHA-256 manifests. The compiler must remain on the
-existing upstream pins and report `reproducible: false` until those patched
-assets are published, checksum-pinned, and their full clean-host equality gate
-passes.
+contains wheel and patch-set SHA-256 manifests. The compiler now selects the
+five host wheels from immutable release `componentizer-v0.25.0-hologram.1`,
+verifies each exact SHA-256, and reports `reproducible: false` until the full
+clean-host equality gate passes.
 
 The Hologram distribution also removes upstream CLI discovery of virtualenv,
 pipenv, and host-Python site-packages. Hologram supplies the complete staged
@@ -428,6 +428,17 @@ against the published wheel manifest and every repository patch against the
 published patch-set manifest. Publication is complete; compiler URL/hash
 pinning, provenance patch identity, and two clean builds per supported host
 remain required before changing the reproducibility claim.
+
+Compiler pinning follow-up (2026-08-28): the closed five-host mapping no longer
+references PyPI's upstream wheels. Every host selects its exact asset under
+`componentizer-v0.25.0-hologram.1` and the SHA-256 independently verified from
+the published manifest; unsupported hosts still fail closed. Planned and
+completed Component provenance now includes `componentizer.patch_set` with the
+immutable release tag/URL, `PATCHSET.sha256` URL and digest, and contract
+`hologram:componentizer/preinitialization-determinism@1`. The old missing-seed
+blocker is replaced by the truthful remaining two-clean-builds-per-host gate.
+The report stays non-canonical and `reproducible: false` until that matrix
+passes.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
@@ -918,7 +929,7 @@ work below.
     workflow without post-processing completed Wasm bytes.
   - [x] Publish the patched wheels and SHA-256 manifest under an immutable
     `componentizer-v*` release.
-  - [ ] Pin those five distributions in the compiler and record the patch
+  - [x] Pin those five distributions in the compiler and record the patch
     identity in build provenance.
   - [ ] Compare two clean builds per host before changing the reproducibility
     claim.

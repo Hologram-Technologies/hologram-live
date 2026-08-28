@@ -357,7 +357,7 @@ the published `wasmtime-wasi 46.0.1` crate against SHA-256
 and builds the same five native host wheels as the standalone-server matrix.
 Rust, maturin-action, maturin, and WASI SDK inputs are pinned, and the release
 contains wheel and patch-set SHA-256 manifests. The compiler now selects the
-five host wheels from immutable release `componentizer-v0.25.0-hologram.3`,
+five host wheels from immutable release `componentizer-v0.25.0-hologram.4`,
 verifies each exact SHA-256, and reports `reproducible: false` until the full
 clean-host equality gate passes.
 
@@ -537,6 +537,49 @@ and complete-file SHA-256
 `67efc1a326e380a2fb6e35da7dc002396f0baeb1de4ffb7bf1261d9e680054d3`.
 Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
 response. This closes the `.3` local gate only; the five-host matrix remains
+authoritative.
+
+Pinned `.3` matrix result (2026-08-28): run `33214553697` successfully compiled
+and executed both replicas on Linux arm64/x86_64 and macOS arm64/x86_64. Both
+Windows replicas failed before componentization because `cap-std` exposes
+device/file identity there only for metadata queried from an open handle;
+path-derived directory-entry metadata panicked when preregistration requested
+`dev()`. PR #36 (`370c92b`) now opens each file or directory before registering
+its identity and adds a release-wheel smoke step that invokes the built
+componentizer on every platform. Fresh-source patching, the preregistration
+unit test, the locked vendored feature build, and PR CI passed. Merged-main
+release run `33217328768` then built all five wheels, invoked the packaged
+componentizer successfully on every platform (including Windows), and
+generated both manifests. Annotated immutable `.4` tag release run
+`33219475061` then rebuilt and published the same validated source.
+Completed provenance remains false until the replacement matrix passes.
+
+Handle-portable `.4` publication (2026-08-28): annotated tag
+`componentizer-v0.25.0-hologram.4` points to merged fix commit `370c92b`.
+Tagged run `33219475061` rebuilt the shared CPython/WASI payload and all five
+native wheels, invoked the packaged componentizer successfully on every host,
+generated both checksum manifests, and published the non-draft,
+non-prerelease seven-asset release. A fresh public download verified every
+wheel against `SHA256SUMS`, all six repository patches against
+`PATCHSET.sha256`, and patch-manifest SHA-256
+`1160ed7bd742dd55d798aae7baa2047897d0b188d251af63cbae5f25381c775f`.
+PR #33 now pins the exact `.4` assets and determinism contract
+`hologram:componentizer/preinitialization-determinism@4`. The local two-build
+proof and ten-runner acceptance matrix remain the final gates before completed
+provenance may report reproducible output.
+
+Pinned `.4` local proof (2026-08-28): two isolated macOS arm64 compiles
+executed successfully and matched component layer
+`blake3:37f149dae0f4ddfc95e7e424bdde2825b5978465fc21e56b8a59b41099110a49`,
+application
+`blake3:cff358ff9052748487822aa98f8d9b51701ffc6e028e7171b253ddb730529176`,
+archive
+`blake3:dfa39f441e209997de1fd802d8ba1c2ed5c4d73ab4142a3d96dcd57d1b771d31`,
+footer `e77557c01644073652f746a82cd9bf6732c970275028f2f020b7cf726eea09e2`,
+and complete-file SHA-256
+`7fbb256c51c2d2a2f22bcd997a0cebde038f14c83270466ba042caeaf30f6470`.
+Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
+response. This closes the `.4` local gate; the five-host matrix remains
 authoritative.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,

@@ -496,7 +496,7 @@ This compiler invokes Hologram's deterministic `componentize-py 0.25.0`
 distribution through an isolated `uvx` tool environment, removes the developer
 virtual environment and Python search path, and uses `--stub-wasi`. It selects
 one exact wheel URL and SHA-256 from the immutable
-[`componentizer-v0.25.0-hologram.3`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.3)
+[`componentizer-v0.25.0-hologram.4`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.4)
 release for each of the five server-release hosts, disables package indexes and
 source builds, and fails with `LIVE_CAPABILITY_MISSING` on an unpinned host.
 The emitted component therefore imports no WASI and runs under the existing

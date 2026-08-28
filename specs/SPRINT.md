@@ -44,7 +44,7 @@
   pinned Rust, maturin-action, maturin, and WASI SDK inputs.
 - [x] Build the patch as five immutable wheel assets matching the server
   release matrix and publish their SHA-256 manifest under
-  [`componentizer-v0.25.0-hologram.3`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.3).
+  [`componentizer-v0.25.0-hologram.4`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.4).
 - [x] Replace every upstream componentizer URL/hash pin with the corresponding
   Hologram distribution asset; retain fail-closed host selection.
 - [x] Report the patch identity and deterministic build-randomness contract in
@@ -162,6 +162,41 @@ footer `d47bbff76be502f6003211f9b14e7ba46478b40936abba158e5ddd1fab3adde0`,
 and complete-file SHA-256
 `67efc1a326e380a2fb6e35da7dc002396f0baeb1de4ffb7bf1261d9e680054d3`.
 
+Pinned `.3` matrix result (run `33214553697`, 2026-08-28): all eight Linux and
+macOS replicas compiled and executed, but both Windows replicas failed before
+componentization. On Windows, `cap-std` exposes device/file identity only from
+an open handle; preregistration's path-derived directory-entry metadata
+panicked on `dev()`. PR #36 merged as `370c92b` with handle-derived identity
+queries and a release-wheel invocation smoke test on every platform.
+Fresh-source application, the unit regression, the locked vendored feature
+build, and PR CI passed. Merged-main release run `33217328768` then built all
+five wheels, invoked the packaged componentizer successfully on every platform
+(including Windows), and generated both manifests. Annotated immutable `.4`
+tag release run `33219475061` then rebuilt and published the validated source;
+provenance remains false until the replacement matrix passes.
+
+Handle-portable `.4` release evidence (run `33219475061`, 2026-08-28): all
+five native wheel builders installed and invoked their packaged componentizer,
+including Windows, before the immutable
+`componentizer-v0.25.0-hologram.4` release was published. A fresh public
+download verified every wheel against `SHA256SUMS`, all six repository patches
+against `PATCHSET.sha256`, and patch-manifest digest
+`1160ed7bd742dd55d798aae7baa2047897d0b188d251af63cbae5f25381c775f`.
+PR #33 now pins the exact `.4` assets and contract `@4`; provenance remains
+false until the local proof and replacement ten-runner matrix pass.
+
+Pinned `.4` local proof (2026-08-28): two isolated macOS arm64 builds executed
+successfully and matched layer
+`blake3:37f149dae0f4ddfc95e7e424bdde2825b5978465fc21e56b8a59b41099110a49`,
+application
+`blake3:cff358ff9052748487822aa98f8d9b51701ffc6e028e7171b253ddb730529176`,
+archive
+`blake3:dfa39f441e209997de1fd802d8ba1c2ed5c4d73ab4142a3d96dcd57d1b771d31`,
+footer `e77557c01644073652f746a82cd9bf6732c970275028f2f020b7cf726eea09e2`,
+and complete-file SHA-256
+`7fbb256c51c2d2a2f22bcd997a0cebde038f14c83270466ba042caeaf30f6470`.
+The replacement ten-runner matrix is now the remaining acceptance gate.
+
 ## Verification and delivery
 
 - [x] Validate the source preparation and workflow statically with ShellCheck,
@@ -192,6 +227,11 @@ and complete-file SHA-256
   `componentizer-v0.25.0-hologram.3`; and a fresh download verified every
   wheel plus patch-set digest
   `d281c2667a893fffa7e7d64c3b34d6ef22d9f40b9b89ab643475705bd0eba9c7`.
+- [x] Publish the Windows handle-portability correction. Untagged run
+  `33217328768` invoked all five packaged wheels successfully; tagged run
+  `33219475061` published `componentizer-v0.25.0-hologram.4`; and a fresh
+  download verified all wheel hashes and patch-set digest
+  `1160ed7bd742dd55d798aae7baa2047897d0b188d251af63cbae5f25381c775f`.
 - [x] Add exact five-host distribution-selection and planned-provenance tests
   for the immutable release and patch contract.
 - [x] Add a fail-closed clean-host comparator and execute every compiled proof

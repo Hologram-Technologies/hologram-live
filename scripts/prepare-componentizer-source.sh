@@ -45,6 +45,10 @@ git -C "${componentizer_source}" apply --directory=vendor/wasmtime-wasi --check 
   "${repository_root}/tools/componentize-py/wasmtime-wasi-deterministic-metadata.patch"
 git -C "${componentizer_source}" apply --directory=vendor/wasmtime-wasi \
   "${repository_root}/tools/componentize-py/wasmtime-wasi-deterministic-metadata.patch"
+git -C "${componentizer_source}" apply --directory=vendor/wasmtime-wasi --check \
+  "${repository_root}/tools/componentize-py/wasmtime-wasi-deterministic-readdir.patch"
+git -C "${componentizer_source}" apply --directory=vendor/wasmtime-wasi \
+  "${repository_root}/tools/componentize-py/wasmtime-wasi-deterministic-readdir.patch"
 git -C "${componentizer_source}" apply --check \
   "${repository_root}/tools/componentize-py/deterministic-metadata-wiring.patch"
 git -C "${componentizer_source}" apply \

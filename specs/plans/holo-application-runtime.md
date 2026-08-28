@@ -401,6 +401,15 @@ local equality gate, not the release claim. Do not pin the patched wheels or
 report `reproducible: true` until the immutable release exists and the five-host
 clean-build matrix passes.
 
+First merged-workflow dry run (2026-08-27): run `33140574673` completed the
+shared CPython/WASI build in 12m44s, then found two host portability defects
+before any tag or release existed. Both macOS architectures rejected GNU-only
+`sha256sum --check`, and Windows converted the upstream checkout to CRLF while
+the vendored crate remained LF, preventing its patch from applying. The
+follow-up uses a value-comparing portable SHA-256 helper and forces LF for patch
+inputs/upstream source. The full untagged matrix must pass after that fix before
+publication proceeds.
+
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
 `compile --check` hashes `pyproject.toml`, `uv.lock`, and the normalized source

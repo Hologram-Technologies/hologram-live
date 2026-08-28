@@ -29,20 +29,12 @@ git -C "${componentizer_source}" apply --check \
 git -C "${componentizer_source}" apply \
   "${repository_root}/tools/componentize-py/deterministic-generation-order.patch"
 
-archive=$(mktemp "${TMPDIR:-/tmp}/wasmtime-wasi-${wasmtime_wasi_version}.XXXXXX.crate")
+archive=$(mktemp "${TMPDIR:-/tmp}/wasmtime-wasi-${wasmtime_wasi_version}.XXXXXX")
 trap 'rm -f "${archive}"' EXIT
 curl --fail --location --silent --show-error \
   "https://static.crates.io/crates/wasmtime-wasi/wasmtime-wasi-${wasmtime_wasi_version}.crate" \
   --output "${archive}"
-if command -v sha256sum >/dev/null 2>&1; then
-  actual_sha256=$(sha256sum "${archive}" | awk '{print $1}')
-else
-  actual_sha256=$(shasum -a 256 "${archive}" | awk '{print $1}')
-fi
-if [[ "${actual_sha256}" != "${wasmtime_wasi_sha256}" ]]; then
-  echo "wasmtime-wasi crate checksum mismatch: expected ${wasmtime_wasi_sha256}, got ${actual_sha256}" >&2
-  exit 1
-fi
+"${script_dir}/verify-sha256.sh" "${archive}" "${wasmtime_wasi_sha256}"
 
 mkdir -p "${componentizer_source}/vendor"
 tar -xzf "${archive}" -C "${componentizer_source}/vendor"

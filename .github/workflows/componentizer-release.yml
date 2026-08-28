@@ -30,6 +30,11 @@ jobs:
         with:
           path: hologram-live
 
+      - name: Preserve LF in upstream source
+        if: runner.os == 'Windows'
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Check out pinned componentize-py
         uses: actions/checkout@v7
         with:
@@ -51,12 +56,15 @@ jobs:
 
       - name: Install WASI SDK
         run: |
-          cd /tmp
           sdk_archive="wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux"
-          curl -LO "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${sdk_archive}.tar.gz"
-          echo "${WASI_SDK_X86_64_LINUX_SHA256}  ${sdk_archive}.tar.gz" | sha256sum --check
-          tar xf "${sdk_archive}.tar.gz"
-          sudo mv "${sdk_archive}" /opt/wasi-sdk
+          sdk_path="/tmp/${sdk_archive}.tar.gz"
+          curl --fail --location --retry 3 \
+            "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${sdk_archive}.tar.gz" \
+            --output "${sdk_path}"
+          hologram-live/scripts/verify-sha256.sh \
+            "${sdk_path}" "${WASI_SDK_X86_64_LINUX_SHA256}"
+          tar xf "${sdk_path}" -C /tmp
+          sudo mv "/tmp/${sdk_archive}" /opt/wasi-sdk
 
       - name: Build shared CPython WASI inputs
         working-directory: componentize-py
@@ -114,6 +122,11 @@ jobs:
         with:
           path: hologram-live
 
+      - name: Preserve LF in upstream source
+        if: runner.os == 'Windows'
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Check out pinned componentize-py
         uses: actions/checkout@v7
         with:
@@ -137,11 +150,14 @@ jobs:
       - name: Download WASI SDK
         shell: bash
         run: |
-          cd /tmp
           sdk_archive="wasi-sdk-${WASI_SDK_VERSION}.0-${{ matrix.wasi_sdk }}"
-          curl -LO "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${sdk_archive}.tar.gz"
-          echo "${{ matrix.wasi_sdk_sha256 }}  ${sdk_archive}.tar.gz" | sha256sum --check
-          tar xf "${sdk_archive}.tar.gz"
+          sdk_path="/tmp/${sdk_archive}.tar.gz"
+          curl --fail --location --retry 3 \
+            "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${sdk_archive}.tar.gz" \
+            --output "${sdk_path}"
+          hologram-live/scripts/verify-sha256.sh \
+            "${sdk_path}" "${{ matrix.wasi_sdk_sha256 }}"
+          tar xf "${sdk_path}" -C /tmp
 
       - name: Install WASI SDK
         if: runner.os != 'Windows'

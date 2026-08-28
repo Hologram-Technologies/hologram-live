@@ -36,7 +36,7 @@ index 312404b..ee487a3 100644
      }
  
      /// Whether build-only filesystem observations must use a stable order.
-@@ -105,6 +112,41 @@ impl WasiFilesystemCtx {
+@@ -105,6 +112,49 @@ impl WasiFilesystemCtx {
      }
  }
  
@@ -46,11 +46,7 @@ index 312404b..ee487a3 100644
 +    dir: &cap_std::fs::Dir,
 +) -> std::io::Result<()> {
 +    let metadata = dir.dir_metadata()?;
-+    let identity = (metadata.dev(), metadata.ino());
-+    hashes.identities.entry(identity).or_insert_with(|| {
-+        hashes.next = hashes.next.checked_add(1).expect("guest identity overflow");
-+        MetadataHashValue::from_guest_identity(hashes.next)
-+    });
++    register_metadata_identity(hashes, &metadata);
 +
 +    let mut entries = dir
 +        .entries()?
@@ -61,24 +57,36 @@ index 312404b..ee487a3 100644
 +        .collect::<std::io::Result<Vec<_>>>()?;
 +    entries.sort_by(|left, right| left.0.cmp(&right.0));
 +    for (name, entry) in entries {
-+        let metadata = entry.metadata()?;
-+        let is_dir = metadata.is_dir();
-+        let identity = (metadata.dev(), metadata.ino());
-+        hashes.identities.entry(identity).or_insert_with(|| {
-+            hashes.next = hashes.next.checked_add(1).expect("guest identity overflow");
-+            MetadataHashValue::from_guest_identity(hashes.next)
-+        });
-+        if is_dir {
-+            register_preopened_tree(hashes, &dir.open_dir(name)?)?;
++        // Windows exposes device/file identity only for metadata queried from
++        // an open handle, not metadata obtained by statting a directory entry.
++        if entry.file_type()?.is_dir() {
++            let child = dir.open_dir(name)?;
++            register_metadata_identity(hashes, &child.dir_metadata()?);
++            register_preopened_tree(hashes, &child)?;
++        } else {
++            let file = dir.open(name)?;
++            register_metadata_identity(hashes, &file.metadata()?);
 +        }
 +    }
 +    Ok(())
 +}
 +
++#[cfg(feature = "deterministic-metadata-hashes")]
++fn register_metadata_identity(
++    hashes: &mut DeterministicMetadataHashes,
++    metadata: &cap_std::fs::Metadata,
++) {
++    let identity = (metadata.dev(), metadata.ino());
++    hashes.identities.entry(identity).or_insert_with(|| {
++        hashes.next = hashes.next.checked_add(1).expect("guest identity overflow");
++        MetadataHashValue::from_guest_identity(hashes.next)
++    });
++}
++
  pub struct WasiFilesystemCtxView<'a> {
      pub ctx: &'a mut WasiFilesystemCtx,
      pub table: &'a mut ResourceTable,
-@@ -1232,3 +1274,47 @@ impl WasiFilesystemCtxView<'_> {
+@@ -1232,3 +1282,53 @@ impl WasiFilesystemCtxView<'_> {
          Ok(results)
      }
  }
@@ -108,10 +116,16 @@ index 312404b..ee487a3 100644
 +        [".", "a", "b", "nested", "nested/c"]
 +            .into_iter()
 +            .map(|path| {
-+                let metadata = if path == "." {
-+                    dir.dir_metadata().expect("root metadata")
-+                } else {
-+                    dir.metadata(path).expect("entry metadata")
++                let metadata = match path {
++                    "." => dir.dir_metadata().expect("root metadata"),
++                    "nested" => dir
++                        .open_dir(path)
++                        .and_then(|child| child.dir_metadata())
++                        .expect("directory metadata"),
++                    _ => dir
++                        .open(path)
++                        .and_then(|file| file.metadata())
++                        .expect("file metadata"),
 +                };
 +                hashes.identities[&(metadata.dev(), metadata.ino())].lower
 +            })

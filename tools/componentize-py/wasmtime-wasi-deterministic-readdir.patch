@@ -1,0 +1,46 @@
+diff --git a/src/filesystem.rs b/src/filesystem.rs
+index b18932c..c4544d3 100644
+--- a/src/filesystem.rs
++++ b/src/filesystem.rs
+@@ -85,6 +85,12 @@ impl WasiFilesystemCtx {
+         self.deterministic_metadata_hashes = Some(DeterministicMetadataHashes::default());
+     }
+ 
++    /// Whether build-only filesystem observations must use a stable order.
++    #[cfg(feature = "deterministic-metadata-hashes")]
++    pub(crate) fn deterministic_directory_ordering(&self) -> bool {
++        self.deterministic_metadata_hashes.is_some()
++    }
++
+     pub(crate) fn metadata_hash(&mut self, meta: &cap_std::fs::Metadata) -> MetadataHashValue {
+         #[cfg(feature = "deterministic-metadata-hashes")]
+         if let Some(hashes) = &mut self.deterministic_metadata_hashes {
+diff --git a/src/p2/host/filesystem.rs b/src/p2/host/filesystem.rs
+index 5ac520c..d8ee469 100644
+--- a/src/p2/host/filesystem.rs
++++ b/src/p2/host/filesystem.rs
+@@ -192,8 +192,22 @@ impl types::Host for WasiFilesystemCtxView<'_> {
+                         .collect::<Vec<Result<types::DirectoryEntry, ReaddirError>>>(),
+                 )
+             })
+-            .await?
+-            .into_iter();
++            .await?;
++
++        #[cfg(feature = "deterministic-metadata-hashes")]
++        let entries = if self.ctx.deterministic_directory_ordering() {
++            let mut entries = entries;
++            entries.sort_by(|left, right| match (left, right) {
++                (Ok(left), Ok(right)) => left.name.cmp(&right.name),
++                (Err(_), Ok(_)) => std::cmp::Ordering::Less,
++                (Ok(_), Err(_)) => std::cmp::Ordering::Greater,
++                (Err(_), Err(_)) => std::cmp::Ordering::Equal,
++            });
++            entries
++        } else {
++            entries
++        };
++        let entries = entries.into_iter();
+ 
+         // On windows, filter out files like `C:\DumpStack.log.tmp` which we
+         // can't get full metadata for.

@@ -1,4 +1,113 @@
-# Current sprint: M4.2 clean Python rootfs equality
+# Current sprint: M4.2 deterministic Python Components
+
+## Sprint status
+
+- State: active
+- Started: 2026-08-27
+- Last reviewed: 2026-08-27
+- Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
+- Decision: [ADR 013](adrs/013-python-component-build-provenance.md)
+- Discovery: `DISC-017d`
+- Goal: make source-compiled Python Component layers byte-identical without
+  rewriting a completed Wasm snapshot
+- Exit signal: Hologram pins one patched componentizer wheel for every
+  standalone-server release host, two clean builds per host agree on layer,
+  application, and archive identity, and completed provenance reports
+  `reproducible: true`
+
+## Deterministic componentizer boundary
+
+- [x] Confirm upstream `componentize-py 0.25.0` exposes no build-randomness
+  control and constructs a private `WasiCtxBuilder` with three random defaults.
+- [x] Reject fixed-offset or length-dependent rewriting of the finished Wasm
+  snapshot because controlled outputs differ in both content and layout.
+- [x] Define a minimal patch at pinned upstream revision `c0949b1` that supplies
+  fixed secure bytes, insecure bytes, insecure seed, wall/monotonic clocks, and
+  `PYTHONHASHSEED` during pre-initialization, then epoch-normalizes every
+  compiler-owned preopened tree after generated bindings are complete.
+- [x] Remove componentize-py's implicit virtualenv/pipenv/host-site fallback so
+  the snapshot sees only Hologram's complete explicit staging paths.
+- [x] Mount every pre-initialization input read-only so CPython cannot create
+  bytecode caches and restore host-time directory mtimes after normalization.
+- [x] Test CPython hash seeding and deterministic debug/system allocation;
+  these controls leave the same 20 host-identity bytes in the snapshot and do
+  not close reproducibility by themselves.
+- [x] Approve a build-only Wasmtime metadata policy that maps each distinct
+  host `(device, inode)` pair to a distinct, context-local guest identity in
+  deterministic observation order. The policy exists only in the private
+  preinitializer; it is absent from Hologram's runtime and emitted component.
+- [x] Add a checksum-verified source-preparation script and immutable
+  `componentizer-v*` release workflow. It applies the complete four-patch set
+  to the exact componentize-py revision, vendors the SHA-256-pinned
+  `wasmtime-wasi 46.0.1` crate, and builds the five native server hosts with
+  pinned Rust, maturin-action, maturin, and WASI SDK inputs.
+- [ ] Build the patch as five immutable wheel assets matching the server
+  release matrix and publish their SHA-256 manifest.
+- [ ] Replace every upstream componentizer URL/hash pin with the corresponding
+  Hologram distribution asset; retain fail-closed host selection.
+- [ ] Report the patch identity and deterministic build-randomness contract in
+  planned and completed non-canonical provenance.
+
+## Reproducibility evidence
+
+- [x] Reduce local drift from generated-section ordering plus snapshot state to
+  exactly 20 bytes in one linear-memory data segment. Fixed-seed Rust maps
+  removed the former large ordering delta; deterministic randomness, clocks,
+  timestamps, CPython hash seed, and allocator selection do not remove the
+  remaining host metadata.
+- [x] Prove two independent local compiles have identical component layer,
+  application, archive, footer, and complete-file identities using the exact
+  locked release patch set. Two isolated uvx caches produced byte-identical
+  19,554,774-byte archives with complete-file SHA-256
+  `04d9b1b62ef98336d02ddcd76e13981aa43f636c2c984a616fc7ba6af9907048`,
+  layer
+  `blake3:abb209bfdd3b932910b0bfede3aeb8be477adeff07c6b8feaaafbc41e6e085f8`,
+  application
+  `blake3:f03f47117b4d3db6e55b559fe953d0ad60fa86604b8c5a781eaa6dbff7356fef`,
+  archive
+  `blake3:585b3a7b0fd048b005f474aa7887798fa7646859019d5277e9866b01e914fb98`,
+  and footer
+  `9a2893ff163aa67d694e2286af87cc417571e9684e6c8f8fa33c069d11b055b7`.
+  The resulting archive executed successfully with bundled CPython 3.14.0.
+- [x] Record the exact local arm64 macOS wheel SHA-256
+  `06b3896b922e77bd6257b2b773348f62b37327fa9ea043b61054f70620904f5b`.
+  Its clean locked build took 20m31s; the release workflow therefore builds
+  the shared CPython WASI inputs once before fanning out to five wheel jobs.
+- [ ] Add one `jq`-friendly reproducibility command with JSON on stdout and
+  progress on stderr.
+- [ ] Run two clean builders for macOS arm64/x86_64, Linux arm64/x86_64, and
+  Windows x86_64 and compare all canonical and physical identities.
+- [ ] Keep completed provenance `reproducible: false` until the full clean-host
+  matrix passes; cached wheel reuse is not acceptance evidence.
+- [ ] After the matrix passes, set completed provenance to `reproducible: true`
+  while keeping `compile --check` honest about its unobserved output.
+
+## Verification and delivery
+
+- [x] Validate the source preparation and workflow statically with ShellCheck,
+  actionlint, locked offline Cargo metadata, and `git diff --check`.
+- [ ] Add patch-application, distribution-selection, provenance, comparator,
+  and end-to-end execution tests.
+- [ ] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
+  documentation, desktop, and component clean-build gates.
+- [ ] Update README, website Python guidance, ADR 013, and the durable runtime
+  plan with the released tool boundary and exact commands.
+- [ ] Commit, merge the PR or PR sequence, remove only this sprint's temporary
+  worktree, and leave the primary checkout clean on synchronized `main`.
+
+## Next prioritized work
+
+- [x] Resolve the pre-initialization filesystem-identity decision and prove
+  local byte equality before publishing or pinning a distribution.
+- [ ] Publish and pin the deterministic componentizer distribution after that
+  equality gate passes.
+- [ ] Close `DISC-017d` with the clean five-host equality matrix.
+- [ ] Add authenticated private-registry integration coverage without exposing
+  credentials in build provenance.
+
+---
+
+# Previous sprint: M4.2 clean Python rootfs equality
 
 ## Sprint status
 

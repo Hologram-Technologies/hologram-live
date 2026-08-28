@@ -1,0 +1,299 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index f4a96d6..79e5fc7 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -15,6 +15,7 @@ anyhow = { version = "1.0.91", features = ["backtrace"] }
+ clap = { version = "4.5.20", features = ["derive"] }
+ tar = "0.4.42"
+ tempfile = "3.13.0"
++filetime = "0.2.29"
+ zstd = "0.13.2"
+ wasm-encoder = { version = "0.245.0", features = ["wasmparser"] }
+ wit-dylib = "0.245.0"
+diff --git a/src/command.rs b/src/command.rs
+index be886b6..c18f747 100644
+--- a/src/command.rs
++++ b/src/command.rs
+@@ -1,14 +1,8 @@
+ use {
+     crate::{BindingsGenerator, ComponentGenerator},
+-    anyhow::{Context, Result},
++    anyhow::Result,
+     clap::Parser as _,
+-    std::{
+-        env,
+-        ffi::OsString,
+-        fs,
+-        path::{Path, PathBuf},
+-        process, str,
+-    },
++    std::{ffi::OsString, path::PathBuf},
+     tokio::runtime::Runtime,
+ };
+ 
+@@ -244,16 +238,7 @@ fn generate_bindings(common: Common, bindings: Bindings) -> Result<()> {
+ }
+ 
+ fn componentize(common: Common, componentize: Componentize) -> Result<()> {
+-    let mut python_path = componentize.python_path;
+-
+-    for site_packages in find_site_packages()? {
+-        python_path.push(
+-            site_packages
+-                .to_str()
+-                .context("non-UTF-8 site-packages name")?
+-                .to_owned(),
+-        );
+-    }
++    let python_path = componentize.python_path;
+ 
+     Runtime::new()?.block_on(
+         ComponentGenerator {
+@@ -306,92 +291,9 @@ fn componentize(common: Common, componentize: Componentize) -> Result<()> {
+     Ok(())
+ }
+ 
+-fn find_site_packages() -> Result<Vec<PathBuf>> {
+-    Ok(if let Ok(env) = env::var("VIRTUAL_ENV") {
+-        let dir = Path::new(&env).join("lib");
+-
+-        if let Some(site_packages) = find_dir("site-packages", &dir)? {
+-            vec![site_packages]
+-        } else {
+-            eprintln!(
+-                "warning: site-packages directory not found under {}",
+-                dir.display()
+-            );
+-            Vec::new()
+-        }
+-    } else {
+-        let pipenv_packages = match process::Command::new("pipenv").arg("--venv").output() {
+-            Ok(output) => {
+-                if output.status.success() {
+-                    let dir = Path::new(str::from_utf8(&output.stdout)?.trim()).join("lib");
+-
+-                    if let Some(site_packages) = find_dir("site-packages", &dir)? {
+-                        vec![site_packages]
+-                    } else {
+-                        eprintln!(
+-                            "warning: site-packages directory not found under {}",
+-                            dir.display()
+-                        );
+-                        Vec::new()
+-                    }
+-                } else {
+-                    // `pipenv` is in `$PATH`, but this app does not appear to be using it
+-                    Vec::new()
+-                }
+-            }
+-            Err(_) => {
+-                // `pipenv` is not in `$PATH -- assume this app isn't using it
+-                Vec::new()
+-            }
+-        };
+-
+-        if !pipenv_packages.is_empty() {
+-            pipenv_packages
+-        } else {
+-            // Get site packages location using the `site` module in python
+-            match process::Command::new("python3")
+-                .args([
+-                    "-c",
+-                    "import site; \
+-                     list = site.getsitepackages(); \
+-                     list.insert(0, site.getusersitepackages()); \
+-                     print(';'.join(list))",
+-                ])
+-                .output()
+-            {
+-                Ok(output) => str::from_utf8(&output.stdout)?
+-                    .trim()
+-                    .split(';')
+-                    .map(|p| Path::new(p).to_path_buf())
+-                    .collect(),
+-                Err(_) => Vec::new(),
+-            }
+-        }
+-    })
+-}
+-
+-fn find_dir(name: &str, path: &Path) -> Result<Option<PathBuf>> {
+-    if path.is_dir() {
+-        match path.file_name().and_then(|name| name.to_str()) {
+-            Some(this_name) if this_name == name => {
+-                return Ok(Some(path.canonicalize()?));
+-            }
+-            _ => {
+-                for entry in fs::read_dir(path)? {
+-                    if let Some(path) = find_dir(name, &entry?.path())? {
+-                        return Ok(Some(path));
+-                    }
+-                }
+-            }
+-        }
+-    }
+-
+-    Ok(None)
+-}
+-
+ #[cfg(test)]
+ mod tests {
+-    use std::io::Write;
++    use std::{fs, io::Write};
+ 
+     use super::*;
+ 
+diff --git a/src/lib.rs b/src/lib.rs
+index c0b52fe..3f03a4c 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -17,6 +17,7 @@ use {
+         ops::Deref,
+         path::{Path, PathBuf},
+         str,
++        time::Duration,
+     },
+     summary::{Locations, Naming, Summary},
+     tar::Archive,
+@@ -26,7 +27,8 @@ use {
+         component::{Component, Instance, Linker, ResourceTable, ResourceType},
+     },
+     wasmtime_wasi::{
+-        DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView,
++        Deterministic, DirPerms, FilePerms, HostMonotonicClock, HostWallClock, WasiCtx,
++        WasiCtxBuilder, WasiCtxView, WasiView,
+         p2::pipe::{MemoryInputPipe, MemoryOutputPipe},
+     },
+     wit_component::metadata,
+@@ -67,6 +69,30 @@ pub struct Ctx {
+     table: ResourceTable,
+ }
+ 
++struct DeterministicWallClock;
++
++impl HostWallClock for DeterministicWallClock {
++    fn resolution(&self) -> Duration {
++        Duration::from_nanos(1)
++    }
++
++    fn now(&self) -> Duration {
++        Duration::ZERO
++    }
++}
++
++struct DeterministicMonotonicClock;
++
++impl HostMonotonicClock for DeterministicMonotonicClock {
++    fn resolution(&self) -> u64 {
++        1
++    }
++
++    fn now(&self) -> u64 {
++        0
++    }
++}
++
+ impl WasiView for Ctx {
+     fn ctx(&mut self) -> WasiCtxView<'_> {
+         WasiCtxView {
+@@ -672,27 +698,38 @@ impl ComponentGenerator<'_> {
+         let stderr = MemoryOutputPipe::new(10000);
+ 
+         let mut wasi = WasiCtxBuilder::new();
+-        wasi.stdin(MemoryInputPipe::new(Bytes::new()))
+-            .stdout(stdout.clone())
+-            .stderr(stderr.clone())
+-            .env("PYTHONUNBUFFERED", "1")
+-            .env("PYTHONHOME", "/python")
+-            .preopened_dir(
+-                embedded_python_standard_lib.path(),
+-                "python",
+-                DirPerms::all(),
+-                FilePerms::all(),
+-            )?
+-            .preopened_dir(
+-                embedded_helper_utils.path(),
+-                "bundled",
+-                DirPerms::all(),
+-                FilePerms::all(),
+-            )?;
++        wasi.secure_random(Deterministic::new(
++            b"hologram-componentize-py-secure-random-v1".to_vec(),
++        ))
++        .insecure_random(Deterministic::new(
++            b"hologram-componentize-py-insecure-random-v1".to_vec(),
++        ))
++        .insecure_random_seed(0)
++        .wall_clock(DeterministicWallClock)
++        .monotonic_clock(DeterministicMonotonicClock)
++        .stdin(MemoryInputPipe::new(Bytes::new()))
++        .stdout(stdout.clone())
++        .stderr(stderr.clone())
++        .env("PYTHONUNBUFFERED", "1")
++        .env("PYTHONHOME", "/python")
++        .env("PYTHONHASHSEED", "0")
++        .env("PYTHONMALLOC", "debug")
++        .preopened_dir(
++            embedded_python_standard_lib.path(),
++            "python",
++            DirPerms::READ,
++            FilePerms::READ,
++        )?
++        .preopened_dir(
++            embedded_helper_utils.path(),
++            "bundled",
++            DirPerms::READ,
++            FilePerms::READ,
++        )?;
+ 
+         // Generate guest mounts for each host directory in `python_path`.
+         for (index, path) in python_path.iter().enumerate() {
+-            wasi.preopened_dir(path, index.to_string(), DirPerms::all(), FilePerms::all())?;
++            wasi.preopened_dir(path, index.to_string(), DirPerms::READ, FilePerms::READ)?;
+         }
+ 
+         // For each Python module with a `componentize-py.toml` file that
+@@ -785,10 +822,19 @@ impl ComponentGenerator<'_> {
+                         world_dir.path().display()
+                     );
+                 }
+-                wasi.preopened_dir(world_dir.path(), mount, DirPerms::all(), FilePerms::all())?;
++                wasi.preopened_dir(world_dir.path(), mount, DirPerms::READ, FilePerms::READ)?;
+             }
+         }
+ 
++        normalize_tree_timestamps(embedded_python_standard_lib.path())?;
++        normalize_tree_timestamps(embedded_helper_utils.path())?;
++        for path in python_path.iter() {
++            normalize_tree_timestamps(Path::new(path))?;
++        }
++        for (_, world_dir) in world_dir_mounts.iter() {
++            normalize_tree_timestamps(world_dir.path())?;
++        }
++
+         if DEBUG_PYTHON_BINDINGS {
+             // Prevent temporary directories from being deleted:
+             std::mem::forget(world_dir_mounts);
+@@ -1191,3 +1237,22 @@ fn is_wasip2_cli(interface_name: &str) -> bool {
+         || interface_name.starts_with("wasi:sockets/"))
+         && interface_name.contains("@0.2.")
+ }
++
++fn normalize_tree_timestamps(path: &Path) -> Result<()> {
++    if path.is_symlink() {
++        return Err(anyhow!(
++            "refusing to normalize symlink in deterministic component input: {}",
++            path.display()
++        ));
++    }
++    if path.is_dir() {
++        let mut entries = fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
++        entries.sort_by_key(std::fs::DirEntry::file_name);
++        for entry in entries {
++            normalize_tree_timestamps(&entry.path())?;
++        }
++    }
++    let epoch = filetime::FileTime::from_unix_time(0, 0);
++    filetime::set_file_times(path, epoch, epoch)?;
++    Ok(())
++}

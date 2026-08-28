@@ -1,0 +1,255 @@
+name: componentizer-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "componentizer-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: componentizer-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  COMPONENTIZE_PY_REVISION: c0949b19d464f5d70bc1051195a3ae0e6a012df9
+  WASMTIME_WASI_VERSION: "46.0.1"
+  WASMTIME_WASI_SHA256: e9f65ef30a2c5478873cdb619085a7a649d3ce41cc3eaf298a7ce3dee96a8e11
+  WASI_SDK_VERSION: "33"
+  WASI_SDK_X86_64_LINUX_SHA256: 0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce
+
+jobs:
+  prepare-cpython:
+    name: Prepare CPython WASI build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Hologram patch
+        uses: actions/checkout@v7
+        with:
+          path: hologram-live
+
+      - name: Check out pinned componentize-py
+        uses: actions/checkout@v7
+        with:
+          repository: bytecodealliance/componentize-py
+          ref: ${{ env.COMPONENTIZE_PY_REVISION }}
+          path: componentize-py
+
+      - name: Prepare deterministic componentizer source
+        run: hologram-live/scripts/prepare-componentizer-source.sh componentize-py
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14.0"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: wasm32-wasip2
+
+      - name: Install WASI SDK
+        run: |
+          cd /tmp
+          sdk_archive="wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux"
+          curl -LO "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${sdk_archive}.tar.gz"
+          echo "${WASI_SDK_X86_64_LINUX_SHA256}  ${sdk_archive}.tar.gz" | sha256sum --check
+          tar xf "${sdk_archive}.tar.gz"
+          sudo mv "${sdk_archive}" /opt/wasi-sdk
+
+      - name: Build shared CPython WASI inputs
+        working-directory: componentize-py
+        run: cargo build --release --locked
+
+      - name: Package shared CPython WASI inputs
+        run: |
+          tar --dereference -czf componentizer-cpython-wasi.tar.gz \
+            -C componentize-py/cpython/builddir/wasi \
+            libpython3.14.so install/lib/python3.14
+
+      - name: Upload CPython WASI inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: componentizer-cpython-wasi
+          path: componentizer-cpython-wasi.tar.gz
+          if-no-files-found: error
+
+  wheels:
+    name: Wheel (${{ matrix.label }})
+    needs: prepare-cpython
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            os: ubuntu-24.04
+            maturin_target: x86_64-unknown-linux-gnu
+            wasi_sdk: x86_64-linux
+            wasi_sdk_sha256: 0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce
+          - label: linux-aarch64
+            os: ubuntu-24.04-arm
+            maturin_target: aarch64-unknown-linux-gnu
+            wasi_sdk: arm64-linux
+            wasi_sdk_sha256: 4f98ee738c7abb45c81a94d1461fc53cc569d1cd01498951c8184d841a027844
+          - label: macos-aarch64
+            os: macos-15
+            maturin_target: aarch64-apple-darwin
+            wasi_sdk: arm64-macos
+            wasi_sdk_sha256: 85c997a2665ead91673b5bb88b7d0df3fc8900df3bfa244f720d478187bbdc78
+          - label: macos-x86_64
+            os: macos-15-intel
+            maturin_target: x86_64-apple-darwin
+            wasi_sdk: x86_64-macos
+            wasi_sdk_sha256: 18f3f201ba9734e6a4455b0b6410690395a55e9ffa9f6f5066f66083a94b93b3
+          - label: windows-x86_64
+            os: windows-2025
+            maturin_target: x86_64-pc-windows-msvc
+            wasi_sdk: x86_64-windows
+            wasi_sdk_sha256: df14ca2a2127c2d6b6be07e6f5549b3af9c1b3c0112430c200a4749970c59f06
+    steps:
+      - name: Check out Hologram patch
+        uses: actions/checkout@v7
+        with:
+          path: hologram-live
+
+      - name: Check out pinned componentize-py
+        uses: actions/checkout@v7
+        with:
+          repository: bytecodealliance/componentize-py
+          ref: ${{ env.COMPONENTIZE_PY_REVISION }}
+          path: componentize-py
+
+      - name: Prepare deterministic componentizer source
+        shell: bash
+        run: hologram-live/scripts/prepare-componentizer-source.sh componentize-py
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14.0"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: wasm32-wasip2
+
+      - name: Download WASI SDK
+        shell: bash
+        run: |
+          cd /tmp
+          sdk_archive="wasi-sdk-${WASI_SDK_VERSION}.0-${{ matrix.wasi_sdk }}"
+          curl -LO "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${sdk_archive}.tar.gz"
+          echo "${{ matrix.wasi_sdk_sha256 }}  ${sdk_archive}.tar.gz" | sha256sum --check
+          tar xf "${sdk_archive}.tar.gz"
+
+      - name: Install WASI SDK
+        if: runner.os != 'Windows'
+        shell: bash
+        run: sudo mv "/tmp/wasi-sdk-${WASI_SDK_VERSION}.0-${{ matrix.wasi_sdk }}" /opt/wasi-sdk
+
+      - name: Select WASI SDK on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          sdk_path=$(cygpath -m "/tmp/wasi-sdk-${WASI_SDK_VERSION}.0-${{ matrix.wasi_sdk }}")
+          echo "WASI_SDK_PATH=${sdk_path}" >> "${GITHUB_ENV}"
+
+      - name: Restore CPython WASI inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: componentizer-cpython-wasi
+          path: .componentizer-inputs
+
+      - name: Extract CPython WASI inputs
+        shell: bash
+        run: |
+          mkdir -p componentize-py/cpython/builddir/wasi
+          tar -xzf .componentizer-inputs/componentizer-cpython-wasi.tar.gz \
+            -C componentize-py/cpython/builddir/wasi
+
+      - name: Build patched wheel
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          maturin-version: v1.11.5
+          rust-toolchain: 1.97.1
+          working-directory: componentize-py
+          target: ${{ matrix.maturin_target }}
+          args: --release --locked --out dist --features pyo3
+          manylinux: "2_28"
+          docker-options: -v /opt/wasi-sdk:/opt/wasi-sdk
+          before-script-linux: rustup target add wasm32-wasip2
+
+      - name: Upload patched wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: componentizer-wheel-${{ matrix.label }}
+          path: componentize-py/dist/*.whl
+          if-no-files-found: error
+
+  checksums:
+    name: Generate wheel checksums
+    needs: wheels
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Hologram patch metadata
+        uses: actions/checkout@v7
+        with:
+          path: hologram-live
+
+      - name: Download wheels
+        uses: actions/download-artifact@v8
+        with:
+          pattern: componentizer-wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA-256 manifest
+        working-directory: dist
+        run: sha256sum ./*.whl | sort > SHA256SUMS
+
+      - name: Generate patch-set manifest
+        run: |
+          sha256sum hologram-live/tools/componentize-py/*.patch \
+            | sed 's#hologram-live/tools/componentize-py/##' \
+            | sort > dist/PATCHSET.sha256
+
+      - name: Upload release payload
+        uses: actions/upload-artifact@v7
+        with:
+          name: componentizer-release
+          path: |
+            dist/*.whl
+            dist/SHA256SUMS
+            dist/PATCHSET.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish immutable componentizer release
+    if: startsWith(github.ref, 'refs/tags/componentizer-v')
+    needs: checksums
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download release payload
+        uses: actions/download-artifact@v8
+        with:
+          name: componentizer-release
+          path: dist
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+          body: |
+            Hologram's deterministic componentize-py distribution.
+
+            Upstream: bytecodealliance/componentize-py@${{ env.COMPONENTIZE_PY_REVISION }}
+            Wasmtime WASI: wasmtime-wasi@${{ env.WASMTIME_WASI_VERSION }}
+            Wasmtime crate SHA-256: ${{ env.WASMTIME_WASI_SHA256 }}
+
+            The exact patch checksums are recorded in PATCHSET.sha256.
+          files: |
+            dist/*.whl
+            dist/SHA256SUMS
+            dist/PATCHSET.sha256

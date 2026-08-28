@@ -1,0 +1,53 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index ce207d9..1b09c0c 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -3406,8 +3406,6 @@ dependencies = [
+ [[package]]
+ name = "wasmtime-wasi"
+ version = "46.0.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "e9f65ef30a2c5478873cdb619085a7a649d3ce41cc3eaf298a7ce3dee96a8e11"
+ dependencies = [
+  "async-trait",
+  "bitflags",
+diff --git a/Cargo.toml b/Cargo.toml
+index d4273a6..c0ea091 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -31,7 +31,10 @@ pyo3 = { version = "0.28.3", features = [
+     "extension-module",
+ ], optional = true }
+ wasmtime = "46.0.1"
+-wasmtime-wasi = { version = "46.0.1", features = [ "p3" ] }
++wasmtime-wasi = { path = "vendor/wasmtime-wasi", features = [
++    "deterministic-metadata-hashes",
++    "p3",
++] }
+ once_cell = "1.20.2"
+ component-init-transform = "0.2.0"
+ async-trait = "0.1.83"
+@@ -92,3 +95,4 @@ package.edition = "2024"
+ package.license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+ package.repository = "https://github.com/bytecodealliance/componentize-py"
+ members = ["runtime", "test-generator"]
++exclude = ["vendor/wasmtime-wasi"]
+diff --git a/src/lib.rs b/src/lib.rs
+index 4b24fb6..000b504 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -854,12 +854,13 @@ impl ComponentGenerator<'_> {
+             .join(":");
+ 
+         let table = ResourceTable::new();
+-        let wasi = wasi
++        let mut wasi = wasi
+             .env(
+                 "PYTHONPATH",
+                 format!("/python:/world:{python_path}:/bundled"),
+             )
+             .build();
++        wasi.filesystem().enable_deterministic_metadata_hashes();
+ 
+         let mut config = Config::new();
+         config.wasm_component_model(true);

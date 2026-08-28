@@ -1,0 +1,143 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 1402d48..f14e196 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -44,6 +44,7 @@ resolver = "2"
+ all-features = true
+ 
+ [features]
++deterministic-metadata-hashes = []
+ default = [
+     "p1",
+     "p2",
+diff --git a/src/filesystem.rs b/src/filesystem.rs
+index 3f6b657..b18932c 100644
+--- a/src/filesystem.rs
++++ b/src/filesystem.rs
+@@ -2,7 +2,7 @@ use crate::clocks::Datetime;
+ use crate::runtime::{AbortOnDropJoinHandle, spawn_blocking};
+ use cap_fs_ext::{FileTypeExt as _, MetadataExt as _, SystemTimeSpec};
+ use io_lifetimes::AsFilelike;
+-use std::collections::hash_map;
++use std::collections::{BTreeMap, hash_map};
+ use std::sync::Arc;
+ use std::time::SystemTime;
+ use tracing::debug;
+@@ -66,6 +66,37 @@ impl HasData for WasiFilesystem {
+ pub struct WasiFilesystemCtx {
+     pub(crate) allow_blocking_current_thread: bool,
+     pub(crate) preopens: Vec<(Dir, String)>,
++    #[cfg(feature = "deterministic-metadata-hashes")]
++    deterministic_metadata_hashes: Option<DeterministicMetadataHashes>,
++}
++
++#[cfg(feature = "deterministic-metadata-hashes")]
++#[derive(Clone, Default)]
++struct DeterministicMetadataHashes {
++    next: u64,
++    identities: BTreeMap<(u64, u64), MetadataHashValue>,
++}
++
++impl WasiFilesystemCtx {
++    /// Replace host device/inode hashes with distinct, context-local guest
++    /// identities assigned in observation order.
++    #[cfg(feature = "deterministic-metadata-hashes")]
++    pub fn enable_deterministic_metadata_hashes(&mut self) {
++        self.deterministic_metadata_hashes = Some(DeterministicMetadataHashes::default());
++    }
++
++    pub(crate) fn metadata_hash(&mut self, meta: &cap_std::fs::Metadata) -> MetadataHashValue {
++        #[cfg(feature = "deterministic-metadata-hashes")]
++        if let Some(hashes) = &mut self.deterministic_metadata_hashes {
++            let identity = (meta.dev(), meta.ino());
++            return *hashes.identities.entry(identity).or_insert_with(|| {
++                hashes.next = hashes.next.checked_add(1).expect("guest identity overflow");
++                MetadataHashValue::from_guest_identity(hashes.next)
++            });
++        }
++
++        MetadataHashValue::from(meta)
++    }
+ }
+ 
+ pub struct WasiFilesystemCtxView<'a> {
+@@ -327,6 +358,7 @@ impl From<cap_std::fs::Metadata> for DescriptorStat {
+ 
+ /// A 128-bit hash value, split into parts because wasm doesn't have a
+ /// 128-bit integer type.
++#[derive(Clone, Copy)]
+ pub(crate) struct MetadataHashValue {
+     /// 64 bits of a 128-bit hash value.
+     pub lower: u64,
+@@ -334,6 +366,15 @@ pub(crate) struct MetadataHashValue {
+     pub upper: u64,
+ }
+ 
++impl MetadataHashValue {
++    fn from_guest_identity(identity: u64) -> Self {
++        Self {
++            lower: identity,
++            upper: identity ^ 4614256656552045848u64,
++        }
++    }
++}
++
+ impl From<&cap_std::fs::Metadata> for MetadataHashValue {
+     fn from(meta: &cap_std::fs::Metadata) -> Self {
+         use cap_fs_ext::MetadataExt;
+@@ -486,7 +527,7 @@ impl Descriptor {
+         }
+     }
+ 
+-    async fn get_metadata(&self) -> std::io::Result<cap_std::fs::Metadata> {
++    pub(crate) async fn get_metadata(&self) -> std::io::Result<cap_std::fs::Metadata> {
+         match self {
+             Self::File(f) => {
+                 // No permissions check on metadata: if opened, allowed to stat it
+@@ -1151,6 +1192,22 @@ impl Dir {
+             .await?;
+         Ok(MetadataHashValue::from(&meta))
+     }
++
++    pub(crate) async fn get_metadata_at(
++        &self,
++        path_flags: PathFlags,
++        path: String,
++    ) -> Result<cap_std::fs::Metadata, ErrorCode> {
++        self.run_blocking(move |d| {
++            if path_flags.contains(PathFlags::SYMLINK_FOLLOW) {
++                d.metadata(path)
++            } else {
++                d.symlink_metadata(path)
++            }
++        })
++        .await
++        .map_err(Into::into)
++    }
+ }
+ 
+ impl WasiFilesystemCtxView<'_> {
+diff --git a/src/p2/host/filesystem.rs b/src/p2/host/filesystem.rs
+index 773b481..5ac520c 100644
+--- a/src/p2/host/filesystem.rs
++++ b/src/p2/host/filesystem.rs
+@@ -447,7 +447,8 @@ impl HostDescriptor for WasiFilesystemCtxView<'_> {
+         fd: Resource<types::Descriptor>,
+     ) -> FsResult<types::MetadataHashValue> {
+         let fd = self.table.get(&fd)?;
+-        let meta = fd.metadata_hash().await?;
++        let meta = fd.get_metadata().await?;
++        let meta = self.ctx.metadata_hash(&meta);
+         Ok(meta.into())
+     }
+     async fn metadata_hash_at(
+@@ -457,7 +458,8 @@ impl HostDescriptor for WasiFilesystemCtxView<'_> {
+         path: String,
+     ) -> FsResult<types::MetadataHashValue> {
+         let d = self.table.get(&fd)?.dir()?;
+-        let meta = d.metadata_hash_at(path_flags.into(), path).await?;
++        let meta = d.get_metadata_at(path_flags.into(), path).await?;
++        let meta = self.ctx.metadata_hash(&meta);
+         Ok(meta.into())
+     }
+ }

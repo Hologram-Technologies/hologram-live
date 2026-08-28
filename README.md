@@ -691,6 +691,36 @@ target/release/hologram --json run target/numpy-pandas.holo \
   --input examples/python-numpy-pandas/request.json
 ```
 
+#### HoloTrade quote engine
+
+`examples/holotrade-quote/` is a worked port of
+[HoloTrade](https://github.com/wilcompute/Holotrade)'s deterministic
+single-node pricing engine to the `core-wasm-v1` guest contract. One
+zero-dependency Rust file — built with plain `rustc`, no Cargo project — takes
+a self-contained JSON quote request and returns the full price decomposition
+`P = P_base × E × G × D × H × Q × L`, including the operating floor, margin,
+carbon, and the locality multiplier computed from the W(3,3) symplectic
+geometry inside the guest. The port is differentially checked against
+HoloTrade's own JS `PricingEngine` on ten scenarios to 1e-9 relative
+tolerance.
+
+```bash
+rustup target add wasm32-unknown-unknown
+cd examples/holotrade-quote
+rustc --target wasm32-unknown-unknown -O -C panic=abort \
+  --crate-type cdylib guest.rs -o app.wasm
+
+hologram compile hologram.json -o holotrade-quote.holo
+hologram run holotrade-quote.holo --input request.json --output-format text
+```
+
+It also makes a good persistent service: import the archive, declare its κ
+under `[[holo.resident]]` in `live.toml`, and every `hologram serve` boot
+loads it into a resident session, invocable at
+`POST /api/v1/holo/{kappa}/run`. See the
+[example README](examples/holotrade-quote/README.md) for the request schema,
+the ported-source inventory, and the fidelity notes.
+
 ### Inference compatibility APIs
 
 The daemon exposes non-streaming OpenAI- and Ollama-compatible HTTP surfaces over the configured inference engine:

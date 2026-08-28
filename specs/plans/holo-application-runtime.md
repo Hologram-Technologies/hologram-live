@@ -407,8 +407,16 @@ before any tag or release existed. Both macOS architectures rejected GNU-only
 `sha256sum --check`, and Windows converted the upstream checkout to CRLF while
 the vendored crate remained LF, preventing its patch from applying. The
 follow-up uses a value-comparing portable SHA-256 helper and forces LF for patch
-inputs/upstream source. The full untagged matrix must pass after that fix before
-publication proceeds.
+inputs/upstream source.
+
+Portable five-host workflow proof (2026-08-27): PR #29 merged those fixes as
+`951cc25`, and untagged run `33142178976` then passed from merged `main`. The
+shared CPython/WASI stage completed in 10m31s; Linux x86_64/arm64, macOS
+x86_64/arm64, and Windows x86_64 each built and uploaded a patched wheel; and
+the final job generated the wheel SHA-256 and patch-set manifests. The immutable
+release job was correctly skipped without a `componentizer-v*` tag. This closes
+workflow portability, but not publication, compiler pinning, or the required
+two-clean-builds-per-host equality proof.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.

@@ -418,6 +418,17 @@ release job was correctly skipped without a `componentizer-v*` tag. This closes
 workflow portability, but not publication, compiler pinning, or the required
 two-clean-builds-per-host equality proof.
 
+Immutable distribution publication (2026-08-28): annotated tag
+`componentizer-v0.25.0-hologram.1` points to validated commit `8d65bed`, and
+tagged run `33188965708` rebuilt and uploaded all five native wheels plus
+`SHA256SUMS` and `PATCHSET.sha256`. The resulting non-draft, non-prerelease
+[GitHub release](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1)
+contains exactly those seven assets. A fresh download verified every wheel
+against the published wheel manifest and every repository patch against the
+published patch-set manifest. Publication is complete; compiler URL/hash
+pinning, provenance patch identity, and two clean builds per supported host
+remain required before changing the reproducibility claim.
+
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
 `compile --check` hashes `pyproject.toml`, `uv.lock`, and the normalized source
@@ -905,7 +916,7 @@ work below.
   before claiming reproducible output.
   - [x] Define an exact-revision patch and five-host immutable wheel release
     workflow without post-processing completed Wasm bytes.
-  - [ ] Publish the patched wheels and SHA-256 manifest under an immutable
+  - [x] Publish the patched wheels and SHA-256 manifest under an immutable
     `componentizer-v*` release.
   - [ ] Pin those five distributions in the compiler and record the patch
     identity in build provenance.

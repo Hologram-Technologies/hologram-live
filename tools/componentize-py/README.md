@@ -1,6 +1,6 @@
 # Hologram deterministic componentize-py distribution
 
-Hologram applies an exact five-patch set to upstream `componentize-py` revision
+Hologram applies an exact six-patch set to upstream `componentize-py` revision
 `c0949b19d464f5d70bc1051195a3ae0e6a012df9` (`v0.25.0`):
 
 - [`deterministic-build-randomness.patch`](deterministic-build-randomness.patch)
@@ -13,7 +13,10 @@ Hologram applies an exact five-patch set to upstream `componentize-py` revision
 - [`wasmtime-wasi-deterministic-readdir.patch`](wasmtime-wasi-deterministic-readdir.patch)
   gives guest directory streams stable lexical order; and
 - [`deterministic-metadata-wiring.patch`](deterministic-metadata-wiring.patch)
-  wires that policy to a vendored, feature-gated Wasmtime WASI dependency.
+  wires that policy to a vendored, feature-gated Wasmtime WASI dependency; and
+- [`deterministic-metadata-preregistration.patch`](deterministic-metadata-preregistration.patch)
+  assigns guest metadata identities with a lexical pre-execution walk instead
+  of runtime observation order.
 
 The preparation script downloads `wasmtime-wasi 46.0.1`, requires SHA-256
 `e9f65ef30a2c5478873cdb619085a7a649d3ce41cc3eaf298a7ce3dee96a8e11`,
@@ -32,6 +35,9 @@ Python Component:
   CPython bytecode-cache writes from reintroducing host-time mtimes; and
 - guest directory entries are returned in lexical order instead of host
   filesystem enumeration order; and
+- every preopened filesystem identity is assigned before guest execution by a
+  lexical tree walk, so runtime metadata call order cannot change the snapshot;
+  and
 - CPython receives `PYTHONHASHSEED=0`; and
 - CPython's debug allocator fills allocated/freed blocks deterministically.
 

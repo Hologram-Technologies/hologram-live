@@ -1,1 +1,2 @@
-tools/componentize-py/*.patch -whitespace
+scripts/*.sh text eol=lf
+tools/componentize-py/*.patch text eol=lf -whitespace

@@ -86,6 +86,13 @@
 
 - [x] Validate the source preparation and workflow statically with ShellCheck,
   actionlint, locked offline Cargo metadata, and `git diff --check`.
+- [x] Run the merged workflow without a release tag. Run `33140574673` proved
+  the shared CPython/WASI build in 12m44s and exposed two release-portability
+  defects before publication: both macOS runners use a BSD `sha256sum` that
+  lacks GNU `--check`, and Windows CRLF checkout prevents LF vendored-source
+  patches from matching.
+- [ ] Merge the portable digest verifier/LF checkout fix and rerun all five
+  native wheel jobs from `main` before creating a `componentizer-v*` tag.
 - [ ] Add patch-application, distribution-selection, provenance, comparator,
   and end-to-end execution tests.
 - [ ] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,

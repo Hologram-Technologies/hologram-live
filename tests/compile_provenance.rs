@@ -32,7 +32,7 @@ fn compile_check_reports_versioned_noncanonical_python_provenance() {
     assert!(source["componentizer"]["distribution"]["url"]
         .as_str()
         .is_some_and(|url| {
-            url.starts_with("https://files.pythonhosted.org/")
+            url.starts_with("https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.1/")
                 && std::path::Path::new(url)
                     .extension()
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("whl"))
@@ -42,6 +42,24 @@ fn compile_check_reports_versioned_noncanonical_python_provenance() {
             .as_str()
             .map(str::len),
         Some(64)
+    );
+    let patch_set = &source["componentizer"]["patch_set"];
+    assert_eq!(patch_set["release_tag"], "componentizer-v0.25.0-hologram.1");
+    assert_eq!(
+        patch_set["release_url"],
+        "https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1"
+    );
+    assert_eq!(
+        patch_set["manifest_url"],
+        "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.1/PATCHSET.sha256"
+    );
+    assert_eq!(
+        patch_set["manifest_sha256"],
+        "25e19905ce9a12c341741e1b5754307e1d6e07bdf3a1f7bcaa7739595dc82167"
+    );
+    assert_eq!(
+        patch_set["determinism_contract"],
+        "hologram:componentizer/preinitialization-determinism@1"
     );
     assert!(source.get("componentizer_runner").is_none());
     assert!(source.get("dependency_installer").is_none());
@@ -58,7 +76,7 @@ fn compile_check_reports_versioned_noncanonical_python_provenance() {
     assert_eq!(source["reproducibility"]["reproducible"], false);
     assert!(source["reproducibility"]["blocker"]
         .as_str()
-        .is_some_and(|blocker| blocker.contains("no deterministic seed control")));
+        .is_some_and(|blocker| blocker.contains("two independent clean builds")));
 }
 
 #[test]

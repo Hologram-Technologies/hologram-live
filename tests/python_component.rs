@@ -148,10 +148,23 @@ fn assert_compiled_provenance(
         .distribution
         .as_ref()
         .expect("componentizer distribution");
+    assert!(distribution.url.starts_with(
+        "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.1/"
+    ));
     assert!(std::path::Path::new(distribution.url)
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("whl")));
     assert_eq!(distribution.sha256.len(), 64);
+    let patch_set = source
+        .componentizer
+        .patch_set
+        .as_ref()
+        .expect("componentizer patch set");
+    assert_eq!(patch_set.release_tag, "componentizer-v0.25.0-hologram.1");
+    assert_eq!(
+        patch_set.determinism_contract,
+        "hologram:componentizer/preinitialization-determinism@1"
+    );
     assert_eq!(
         source.componentizer_runner.as_ref().map(|tool| tool.name),
         Some("uvx")

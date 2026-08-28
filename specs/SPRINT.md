@@ -91,8 +91,12 @@
   defects before publication: both macOS runners use a BSD `sha256sum` that
   lacks GNU `--check`, and Windows CRLF checkout prevents LF vendored-source
   patches from matching.
-- [ ] Merge the portable digest verifier/LF checkout fix and rerun all five
+- [x] Merge the portable digest verifier/LF checkout fix and rerun all five
   native wheel jobs from `main` before creating a `componentizer-v*` tag.
+  PR #29 merged as `951cc25`; untagged run `33142178976` passed the shared
+  CPython/WASI build, Linux x86_64/arm64, macOS x86_64/arm64, Windows x86_64,
+  and the wheel/checksum/patch-set manifest aggregation. The release job was
+  correctly skipped because no `componentizer-v*` tag was present.
 - [ ] Add patch-application, distribution-selection, provenance, comparator,
   and end-to-end execution tests.
 - [ ] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,

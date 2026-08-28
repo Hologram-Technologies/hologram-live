@@ -953,5 +953,12 @@ work below.
     identity in build provenance.
   - [x] Add a jq-friendly local comparator and a two-replica five-host release
     matrix that executes every proof archive.
+  - [x] Retain mismatched archives, localize the clean-host delta to 7–19 bytes
+    in preinitialized filesystem metadata, and merge deterministic lexical guest
+    directory enumeration in PR #34 (`dec6a00`).
+  - [x] Prove the updated five-patch source builds all five native wheels and
+    both checksum manifests in untagged release run `33200329304`.
+  - [ ] Publish and pin the immutable
+    `componentizer-v0.25.0-hologram.2` release.
   - [ ] Compare two clean builds per host before changing the reproducibility
     claim.

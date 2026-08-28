@@ -37,7 +37,8 @@
   deterministic observation order. The policy exists only in the private
   preinitializer; it is absent from Hologram's runtime and emitted component.
 - [x] Add a checksum-verified source-preparation script and immutable
-  `componentizer-v*` release workflow. It applies the complete four-patch set
+  `componentizer-v*` release workflow. It applies the complete versioned patch
+  set
   to the exact componentize-py revision, vendors the SHA-256-pinned
   `wasmtime-wasi 46.0.1` crate, and builds the five native server hosts with
   pinned Rust, maturin-action, maturin, and WASI SDK inputs.
@@ -104,6 +105,17 @@ failed because equal-length component bytes differed between replicas on both
 Linux architectures and Windows x86_64; their build contracts matched. The
 next diagnostic run retains each `.holo` artifact so the remaining component
 byte differences can be localized instead of weakening the gate.
+
+Retained-archive evidence (run `33198288139`, 2026-08-28) reproduced the same
+host pattern while every independent compile and execution succeeded. Extracting
+the component layer localized the replica delta to only 17 bytes on Linux
+x86_64, 19 bytes on Linux arm64, and 7 bytes on Windows x86_64, all in the
+preinitialized filesystem metadata region. PR #34 added lexical guest-directory
+enumeration to deterministic metadata mode and merged as `dec6a00`. Untagged
+release run `33200329304` then built the shared CPython/WASI payload, all five
+native wheels, `SHA256SUMS`, and `PATCHSET.sha256` successfully. Publishing the
+immutable `.2` tag remains an explicit release action; the ten-runner acceptance
+matrix and provenance claim remain open until that release exists and is pinned.
 
 ## Verification and delivery
 

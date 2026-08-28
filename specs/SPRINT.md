@@ -41,8 +41,9 @@
   to the exact componentize-py revision, vendors the SHA-256-pinned
   `wasmtime-wasi 46.0.1` crate, and builds the five native server hosts with
   pinned Rust, maturin-action, maturin, and WASI SDK inputs.
-- [ ] Build the patch as five immutable wheel assets matching the server
-  release matrix and publish their SHA-256 manifest.
+- [x] Build the patch as five immutable wheel assets matching the server
+  release matrix and publish their SHA-256 manifest under
+  [`componentizer-v0.25.0-hologram.1`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1).
 - [ ] Replace every upstream componentizer URL/hash pin with the corresponding
   Hologram distribution asset; retain fail-closed host selection.
 - [ ] Report the patch identity and deterministic build-randomness contract in
@@ -97,6 +98,11 @@
   CPython/WASI build, Linux x86_64/arm64, macOS x86_64/arm64, Windows x86_64,
   and the wheel/checksum/patch-set manifest aggregation. The release job was
   correctly skipped because no `componentizer-v*` tag was present.
+- [x] Publish the immutable tagged distribution. Run `33188965708` rebuilt all
+  five wheels from tag `componentizer-v0.25.0-hologram.1`, generated
+  `SHA256SUMS` and `PATCHSET.sha256`, and published all seven assets. A fresh
+  download verified every wheel against `SHA256SUMS` and every local patch
+  against `PATCHSET.sha256`.
 - [ ] Add patch-application, distribution-selection, provenance, comparator,
   and end-to-end execution tests.
 - [ ] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
@@ -110,8 +116,10 @@
 
 - [x] Resolve the pre-initialization filesystem-identity decision and prove
   local byte equality before publishing or pinning a distribution.
-- [ ] Publish and pin the deterministic componentizer distribution after that
-  equality gate passes.
+- [x] Publish the deterministic componentizer distribution after the local
+  equality and five-host workflow gates pass.
+- [ ] Pin the five immutable release assets in the compiler and report the
+  patch identity in provenance.
 - [ ] Close `DISC-017d` with the clean five-host equality matrix.
 - [ ] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.

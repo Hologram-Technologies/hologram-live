@@ -16,6 +16,9 @@ jobs:
   rootfs-reproducibility:
     uses: ./.github/workflows/rootfs-reproducibility.yml
 
+  component-reproducibility:
+    uses: ./.github/workflows/component-reproducibility.yml
+
   verify:
     runs-on: ubuntu-24.04
     steps:
@@ -27,7 +30,7 @@ jobs:
       - run: cargo test --workspace --all-targets --locked -- --test-threads=1
 
   build:
-    needs: [verify, rootfs-reproducibility]
+    needs: [verify, rootfs-reproducibility, component-reproducibility]
     strategy:
       fail-fast: false
       matrix:

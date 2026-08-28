@@ -83,6 +83,10 @@ hologram run python-component-dependency.holo \
 hologram --json compile hologram.json --output application.holo \
   | jq '.build_provenance' &gt; application.provenance.json</code></pre>
   <p>The source-tree digest uses lexical normalized paths and file bytes; timestamps, permissions, and directory creation order are excluded. The compiler stages the same regular files in lexical order and rejects nested symlinks. macOS arm64/x86_64, Linux arm64/x86_64, and Windows x86_64 have exact Hologram release wheel pins matching the server release matrix; any other host fails closed instead of resolving an unrecorded artifact. The patched tool fixes private preinitialization randomness, clocks, filesystem metadata, Python hash seed, allocator fills, and generated ordering. The report remains <code>reproducible: false</code> until two independent clean builds agree on every supported host; it is evidence about the build, not a premature equality claim.</p>
+  <pre><code># Two isolated local builds; stdout is one jq-friendly JSON document
+just python-component-repro \
+  | jq '&#123;status, target_host, equal, identities&#125;'</code></pre>
+  <p>The <code>component-reproducibility</code> workflow expands that proof to two independent clean runners for macOS arm64/x86_64, Linux arm64/x86_64, and Windows x86_64. Its aggregate artifact compares component-layer κ/size, capabilities κ, application κ, archive κ/size, footer fingerprint, complete-file SHA-256, and the exact build contract for each host. Every server release depends on this gate.</p>
 
   <h2>Rootfs example: Python hello</h2>
   <p><code>examples/python-hello/</code> is the small companion to the Wasm project example. It has no third-party dependencies, but it still carries a committed <code>uv.lock</code>, uses the schema-v2 rootfs recipe, and implements the real byte entrypoint contract:</p>

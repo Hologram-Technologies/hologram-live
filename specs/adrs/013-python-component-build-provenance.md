@@ -108,8 +108,9 @@ hologram --json compile hologram.json --output application.holo \
 
 ## Follow-up
 
-- Verify byte-identical components and `.holo` archives across two clean builds
-  for every supported host, then update the reproducibility claim.
+- Run the reusable `component-reproducibility` gate, which executes and compares
+  two isolated builds for each supported host, then update the completed-build
+  reproducibility claim only after all ten clean runners pass.
 - Rootfs observational evidence is implemented by ADR 014. Registry digest
   resolution, reproducible OCI construction, and the microVM execution
   boundary remain prerequisites for a rootfs reproducibility claim.

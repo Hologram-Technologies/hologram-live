@@ -558,6 +558,19 @@ Run the repeatable direct-and-resident proof with:
 just python-component-holo-demo
 ```
 
+Run two compiler invocations with separate Hologram and uv caches and query the
+single JSON result with `jq`:
+
+```bash
+just python-component-repro | jq '{status, target_host, equal, identities}'
+```
+
+The `component-reproducibility` workflow runs that proof on two independent
+clean runners for each supported macOS, Linux, and Windows host, then compares
+the component layer, capabilities, application, archive, footer, byte-length,
+and complete-file SHA-256 identities. Server releases depend on its aggregate
+result.
+
 For the dependency-aware rootfs profile, source-manifest schema v4 turns a
 locked project into an architecture-specific `rootfs` layer containing CPython,
 the application, dependencies, and required Linux libraries.

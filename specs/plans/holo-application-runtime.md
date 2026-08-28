@@ -440,6 +440,17 @@ blocker is replaced by the truthful remaining two-clean-builds-per-host gate.
 The report stays non-canonical and `reproducible: false` until that matrix
 passes.
 
+Clean-component gate implementation (2026-08-28): `just
+python-component-repro` now compiles the locked `six` example with independent
+Hologram and uv caches, executes every archive, and emits one JSON report on
+stdout. It records component layer κ/size, capabilities κ, application κ,
+archive κ/size, footer fingerprint, complete-file SHA-256, and the exact build
+contract. The reusable `component-reproducibility` workflow runs one build on
+two independent runners for each of the five native release hosts and rejects
+missing hosts, missing replicas, contract drift, or target-local identity
+drift. Server releases depend on the aggregate job. Completed provenance stays
+false until the first ten-runner matrix passes.
+
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
 `compile --check` hashes `pyproject.toml`, `uv.lock`, and the normalized source
@@ -931,5 +942,7 @@ work below.
     `componentizer-v*` release.
   - [x] Pin those five distributions in the compiler and record the patch
     identity in build provenance.
+  - [x] Add a jq-friendly local comparator and a two-replica five-host release
+    matrix that executes every proof archive.
   - [ ] Compare two clean builds per host before changing the reproducibility
     claim.

@@ -37,6 +37,11 @@ python-hello-demo:
 python-component-holo-demo:
     cargo test --release --locked --test python_component -- --ignored --nocapture
 
+# Compile the locked Python Component in isolated tool caches and compare every
+# canonical and physical archive identity. Emits one JSON document on stdout.
+python-component-repro builds="2":
+    ./scripts/check-python-component-reproducibility.sh --build-count "{{builds}}"
+
 # Compile, verify, and retain the NumPy + pandas .holo artifact.
 python-holo-package output="target/numpy-pandas.holo":
     ./scripts/check-python-holo-demo.sh --output "{{output}}"

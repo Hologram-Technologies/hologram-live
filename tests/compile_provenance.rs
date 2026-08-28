@@ -206,3 +206,91 @@ fn rootfs_report_comparator_groups_clean_replicas_by_target() {
         .as_array()
         .is_some_and(|targets| targets.iter().all(|target| target["equal"] == true)));
 }
+
+#[test]
+fn component_report_comparator_requires_two_equal_replicas_for_every_host() {
+    let directory = tempfile::tempdir().expect("temporary reports");
+    let targets = [
+        "linux/aarch64",
+        "linux/x86_64",
+        "macos/aarch64",
+        "macos/x86_64",
+        "windows/x86_64",
+    ];
+    let mut report_paths = Vec::new();
+    for target in targets {
+        for replica in ["a", "b"] {
+            let report = json!({
+                "status": "ok",
+                "target_host": target,
+                "build_host": {"os": target.split('/').next(), "arch": target.split('/').nth(1)},
+                "build_count": 1,
+                "isolated_uv_cache": true,
+                "equal": true,
+                "provenance_reproducible": false,
+                "build_contract": {"componentizer": "deterministic-v1"},
+                "identities": {"archive_kappa": format!("{target}-identity")},
+            });
+            let path = directory
+                .path()
+                .join(format!("{}-{replica}.json", target.replace('/', "-")));
+            std::fs::write(&path, serde_json::to_vec(&report).expect("encode report"))
+                .expect("write report");
+            report_paths.push(path);
+        }
+    }
+
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("scripts/compare-python-component-reports.py");
+    let output = Command::new("python3")
+        .arg(script)
+        .arg("--expected-replicas")
+        .arg("2")
+        .args(&report_paths)
+        .output()
+        .expect("compare reports");
+    assert!(
+        output.status.success(),
+        "comparison failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).expect("comparison JSON");
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["target_local_equality"], true);
+    assert_eq!(result["targets"].as_array().map(Vec::len), Some(5));
+
+    let mismatched = json!({
+        "status": "ok",
+        "target_host": "linux/aarch64",
+        "build_host": {"os": "linux", "arch": "aarch64"},
+        "build_count": 1,
+        "isolated_uv_cache": true,
+        "equal": true,
+        "provenance_reproducible": false,
+        "build_contract": {"componentizer": "deterministic-v1"},
+        "identities": {"archive_kappa": "different"},
+    });
+    std::fs::write(
+        &report_paths[1],
+        serde_json::to_vec(&mismatched).expect("encode mismatch"),
+    )
+    .expect("write mismatch");
+    let failed = Command::new("python3")
+        .arg(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/compare-python-component-reports.py"),
+        )
+        .arg("--expected-replicas")
+        .arg("2")
+        .args(&report_paths)
+        .output()
+        .expect("compare mismatch");
+    assert!(!failed.status.success());
+    let result: Value = serde_json::from_slice(&failed.stdout).expect("mismatch JSON");
+    assert_eq!(result["status"], "mismatch");
+    assert!(result["errors"]
+        .as_array()
+        .is_some_and(|errors| errors.iter().any(|error| error
+            .as_str()
+            .is_some_and(|message| message.contains("identities differ")))));
+}

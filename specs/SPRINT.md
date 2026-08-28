@@ -4,7 +4,7 @@
 
 - State: active
 - Started: 2026-08-27
-- Last reviewed: 2026-08-27
+- Last reviewed: 2026-08-28
 - Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
 - Decision: [ADR 013](adrs/013-python-component-build-provenance.md)
 - Discovery: `DISC-017d`
@@ -74,7 +74,7 @@
   `06b3896b922e77bd6257b2b773348f62b37327fa9ea043b61054f70620904f5b`.
   Its clean locked build took 20m31s; the release workflow therefore builds
   the shared CPython WASI inputs once before fanning out to five wheel jobs.
-- [ ] Add one `jq`-friendly reproducibility command with JSON on stdout and
+- [x] Add one `jq`-friendly reproducibility command with JSON on stdout and
   progress on stderr.
 - [ ] Run two clean builders for macOS arm64/x86_64, Linux arm64/x86_64, and
   Windows x86_64 and compare all canonical and physical identities.
@@ -82,6 +82,20 @@
   matrix passes; cached wheel reuse is not acceptance evidence.
 - [ ] After the matrix passes, set completed provenance to `reproducible: true`
   while keeping `compile --check` honest about its unobserved output.
+
+Local locked-dependency evidence (2026-08-28): `just
+python-component-repro` used separate Hologram and uv caches for two macOS
+arm64 builds, executed both archives, and matched component layer
+`blake3:e454be4792df969408170829351ef3ce7f1bf87c67c5cbbbc126c3a1b690c41c`,
+application
+`blake3:f1e614a90cc39d67d8e7540c2346312f6db14838fe7769fd04d8f5bddb6f7e85`,
+archive
+`blake3:1412cfbf19e0d84eb775927252e0858bf693f72e1af8958e5d0d63c00e7bc366`,
+footer `7d0da0fea43b3a67b03f46518ff8750d6393f788655221c92179a5f66f9b2968`,
+and complete-file SHA-256
+`24f63245fe22ebc105f451b851f88bcefe4099535f1312795f1d10594b39b7e9`.
+This validates the command and one host locally; provenance remains false
+until the ten clean GitHub runners pass.
 
 ## Verification and delivery
 
@@ -105,8 +119,10 @@
   against `PATCHSET.sha256`.
 - [x] Add exact five-host distribution-selection and planned-provenance tests
   for the immutable release and patch contract.
-- [ ] Add patch-application, clean-host comparator, and end-to-end execution
-  tests for the remaining equality gate.
+- [x] Add a fail-closed clean-host comparator and execute every compiled proof
+  archive before accepting its report.
+- [ ] Add a direct patch-application regression test independent of the release
+  workflow's existing `git apply --check` step.
 - [ ] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
   documentation, desktop, and component clean-build gates.
 - [x] Update README, website Python guidance, ADR 013, and the durable runtime

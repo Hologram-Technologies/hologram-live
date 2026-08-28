@@ -44,9 +44,9 @@
 - [x] Build the patch as five immutable wheel assets matching the server
   release matrix and publish their SHA-256 manifest under
   [`componentizer-v0.25.0-hologram.1`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1).
-- [ ] Replace every upstream componentizer URL/hash pin with the corresponding
+- [x] Replace every upstream componentizer URL/hash pin with the corresponding
   Hologram distribution asset; retain fail-closed host selection.
-- [ ] Report the patch identity and deterministic build-randomness contract in
+- [x] Report the patch identity and deterministic build-randomness contract in
   planned and completed non-canonical provenance.
 
 ## Reproducibility evidence
@@ -103,11 +103,13 @@
   `SHA256SUMS` and `PATCHSET.sha256`, and published all seven assets. A fresh
   download verified every wheel against `SHA256SUMS` and every local patch
   against `PATCHSET.sha256`.
-- [ ] Add patch-application, distribution-selection, provenance, comparator,
-  and end-to-end execution tests.
+- [x] Add exact five-host distribution-selection and planned-provenance tests
+  for the immutable release and patch contract.
+- [ ] Add patch-application, clean-host comparator, and end-to-end execution
+  tests for the remaining equality gate.
 - [ ] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
   documentation, desktop, and component clean-build gates.
-- [ ] Update README, website Python guidance, ADR 013, and the durable runtime
+- [x] Update README, website Python guidance, ADR 013, and the durable runtime
   plan with the released tool boundary and exact commands.
 - [ ] Commit, merge the PR or PR sequence, remove only this sprint's temporary
   worktree, and leave the primary checkout clean on synchronized `main`.
@@ -118,7 +120,7 @@
   local byte equality before publishing or pinning a distribution.
 - [x] Publish the deterministic componentizer distribution after the local
   equality and five-host workflow gates pass.
-- [ ] Pin the five immutable release assets in the compiler and report the
+- [x] Pin the five immutable release assets in the compiler and report the
   patch identity in provenance.
 - [ ] Close `DISC-017d` with the clean five-host equality matrix.
 - [ ] Add authenticated private-registry integration coverage without exposing

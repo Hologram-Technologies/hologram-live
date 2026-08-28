@@ -493,6 +493,21 @@ The 19,548,031-byte archives both returned the expected locked `six==1.17.0`
 response. This closes the new-release local gate only; the five-host matrix is
 still authoritative.
 
+Pinned `.2` matrix result (2026-08-28): run `33206743619` compiled and executed
+all ten clean proofs. Both macOS replica pairs matched every canonical and
+physical identity, but Linux arm64, Linux x86_64, and Windows x86_64 again
+produced equal-length components with different identities. This proves
+lexically sorted guest directory streams alone are insufficient: the metadata
+mapper still assigns identities lazily according to the guest's first metadata
+calls, whose order is not stable on those hosts. Completed provenance therefore
+remains false. PR #35 moves identity assignment before guest execution: it
+walks every preopened tree in lexical mount/path order, registers each host
+`(device, inode)` pair once, and makes runtime metadata-call order irrelevant.
+Its unit regression test creates equivalent trees in opposite host creation
+orders and proves the same path-to-guest-identity sequence. The next gate is a
+five-host build of that six-patch source, followed by a new immutable release
+and another two-replica matrix.
+
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
 `compile --check` hashes `pyproject.toml`, `uv.lock`, and the normalized source
@@ -993,5 +1008,12 @@ work below.
     both checksum manifests in untagged release run `33200329304`.
   - [x] Publish and pin the immutable
     `componentizer-v0.25.0-hologram.2` release.
+  - [x] Run the `.2` ten-runner matrix and retain the truthful failure: macOS
+    pairs match, while Linux and Windows prove lazy first-observation metadata
+    identity assignment remains unstable (`33206743619`).
+  - [x] Replace lazy assignment with lexical pre-registration of every
+    preopened-tree identity before guest execution, with an opposite-creation-
+    order regression test (PR #35).
+  - [ ] Build and publish the six-patch componentizer distribution.
   - [ ] Compare two clean builds per host before changing the reproducibility
     claim.

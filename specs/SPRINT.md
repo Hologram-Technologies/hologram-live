@@ -131,6 +131,15 @@ footer `cb60b3fea1cca459c0197fd0ff51e3b9b9d275c8ad0a56e0e3f0b26cea0e2e05`,
 and complete-file SHA-256
 `d150fa30cb5492473c5eacc797b5906512f81b99b47823012ebc5101d7f4c9fb`.
 
+Pinned `.2` matrix result (run `33206743619`, 2026-08-28): all ten clean
+archives compiled and executed. Both macOS pairs matched completely; Linux
+arm64/x86_64 and Windows x86_64 still differed at equal component lengths.
+Sorting directory streams did not remove lazy first-observation order from the
+metadata mapper. PR #35 now pre-registers every preopened-tree host identity in
+lexical mount/path order before guest execution and includes a regression test
+for opposite host file-creation orders. Provenance remains false while the
+six-patch distribution and replacement matrix are pending.
+
 ## Verification and delivery
 
 - [x] Validate the source preparation and workflow statically with ShellCheck,

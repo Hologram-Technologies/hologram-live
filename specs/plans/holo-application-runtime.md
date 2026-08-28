@@ -6,8 +6,8 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M4.2 clean Python rootfs equality complete
-- Next delivery: M4.2 deterministic Python Component build randomness
+- Current delivery: M4.2 deterministic Python Component build randomness
+- Previous delivery: M4.2 clean Python rootfs equality complete
 - Next runtime milestone: M3, real multi-layer providers
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
@@ -339,6 +339,95 @@ The exact arm64 macOS wheel compiled the dependency-free proof and preserved
 direct and resident execution. This closes distribution selection, not output
 determinism: uvx/host-Python bundling and deterministic pre-initialization
 randomness remain separate follow-ups.
+
+Deterministic-componentizer work (started 2026-08-27): upstream revision
+`c0949b1` still creates a private WASI context with independently randomized
+secure bytes, insecure bytes, and insecure seed, and has no CLI or library seed
+control. Hologram now carries a reviewed four-patch source set under
+`tools/componentize-py/`: it supplies
+separate fixed-domain streams for both byte interfaces, fixes the insecure
+seed, fixes wall and monotonic clocks at epoch zero, and sets
+`PYTHONHASHSEED=0` before CPython pre-initialization. The same patch traverses
+compiler-owned preopened trees lexically and fixes access/modification times at
+epoch zero after generated bindings are complete. This is a build-tool change,
+not finished-component rewriting. A dedicated release workflow uses
+`scripts/prepare-componentizer-source.sh` to apply the exact patch set, verifies
+the published `wasmtime-wasi 46.0.1` crate against SHA-256
+`e9f65ef30a2c5478873cdb619085a7a649d3ce41cc3eaf298a7ce3dee96a8e11`,
+and builds the same five native host wheels as the standalone-server matrix.
+Rust, maturin-action, maturin, and WASI SDK inputs are pinned, and the release
+contains wheel and patch-set SHA-256 manifests. The compiler must remain on the
+existing upstream pins and report `reproducible: false` until those patched
+assets are published, checksum-pinned, and their full clean-host equality gate
+passes.
+
+The Hologram distribution also removes upstream CLI discovery of virtualenv,
+pipenv, and host-Python site-packages. Hologram supplies the complete staged
+source and locked wheel closure explicitly, so appending uvx's own tool
+environment would both weaken isolation and expose non-scratch filesystem
+metadata to pre-initialization. All remaining preopened inputs are read-only;
+this prevents CPython bytecode-cache writes from changing epoch-normalized
+directory metadata during the snapshot.
+
+Local equality investigation (2026-08-27) removed generated-section ordering
+drift with fixed-seed Rust maps and reduced the remaining difference to exactly
+20 bytes in one preinitialized linear-memory data segment. Fixed WASI entropy
+and clocks, epoch timestamps, direct CPython hash seeding, and deterministic
+allocator selection left those bytes unchanged. They originated at the host
+filesystem-identity boundary used by Wasmtime's metadata hash. The approved
+build-only policy now maps each distinct host `(device, inode)` pair to a
+distinct, context-local guest identity in deterministic observation order. It
+is enabled only in componentize-py's private preinitializer and does not alter
+Hologram's runtime or the import-free emitted component.
+
+The exact locked release patch set built an arm64 macOS wheel in 20m31s with
+SHA-256
+`06b3896b922e77bd6257b2b773348f62b37327fa9ea043b61054f70620904f5b`.
+Two independent local compiles using separate isolated uvx caches produced
+byte-identical 19,554,774-byte archives with layer
+`blake3:abb209bfdd3b932910b0bfede3aeb8be477adeff07c6b8feaaafbc41e6e085f8`,
+application
+`blake3:f03f47117b4d3db6e55b559fe953d0ad60fa86604b8c5a781eaa6dbff7356fef`,
+archive
+`blake3:585b3a7b0fd048b005f474aa7887798fa7646859019d5277e9866b01e914fb98`,
+footer
+`9a2893ff163aa67d694e2286af87cc417571e9684e6c8f8fa33c069d11b055b7`,
+and complete-file SHA-256
+`04d9b1b62ef98336d02ddcd76e13981aa43f636c2c984a616fc7ba6af9907048`.
+The resulting archive also executed successfully under Component v1 with
+bundled CPython 3.14.0. The release workflow builds the expensive shared CPython
+WASI inputs once before fanning out to the five wheel jobs. This closes the
+local equality gate, not the release claim. Do not pin the patched wheels or
+report `reproducible: true` until the immutable release exists and the five-host
+clean-build matrix passes.
+
+First merged-workflow dry run (2026-08-27): run `33140574673` completed the
+shared CPython/WASI build in 12m44s, then found two host portability defects
+before any tag or release existed. Both macOS architectures rejected GNU-only
+`sha256sum --check`, and Windows converted the upstream checkout to CRLF while
+the vendored crate remained LF, preventing its patch from applying. The
+follow-up uses a value-comparing portable SHA-256 helper and forces LF for patch
+inputs/upstream source.
+
+Portable five-host workflow proof (2026-08-27): PR #29 merged those fixes as
+`951cc25`, and untagged run `33142178976` then passed from merged `main`. The
+shared CPython/WASI stage completed in 10m31s; Linux x86_64/arm64, macOS
+x86_64/arm64, and Windows x86_64 each built and uploaded a patched wheel; and
+the final job generated the wheel SHA-256 and patch-set manifests. The immutable
+release job was correctly skipped without a `componentizer-v*` tag. This closes
+workflow portability, but not publication, compiler pinning, or the required
+two-clean-builds-per-host equality proof.
+
+Immutable distribution publication (2026-08-28): annotated tag
+`componentizer-v0.25.0-hologram.1` points to validated commit `8d65bed`, and
+tagged run `33188965708` rebuilt and uploaded all five native wheels plus
+`SHA256SUMS` and `PATCHSET.sha256`. The resulting non-draft, non-prerelease
+[GitHub release](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1)
+contains exactly those seven assets. A fresh download verified every wheel
+against the published wheel manifest and every repository patch against the
+published patch-set manifest. Publication is complete; compiler URL/hash
+pinning, provenance patch identity, and two clean builds per supported host
+remain required before changing the reproducibility claim.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
@@ -825,3 +914,11 @@ work below.
 - [ ] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.
+  - [x] Define an exact-revision patch and five-host immutable wheel release
+    workflow without post-processing completed Wasm bytes.
+  - [x] Publish the patched wheels and SHA-256 manifest under an immutable
+    `componentizer-v*` release.
+  - [ ] Pin those five distributions in the compiler and record the patch
+    identity in build provenance.
+  - [ ] Compare two clean builds per host before changing the reproducibility
+    claim.

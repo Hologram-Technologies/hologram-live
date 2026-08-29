@@ -190,7 +190,8 @@ fn assert_compiled_provenance(
         )
         .to_string()
     );
-    assert!(!source.reproducibility.reproducible);
+    assert!(source.reproducibility.reproducible);
+    assert_eq!(source.reproducibility.blocker, None);
 }
 
 fn assert_response(outputs: &[Vec<u8>], expected_name: &str) {

@@ -77,11 +77,11 @@
   the shared CPython WASI inputs once before fanning out to five wheel jobs.
 - [x] Add one `jq`-friendly reproducibility command with JSON on stdout and
   progress on stderr.
-- [ ] Run two clean builders for macOS arm64/x86_64, Linux arm64/x86_64, and
+- [x] Run two clean builders for macOS arm64/x86_64, Linux arm64/x86_64, and
   Windows x86_64 and compare all canonical and physical identities.
-- [ ] Keep completed provenance `reproducible: false` until the full clean-host
+- [x] Keep completed provenance `reproducible: false` until the full clean-host
   matrix passes; cached wheel reuse is not acceptance evidence.
-- [ ] After the matrix passes, set completed provenance to `reproducible: true`
+- [x] After the matrix passes, set completed provenance to `reproducible: true`
   while keeping `compile --check` honest about its unobserved output.
 
 Local locked-dependency evidence (2026-08-28): `just
@@ -228,7 +228,15 @@ archive
 footer `245b38faa865018c52fb9592d47aa56959b98cf3de437c99462ef5b01145b709`,
 and complete-file SHA-256
 `3207dbf510698d48108064470ac26f17eecb120aa1d00ab78e61d23b0d94e691`.
-The replacement matrix is the remaining acceptance gate.
+This closes the local gate; the five-host result follows.
+
+Five-host acceptance (run `33227358037`, 2026-08-28): all ten isolated clean
+builders compiled and executed successfully. The aggregate reported
+`target_local_equality: true`; both replicas matched every canonical and
+physical identity plus the build contract within all five supported hosts.
+Completed Component provenance now reports `reproducible: true` with no
+blocker, while offline `compile --check` remains false because output is
+unobserved.
 
 ## Verification and delivery
 
@@ -291,7 +299,7 @@ The replacement matrix is the remaining acceptance gate.
   equality and five-host workflow gates pass.
 - [x] Pin the five immutable release assets in the compiler and report the
   patch identity in provenance.
-- [ ] Close `DISC-017d` with the clean five-host equality matrix.
+- [x] Close `DISC-017d` with the clean five-host equality matrix.
 - [ ] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 

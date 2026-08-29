@@ -227,7 +227,7 @@ fn component_report_comparator_requires_two_equal_replicas_for_every_host() {
                 "build_count": 1,
                 "isolated_uv_cache": true,
                 "equal": true,
-                "provenance_reproducible": false,
+                "provenance_reproducible": true,
                 "build_contract": {"componentizer": "deterministic-v1"},
                 "identities": {"archive_kappa": format!("{target}-identity")},
             });
@@ -259,7 +259,7 @@ fn component_report_comparator_requires_two_equal_replicas_for_every_host() {
     assert_eq!(result["target_local_equality"], true);
     assert_eq!(result["targets"].as_array().map(Vec::len), Some(5));
 
-    let mismatched = json!({
+    let unclaimed = json!({
         "status": "ok",
         "target_host": "linux/aarch64",
         "build_host": {"os": "linux", "arch": "aarch64"},
@@ -268,10 +268,44 @@ fn component_report_comparator_requires_two_equal_replicas_for_every_host() {
         "equal": true,
         "provenance_reproducible": false,
         "build_contract": {"componentizer": "deterministic-v1"},
+        "identities": {"archive_kappa": "linux/aarch64-identity"},
+    });
+    std::fs::write(
+        &report_paths[0],
+        serde_json::to_vec(&unclaimed).expect("encode unclaimed provenance"),
+    )
+    .expect("write unclaimed provenance");
+    let failed = Command::new("python3")
+        .arg(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/compare-python-component-reports.py"),
+        )
+        .arg("--expected-replicas")
+        .arg("2")
+        .args(&report_paths)
+        .output()
+        .expect("compare unclaimed provenance");
+    assert!(!failed.status.success());
+    let result: Value = serde_json::from_slice(&failed.stdout).expect("unclaimed JSON");
+    assert!(result["errors"]
+        .as_array()
+        .is_some_and(|errors| errors.iter().any(|error| error
+            .as_str()
+            .is_some_and(|message| message.contains("does not claim reproducible")))));
+
+    let mismatched = json!({
+        "status": "ok",
+        "target_host": "linux/aarch64",
+        "build_host": {"os": "linux", "arch": "aarch64"},
+        "build_count": 1,
+        "isolated_uv_cache": true,
+        "equal": true,
+        "provenance_reproducible": true,
+        "build_contract": {"componentizer": "deterministic-v1"},
         "identities": {"archive_kappa": "different"},
     });
     std::fs::write(
-        &report_paths[1],
+        &report_paths[0],
         serde_json::to_vec(&mismatched).expect("encode mismatch"),
     )
     .expect("write mismatch");

@@ -51,7 +51,9 @@ A Python Component entry records:
   the runtime lock closure;
 - for a completed build, the observed uvx version, the uv dependency-installer
   version when dependencies exist, and the generated layer κ and byte length;
-- `reproducible: false` plus the remaining clean-host equality blocker.
+- for a completed build, `reproducible: true` with no blocker after the
+  five-host clean-build matrix passed; offline planning remains false because
+  it has not observed output.
 
 The source-tree digest uses domain `hologram-python-source-tree-v1`, lexical
 UTF-8 `/`-separated paths, file lengths, and file bytes. It deliberately ignores
@@ -103,15 +105,15 @@ hologram --json compile hologram.json --output application.holo \
 - Provenance schema evolution can proceed independently and may later become a
   signed attestation. Embedding it would require a separate format and identity
   decision.
-- Byte-identical Python Component output remains unclaimed until two clean
-  builders agree on every supported host. The report exposes this as
-  machine-readable state instead of hiding it in documentation.
+- Byte-identical Python Component output is claimed only for a completed build.
+  Workflow run `33227358037` established the claim with two matching clean
+  builders on every supported host; offline planning cannot make it.
 
 ## Follow-up
 
-- Run the reusable `component-reproducibility` gate, which executes and compares
-  two isolated builds for each supported host, then update the completed-build
-  reproducibility claim only after all ten clean runners pass.
+- Keep the reusable `component-reproducibility` gate on server releases. It
+  executes and compares two isolated builds for each supported host and rejects
+  either identity drift or a missing completed-build reproducibility claim.
 - Rootfs observational evidence is implemented by ADR 014. Registry digest
   resolution, reproducible OCI construction, and the microVM execution
   boundary remain prerequisites for a rootfs reproducibility claim.

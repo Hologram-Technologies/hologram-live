@@ -357,9 +357,9 @@ the published `wasmtime-wasi 46.0.1` crate against SHA-256
 and builds the same five native host wheels as the standalone-server matrix.
 Rust, maturin-action, maturin, and WASI SDK inputs are pinned, and the release
 contains wheel and patch-set SHA-256 manifests. The compiler now selects the
-five host wheels from immutable release `componentizer-v0.25.0-hologram.5`,
-verifies each exact SHA-256, and reports `reproducible: false` until the full
-clean-host equality gate passes.
+five host wheels from immutable release `componentizer-v0.25.0-hologram.5`
+and verifies each exact SHA-256. Completed compilation reports
+`reproducible: true`; offline planning remains false because no output exists.
 
 The Hologram distribution also removes upstream CLI discovery of virtualenv,
 pipenv, and host-Python site-packages. Hologram supplies the complete staged
@@ -620,7 +620,16 @@ footer `245b38faa865018c52fb9592d47aa56959b98cf3de437c99462ef5b01145b709`,
 and complete-file SHA-256
 `3207dbf510698d48108064470ac26f17eecb120aa1d00ab78e61d23b0d94e691`.
 Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
-response. The five-host matrix is the remaining acceptance gate.
+response. This closes the local gate; the five-host result follows.
+
+Five-host acceptance (run `33227358037`, 2026-08-28): all ten isolated clean
+builders compiled and executed the locked dependency proof, and the aggregate
+reported `target_local_equality: true`. Both replicas matched component layer,
+capabilities, application, archive, footer, byte-length, complete-file SHA-256,
+and build contract within Linux arm64/x86_64, macOS arm64/x86_64, and Windows
+x86_64. Completed Component provenance may now report `reproducible: true`
+with no blocker. Offline `compile --check` remains false because it cannot
+observe an emitted layer.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
@@ -1104,7 +1113,7 @@ work below.
   each supported target architecture, compare config/layer/application/archive
   identities, and close every observed difference before setting
   `reproducible: true`.
-- [ ] Supply deterministic componentizer randomness and prove byte-identical
+- [x] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.
   - [x] Define an exact-revision patch and five-host immutable wheel release
@@ -1137,5 +1146,6 @@ work below.
   - [x] Add a seventh build-only patch that epoch-normalizes every timestamp
     exposed by the private WASI filesystem, including status/creation time,
     with fresh-source and unit-regression coverage.
-  - [ ] Compare two clean builds per host before changing the reproducibility
-    claim.
+  - [x] Pass the two-clean-builds-per-host equality gate in run `33227358037`
+    and change completed provenance to `reproducible: true` while preserving
+    an honest false value for offline planning.

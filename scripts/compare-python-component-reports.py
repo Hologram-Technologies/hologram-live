@@ -51,12 +51,16 @@ def main() -> int:
             )
         identities = [report.get("identities") for report in reports]
         contracts = [report.get("build_contract") for report in reports]
+        provenance = [report.get("provenance_reproducible") for report in reports]
         equal = bool(identities) and all(value == identities[0] for value in identities[1:])
         same_contract = bool(contracts) and all(value == contracts[0] for value in contracts[1:])
+        reproducible = bool(provenance) and all(value is True for value in provenance)
         if not equal:
             errors.append(f"{target}: canonical or physical identities differ across clean runners")
         if not same_contract:
             errors.append(f"{target}: build contracts differ across clean runners")
+        if not reproducible:
+            errors.append(f"{target}: completed provenance does not claim reproducible output")
         targets.append(
             {
                 "target_host": target,
@@ -66,9 +70,7 @@ def main() -> int:
                 "identities": identities[0] if equal else None,
                 "builds": identities,
                 "build_hosts": [report.get("build_host") for report in reports],
-                "provenance_reproducible": [
-                    report.get("provenance_reproducible") for report in reports
-                ],
+                "provenance_reproducible": provenance,
             }
         )
 

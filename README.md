@@ -549,9 +549,11 @@ component and is not suitable for security-sensitive runtime randomness. The
 pinned Hologram tool controls its private preinitialization randomness, clocks,
 filesystem metadata, directory enumeration, hash seed, allocator fills, and
 generated ordering.
-Completed output remains `reproducible: false` until two independent clean
-builds agree on every supported host. Real capability-gated WASI remains a
-later milestone.
+Completed output reports `reproducible: true`: workflow run `33227358037`
+proved matching component, application, archive, footer, and complete-file
+identities on two independent clean builders for every supported host. Offline
+`compile --check` remains `false` because it has not observed output. Real
+capability-gated WASI remains a later milestone.
 
 Run the repeatable direct-and-resident proof with:
 

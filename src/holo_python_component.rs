@@ -250,6 +250,10 @@ pub fn compile(root: &Path, source: &PythonRootfsSource) -> Result<CompiledCompo
         layer_kappa: address_bytes(&bytes).to_string(),
         byte_length: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
     });
+    provenance.reproducibility = Reproducibility {
+        reproducible: true,
+        blocker: None,
+    };
     Ok(CompiledComponent { bytes, provenance })
 }
 

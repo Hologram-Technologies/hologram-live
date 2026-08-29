@@ -343,7 +343,7 @@ randomness remain separate follow-ups.
 Deterministic-componentizer work (started 2026-08-27): upstream revision
 `c0949b1` still creates a private WASI context with independently randomized
 secure bytes, insecure bytes, and insecure seed, and has no CLI or library seed
-control. Hologram now carries a reviewed four-patch source set under
+control. Hologram now carries a reviewed seven-patch source set under
 `tools/componentize-py/`: it supplies
 separate fixed-domain streams for both byte interfaces, fixes the insecure
 seed, fixes wall and monotonic clocks at epoch zero, and sets
@@ -357,9 +357,9 @@ the published `wasmtime-wasi 46.0.1` crate against SHA-256
 and builds the same five native host wheels as the standalone-server matrix.
 Rust, maturin-action, maturin, and WASI SDK inputs are pinned, and the release
 contains wheel and patch-set SHA-256 manifests. The compiler now selects the
-five host wheels from immutable release `componentizer-v0.25.0-hologram.1`,
-verifies each exact SHA-256, and reports `reproducible: false` until the full
-clean-host equality gate passes.
+five host wheels from immutable release `componentizer-v0.25.0-hologram.5`
+and verifies each exact SHA-256. Completed compilation reports
+`reproducible: true`; offline planning remains false because no output exists.
 
 The Hologram distribution also removes upstream CLI discovery of virtualenv,
 pipenv, and host-Python site-packages. Hologram supplies the complete staged
@@ -376,8 +376,10 @@ and clocks, epoch timestamps, direct CPython hash seeding, and deterministic
 allocator selection left those bytes unchanged. They originated at the host
 filesystem-identity boundary used by Wasmtime's metadata hash. The approved
 build-only policy now maps each distinct host `(device, inode)` pair to a
-distinct, context-local guest identity in deterministic observation order. It
-is enabled only in componentize-py's private preinitializer and does not alter
+distinct, context-local guest identity in deterministic observation order.
+Before guest execution, that private preinitializer now registers every
+identity by walking preopened trees in lexical mount/path order, so runtime
+metadata-call order cannot change the mapping. This policy does not alter
 Hologram's runtime or the import-free emitted component.
 
 The exact locked release patch set built an arm64 macOS wheel in 20m31s with
@@ -439,6 +441,195 @@ immutable release tag/URL, `PATCHSET.sha256` URL and digest, and contract
 blocker is replaced by the truthful remaining two-clean-builds-per-host gate.
 The report stays non-canonical and `reproducible: false` until that matrix
 passes.
+
+Clean-component gate implementation (2026-08-28): `just
+python-component-repro` now compiles the locked `six` example with independent
+Hologram and uv caches, executes every archive, and emits one JSON report on
+stdout. It records component layer κ/size, capabilities κ, application κ,
+archive κ/size, footer fingerprint, complete-file SHA-256, and the exact build
+contract. The reusable `component-reproducibility` workflow runs one build on
+two independent runners for each of the five native release hosts and rejects
+missing hosts, missing replicas, contract drift, or target-local identity
+drift. Server releases depend on the aggregate job. Completed provenance stays
+false until the first ten-runner matrix passes.
+
+First matrix result (2026-08-28): run `33196484166` compiled and executed all
+ten clean proofs. Both macOS arm64 and x86_64 replica pairs matched completely.
+Linux arm64, Linux x86_64, and Windows x86_64 produced equal-length components
+whose layer, application, archive, footer, and complete-file identities
+differed between replicas despite identical reported build contracts. The
+aggregate failed as designed. Diagnostic matrix artifacts now retain the
+`.holo` files and expose both mismatched identity sets for byte localization;
+the reproducibility claim remains false.
+
+Directory-order correction and immutable `.2` publication (2026-08-28):
+retained-archive run `33198288139` repeated the host pattern while every one of
+the ten archives executed correctly. Extracting the component layer localized
+the replica differences to 17 bytes on Linux x86_64, 19 bytes on Linux arm64,
+and 7 bytes on Windows x86_64, all in preinitialized filesystem metadata. PR
+#34 (`dec6a00`) added lexical guest-directory enumeration whenever the private
+deterministic metadata policy is enabled. Untagged run `33200329304` proved
+the updated five-patch source on every native host. Annotated tag
+`componentizer-v0.25.0-hologram.2` then triggered tagged run `33203476950`,
+which rebuilt all five wheels, generated both manifests, and published the
+non-draft, non-prerelease
+[immutable release](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.2).
+A fresh download verified all five wheels against `SHA256SUMS`; the independently
+computed `PATCHSET.sha256` digest is
+`ce542742dfdd624bb25380bf042638a4e7caa5edb7e7560f0f8809343999c37c`.
+The compiler now pins those `.2` assets and reports contract
+`hologram:componentizer/preinitialization-determinism@2`. Completed provenance
+remains false until the new ten-runner acceptance matrix passes.
+
+Pinned `.2` local proof (2026-08-28): two macOS arm64 compiles used separate
+Hologram and uv caches, executed successfully, and matched component layer
+`blake3:d647d38b165f9f11462791e5bc0df53b97c9f597e805b254eeada2224af72df8`,
+application
+`blake3:1a35dac18db1dcfa7697e4b67afd5214580c87205942f40c909f7e660a67e010`,
+archive
+`blake3:2c0cafa298460003ed25ca585e815c3e77c464c2fa9fe38c1cbd53afc22bbadc`,
+footer `cb60b3fea1cca459c0197fd0ff51e3b9b9d275c8ad0a56e0e3f0b26cea0e2e05`,
+and complete-file SHA-256
+`d150fa30cb5492473c5eacc797b5906512f81b99b47823012ebc5101d7f4c9fb`.
+The 19,548,031-byte archives both returned the expected locked `six==1.17.0`
+response. This closes the new-release local gate only; the five-host matrix is
+still authoritative.
+
+Pinned `.2` matrix result (2026-08-28): run `33206743619` compiled and executed
+all ten clean proofs. Both macOS replica pairs matched every canonical and
+physical identity, but Linux arm64, Linux x86_64, and Windows x86_64 again
+produced equal-length components with different identities. This proves
+lexically sorted guest directory streams alone are insufficient: the metadata
+mapper still assigns identities lazily according to the guest's first metadata
+calls, whose order is not stable on those hosts. Completed provenance therefore
+remains false. PR #35 moves identity assignment before guest execution: it
+walks every preopened tree in lexical mount/path order, registers each host
+`(device, inode)` pair once, and makes runtime metadata-call order irrelevant.
+Its unit regression test creates equivalent trees in opposite host creation
+orders and proves the same path-to-guest-identity sequence. The next gate is a
+five-host build of that six-patch source, followed by a new immutable release
+and another two-replica matrix.
+
+Six-patch release validation (2026-08-28): PR #35 merged as `533dd4c`. A fresh
+upstream checkout accepted all six patches, its preregistration regression test
+passed, and the vendored componentizer passed a locked feature build. Untagged
+release run `33209572217` then built the shared CPython/WASI payload, all five
+native wheels, `SHA256SUMS`, and `PATCHSET.sha256` from merged `main`. The
+immutable `componentizer-v0.25.0-hologram.3` tag points to that exact commit.
+Tagged run `33211899065` rebuilt all five wheels and published the seven-asset,
+non-draft, non-prerelease release. A fresh public download verified every wheel
+against `SHA256SUMS`, every local patch against `PATCHSET.sha256`, and the
+patch-manifest SHA-256
+`d281c2667a893fffa7e7d64c3b34d6ef22d9f40b9b89ab643475705bd0eba9c7`.
+PR #33 now pins those exact `.3` URLs and hashes under determinism contract
+`hologram:componentizer/preinitialization-determinism@3`. Completed provenance
+remains false until the replacement ten-runner matrix passes.
+
+Pinned `.3` local proof (2026-08-28): two macOS arm64 compiles used separate
+Hologram and uv caches, executed successfully, and matched component layer
+`blake3:cadb16f50a4cef8fd992838fb20c5acb44b2a94e84b0f9a5a56212c32545d716`,
+application
+`blake3:86d4be4b4900263bde7c38e245379e41a20fa78562d966abf2e5298eae51d805`,
+archive
+`blake3:344d1e3d84e6c5a217eb63cdfef5a14ebe11ff5034ec7a59b5e47a7a6e025ba8`,
+footer `d47bbff76be502f6003211f9b14e7ba46478b40936abba158e5ddd1fab3adde0`,
+and complete-file SHA-256
+`67efc1a326e380a2fb6e35da7dc002396f0baeb1de4ffb7bf1261d9e680054d3`.
+Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
+response. This closes the `.3` local gate only; the five-host matrix remains
+authoritative.
+
+Pinned `.3` matrix result (2026-08-28): run `33214553697` successfully compiled
+and executed both replicas on Linux arm64/x86_64 and macOS arm64/x86_64. Both
+Windows replicas failed before componentization because `cap-std` exposes
+device/file identity there only for metadata queried from an open handle;
+path-derived directory-entry metadata panicked when preregistration requested
+`dev()`. PR #36 (`370c92b`) now opens each file or directory before registering
+its identity and adds a release-wheel smoke step that invokes the built
+componentizer on every platform. Fresh-source patching, the preregistration
+unit test, the locked vendored feature build, and PR CI passed. Merged-main
+release run `33217328768` then built all five wheels, invoked the packaged
+componentizer successfully on every platform (including Windows), and
+generated both manifests. Annotated immutable `.4` tag release run
+`33219475061` then rebuilt and published the same validated source.
+Completed provenance remains false until the replacement matrix passes.
+
+Handle-portable `.4` publication (2026-08-28): annotated tag
+`componentizer-v0.25.0-hologram.4` points to merged fix commit `370c92b`.
+Tagged run `33219475061` rebuilt the shared CPython/WASI payload and all five
+native wheels, invoked the packaged componentizer successfully on every host,
+generated both checksum manifests, and published the non-draft,
+non-prerelease seven-asset release. A fresh public download verified every
+wheel against `SHA256SUMS`, all six repository patches against
+`PATCHSET.sha256`, and patch-manifest SHA-256
+`1160ed7bd742dd55d798aae7baa2047897d0b188d251af63cbae5f25381c775f`.
+PR #33 now pins the exact `.4` assets and determinism contract
+`hologram:componentizer/preinitialization-determinism@4`. The local two-build
+proof and ten-runner acceptance matrix remain the final gates before completed
+provenance may report reproducible output.
+
+Pinned `.4` local proof (2026-08-28): two isolated macOS arm64 compiles
+executed successfully and matched component layer
+`blake3:37f149dae0f4ddfc95e7e424bdde2825b5978465fc21e56b8a59b41099110a49`,
+application
+`blake3:cff358ff9052748487822aa98f8d9b51701ffc6e028e7171b253ddb730529176`,
+archive
+`blake3:dfa39f441e209997de1fd802d8ba1c2ed5c4d73ab4142a3d96dcd57d1b771d31`,
+footer `e77557c01644073652f746a82cd9bf6732c970275028f2f020b7cf726eea09e2`,
+and complete-file SHA-256
+`7fbb256c51c2d2a2f22bcd997a0cebde038f14c83270466ba042caeaf30f6470`.
+Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
+response. This closes the `.4` local gate; the five-host matrix remains
+authoritative.
+
+Pinned `.4` matrix result (run `33221589694`, 2026-08-28): all ten clean
+archives compiled and executed. Both macOS architecture pairs matched every
+identity, while Linux arm64/x86_64 and Windows x86_64 produced equal-length
+components with different identities. Retained-archive comparison localized
+each Linux x86_64 delta to three 32-bit nanosecond fields beside stable epoch
+seconds in preinitialized linear memory. The private filesystem policy had
+normalized settable access/modification times but still exposed host
+status/creation timestamps, which differ per clean workspace on Linux and
+Windows. A seventh build-only patch now preserves timestamp availability while
+mapping every exposed access, modification, and status/creation value to epoch
+zero. Its focused regression passes after fresh-source application; completed
+provenance remains false pending a corrected release and replacement matrix.
+
+Timestamp-normalized `.5` publication (2026-08-28): PR #37 merged the seventh
+patch as `903c671`. Untagged merged-main release run `33224125002` rebuilt the
+shared CPython/WASI payload and all five native wheels, invoked each packaged
+componentizer successfully, and generated both checksum manifests. Annotated
+tag `componentizer-v0.25.0-hologram.5` points to that exact merge commit;
+tagged run `33225747320` repeated every build and smoke test and published the
+non-draft, non-prerelease seven-asset release. A fresh public download verified
+all five wheels against `SHA256SUMS`, all seven repository patches against
+`PATCHSET.sha256`, and patch-manifest SHA-256
+`8262cb4562428132c29dc4a46780178a5e0f4d7fa1c41549e2f15c76f7dec8ad`.
+PR #33 pins those exact `.5` assets and contract
+`hologram:componentizer/preinitialization-determinism@5`; completed provenance
+remains false pending the replacement matrix.
+
+Pinned `.5` local proof (2026-08-28): two isolated macOS arm64 compiles
+executed successfully and matched component layer
+`blake3:624884be7f65be8cb3ff4f7c8c9f9109bc33b81456feb8ea74653bd3e1c454b3`,
+application
+`blake3:bdf89554364b8df2ec40160880194e4bac7244bdbbb7ebc5285a9f8b9144aac0`,
+archive
+`blake3:b52177ef4d463218037802aa47fa15a62c428b5f666122fe7f1b522869cbcbc2`,
+footer `245b38faa865018c52fb9592d47aa56959b98cf3de437c99462ef5b01145b709`,
+and complete-file SHA-256
+`3207dbf510698d48108064470ac26f17eecb120aa1d00ab78e61d23b0d94e691`.
+Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
+response. This closes the local gate; the five-host result follows.
+
+Five-host acceptance (run `33227358037`, 2026-08-28): all ten isolated clean
+builders compiled and executed the locked dependency proof, and the aggregate
+reported `target_local_equality: true`. Both replicas matched component layer,
+capabilities, application, archive, footer, byte-length, complete-file SHA-256,
+and build contract within Linux arm64/x86_64, macOS arm64/x86_64, and Windows
+x86_64. Completed Component provenance may now report `reproducible: true`
+with no blocker. Offline `compile --check` remains false because it cannot
+observe an emitted layer.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
@@ -922,7 +1113,7 @@ work below.
   each supported target architecture, compare config/layer/application/archive
   identities, and close every observed difference before setting
   `reproducible: true`.
-- [ ] Supply deterministic componentizer randomness and prove byte-identical
+- [x] Supply deterministic componentizer randomness and prove byte-identical
   layer, application, and archive κ values across clean supported-host builds
   before claiming reproducible output.
   - [x] Define an exact-revision patch and five-host immutable wheel release
@@ -931,5 +1122,30 @@ work below.
     `componentizer-v*` release.
   - [x] Pin those five distributions in the compiler and record the patch
     identity in build provenance.
-  - [ ] Compare two clean builds per host before changing the reproducibility
-    claim.
+  - [x] Add a jq-friendly local comparator and a two-replica five-host release
+    matrix that executes every proof archive.
+  - [x] Retain mismatched archives, localize the clean-host delta to 7–19 bytes
+    in preinitialized filesystem metadata, and merge deterministic lexical guest
+    directory enumeration in PR #34 (`dec6a00`).
+  - [x] Prove the updated five-patch source builds all five native wheels and
+    both checksum manifests in untagged release run `33200329304`.
+  - [x] Publish and pin the immutable
+    `componentizer-v0.25.0-hologram.2` release.
+  - [x] Run the `.2` ten-runner matrix and retain the truthful failure: macOS
+    pairs match, while Linux and Windows prove lazy first-observation metadata
+    identity assignment remains unstable (`33206743619`).
+  - [x] Replace lazy assignment with lexical pre-registration of every
+    preopened-tree identity before guest execution, with an opposite-creation-
+    order regression test (PR #35).
+  - [x] Build and publish the six-patch componentizer distribution in dry run
+    `33209572217` and tagged release run `33211899065`, then independently
+    verify all public wheel and patch checksums.
+  - [x] Run the handle-portable `.4` release and replacement matrix, retain its
+    truthful failure, and localize the remaining Linux/Windows delta to
+    status/creation timestamp nanoseconds (`33221589694`).
+  - [x] Add a seventh build-only patch that epoch-normalizes every timestamp
+    exposed by the private WASI filesystem, including status/creation time,
+    with fresh-source and unit-regression coverage.
+  - [x] Pass the two-clean-builds-per-host equality gate in run `33227358037`
+    and change completed provenance to `reproducible: true` while preserving
+    an honest false value for offline planning.

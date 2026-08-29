@@ -149,7 +149,7 @@ fn assert_compiled_provenance(
         .as_ref()
         .expect("componentizer distribution");
     assert!(distribution.url.starts_with(
-        "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.1/"
+        "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/"
     ));
     assert!(std::path::Path::new(distribution.url)
         .extension()
@@ -160,10 +160,10 @@ fn assert_compiled_provenance(
         .patch_set
         .as_ref()
         .expect("componentizer patch set");
-    assert_eq!(patch_set.release_tag, "componentizer-v0.25.0-hologram.1");
+    assert_eq!(patch_set.release_tag, "componentizer-v0.25.0-hologram.5");
     assert_eq!(
         patch_set.determinism_contract,
-        "hologram:componentizer/preinitialization-determinism@1"
+        "hologram:componentizer/preinitialization-determinism@5"
     );
     assert_eq!(
         source.componentizer_runner.as_ref().map(|tool| tool.name),
@@ -190,7 +190,8 @@ fn assert_compiled_provenance(
         )
         .to_string()
     );
-    assert!(!source.reproducibility.reproducible);
+    assert!(source.reproducibility.reproducible);
+    assert_eq!(source.reproducibility.blocker, None);
 }
 
 fn assert_response(outputs: &[Vec<u8>], expected_name: &str) {

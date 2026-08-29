@@ -15,7 +15,7 @@ HOLOGRAM_STATE_DIR=.state ./target/release/hologram run \
 
 The first compile lets `uvx` download Hologram's pinned deterministic
 `componentize-py 0.25.0` wheel from the immutable
-`componentizer-v0.25.0-hologram.1` release. Later compiles reuse uv's tool
+`componentizer-v0.25.0-hologram.2` release. Later compiles reuse uv's tool
 cache. This example is dependency-free; the companion
 `../python-component-dependency/` shows the profile's locked pure-Python wheel
 support. It stubs CPython's WASI imports, so Python randomness is deterministic

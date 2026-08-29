@@ -80,8 +80,8 @@ as reproducible.
 The `componentizer-release.yml` workflow checks that this exact patch set still
 applies, builds the shared CPython WASI inputs once, builds one native wheel for
 each standalone-server release host, and publishes the wheels, `SHA256SUMS`,
-and `PATCHSET.sha256` under a `componentizer-v*` release tag. The first
+and `PATCHSET.sha256` under a `componentizer-v*` release tag. The current
 distribution is
-[`componentizer-v0.25.0-hologram.1`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1).
+[`componentizer-v0.25.0-hologram.5`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.5).
 The compiler pins each exact release URL/checksum plus the patch-manifest
 identity and never selects these assets by a mutable release name.

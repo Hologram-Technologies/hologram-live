@@ -496,7 +496,7 @@ This compiler invokes Hologram's deterministic `componentize-py 0.25.0`
 distribution through an isolated `uvx` tool environment, removes the developer
 virtual environment and Python search path, and uses `--stub-wasi`. It selects
 one exact wheel URL and SHA-256 from the immutable
-[`componentizer-v0.25.0-hologram.1`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.1)
+[`componentizer-v0.25.0-hologram.5`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.5)
 release for each of the five server-release hosts, disables package indexes and
 source builds, and fails with `LIVE_CAPABILITY_MISSING` on an unpinned host.
 The emitted component therefore imports no WASI and runs under the existing
@@ -547,16 +547,32 @@ $ hologram run python-component-dependency.holo \
 Stubbed randomness repeats deterministic build-time state inside an emitted
 component and is not suitable for security-sensitive runtime randomness. The
 pinned Hologram tool controls its private preinitialization randomness, clocks,
-filesystem metadata, hash seed, allocator fills, and generated ordering.
-Byte-identical output is still reported as `reproducible: false` until two
-independent clean builds agree on every supported host. Real capability-gated
-WASI remains a later milestone.
+filesystem metadata, directory enumeration, hash seed, allocator fills, and
+generated ordering.
+Completed output reports `reproducible: true`: workflow run `33227358037`
+proved matching component, application, archive, footer, and complete-file
+identities on two independent clean builders for every supported host. Offline
+`compile --check` remains `false` because it has not observed output. Real
+capability-gated WASI remains a later milestone.
 
 Run the repeatable direct-and-resident proof with:
 
 ```bash
 just python-component-holo-demo
 ```
+
+Run two compiler invocations with separate Hologram and uv caches and query the
+single JSON result with `jq`:
+
+```bash
+just python-component-repro | jq '{status, target_host, equal, identities}'
+```
+
+The `component-reproducibility` workflow runs that proof on two independent
+clean runners for each supported macOS, Linux, and Windows host, then compares
+the component layer, capabilities, application, archive, footer, byte-length,
+and complete-file SHA-256 identities. Server releases depend on its aggregate
+result.
 
 For the dependency-aware rootfs profile, source-manifest schema v4 turns a
 locked project into an architecture-specific `rootfs` layer containing CPython,

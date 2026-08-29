@@ -1,0 +1,74 @@
+diff --git a/vendor/wasmtime-wasi/src/filesystem.rs b/vendor/wasmtime-wasi/src/filesystem.rs
+--- a/vendor/wasmtime-wasi/src/filesystem.rs
++++ b/vendor/wasmtime-wasi/src/filesystem.rs
+@@ -401,14 +401,30 @@ struct DescriptorStat {
+ 
+ impl From<cap_std::fs::Metadata> for DescriptorStat {
+     fn from(meta: cap_std::fs::Metadata) -> Self {
+-        Self {
++        let mut stat = Self {
+             type_: meta.file_type().into(),
+             link_count: meta.nlink(),
+             size: meta.len(),
+             data_access_timestamp: meta.accessed().map(|t| datetime_from(t.into_std())).ok(),
+             data_modification_timestamp: meta.modified().map(|t| datetime_from(t.into_std())).ok(),
+             status_change_timestamp: meta.created().map(|t| datetime_from(t.into_std())).ok(),
++        };
++        #[cfg(feature = "deterministic-metadata-hashes")]
++        {
++            stat.data_access_timestamp = stat.data_access_timestamp.map(|_| Datetime {
++                seconds: 0,
++                nanoseconds: 0,
++            });
++            stat.data_modification_timestamp = stat.data_modification_timestamp.map(|_| Datetime {
++                seconds: 0,
++                nanoseconds: 0,
++            });
++            stat.status_change_timestamp = stat.status_change_timestamp.map(|_| Datetime {
++                seconds: 0,
++                nanoseconds: 0,
++            });
+         }
++        stat
+     }
+ }
+ 
+@@ -1303,7 +1319,7 @@ impl WasiFilesystemCtxView<'_> {
+ 
+ #[cfg(all(test, feature = "deterministic-metadata-hashes"))]
+ mod deterministic_metadata_tests {
+-    use super::{DeterministicMetadataHashes, register_preopened_tree};
++    use super::{DescriptorStat, DeterministicMetadataHashes, register_preopened_tree};
+     use cap_fs_ext::MetadataExt as _;
+     use std::fs;
+ 
+@@ -1349,4 +1365,29 @@ mod deterministic_metadata_tests {
+         assert_eq!(forward, vec![1, 2, 3, 4, 5]);
+         assert_eq!(reverse, forward);
+     }
++
++    #[test]
++    fn descriptor_stat_timestamps_are_epoch_normalized() {
++        let temporary = tempfile::tempdir().expect("temporary tree");
++        fs::write(temporary.path().join("file"), b"content").expect("write file");
++        let dir =
++            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
++                .expect("open tree");
++        let file = dir.open("file").expect("open file");
++        let stat = DescriptorStat::from(file.metadata().expect("file metadata"));
++
++        assert!(stat.data_access_timestamp.is_some());
++        assert!(stat.data_modification_timestamp.is_some());
++        for timestamp in [
++            stat.data_access_timestamp,
++            stat.data_modification_timestamp,
++            stat.status_change_timestamp,
++        ]
++        .into_iter()
++        .flatten()
++        {
++            assert_eq!(timestamp.seconds, 0);
++            assert_eq!(timestamp.nanoseconds, 0);
++        }
++    }
+ }

@@ -357,7 +357,7 @@ the published `wasmtime-wasi 46.0.1` crate against SHA-256
 and builds the same five native host wheels as the standalone-server matrix.
 Rust, maturin-action, maturin, and WASI SDK inputs are pinned, and the release
 contains wheel and patch-set SHA-256 manifests. The compiler now selects the
-five host wheels from immutable release `componentizer-v0.25.0-hologram.4`,
+five host wheels from immutable release `componentizer-v0.25.0-hologram.5`,
 verifies each exact SHA-256, and reports `reproducible: false` until the full
 clean-host equality gate passes.
 
@@ -594,6 +594,33 @@ Windows. A seventh build-only patch now preserves timestamp availability while
 mapping every exposed access, modification, and status/creation value to epoch
 zero. Its focused regression passes after fresh-source application; completed
 provenance remains false pending a corrected release and replacement matrix.
+
+Timestamp-normalized `.5` publication (2026-08-28): PR #37 merged the seventh
+patch as `903c671`. Untagged merged-main release run `33224125002` rebuilt the
+shared CPython/WASI payload and all five native wheels, invoked each packaged
+componentizer successfully, and generated both checksum manifests. Annotated
+tag `componentizer-v0.25.0-hologram.5` points to that exact merge commit;
+tagged run `33225747320` repeated every build and smoke test and published the
+non-draft, non-prerelease seven-asset release. A fresh public download verified
+all five wheels against `SHA256SUMS`, all seven repository patches against
+`PATCHSET.sha256`, and patch-manifest SHA-256
+`8262cb4562428132c29dc4a46780178a5e0f4d7fa1c41549e2f15c76f7dec8ad`.
+PR #33 pins those exact `.5` assets and contract
+`hologram:componentizer/preinitialization-determinism@5`; completed provenance
+remains false pending the replacement matrix.
+
+Pinned `.5` local proof (2026-08-28): two isolated macOS arm64 compiles
+executed successfully and matched component layer
+`blake3:624884be7f65be8cb3ff4f7c8c9f9109bc33b81456feb8ea74653bd3e1c454b3`,
+application
+`blake3:bdf89554364b8df2ec40160880194e4bac7244bdbbb7ebc5285a9f8b9144aac0`,
+archive
+`blake3:b52177ef4d463218037802aa47fa15a62c428b5f666122fe7f1b522869cbcbc2`,
+footer `245b38faa865018c52fb9592d47aa56959b98cf3de437c99462ef5b01145b709`,
+and complete-file SHA-256
+`3207dbf510698d48108064470ac26f17eecb120aa1d00ab78e61d23b0d94e691`.
+Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
+response. The five-host matrix is the remaining acceptance gate.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.

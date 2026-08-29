@@ -44,7 +44,7 @@
   pinned Rust, maturin-action, maturin, and WASI SDK inputs.
 - [x] Build the patch as five immutable wheel assets matching the server
   release matrix and publish their SHA-256 manifest under
-  [`componentizer-v0.25.0-hologram.4`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.4).
+  [`componentizer-v0.25.0-hologram.5`](https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.5).
 - [x] Replace every upstream componentizer URL/hash pin with the corresponding
   Hologram distribution asset; retain fail-closed host selection.
 - [x] Report the patch identity and deterministic build-randomness contract in
@@ -208,6 +208,28 @@ availability while mapping every exposed filesystem timestamp to epoch zero;
 fresh-source application and its focused regression pass. Provenance remains
 false pending a corrected release and replacement matrix.
 
+Timestamp-normalized `.5` release evidence (2026-08-28): PR #37 merged as
+`903c671`, and untagged merged-main run `33224125002` passed the shared
+CPython/WASI stage, all five wheel builders, each packaged-tool invocation, and
+both checksum manifests. Tagged run `33225747320` repeated those gates and
+published `componentizer-v0.25.0-hologram.5`. A fresh public download verified
+all five wheels, all seven local patches, and patch-manifest digest
+`8262cb4562428132c29dc4a46780178a5e0f4d7fa1c41549e2f15c76f7dec8ad`.
+PR #33 now pins the `.5` assets and determinism contract `@5`; provenance
+remains false until the replacement ten-runner matrix passes.
+
+Pinned `.5` local proof (2026-08-28): two isolated macOS arm64 builds executed
+successfully and matched layer
+`blake3:624884be7f65be8cb3ff4f7c8c9f9109bc33b81456feb8ea74653bd3e1c454b3`,
+application
+`blake3:bdf89554364b8df2ec40160880194e4bac7244bdbbb7ebc5285a9f8b9144aac0`,
+archive
+`blake3:b52177ef4d463218037802aa47fa15a62c428b5f666122fe7f1b522869cbcbc2`,
+footer `245b38faa865018c52fb9592d47aa56959b98cf3de437c99462ef5b01145b709`,
+and complete-file SHA-256
+`3207dbf510698d48108064470ac26f17eecb120aa1d00ab78e61d23b0d94e691`.
+The replacement matrix is the remaining acceptance gate.
+
 ## Verification and delivery
 
 - [x] Validate the source preparation and workflow statically with ShellCheck,
@@ -243,6 +265,11 @@ false pending a corrected release and replacement matrix.
   `33219475061` published `componentizer-v0.25.0-hologram.4`; and a fresh
   download verified all wheel hashes and patch-set digest
   `1160ed7bd742dd55d798aae7baa2047897d0b188d251af63cbae5f25381c775f`.
+- [x] Publish the timestamp-normalization correction. Untagged run
+  `33224125002` passed all five packaged-wheel invocations; tagged run
+  `33225747320` published `componentizer-v0.25.0-hologram.5`; and a fresh
+  public download verified all wheels and patch-set digest
+  `8262cb4562428132c29dc4a46780178a5e0f4d7fa1c41549e2f15c76f7dec8ad`.
 - [x] Add exact five-host distribution-selection and planned-provenance tests
   for the immutable release and patch contract.
 - [x] Add a fail-closed clean-host comparator and execute every compiled proof

@@ -25,13 +25,13 @@ pub const COMPONENTIZE_PY_VERSION: &str = "0.25.0";
 pub const COMPONENT_PYTHON_VERSION: &str = "3.14.0";
 const COMPONENT_PYTHON_INSTALL_VERSION: &str = "3.14";
 const COMPONENTIZE_PY_SOURCE_REVISION: &str = "c0949b19d464f5d70bc1051195a3ae0e6a012df9";
-const COMPONENTIZER_RELEASE_TAG: &str = "componentizer-v0.25.0-hologram.4";
-const COMPONENTIZER_RELEASE_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.4";
-const COMPONENTIZER_PATCHSET_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.4/PATCHSET.sha256";
+const COMPONENTIZER_RELEASE_TAG: &str = "componentizer-v0.25.0-hologram.5";
+const COMPONENTIZER_RELEASE_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/tag/componentizer-v0.25.0-hologram.5";
+const COMPONENTIZER_PATCHSET_URL: &str = "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/PATCHSET.sha256";
 const COMPONENTIZER_PATCHSET_SHA256: &str =
-    "1160ed7bd742dd55d798aae7baa2047897d0b188d251af63cbae5f25381c775f";
+    "8262cb4562428132c29dc4a46780178a5e0f4d7fa1c41549e2f15c76f7dec8ad";
 const COMPONENTIZER_DETERMINISM_CONTRACT: &str =
-    "hologram:componentizer/preinitialization-determinism@4";
+    "hologram:componentizer/preinitialization-determinism@5";
 const TARGET_ABI: &str = "wasm32-wasip2-component";
 const GUEST_CONTRACT: &str = "hologram:guest/component@1";
 const REPRODUCIBILITY_BLOCKER: &str = "the deterministic componentizer is pinned, but two independent clean builds have not yet been compared on every supported host";
@@ -386,24 +386,24 @@ fn componentizer_patch_set() -> ToolPatchSet {
 fn componentizer_distribution(os: &str, arch: &str) -> Result<ToolDistribution> {
     let distribution = match (os, arch) {
         ("macos", "x86_64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.4/componentize_py-0.25.0-cp39-abi3-macosx_10_12_x86_64.whl",
-            sha256: "a84f0558f4d2870d5f025d1f905faf2c3a8fc54fbeea66ab578e66305c99f56e",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/componentize_py-0.25.0-cp39-abi3-macosx_10_12_x86_64.whl",
+            sha256: "4653f85787ce1fd8f21abeb3ed07f940367a6a8f16df7bc7279131a0252a4da1",
         },
         ("macos", "aarch64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.4/componentize_py-0.25.0-cp39-abi3-macosx_11_0_arm64.whl",
-            sha256: "aa0d3d3c56cc30cff87f9c9698308a2dfcf814f4b436816ee64d736e8fcfaeb8",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/componentize_py-0.25.0-cp39-abi3-macosx_11_0_arm64.whl",
+            sha256: "eb9a6ed5c5d93ef949bcf2682b64b9097d1fa13b8f87fe3aabe54be7415559f8",
         },
         ("linux", "x86_64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.4/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_x86_64.whl",
-            sha256: "1742bb281b6668cac60aad832a91df5aa7b9d249a833b6ba1c50c1d075c74b1e",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_x86_64.whl",
+            sha256: "1285eeb7cec8408153523016228f2afe577357419101373dc94b77fe54d7973f",
         },
         ("linux", "aarch64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.4/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_aarch64.whl",
-            sha256: "a835335e59506f190332a6ff0332c865a8e312f097b1e83fa72e67736a5f453c",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/componentize_py-0.25.0-cp39-abi3-manylinux_2_28_aarch64.whl",
+            sha256: "72e6ae13ff1b597e2e7adfafb80b562463acfbedb69603e3f0b36f83c895c365",
         },
         ("windows", "x86_64") => ToolDistribution {
-            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.4/componentize_py-0.25.0-cp39-abi3-win_amd64.whl",
-            sha256: "91bdeef904d93971dc2ae3815866752f4597dfb8f7a4eae51cedf3c3cf9edaa5",
+            url: "https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/componentize_py-0.25.0-cp39-abi3-win_amd64.whl",
+            sha256: "fdf254a2d3ec235921a4a7a62d63b0c39e7b7da4444f08ba6cad730c35965a39",
         },
         _ => {
             return Err(LiveError::Capability(format!(
@@ -1000,7 +1000,7 @@ mod tests {
             .expect("host distribution");
         assert!(distribution
             .url
-            .starts_with("https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.4/"));
+            .starts_with("https://github.com/Hologram-Technologies/hologram-live/releases/download/componentizer-v0.25.0-hologram.5/"));
         assert_eq!(distribution.sha256.len(), 64);
         assert_eq!(
             provenance.componentizer.patch_set,
@@ -1029,31 +1029,31 @@ mod tests {
                 "linux",
                 "x86_64",
                 "manylinux_2_28_x86_64.whl",
-                "1742bb281b6668cac60aad832a91df5aa7b9d249a833b6ba1c50c1d075c74b1e",
+                "1285eeb7cec8408153523016228f2afe577357419101373dc94b77fe54d7973f",
             ),
             (
                 "linux",
                 "aarch64",
                 "manylinux_2_28_aarch64.whl",
-                "a835335e59506f190332a6ff0332c865a8e312f097b1e83fa72e67736a5f453c",
+                "72e6ae13ff1b597e2e7adfafb80b562463acfbedb69603e3f0b36f83c895c365",
             ),
             (
                 "macos",
                 "x86_64",
                 "macosx_10_12_x86_64.whl",
-                "a84f0558f4d2870d5f025d1f905faf2c3a8fc54fbeea66ab578e66305c99f56e",
+                "4653f85787ce1fd8f21abeb3ed07f940367a6a8f16df7bc7279131a0252a4da1",
             ),
             (
                 "macos",
                 "aarch64",
                 "macosx_11_0_arm64.whl",
-                "aa0d3d3c56cc30cff87f9c9698308a2dfcf814f4b436816ee64d736e8fcfaeb8",
+                "eb9a6ed5c5d93ef949bcf2682b64b9097d1fa13b8f87fe3aabe54be7415559f8",
             ),
             (
                 "windows",
                 "x86_64",
                 "win_amd64.whl",
-                "91bdeef904d93971dc2ae3815866752f4597dfb8f7a4eae51cedf3c3cf9edaa5",
+                "fdf254a2d3ec235921a4a7a62d63b0c39e7b7da4444f08ba6cad730c35965a39",
             ),
         ];
         for (os, arch, wheel_suffix, sha256) in targets {

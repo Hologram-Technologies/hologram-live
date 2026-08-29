@@ -151,9 +151,9 @@ def identity(report, archive_path):
         raise ValueError("build provenance must remain non-canonical")
     if source.get("profile") != "wasi-component":
         raise ValueError("compile report is not for the Python Component profile")
-    if patch_set.get("determinism_contract") != "hologram:componentizer/preinitialization-determinism@4":
+    if patch_set.get("determinism_contract") != "hologram:componentizer/preinitialization-determinism@5":
         raise ValueError("compile report does not contain the deterministic componentizer contract")
-    if patch_set.get("release_tag") != "componentizer-v0.25.0-hologram.4":
+    if patch_set.get("release_tag") != "componentizer-v0.25.0-hologram.5":
         raise ValueError("compile report does not contain the pinned componentizer release")
     if len(distribution.get("sha256", "")) != 64:
         raise ValueError("compile report does not contain the componentizer wheel digest")

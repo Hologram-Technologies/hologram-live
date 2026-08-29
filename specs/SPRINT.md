@@ -197,6 +197,17 @@ and complete-file SHA-256
 `7fbb256c51c2d2a2f22bcd997a0cebde038f14c83270466ba042caeaf30f6470`.
 The replacement ten-runner matrix is now the remaining acceptance gate.
 
+Pinned `.4` matrix result (run `33221589694`, 2026-08-28): all ten clean
+archives compiled and executed. Both macOS pairs matched, but Linux
+arm64/x86_64 and Windows x86_64 produced equal-length components with different
+identities. Retained bytes localized the Linux x86_64 delta to three 32-bit
+nanosecond fields beside stable epoch seconds. Access/modification timestamps
+were normalized on disk, but host status/creation time remained observable on
+Linux and Windows. A seventh build-only patch now preserves timestamp
+availability while mapping every exposed filesystem timestamp to epoch zero;
+fresh-source application and its focused regression pass. Provenance remains
+false pending a corrected release and replacement matrix.
+
 ## Verification and delivery
 
 - [x] Validate the source preparation and workflow statically with ShellCheck,

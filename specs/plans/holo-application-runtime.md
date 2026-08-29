@@ -343,7 +343,7 @@ randomness remain separate follow-ups.
 Deterministic-componentizer work (started 2026-08-27): upstream revision
 `c0949b1` still creates a private WASI context with independently randomized
 secure bytes, insecure bytes, and insecure seed, and has no CLI or library seed
-control. Hologram now carries a reviewed six-patch source set under
+control. Hologram now carries a reviewed seven-patch source set under
 `tools/componentize-py/`: it supplies
 separate fixed-domain streams for both byte interfaces, fixes the insecure
 seed, fixes wall and monotonic clocks at epoch zero, and sets
@@ -581,6 +581,19 @@ and complete-file SHA-256
 Both 19,547,588-byte archives returned the expected locked `six==1.17.0`
 response. This closes the `.4` local gate; the five-host matrix remains
 authoritative.
+
+Pinned `.4` matrix result (run `33221589694`, 2026-08-28): all ten clean
+archives compiled and executed. Both macOS architecture pairs matched every
+identity, while Linux arm64/x86_64 and Windows x86_64 produced equal-length
+components with different identities. Retained-archive comparison localized
+each Linux x86_64 delta to three 32-bit nanosecond fields beside stable epoch
+seconds in preinitialized linear memory. The private filesystem policy had
+normalized settable access/modification times but still exposed host
+status/creation timestamps, which differ per clean workspace on Linux and
+Windows. A seventh build-only patch now preserves timestamp availability while
+mapping every exposed access, modification, and status/creation value to epoch
+zero. Its focused regression passes after fresh-source application; completed
+provenance remains false pending a corrected release and replacement matrix.
 
 Rootfs-provenance follow-up (2026-08-26): the same schema-v1,
 `canonical: false` envelope now covers source-compiled Python rootfs layers.
@@ -1091,5 +1104,11 @@ work below.
   - [x] Build and publish the six-patch componentizer distribution in dry run
     `33209572217` and tagged release run `33211899065`, then independently
     verify all public wheel and patch checksums.
+  - [x] Run the handle-portable `.4` release and replacement matrix, retain its
+    truthful failure, and localize the remaining Linux/Windows delta to
+    status/creation timestamp nanoseconds (`33221589694`).
+  - [x] Add a seventh build-only patch that epoch-normalizes every timestamp
+    exposed by the private WASI filesystem, including status/creation time,
+    with fresh-source and unit-regression coverage.
   - [ ] Compare two clean builds per host before changing the reproducibility
     claim.

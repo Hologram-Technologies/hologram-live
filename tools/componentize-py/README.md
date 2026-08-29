@@ -1,6 +1,6 @@
 # Hologram deterministic componentize-py distribution
 
-Hologram applies an exact six-patch set to upstream `componentize-py` revision
+Hologram applies an exact seven-patch set to upstream `componentize-py` revision
 `c0949b19d464f5d70bc1051195a3ae0e6a012df9` (`v0.25.0`):
 
 - [`deterministic-build-randomness.patch`](deterministic-build-randomness.patch)
@@ -16,7 +16,10 @@ Hologram applies an exact six-patch set to upstream `componentize-py` revision
   wires that policy to a vendored, feature-gated Wasmtime WASI dependency; and
 - [`deterministic-metadata-preregistration.patch`](deterministic-metadata-preregistration.patch)
   assigns guest metadata identities with a lexical pre-execution walk instead
-  of runtime observation order.
+  of runtime observation order; and
+- [`deterministic-stat-timestamps.patch`](deterministic-stat-timestamps.patch)
+  maps every filesystem timestamp exposed during private pre-initialization to
+  epoch zero, including host status/creation time that cannot be set on disk.
 
 The preparation script downloads `wasmtime-wasi 46.0.1`, requires SHA-256
 `e9f65ef30a2c5478873cdb619085a7a649d3ce41cc3eaf298a7ce3dee96a8e11`,
@@ -31,6 +34,8 @@ Python Component:
 - every private/preopened scratch tree is traversed lexically and its access and
   modification timestamps are fixed at the Unix epoch immediately before
   pre-initialization; and
+- every timestamp returned by the private WASI filesystem is mapped to epoch
+  zero while preserving whether that timestamp is supported; and
 - every preopened input is read-only during pre-initialization, preventing
   CPython bytecode-cache writes from reintroducing host-time mtimes; and
 - guest directory entries are returned in lexical order instead of host

@@ -3,7 +3,7 @@
   "layers": [
     {
       "kind": "view",
-      "path": "index.html",
+      "path": "ui",
       "surface": "portable"
     }
   ]

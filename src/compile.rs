@@ -7,6 +7,7 @@ use crate::holo_contract::{
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
 use crate::holo_python_component;
+use crate::holo_view;
 use crate::holo_wasm::validate_entry_name;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
@@ -149,7 +150,11 @@ pub fn check_manifest(path: &Path) -> Result<CheckedManifest> {
     for (layer_index, layer) in specification.layers.iter().enumerate() {
         match (&layer.path, &layer.source) {
             (Some(path), None) => {
-                let _ = read_required(root, path)?;
+                if matches!(layer.kind, CompileLayerKind::View) {
+                    let _ = holo_view::compile_directory(&root.join(path))?;
+                } else {
+                    let _ = read_required(root, path)?;
+                }
             }
             (None, Some(CompileSource::Python(source))) => match source.profile {
                 holo_python::PythonProfile::Rootfs => {
@@ -524,6 +529,15 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
                 ));
             }
             let surface = required_field(source, "surface", source.surface.as_deref())?;
+            holo_view::validate_surface(surface).map_err(|_| {
+                layer_config_error(
+                    source,
+                    &format!(
+                        "unsupported surface {surface:?}; expected {:?}",
+                        holo_view::PORTABLE_SURFACE
+                    ),
+                )
+            })?;
             Ok(Layer::view(kappa, surface))
         }
         CompileLayerKind::InferenceModel => {
@@ -566,7 +580,11 @@ fn compile_layer_content(
 ) -> Result<CompiledLayerContent> {
     match (&layer.path, &layer.source) {
         (Some(path), None) => Ok(CompiledLayerContent {
-            bytes: read_required(root, path)?,
+            bytes: if matches!(layer.kind, CompileLayerKind::View) {
+                holo_view::compile_directory(&root.join(path))?
+            } else {
+                read_required(root, path)?
+            },
             provenance: None,
         }),
         (None, Some(CompileSource::Python(source))) => match source.profile {
@@ -752,12 +770,13 @@ mod tests {
     #[test]
     fn compiles_a_self_contained_view_application() {
         let directory = tempfile::tempdir().expect("tempdir");
-        std::fs::write(directory.path().join("view.html"), "<h1>Hello</h1>").expect("view");
+        std::fs::create_dir(directory.path().join("ui")).expect("ui");
+        std::fs::write(directory.path().join("ui/index.html"), "<h1>Hello</h1>").expect("view");
         std::fs::write(
             directory.path().join("hologram.json"),
             r#"{
                 "schema_version": 4,
-                "layers": [{"kind":"view","path":"view.html","surface":"portable"}]
+                "layers": [{"kind":"view","path":"ui","surface":"portable"}]
             }"#,
         )
         .expect("manifest");
@@ -794,18 +813,64 @@ mod tests {
         assert_eq!(directory.layers[0].kind, "view");
         assert_eq!(directory.layers[0].surface.as_deref(), Some("portable"));
         assert_eq!(directory.blobs.len(), 2);
+
+        let loader = HoloLoader::from_bytes(&compiled.bytes).expect("loader");
+        let plan = loader.into_plan().expect("plan");
+        let bundle = plan
+            .content_blobs()
+            .expect("content blobs")
+            .into_iter()
+            .map(|(_, bytes)| bytes)
+            .find_map(|bytes| crate::holo_view::decode(bytes).ok())
+            .expect("View bundle");
+        assert_eq!(bundle.entry, crate::holo_view::PORTABLE_ENTRY);
+        assert_eq!(bundle.files.len(), 1);
     }
 
     #[test]
-    fn fat_and_thin_packages_share_the_same_application_manifest() {
+    fn view_sources_require_a_directory_and_portable_surface() {
         let directory = tempfile::tempdir().expect("tempdir");
-        std::fs::write(directory.path().join("view.html"), "<h1>Hello</h1>").expect("view");
+        std::fs::write(directory.path().join("index.html"), "<h1>Hello</h1>").expect("view");
         let manifest_path = directory.path().join("hologram.json");
         std::fs::write(
             &manifest_path,
             r#"{
                 "schema_version": 4,
-                "layers": [{"kind":"view","path":"view.html","surface":"portable"}]
+                "layers": [{"kind":"view","path":"index.html","surface":"portable"}]
+            }"#,
+        )
+        .expect("manifest");
+        let error = check_manifest(&manifest_path).expect_err("single file View must fail");
+        assert!(error.to_string().contains("must be a directory"), "{error}");
+
+        std::fs::create_dir(directory.path().join("ui")).expect("ui");
+        std::fs::write(directory.path().join("ui/index.html"), "<h1>Hello</h1>").expect("entry");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "layers": [{"kind":"view","path":"ui","surface":"desktop"}]
+            }"#,
+        )
+        .expect("manifest");
+        let error = check_manifest(&manifest_path).expect_err("unsupported surface must fail");
+        assert!(
+            error.to_string().contains("expected \"portable\""),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn fat_and_thin_packages_share_the_same_application_manifest() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(directory.path().join("ui")).expect("ui");
+        std::fs::write(directory.path().join("ui/index.html"), "<h1>Hello</h1>").expect("view");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "layers": [{"kind":"view","path":"ui","surface":"portable"}]
             }"#,
         )
         .expect("manifest");

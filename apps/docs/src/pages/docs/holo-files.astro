@@ -76,11 +76,14 @@ import { sitePath } from '../../lib/site';
       <tr><td><code>wasm</code></td><td><code>WasmCodemodule</code></td><td>Content κ and callable export; portable.</td><td>Executes in-process through the ordered provider lifecycle; the primary may be at any layer position.</td></tr>
       <tr><td><code>tensor</code></td><td><code>TensorPlan</code></td><td>Content κ and session entrypoint; no app exit code.</td><td>Packages and inspects; execution backend remains explicit.</td></tr>
       <tr><td><code>rootfs</code></td><td><code>RootfsImage</code></td><td>Content κ, entrypoint, and required architecture.</td><td>Directly executes experimental Python OCI bundles; other providers remain explicit.</td></tr>
-      <tr><td><code>view</code></td><td><code>View</code></td><td>Content κ and target surface; no app exit code.</td><td>Packages and inspects; the desktop does not attach it yet.</td></tr>
+      <tr><td><code>view</code></td><td><code>View</code></td><td>Canonical bundle κ and target surface; no app exit code.</td><td>Compiles a portable asset directory and inspects it; Desktop attachment is the next provider slice.</td></tr>
       <tr><td><code>inference-model</code></td><td><code>InferenceModel</code></td><td>Content κ, unique callable entry, and engine identifier; no app exit code.</td><td>Imports, verifies, packages, and inspects; provider invocation remains explicit.</td></tr>
     </tbody>
   </table></div>
   <p>Manifest order is initialization order. Only Wasm and rootfs layers have exit semantics and may be selected as <code>primary</code>; a model-only archive uses <code>primary = null</code>. Composition belongs in child applications rather than a second dependency graph among layers.</p>
+
+  <h3>Portable View bundle v1</h3>
+  <p>A View source path names a directory whose fixed entry is <code>index.html</code>. The compiler writes the <code>HOLOVIEW</code> magic, version 1, entry path, file count, then every regular asset as its portable UTF-8 path, byte length, and exact bytes in strict lexical order. It rejects symlinks, special files, missing entries, unsafe or case-colliding paths, unsupported versions, truncation, trailing bytes, and bounded-size violations. Host paths, timestamps, permissions, ownership, empty directories, MIME guesses, and creation order are absent, so equivalent trees produce identical content κ values. Only surface <code>portable</code> is accepted. ADR 018 defines the Desktop-owned attachment and authority boundary; the current runtime still reports the missing provider explicitly.</p>
 
   <h2>Core-Wasm guest contract v1</h2>
   <p>A Wasm layer's canonical <code>entry</code> is authoritative. Under <code>core-wasm-v1</code>, the resolved module exports <code>memory</code>, <code>holo_alloc(len: i32) -&gt; i32</code>, and the declared entry with signature <code>(ptr: i32, len: i32) -&gt; i64</code>. The packed result is <code>out_ptr &lt;&lt; 32 | out_len</code>. <code>holo_run</code> is the source compiler and generator default, but direct and resident providers resolve whatever valid export the manifest declares and reject a missing or wrongly typed entry during preparation.</p>
@@ -198,7 +201,7 @@ hologram --json holo plan blake3:… |
   "requires": "capabilities.json",
   "layers": [
     &#123; "kind": "wasm", "path": "app.wasm", "entry": "holo_run" &#125;,
-    &#123; "kind": "view", "path": "ui/index.html", "surface": "portable" &#125;
+    &#123; "kind": "view", "path": "ui", "surface": "portable" &#125;
   ]
 &#125;
 

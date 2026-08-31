@@ -91,6 +91,7 @@ impl LayerProvider for ViewProvider {
                     bytes: file.bytes.into(),
                 })
                 .collect(),
+            intents: context.view_intents,
         };
         Ok(Arc::new(PreparedViewLayer {
             position: context.layer.position,
@@ -205,13 +206,25 @@ mod tests {
     use crate::holo_capability::{self, EffectiveGrant, RequestedCapabilities};
     use crate::holo_provider::LayerCompletionRole;
     use hologram::space::address_bytes;
-    use hologram_view_surface::SurfaceFuture;
+    use hologram_view_surface::{PortableViewIntentHandler, SurfaceFuture, ViewIntentRequest};
     use std::sync::Mutex as StdMutex;
 
     #[derive(Default)]
     struct RecordingSurface {
         events: StdMutex<Vec<String>>,
         attachment: StdMutex<Option<PortableViewAttachment>>,
+    }
+
+    struct UnboundIntents;
+
+    impl PortableViewIntentHandler for UnboundIntents {
+        fn handle<'a>(
+            &'a self,
+            _id: &'a ViewAttachmentId,
+            _request: ViewIntentRequest,
+        ) -> hologram_view_surface::IntentFuture<'a> {
+            Box::pin(async { Err("test intent handler is unbound".to_owned()) })
+        }
     }
 
     impl PortableViewSurface for RecordingSurface {
@@ -313,6 +326,7 @@ mod tests {
                 requested_capabilities: requested_capabilities(),
                 layer: layer(content.clone()),
                 target: ProviderTarget::Direct,
+                view_intents: Arc::new(UnboundIntents),
             })
             .await
             .expect("prepare");

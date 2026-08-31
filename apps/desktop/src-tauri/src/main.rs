@@ -262,9 +262,16 @@ fn main() {
     let view_assets = std::sync::Arc::new(view_surface::ViewAssetStore::default());
     let protocol_assets = view_assets.clone();
     tauri::Builder::default()
-        .register_uri_scheme_protocol(view_surface::VIEW_SCHEME, move |context, request| {
-            protocol_assets.response(context.webview_label(), &request)
-        })
+        .register_asynchronous_uri_scheme_protocol(
+            view_surface::VIEW_SCHEME,
+            move |context, request, responder| {
+                let assets = protocol_assets.clone();
+                let webview_label = context.webview_label().to_owned();
+                tauri::async_runtime::spawn(async move {
+                    responder.respond(assets.response(&webview_label, &request).await);
+                });
+            },
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {

@@ -5,8 +5,8 @@ use hologram_live::holo::HoloExecutor;
 use hologram_live::holo_capability::EffectiveGrant;
 use hologram_live::protocol::HoloRunResult;
 use hologram_view_surface::{
-    PortableViewAttachment, PortableViewSurface, SurfaceFuture, ViewAttachmentId,
-    ViewSurfaceRegistry,
+    PortableViewAttachment, PortableViewIntentHandler, PortableViewSurface, SurfaceFuture,
+    ViewAttachmentId, ViewIntentRequest, ViewSurfaceRegistry, MAX_INTENT_PAYLOAD_BYTES,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -17,7 +17,7 @@ use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 pub const VIEW_SCHEME: &str = "hologram-view";
 
 const VIEW_CSP: &str = concat!(
-    "default-src 'self'; base-uri 'none'; connect-src 'none'; ",
+    "default-src 'self'; base-uri 'none'; connect-src 'self'; ",
     "form-action 'none'; frame-ancestors 'none'; object-src 'none'; ",
     "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; ",
     "img-src 'self' data:; font-src 'self'"
@@ -89,9 +89,11 @@ impl Default for ViewAssetStore {
 }
 
 struct StoredAttachment {
+    id: ViewAttachmentId,
     token: String,
     entry: String,
     assets: HashMap<String, Arc<[u8]>>,
+    intents: Arc<dyn PortableViewIntentHandler>,
 }
 
 struct StagedAttachment {
@@ -121,9 +123,11 @@ impl ViewAssetStore {
             ));
         }
         let stored = StoredAttachment {
+            id: view.id.clone(),
             token: view.id.token.clone(),
             entry: view.entry.clone(),
             assets,
+            intents: view.intents.clone(),
         };
         let mut attachments = self
             .attachments
@@ -152,11 +156,101 @@ impl ViewAssetStore {
             .is_some())
     }
 
-    pub fn response(&self, webview_label: &str, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    pub async fn response(
+        &self,
+        webview_label: &str,
+        request: &Request<Vec<u8>>,
+    ) -> Response<Vec<u8>> {
+        if request.method() == Method::POST {
+            return self.intent_response(webview_label, request).await;
+        }
         match self.lookup(webview_label, request) {
             Ok((path, asset)) => asset_response(request.method(), &path, asset),
             Err((status, message)) => error_response(status, &message),
         }
+    }
+
+    async fn intent_response(
+        &self,
+        webview_label: &str,
+        request: &Request<Vec<u8>>,
+    ) -> Response<Vec<u8>> {
+        if request.uri().scheme_str() != Some(VIEW_SCHEME)
+            || request.uri().query().is_some()
+            || request.uri().path() != "/_hologram/intent"
+        {
+            return error_response(StatusCode::BAD_REQUEST, "invalid portable View intent URL");
+        }
+        if request.body().len() > MAX_INTENT_PAYLOAD_BYTES + 1024 {
+            return error_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "portable View intent request is too large",
+            );
+        }
+        let content_type = request
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok());
+        if !matches!(content_type, Some(value) if value.split(';').next() == Some("application/json"))
+        {
+            return error_response(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "portable View intents require application/json",
+            );
+        }
+        let intent = match serde_json::from_slice::<ViewIntentRequest>(request.body()) {
+            Ok(intent) => intent,
+            Err(error) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("decode portable View intent: {error}"),
+                );
+            }
+        };
+        let (id, handler) = match self.intent_target(webview_label, request) {
+            Ok(target) => target,
+            Err((status, message)) => return error_response(status, &message),
+        };
+        match handler.handle(&id, intent).await {
+            Ok(response) => match serde_json::to_vec(&response) {
+                Ok(body) => response_builder(StatusCode::OK)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::CONTENT_LENGTH, body.len())
+                    .body(body)
+                    .expect("portable View intent response headers are valid"),
+                Err(error) => error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("encode portable View intent response: {error}"),
+                ),
+            },
+            Err(error) => error_response(StatusCode::UNPROCESSABLE_ENTITY, &error),
+        }
+    }
+
+    fn intent_target(
+        &self,
+        webview_label: &str,
+        request: &Request<Vec<u8>>,
+    ) -> Result<(ViewAttachmentId, Arc<dyn PortableViewIntentHandler>), AssetError> {
+        let attachments = self.attachments.read().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "portable View asset store lock poisoned".to_owned(),
+            )
+        })?;
+        let attachment = attachments.get(webview_label).ok_or_else(|| {
+            (
+                StatusCode::FORBIDDEN,
+                "portable View attachment is unavailable".to_owned(),
+            )
+        })?;
+        if request.uri().host() != Some(attachment.token.as_str()) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "portable View origin does not match its attachment".to_owned(),
+            ));
+        }
+        Ok((attachment.id.clone(), attachment.intents.clone()))
     }
 
     fn lookup(&self, webview_label: &str, request: &Request<Vec<u8>>) -> AssetLookup {
@@ -368,7 +462,28 @@ fn content_type(path: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hologram_view_surface::PortableViewAsset;
+    use hologram_view_surface::{
+        IntentFuture, PortableViewAsset, ViewIntentResponse, APPLICATION_INVOKE_INTENT,
+        VIEW_INTENT_VERSION,
+    };
+
+    struct EchoIntents;
+
+    impl PortableViewIntentHandler for EchoIntents {
+        fn handle<'a>(
+            &'a self,
+            _id: &'a ViewAttachmentId,
+            request: ViewIntentRequest,
+        ) -> IntentFuture<'a> {
+            Box::pin(async move {
+                request.validate()?;
+                Ok(ViewIntentResponse {
+                    version: VIEW_INTENT_VERSION,
+                    outputs: vec![request.payload],
+                })
+            })
+        }
+    }
 
     fn attachment(token: char) -> PortableViewAttachment {
         PortableViewAttachment {
@@ -388,6 +503,7 @@ mod tests {
                     bytes: Arc::from(b"console.log('view')".as_slice()),
                 },
             ],
+            intents: Arc::new(EchoIntents),
         }
     }
 
@@ -399,44 +515,50 @@ mod tests {
             .expect("request")
     }
 
-    #[test]
-    fn assets_are_bound_to_the_opaque_origin_and_window() {
+    #[tokio::test]
+    async fn assets_are_bound_to_the_opaque_origin_and_window() {
         let store = ViewAssetStore::default();
         let first = attachment('a');
         let second = attachment('b');
         let first_staged = store.stage(&first).expect("stage first");
         let second_staged = store.stage(&second).expect("stage second");
 
-        let response = store.response(
-            &first_staged.label,
-            &request(Method::GET, &format!("{VIEW_SCHEME}://{}/", first.id.token)),
-        );
+        let response = store
+            .response(
+                &first_staged.label,
+                &request(Method::GET, &format!("{VIEW_SCHEME}://{}/", first.id.token)),
+            )
+            .await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.body(), b"<!doctype html><h1>view</h1>");
         assert_eq!(
             response.headers()[header::CONTENT_SECURITY_POLICY],
             VIEW_CSP
         );
-        let script = store.response(
-            &first_staged.label,
-            &request(
-                Method::HEAD,
-                &format!("{VIEW_SCHEME}://{}/assets/app.js", first.id.token),
-            ),
-        );
+        let script = store
+            .response(
+                &first_staged.label,
+                &request(
+                    Method::HEAD,
+                    &format!("{VIEW_SCHEME}://{}/assets/app.js", first.id.token),
+                ),
+            )
+            .await;
         assert!(script.body().is_empty());
         assert_eq!(
             script.headers()[header::CONTENT_TYPE],
             "text/javascript; charset=utf-8"
         );
 
-        let cross_origin = store.response(
-            &first_staged.label,
-            &request(
-                Method::GET,
-                &format!("{VIEW_SCHEME}://{}/index.html", second.id.token),
-            ),
-        );
+        let cross_origin = store
+            .response(
+                &first_staged.label,
+                &request(
+                    Method::GET,
+                    &format!("{VIEW_SCHEME}://{}/index.html", second.id.token),
+                ),
+            )
+            .await;
         assert_eq!(cross_origin.status(), StatusCode::FORBIDDEN);
         assert!(store.remove(&first.id).expect("remove"));
         assert_eq!(
@@ -448,6 +570,7 @@ mod tests {
                         &format!("{VIEW_SCHEME}://{}/index.html", first.id.token),
                     ),
                 )
+                .await
                 .status(),
             StatusCode::FORBIDDEN
         );
@@ -468,8 +591,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn requests_reject_ambiguous_paths_methods_and_queries() {
+    #[tokio::test]
+    async fn requests_reject_ambiguous_paths_methods_and_queries() {
         let store = ViewAssetStore::default();
         let view = attachment('c');
         let staged = store.stage(&view).expect("stage");
@@ -478,12 +601,14 @@ mod tests {
         assert_eq!(
             store
                 .response(&staged.label, &request(Method::POST, &url("/index.html")))
+                .await
                 .status(),
-            StatusCode::METHOD_NOT_ALLOWED
+            StatusCode::BAD_REQUEST
         );
         assert_eq!(
             store
                 .response(&staged.label, &request(Method::GET, &url("/%2e%2e/secret")))
+                .await
                 .status(),
             StatusCode::BAD_REQUEST
         );
@@ -493,14 +618,54 @@ mod tests {
                     &staged.label,
                     &request(Method::GET, &url("/index.html?x=1"))
                 )
+                .await
                 .status(),
             StatusCode::BAD_REQUEST
         );
         assert_eq!(
             store
                 .response(&staged.label, &request(Method::GET, &url("/missing.css")))
+                .await
                 .status(),
             StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn intent_endpoint_accepts_only_the_bounded_versioned_message() {
+        let store = ViewAssetStore::default();
+        let view = attachment('e');
+        let staged = store.stage(&view).expect("stage");
+        let url = format!("{VIEW_SCHEME}://{}/_hologram/intent", view.id.token);
+        let body = serde_json::to_vec(&ViewIntentRequest {
+            version: VIEW_INTENT_VERSION,
+            name: APPLICATION_INVOKE_INTENT.to_owned(),
+            payload: "hello view".to_owned(),
+        })
+        .expect("intent");
+        let intent_request = Request::builder()
+            .method(Method::POST)
+            .uri(&url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .expect("request");
+        let response = store.response(&staged.label, &intent_request).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<ViewIntentResponse>(response.body()).expect("response"),
+            ViewIntentResponse {
+                version: VIEW_INTENT_VERSION,
+                outputs: vec!["hello view".to_owned()]
+            }
+        );
+
+        let wrong_origin = request(
+            Method::GET,
+            &format!("{VIEW_SCHEME}://{}/index.html", "f".repeat(64)),
+        );
+        assert_eq!(
+            store.response(&staged.label, &wrong_origin).await.status(),
+            StatusCode::FORBIDDEN
         );
     }
 }

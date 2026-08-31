@@ -6,9 +6,9 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M3.2 bounded View intent boundary
-- Previous delivery: M3.2 Tauri surface adapter and opaque asset origin
-- Next runtime milestone: M3.2 composed Wasm + View Desktop proof
+- Current delivery: M3.2 composed Wasm + View Desktop proof
+- Previous delivery: M3.2 bounded View intent boundary
+- Next runtime milestone: M3.2 display-independent window lifecycle proof
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -701,7 +701,8 @@ only until compilation resolves and binds its immutable digest.
   registry without adding Tauri dependencies to the server/runtime crates.
 - [x] Serve attached bundle assets from an opaque application/layer origin,
   with no `file://`, source path, or localhost dependency.
-- [ ] Define the intent/message boundary between the view and its application without granting ambient desktop authority.
+- [x] Define the intent/message boundary between the view and its application
+  without granting ambient desktop authority.
 - [x] Make direct headless execution report an explicit unavailable-surface
   capability when a required view cannot attach.
 - [ ] Demonstrate a composed Wasm + View `.holo` application in Hologram Desktop.
@@ -1173,4 +1174,6 @@ work below.
     asset removal on detach.
   - [ ] Add an integration seam for real window attach, replacement, rollback,
     and application-shutdown behavior without requiring a display in CI.
-- [ ] Add the bounded intent/message round trip and composed Wasm + View proof.
+- [x] Add the bounded intent/message round trip and prove it invokes the
+  composed application's own primary before reverse detach/stop.
+- [ ] Add the real composed Wasm + View Desktop example and lifecycle proof.

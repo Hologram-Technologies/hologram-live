@@ -7,10 +7,15 @@ use crate::application_plan::{
 use crate::error::{LiveError, Result};
 use crate::holo_capability::{EffectiveGrant, RequestedCapabilities};
 use hologram::space::LayerKind;
+use hologram_view_surface::{
+    PortableViewIntentHandler, ViewAttachmentId, ViewIntentRequest, ViewIntentResponse,
+    MAX_INTENT_OUTPUTS, MAX_INTENT_OUTPUT_BYTES, VIEW_INTENT_VERSION,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -80,6 +85,7 @@ pub struct LayerPrepareContext {
     pub requested_capabilities: RequestedCapabilities,
     pub layer: ResolvedLayer,
     pub target: ProviderTarget,
+    pub view_intents: Arc<dyn PortableViewIntentHandler>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,6 +275,82 @@ struct PreparedApplicationLayer {
     layer: Arc<dyn PreparedLayer>,
 }
 
+struct ApplicationIntentBroker {
+    application_kappa: String,
+    primary: OnceLock<Arc<dyn PreparedLayer>>,
+    invocation: Mutex<()>,
+}
+
+impl ApplicationIntentBroker {
+    fn new(application_kappa: &str) -> Self {
+        Self {
+            application_kappa: application_kappa.to_owned(),
+            primary: OnceLock::new(),
+            invocation: Mutex::new(()),
+        }
+    }
+
+    fn bind(&self, primary: Arc<dyn PreparedLayer>) -> Result<()> {
+        self.primary.set(primary).map_err(|_| {
+            LiveError::Conflict(format!(
+                "application {} intent broker was bound more than once",
+                self.application_kappa
+            ))
+        })
+    }
+}
+
+impl PortableViewIntentHandler for ApplicationIntentBroker {
+    fn handle<'a>(
+        &'a self,
+        id: &'a ViewAttachmentId,
+        request: ViewIntentRequest,
+    ) -> hologram_view_surface::IntentFuture<'a> {
+        Box::pin(async move {
+            request.validate()?;
+            if id.application_kappa != self.application_kappa {
+                return Err("portable View intent does not belong to this application".to_owned());
+            }
+            let primary = self
+                .primary
+                .get()
+                .ok_or_else(|| "portable View application primary is not ready".to_owned())?;
+            let _invocation = self.invocation.lock().await;
+            let outcome = primary
+                .invoke(vec![request.payload.into_bytes()])
+                .await
+                .map_err(|error| error.to_string())?;
+            if outcome.outputs.len() > MAX_INTENT_OUTPUTS {
+                return Err(format!(
+                    "portable View intent returned {} outputs; maximum is {MAX_INTENT_OUTPUTS}",
+                    outcome.outputs.len()
+                ));
+            }
+            let mut output_bytes = 0usize;
+            let outputs = outcome
+                .outputs
+                .into_iter()
+                .enumerate()
+                .map(|(index, output)| {
+                    output_bytes = output_bytes.saturating_add(output.len());
+                    String::from_utf8(output).map_err(|error| {
+                        format!("portable View intent output {index} is not UTF-8: {error}")
+                    })
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if output_bytes > MAX_INTENT_OUTPUT_BYTES {
+                return Err(format!(
+                    "portable View intent returned {output_bytes} bytes; maximum is {MAX_INTENT_OUTPUT_BYTES}"
+                ));
+            }
+            Ok(ViewIntentResponse {
+                version: VIEW_INTENT_VERSION,
+                outputs,
+            })
+        })
+    }
+}
+
 impl RunningApplication {
     pub fn state(&self) -> LifecycleState {
         LifecycleState::from_value(self.state.load(Ordering::Acquire))
@@ -432,6 +514,22 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
     let mut prepared = Vec::with_capacity(layer_count);
     for application_index in application_order {
         let (application_kappa, layers) = application_layers(plan, application_index)?;
+        let primary_layer = if layers.iter().any(|layer| layer.kind == LayerKind::View) {
+            match application_primary_layer(plan, application_index) {
+                Ok(primary) => Some(primary),
+                Err(error) => {
+                    state.store(LifecycleState::Failed.value(), Ordering::Release);
+                    return Err(with_rollback(
+                        error,
+                        stop_reverse(&plan.identity, &prepared, "rollback").await,
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+        let view_intents = Arc::new(ApplicationIntentBroker::new(application_kappa));
+        let prepared_start = prepared.len();
         let requested_capabilities = application_requested_capabilities(plan, application_index)?;
         let grant = admitted_grants.get(&application_index).ok_or_else(|| {
             LiveError::Conflict(format!(
@@ -484,6 +582,7 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
                     requested_capabilities: requested_capabilities.clone(),
                     layer: layer.clone(),
                     target: registry.target,
+                    view_intents: view_intents.clone(),
                 })
                 .await
             {
@@ -499,6 +598,24 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
                         stop_reverse(&plan.identity, &prepared, "rollback").await,
                     ));
                 }
+            }
+        }
+        if let Some(primary_layer) = primary_layer {
+            let binding = prepared[prepared_start..]
+                .iter()
+                .find(|layer| layer.layer.position() == primary_layer)
+                .ok_or_else(|| {
+                    LiveError::Conflict(format!(
+                        "application {application_kappa} lost primary layer {primary_layer} while binding View intents"
+                    ))
+                })
+                .and_then(|primary| view_intents.bind(primary.layer.clone()));
+            if let Err(error) = binding {
+                state.store(LifecycleState::Failed.value(), Ordering::Release);
+                return Err(with_rollback(
+                    error,
+                    stop_reverse(&plan.identity, &prepared, "rollback").await,
+                ));
             }
         }
     }
@@ -560,6 +677,31 @@ fn application_requested_capabilities(
         .ok_or_else(|| {
             LiveError::Conflict(format!(
                 "runtime lost requested capabilities for application index {application_index}"
+            ))
+        })
+}
+
+fn application_primary_layer(plan: &ApplicationPlan, application_index: usize) -> Result<u32> {
+    if application_index == 0 {
+        return plan.primary_layer.ok_or_else(|| {
+            LiveError::Capability(format!(
+                "application {} has no primary exit-bearing layer",
+                plan.identity.application_kappa
+            ))
+        });
+    }
+    plan.children
+        .iter()
+        .find(|child| child.application_index == application_index)
+        .ok_or_else(|| {
+            LiveError::Conflict(format!(
+                "runtime lost planned child application index {application_index}"
+            ))
+        })?
+        .primary_layer
+        .ok_or_else(|| {
+            LiveError::Capability(format!(
+                "child application index {application_index} has no primary exit-bearing layer"
             ))
         })
 }
@@ -645,6 +787,10 @@ mod tests {
     use crate::application_plan::{explain_application, PlanLimits};
     use hologram::archive::HoloWriter;
     use hologram::space::{address_bytes, AppManifest, Layer, Realization};
+    use hologram_view_surface::{
+        PortableViewAttachment, PortableViewSurface, SurfaceFuture, ViewSurfaceRegistry,
+        APPLICATION_INVOKE_INTENT,
+    };
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
 
@@ -677,6 +823,28 @@ mod tests {
         fail_prepare: Option<u32>,
         fail_start: Option<u32>,
         fail_stop: Option<u32>,
+    }
+
+    struct RecordingViewSurface {
+        events: Arc<Mutex<Vec<String>>>,
+        attachment: Mutex<Option<PortableViewAttachment>>,
+    }
+
+    impl PortableViewSurface for RecordingViewSurface {
+        fn attach(&self, view: PortableViewAttachment) -> SurfaceFuture<'_> {
+            Box::pin(async move {
+                record(&self.events, "attach:view".to_owned());
+                *self.attachment.lock().expect("attachment") = Some(view);
+                Ok(())
+            })
+        }
+
+        fn detach<'a>(&'a self, _id: &'a ViewAttachmentId) -> SurfaceFuture<'a> {
+            Box::pin(async move {
+                record(&self.events, "detach:view".to_owned());
+                Ok(())
+            })
+        }
     }
 
     #[tonic::async_trait]
@@ -947,6 +1115,100 @@ mod tests {
             explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan report");
         registry.evaluate(&mut report);
         report.into_application_plan().expect("strict plan")
+    }
+
+    fn composed_view_plan(registry: &ProviderRegistry) -> ApplicationPlan {
+        let capabilities = test_capabilities();
+        let wasm = b"synthetic primary";
+        let view = crate::holo_view::encode(&crate::holo_view::ViewBundle {
+            version: crate::holo_view::VIEW_BUNDLE_VERSION,
+            entry: crate::holo_view::PORTABLE_ENTRY.to_owned(),
+            files: vec![crate::holo_view::ViewFile {
+                path: crate::holo_view::PORTABLE_ENTRY.to_owned(),
+                bytes: b"<button>invoke</button>".to_vec(),
+            }],
+        })
+        .expect("view bundle");
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![
+                wasm_layer(address_bytes(wasm), "root"),
+                Layer::view(address_bytes(&view), crate::holo_view::PORTABLE_SURFACE),
+            ],
+            children: Vec::new(),
+        };
+        let bytes = finish_archive(
+            &manifest,
+            &[
+                (address_bytes(capabilities).as_bytes(), capabilities),
+                (address_bytes(wasm).as_bytes(), wasm),
+                (address_bytes(&view).as_bytes(), &view),
+            ],
+        );
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan report");
+        registry.evaluate(&mut report);
+        report.into_application_plan().expect("strict plan")
+    }
+
+    #[tokio::test]
+    async fn composed_view_intent_invokes_its_primary_and_stops_in_reverse() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let surface = Arc::new(RecordingViewSurface {
+            events: events.clone(),
+            attachment: Mutex::new(None),
+        });
+        let surfaces = Arc::new(ViewSurfaceRegistry::new());
+        surfaces
+            .register_portable(surface.clone())
+            .expect("register surface");
+        let registry = ProviderRegistry::new(
+            ProviderTarget::Direct,
+            vec![
+                Arc::new(NamedProvider {
+                    events: events.clone(),
+                    fail_prepare: None,
+                    fail_start: None,
+                }),
+                Arc::new(crate::holo_view_provider::ViewProvider::new(surfaces)),
+            ],
+        )
+        .expect("registry");
+        let plan = composed_view_plan(&registry);
+        let application = prepare_and_start(&plan, &registry).await.expect("start");
+        let attachment = surface
+            .attachment
+            .lock()
+            .expect("attachment")
+            .clone()
+            .expect("attached view");
+
+        let response = attachment
+            .intents
+            .handle(
+                &attachment.id,
+                ViewIntentRequest {
+                    version: VIEW_INTENT_VERSION,
+                    name: APPLICATION_INVOKE_INTENT.to_owned(),
+                    payload: "hello intent".to_owned(),
+                },
+            )
+            .await
+            .expect("invoke primary");
+        assert_eq!(response.outputs, vec!["hello intent"]);
+        application.stop().await.expect("stop");
+        assert_eq!(
+            events.lock().expect("events").as_slice(),
+            [
+                "prepare:root:local_baseline",
+                "start:root",
+                "attach:view",
+                "invoke:root",
+                "detach:view",
+                "stop:root"
+            ]
+        );
     }
 
     fn plan_with_child(

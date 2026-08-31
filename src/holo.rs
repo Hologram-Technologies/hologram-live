@@ -6,8 +6,8 @@ use crate::holo_capability::EffectiveGrant;
 use crate::holo_component::ComponentProvider;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_provider::{
-    prepare_and_start_with_admitted_grants, LayerCompletion, ProviderRegistry, ProviderTarget,
-    RunningApplication,
+    prepare_and_start_with_admitted_grants, LayerCompletion, LifecycleState, ProviderRegistry,
+    ProviderTarget, RunningApplication,
 };
 use crate::holo_python::PythonRootfsProvider;
 use crate::holo_view_provider::ViewProvider;
@@ -446,6 +446,67 @@ pub struct HoloExecutor {
     view_surfaces: Arc<ViewSurfaceRegistry>,
 }
 
+/// An explicitly managed direct application lifetime.
+///
+/// Unlike [`HoloExecutor::execute`], starting a session does not invoke the
+/// primary layer or stop providers. Callers may invoke the primary repeatedly
+/// (including through a portable View intent) and must call [`Self::stop`] when
+/// the user-owned lifetime ends.
+pub struct HoloApplicationSession {
+    kappa: String,
+    application: RunningApplication,
+    resident_bytes: usize,
+    requested_capabilities_kappa: String,
+    effective_grant_kappa: String,
+    grant_source: String,
+}
+
+impl HoloApplicationSession {
+    pub fn archive_kappa(&self) -> &str {
+        &self.kappa
+    }
+
+    pub fn application_kappa(&self) -> &str {
+        &self.application.identity().application_kappa
+    }
+
+    pub fn application_kappas(&self) -> Vec<&str> {
+        self.application.application_kappas()
+    }
+
+    pub fn state(&self) -> LifecycleState {
+        self.application.state()
+    }
+
+    pub async fn invoke(&self, inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
+        let outcome = self.application.invoke(inputs).await?;
+        Ok(self.result(outcome))
+    }
+
+    pub async fn stop(&self) -> Result<()> {
+        self.application.stop().await
+    }
+
+    async fn invoke_then_stop(&self, inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
+        let outcome = self.application.invoke_then_stop(inputs).await?;
+        Ok(self.result(outcome))
+    }
+
+    fn result(&self, outcome: crate::holo_provider::LayerInvocation) -> HoloRunResult {
+        HoloRunResult {
+            kappa: self.kappa.clone(),
+            outputs: outcome.outputs,
+            elapsed_micros: outcome.elapsed_micros,
+            resident_bytes: self.resident_bytes,
+            completion: public_completion(outcome.completion),
+            requested_capabilities_kappa: self.requested_capabilities_kappa.clone(),
+            effective_grant_kappa: self.effective_grant_kappa.clone(),
+            grant_source: self.grant_source.clone(),
+            authorization: "allowed".to_owned(),
+        }
+    }
+}
+
 impl HoloExecutor {
     pub fn with_view_surfaces(view_surfaces: Arc<ViewSurfaceRegistry>) -> Self {
         Self {
@@ -481,6 +542,31 @@ impl HoloExecutor {
             .await
     }
 
+    pub async fn start_session(&self, bytes: &[u8]) -> Result<HoloApplicationSession> {
+        self.start_session_with_grant(bytes, &EffectiveGrant::local_baseline())
+            .await
+    }
+
+    pub async fn start_session_with_grant(
+        &self,
+        bytes: &[u8],
+        effective_grant: &EffectiveGrant,
+    ) -> Result<HoloApplicationSession> {
+        self.start_session_internal(bytes, effective_grant, None)
+            .await
+    }
+
+    pub async fn start_session_with_grant_and_audit(
+        &self,
+        bytes: &[u8],
+        effective_grant: &EffectiveGrant,
+        audit: &AuditLog,
+        principal: &str,
+    ) -> Result<HoloApplicationSession> {
+        self.start_session_internal(bytes, effective_grant, Some((audit, principal)))
+            .await
+    }
+
     async fn execute_internal(
         &self,
         bytes: &[u8],
@@ -488,6 +574,18 @@ impl HoloExecutor {
         effective_grant: &EffectiveGrant,
         audit: Option<(&AuditLog, &str)>,
     ) -> Result<HoloRunResult> {
+        self.start_session_internal(bytes, effective_grant, audit)
+            .await?
+            .invoke_then_stop(inputs)
+            .await
+    }
+
+    async fn start_session_internal(
+        &self,
+        bytes: &[u8],
+        effective_grant: &EffectiveGrant,
+        audit: Option<(&AuditLog, &str)>,
+    ) -> Result<HoloApplicationSession> {
         let kappa = format!("blake3:{}", blake3::hash(bytes));
         let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
         let registry = direct_registry(self.engine.clone(), self.view_surfaces.clone())?;
@@ -498,17 +596,13 @@ impl HoloExecutor {
         let application =
             prepare_and_start_with_admitted_grants(&plan, &registry, &admitted_grants).await?;
         let resident_bytes = application.status().resident_bytes;
-        let outcome = application.invoke_then_stop(inputs).await?;
-        Ok(HoloRunResult {
+        Ok(HoloApplicationSession {
             kappa,
-            outputs: outcome.outputs,
-            elapsed_micros: outcome.elapsed_micros,
+            application,
             resident_bytes,
-            completion: public_completion(outcome.completion),
             requested_capabilities_kappa,
             effective_grant_kappa: effective_grant.kappa.clone(),
             grant_source: effective_grant.source.name().to_owned(),
-            authorization: "allowed".to_owned(),
         })
     }
 }
@@ -598,6 +692,38 @@ fn resident_registry(
 mod tests {
     use super::*;
     use hologram::space::{address_bytes, Layer, Realization};
+    use hologram_view_surface::{
+        PortableViewAttachment, PortableViewSurface, SurfaceFuture, ViewIntentRequest,
+        APPLICATION_INVOKE_INTENT, VIEW_INTENT_VERSION,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct SessionViewSurface {
+        attachment: Mutex<Option<PortableViewAttachment>>,
+        attached: AtomicUsize,
+        detached: AtomicUsize,
+    }
+
+    impl PortableViewSurface for SessionViewSurface {
+        fn attach(&self, view: PortableViewAttachment) -> SurfaceFuture<'_> {
+            Box::pin(async move {
+                *self.attachment.lock().expect("attachment") = Some(view);
+                self.attached.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+
+        fn detach<'a>(
+            &'a self,
+            _id: &'a hologram_view_surface::ViewAttachmentId,
+        ) -> SurfaceFuture<'a> {
+            Box::pin(async move {
+                self.detached.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+    }
 
     fn wasm_layer(content: hologram::space::KappaLabel71, entry: &str) -> Layer {
         Layer::wasm_with_contract(content, entry, crate::holo_contract::WASM_CONTRACT_CORE_V1)
@@ -837,6 +963,76 @@ mod tests {
         assert_eq!(result.outputs, vec![b"HELLO HOLO".to_vec()]);
         assert_eq!(result.completion, ApplicationCompletion::Returned);
         assert!(result.resident_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn explicit_session_keeps_a_portable_view_open_until_stop() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples/wasm-view/hologram.json");
+        let compiled = crate::compile::compile_manifest(&manifest).expect("compile View example");
+        let registry = Arc::new(ViewSurfaceRegistry::new());
+        let surface = Arc::new(SessionViewSurface::default());
+        registry
+            .register_portable(surface.clone())
+            .expect("register portable surface");
+
+        let session = HoloExecutor::with_view_surfaces(registry)
+            .start_session(&compiled.bytes)
+            .await
+            .expect("start session");
+        assert_eq!(session.state(), LifecycleState::Running);
+        assert_eq!(surface.attached.load(Ordering::SeqCst), 1);
+        assert_eq!(surface.detached.load(Ordering::SeqCst), 0);
+
+        let direct = session
+            .invoke(vec![b"direct session".to_vec()])
+            .await
+            .expect("invoke session");
+        assert_eq!(direct.outputs, vec![b"DIRECT SESSION".to_vec()]);
+        let attachment = surface
+            .attachment
+            .lock()
+            .expect("attachment")
+            .clone()
+            .expect("attached View");
+        let intent = attachment
+            .intents
+            .handle(
+                &attachment.id,
+                ViewIntentRequest {
+                    version: VIEW_INTENT_VERSION,
+                    name: APPLICATION_INVOKE_INTENT.to_owned(),
+                    payload: "view session".to_owned(),
+                },
+            )
+            .await
+            .expect("invoke through View");
+        assert_eq!(intent.outputs, vec!["VIEW SESSION"]);
+        assert_eq!(session.state(), LifecycleState::Running);
+        assert_eq!(surface.detached.load(Ordering::SeqCst), 0);
+
+        session.stop().await.expect("stop session");
+        session.stop().await.expect("repeated stop is idempotent");
+        assert_eq!(session.state(), LifecycleState::Stopped);
+        assert_eq!(surface.detached.load(Ordering::SeqCst), 1);
+        let error = session
+            .invoke(vec![b"after stop".to_vec()])
+            .await
+            .expect_err("stopped session rejects invocation");
+        assert_eq!(error.code(), "LIVE_CONFLICT");
+        let error = attachment
+            .intents
+            .handle(
+                &attachment.id,
+                ViewIntentRequest {
+                    version: VIEW_INTENT_VERSION,
+                    name: APPLICATION_INVOKE_INTENT.to_owned(),
+                    payload: "stale view".to_owned(),
+                },
+            )
+            .await
+            .expect_err("a stale View handler cannot invoke a stopped primary");
+        assert!(error.contains("not running"), "{error}");
     }
 
     #[tokio::test]

@@ -1,13 +1,14 @@
 use hologram_live::actor::ActorSystem;
 use hologram_live::audit::AuditLog;
 use hologram_live::config::AppConfig;
-use hologram_live::holo::HoloExecutor;
+use hologram_live::holo::{inspect_bytes, HoloApplicationSession, HoloExecutor};
 use hologram_live::holo_capability::EffectiveGrant;
 use hologram_live::protocol::HoloRunResult;
 use hologram_view_surface::{
     PortableViewAttachment, PortableViewIntentHandler, PortableViewSurface, SurfaceFuture,
     ViewAttachmentId, ViewIntentRequest, ViewSurfaceRegistry, MAX_INTENT_PAYLOAD_BYTES,
 };
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tauri::http::{header, Method, Request, Response, StatusCode};
@@ -28,6 +29,34 @@ type AssetLookup = Result<(String, Arc<[u8]>), AssetError>;
 
 pub struct DesktopHoloRuntime {
     view_surfaces: Arc<ViewSurfaceRegistry>,
+    assets: Arc<ViewAssetStore>,
+    sessions: tokio::sync::Mutex<DesktopSessionState>,
+}
+
+#[derive(Default)]
+struct DesktopSessionState {
+    next_id: u64,
+    entries: HashMap<String, DesktopSessionEntry>,
+    archives: HashMap<String, String>,
+    applications: HashMap<String, String>,
+    windows: HashMap<String, String>,
+}
+
+struct DesktopSessionEntry {
+    archive_kappa: String,
+    application_kappa: String,
+    application_kappas: Vec<String>,
+    window_labels: Vec<String>,
+    session: Arc<HoloApplicationSession>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DesktopSessionReport {
+    pub session_id: String,
+    pub archive_kappa: String,
+    pub application_kappa: String,
+    pub state: String,
+    pub window_count: usize,
 }
 
 impl DesktopHoloRuntime {
@@ -59,6 +88,207 @@ impl DesktopHoloRuntime {
             .await
             .map_err(|error| error.to_string())
     }
+
+    pub async fn start_session(
+        &self,
+        archive_kappa: &str,
+        bytes: &[u8],
+    ) -> Result<DesktopSessionReport, String> {
+        let inspection = inspect_bytes(archive_kappa, "application.holo", bytes)
+            .map_err(|error| error.to_string())?;
+        let application_kappa = inspection
+            .application_kappa
+            .ok_or_else(|| "archive does not contain a .holo application".to_owned())?;
+        let mut application_kappas = vec![application_kappa];
+        if let Some(directory) = inspection.directory {
+            application_kappas.extend(
+                directory
+                    .children
+                    .into_iter()
+                    .map(|child| child.application_kappa),
+            );
+        }
+        let mut state = self.sessions.lock().await;
+        if let Some(session_id) = state.archives.get(archive_kappa) {
+            return state
+                .entries
+                .get(session_id)
+                .map(|entry| entry.report(session_id))
+                .ok_or_else(|| "desktop application session registry is inconsistent".to_owned());
+        }
+        for application_kappa in &application_kappas {
+            if let Some(session_id) = state.applications.get(application_kappa) {
+                return Err(format!(
+                    "application {application_kappa} is already open as {session_id}"
+                ));
+            }
+        }
+
+        let (config, _) = AppConfig::load(None).map_err(|error| error.to_string())?;
+        config
+            .create_directories()
+            .map_err(|error| error.to_string())?;
+        let actors = ActorSystem::start();
+        let audit = AuditLog::open(
+            config.paths.state_dir.join("audit.jsonl"),
+            config.server.actor_mailbox_capacity,
+            actors.root(),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+        let session = Arc::new(
+            HoloExecutor::with_view_surfaces(self.view_surfaces.clone())
+                .start_session_with_grant_and_audit(
+                    bytes,
+                    &EffectiveGrant::local_baseline(),
+                    &audit,
+                    "local-desktop",
+                )
+                .await
+                .map_err(|error| error.to_string())?,
+        );
+        if session.archive_kappa() != archive_kappa {
+            let _ = session.stop().await;
+            return Err(format!(
+                "catalog archive identity {archive_kappa} does not match verified bytes {}",
+                session.archive_kappa()
+            ));
+        }
+        match self.register_started(&mut state, archive_kappa, session.clone()) {
+            Ok(report) => Ok(report),
+            Err(error) => match session.stop().await {
+                Ok(()) => Err(error),
+                Err(stop_error) => Err(format!(
+                    "{error}; stop unregistered application session: {stop_error}"
+                )),
+            },
+        }
+    }
+
+    fn register_started(
+        &self,
+        state: &mut DesktopSessionState,
+        archive_kappa: &str,
+        session: Arc<HoloApplicationSession>,
+    ) -> Result<DesktopSessionReport, String> {
+        let application_kappa = session.application_kappa().to_owned();
+        let application_kappas = session
+            .application_kappas()
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for candidate in &application_kappas {
+            if state.applications.contains_key(candidate) {
+                return Err(format!("application {candidate} is already open"));
+            }
+        }
+        let window_labels = self.assets.labels_for_applications(&application_kappas)?;
+        state.next_id = state.next_id.wrapping_add(1).max(1);
+        let session_id = format!("desktop-session-{}", state.next_id);
+        let entry = DesktopSessionEntry {
+            archive_kappa: archive_kappa.to_owned(),
+            application_kappa,
+            application_kappas,
+            window_labels,
+            session,
+        };
+        for label in &entry.window_labels {
+            state.windows.insert(label.clone(), session_id.clone());
+        }
+        state
+            .archives
+            .insert(archive_kappa.to_owned(), session_id.clone());
+        for application_kappa in &entry.application_kappas {
+            state
+                .applications
+                .insert(application_kappa.clone(), session_id.clone());
+        }
+        let report = entry.report(&session_id);
+        state.entries.insert(session_id, entry);
+        Ok(report)
+    }
+
+    pub async fn stop_session(&self, session_id: &str) -> Result<DesktopSessionReport, String> {
+        let mut state = self.sessions.lock().await;
+        let Some(entry) = state.entries.remove(session_id) else {
+            return Err(format!("application session {session_id:?} is not open"));
+        };
+        state.archives.remove(&entry.archive_kappa);
+        for application_kappa in &entry.application_kappas {
+            state.applications.remove(application_kappa);
+        }
+        for label in &entry.window_labels {
+            state.windows.remove(label);
+        }
+        drop(state);
+
+        if let Err(error) = entry.session.stop().await {
+            let mut state = self.sessions.lock().await;
+            state
+                .archives
+                .insert(entry.archive_kappa.clone(), session_id.to_owned());
+            for application_kappa in &entry.application_kappas {
+                state
+                    .applications
+                    .insert(application_kappa.clone(), session_id.to_owned());
+            }
+            for label in &entry.window_labels {
+                state.windows.insert(label.clone(), session_id.to_owned());
+            }
+            state.entries.insert(session_id.to_owned(), entry);
+            return Err(error.to_string());
+        }
+        Ok(entry.report(session_id))
+    }
+
+    pub async fn stop_window(&self, label: &str) -> Result<Option<DesktopSessionReport>, String> {
+        let session_id = self.sessions.lock().await.windows.get(label).cloned();
+        match session_id {
+            Some(session_id) => self.stop_session(&session_id).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn stop_all(&self) -> Vec<String> {
+        let session_ids = self
+            .sessions
+            .lock()
+            .await
+            .entries
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut failures = Vec::new();
+        for session_id in session_ids {
+            if let Err(error) = self.stop_session(&session_id).await {
+                failures.push(format!("{session_id}: {error}"));
+            }
+        }
+        failures
+    }
+
+    pub async fn sessions(&self) -> Vec<DesktopSessionReport> {
+        let state = self.sessions.lock().await;
+        let mut reports = state
+            .entries
+            .iter()
+            .map(|(session_id, entry)| entry.report(session_id))
+            .collect::<Vec<_>>();
+        reports.sort_by(|left, right| left.session_id.cmp(&right.session_id));
+        reports
+    }
+}
+
+impl DesktopSessionEntry {
+    fn report(&self, session_id: &str) -> DesktopSessionReport {
+        DesktopSessionReport {
+            session_id: session_id.to_owned(),
+            archive_kappa: self.archive_kappa.clone(),
+            application_kappa: self.application_kappa.clone(),
+            state: self.session.state().name().to_owned(),
+            window_count: self.window_labels.len(),
+        }
+    }
 }
 
 pub fn initialize(
@@ -71,10 +301,14 @@ pub fn initialize(
             windows: Arc::new(TauriWindowHost {
                 app: app.handle().clone(),
             }),
-            assets,
+            assets: assets.clone(),
         }))
         .map_err(std::io::Error::other)?;
-    app.manage(DesktopHoloRuntime { view_surfaces });
+    app.manage(DesktopHoloRuntime {
+        view_surfaces,
+        assets,
+        sessions: tokio::sync::Mutex::new(DesktopSessionState::default()),
+    });
     Ok(())
 }
 
@@ -120,6 +354,26 @@ struct RemovedAttachment {
 }
 
 impl ViewAssetStore {
+    fn labels_for_applications(
+        &self,
+        application_kappas: &[String],
+    ) -> Result<Vec<String>, String> {
+        let state = self
+            .state
+            .read()
+            .map_err(|_| "portable View asset store lock poisoned".to_owned())?;
+        let mut labels = state
+            .attachments
+            .iter()
+            .filter(|(_, attachment)| {
+                application_kappas.contains(&attachment.id.application_kappa)
+            })
+            .map(|(label, _)| label.clone())
+            .collect::<Vec<_>>();
+        labels.sort();
+        Ok(labels)
+    }
+
     fn stage(&self, view: &PortableViewAttachment) -> Result<StagedAttachment, String> {
         validate_token(&view.id.token)?;
         let label = window_label(&view.id.token);
@@ -1027,5 +1281,107 @@ mod tests {
                 outputs: vec!["DESKTOP LIFECYCLE".to_owned()],
             }
         );
+    }
+
+    #[tokio::test]
+    async fn desktop_session_registry_keeps_the_view_open_until_window_close() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("examples/wasm-view/hologram.json");
+        let compiled = compile_manifest(&manifest).expect("compile composed example");
+        let assets = Arc::new(ViewAssetStore::default());
+        let windows = Arc::new(RecordingWindowHost::default());
+        let surfaces = Arc::new(ViewSurfaceRegistry::new());
+        surfaces
+            .register_portable(Arc::new(TauriViewSurface {
+                windows: windows.clone(),
+                assets: assets.clone(),
+            }))
+            .expect("register Desktop surface");
+        let session = Arc::new(
+            HoloExecutor::with_view_surfaces(surfaces.clone())
+                .start_session(&compiled.bytes)
+                .await
+                .expect("start explicit session"),
+        );
+        let runtime = DesktopHoloRuntime {
+            view_surfaces: surfaces,
+            assets: assets.clone(),
+            sessions: tokio::sync::Mutex::new(DesktopSessionState::default()),
+        };
+        let report = {
+            let mut state = runtime.sessions.lock().await;
+            runtime
+                .register_started(&mut state, session.archive_kappa(), session.clone())
+                .expect("register session")
+        };
+        assert_eq!(report.state, "running");
+        assert_eq!(report.window_count, 1);
+        assert_eq!(runtime.sessions().await.len(), 1);
+        assert_eq!(windows.events(), ["open"]);
+        let duplicate = {
+            let mut state = runtime.sessions.lock().await;
+            runtime.register_started(
+                &mut state,
+                "blake3:physically-different-archive",
+                session.clone(),
+            )
+        }
+        .expect_err("one canonical application has one Desktop session");
+        assert!(duplicate.contains("already open"), "{duplicate}");
+
+        let label = windows
+            .active
+            .lock()
+            .expect("active windows")
+            .keys()
+            .next()
+            .cloned()
+            .expect("View window");
+        let request = windows
+            .active
+            .lock()
+            .expect("active windows")
+            .get(&label)
+            .cloned()
+            .expect("window request");
+        let body = serde_json::to_vec(&ViewIntentRequest {
+            version: VIEW_INTENT_VERSION,
+            name: APPLICATION_INVOKE_INTENT.to_owned(),
+            payload: "still open".to_owned(),
+        })
+        .expect("intent body");
+        let intent = Request::builder()
+            .method(Method::POST)
+            .uri(format!(
+                "{VIEW_SCHEME}://{}/_hologram/intent",
+                request.token
+            ))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .expect("intent request");
+        let response = assets.response(&label, &intent).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<ViewIntentResponse>(response.body())
+                .expect("intent response")
+                .outputs,
+            ["STILL OPEN"]
+        );
+
+        let stopped = runtime
+            .stop_window(&label)
+            .await
+            .expect("stop window session")
+            .expect("registered window");
+        assert_eq!(stopped.session_id, report.session_id);
+        assert_eq!(session.state().name(), "stopped");
+        assert!(runtime.sessions().await.is_empty());
+        assert_eq!(windows.events(), ["open", "close"]);
+        assert!(runtime
+            .stop_window(&label)
+            .await
+            .expect("repeated close")
+            .is_none());
     }
 }

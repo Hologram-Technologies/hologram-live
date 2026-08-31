@@ -1,15 +1,23 @@
 use hologram_application_watch::{
     ApplicationWatchRegistry, BuildRequest, BuildResult, WatchedHoloProject,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::run_hologram;
-use crate::view_surface::DesktopHoloRuntime;
+use crate::view_surface::{DesktopHoloRuntime, DesktopSessionReport};
 
 const CHANGE_EVENT: &str = "holo-watch-changed";
+const SESSION_EVENT: &str = "holo-session-changed";
+
+#[derive(Clone, Serialize)]
+struct SessionEvent<'a> {
+    #[serde(flatten)]
+    session: &'a DesktopSessionReport,
+    lifecycle: &'static str,
+}
 
 #[derive(Deserialize)]
 struct ImportedHolo {
@@ -62,31 +70,7 @@ pub async fn holo_catalog_run(
     kappa: String,
     input: String,
 ) -> Result<String, String> {
-    let cache_directory = app
-        .path()
-        .app_cache_dir()
-        .map_err(|error| format!("resolve application cache: {error}"))?
-        .join("holo-run");
-    std::fs::create_dir_all(&cache_directory)
-        .map_err(|error| format!("create application run cache: {error}"))?;
-    let archive = cache_directory.join(catalog_cache_name(&kappa)?);
-
-    run_hologram(&app, ["--json", "holo", "verify", kappa.as_str()]).await?;
-    run_hologram(
-        &app,
-        vec![
-            OsString::from("--json"),
-            OsString::from("files"),
-            OsString::from("get"),
-            OsString::from(&kappa),
-            OsString::from("--output"),
-            archive.as_os_str().to_owned(),
-        ],
-    )
-    .await?;
-    let bytes = tokio::fs::read(&archive)
-        .await
-        .map_err(|error| format!("read cached .holo application: {error}"))?;
+    let bytes = cached_holo_bytes(&app, &kappa).await?;
     let result = app
         .state::<DesktopHoloRuntime>()
         .execute(&bytes, vec![input.into_bytes()])
@@ -102,6 +86,80 @@ pub async fn holo_catalog_run(
         })
         .collect::<Result<Vec<_>, _>>()?;
     serde_json::to_string(&outputs).map_err(|error| format!("encode application output: {error}"))
+}
+
+#[tauri::command]
+pub async fn holo_catalog_session_list(app: AppHandle) -> Vec<DesktopSessionReport> {
+    app.state::<DesktopHoloRuntime>().sessions().await
+}
+
+#[tauri::command]
+pub async fn holo_catalog_session_start(
+    app: AppHandle,
+    kappa: String,
+) -> Result<DesktopSessionReport, String> {
+    let bytes = cached_holo_bytes(&app, &kappa).await?;
+    let report = app
+        .state::<DesktopHoloRuntime>()
+        .start_session(&kappa, &bytes)
+        .await?;
+    emit_session_event(&app, &report, "running");
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn holo_catalog_session_stop(
+    app: AppHandle,
+    session_id: String,
+) -> Result<DesktopSessionReport, String> {
+    let report = app
+        .state::<DesktopHoloRuntime>()
+        .stop_session(&session_id)
+        .await?;
+    emit_session_event(&app, &report, "stopped");
+    Ok(report)
+}
+
+pub fn emit_session_event(
+    app: &AppHandle,
+    report: &DesktopSessionReport,
+    lifecycle: &'static str,
+) {
+    let _ = app.emit(
+        SESSION_EVENT,
+        SessionEvent {
+            session: report,
+            lifecycle,
+        },
+    );
+}
+
+async fn cached_holo_bytes(app: &AppHandle, kappa: &str) -> Result<Vec<u8>, String> {
+    let cache_directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("resolve application cache: {error}"))?
+        .join("holo-run");
+    std::fs::create_dir_all(&cache_directory)
+        .map_err(|error| format!("create application run cache: {error}"))?;
+    let archive = cache_directory.join(catalog_cache_name(kappa)?);
+
+    run_hologram(app, ["--json", "holo", "verify", kappa]).await?;
+    run_hologram(
+        app,
+        vec![
+            OsString::from("--json"),
+            OsString::from("files"),
+            OsString::from("get"),
+            OsString::from(&kappa),
+            OsString::from("--output"),
+            archive.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+    tokio::fs::read(&archive)
+        .await
+        .map_err(|error| format!("read cached .holo application: {error}"))
 }
 
 fn catalog_cache_name(kappa: &str) -> Result<String, String> {

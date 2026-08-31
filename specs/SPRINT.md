@@ -1,4 +1,56 @@
-# Current sprint: M3.2 portable View bundle and provider
+# Current sprint: M3.2 explicit application sessions
+
+## Sprint status
+
+- State: complete
+- Started: 2026-08-31
+- Last reviewed: 2026-08-31
+- Durable milestone: [M3 — Real multi-layer providers](plans/holo-application-runtime.md#m3--real-multi-layer-providers)
+- Decision: [ADR 019](adrs/019-explicit-application-sessions.md)
+- Goal: keep interactive portable Views available across user messages through
+  an explicit, user-owned lifetime without changing one-shot execution
+- Exit signal: a View opens in its own native window outside the dashboard,
+  serves repeated primary invocations, and stops safely on explicit stop,
+  window close, or Desktop quit
+
+## Runtime contract
+
+- [x] Add explicit start/invoke/stop application sessions while preserving the
+  existing one-shot start/invoke/stop result contract.
+- [x] Serialize direct and View invocations per composed application and wait
+  for root and child invocations before reverse stop.
+- [x] Prove a compiled Wasm + View session remains attached across direct and
+  View messages, then detaches exactly once on idempotent stop.
+- [x] Pass the complete core runtime tests and Clippy after the final Desktop
+  integration is in place.
+
+## Desktop lifetime
+
+- [x] Add an in-memory Desktop session registry indexed by session, archive,
+  canonical application, and attached application-window labels.
+- [x] Add narrow list/start/stop commands and lifecycle events for the main
+  dashboard.
+- [x] Render portable Views with Open/Stop controls while retaining one-shot
+  Run for non-View applications.
+- [x] Open View content in a separate native window outside the dashboard.
+- [x] Allow a View window to close normally and map that close to session stop;
+  keep hide-on-close behavior only for the main dashboard.
+- [x] Attempt reverse stop for every open application session before Desktop
+  quits.
+- [x] Pass display-independent Desktop session/window tests and the packaged
+  Desktop build.
+
+## Documentation and delivery
+
+- [x] Record the explicit lifetime, invocation serialization, and host-neutral
+  external-surface boundary in ADR 019.
+- [x] Update README, website `.holo`/Desktop docs, and the Wasm + View example.
+- [x] Pass repository, docs, Desktop, BDD, and release gates.
+- [x] Prepare the complete verified change and milestone records for delivery.
+
+---
+
+# Previous sprint: M3.2 portable View bundle and provider
 
 ## Sprint status
 
@@ -74,7 +126,7 @@
 - [x] Register the Tauri portable surface adapter and opaque asset origin.
 - [x] Complete the bounded intent/message slice and composed provider proof.
 - [x] Add the real composed Wasm + View Desktop application and lifecycle proof.
-- [ ] Define the explicit application-session API and Desktop lifetime contract
+- [x] Define the explicit application-session API and Desktop lifetime contract
   before keeping a View open beyond one-shot root-primary completion.
 - [ ] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.

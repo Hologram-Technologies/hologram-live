@@ -267,6 +267,7 @@ pub struct RunningApplication {
     primary_layer: u32,
     layers: Vec<PreparedApplicationLayer>,
     state: AtomicU8,
+    invocations: Vec<Arc<Mutex<()>>>,
 }
 
 struct PreparedApplicationLayer {
@@ -278,15 +279,15 @@ struct PreparedApplicationLayer {
 struct ApplicationIntentBroker {
     application_kappa: String,
     primary: OnceLock<Arc<dyn PreparedLayer>>,
-    invocation: Mutex<()>,
+    invocation: Arc<Mutex<()>>,
 }
 
 impl ApplicationIntentBroker {
-    fn new(application_kappa: &str) -> Self {
+    fn new(application_kappa: &str, invocation: Arc<Mutex<()>>) -> Self {
         Self {
             application_kappa: application_kappa.to_owned(),
             primary: OnceLock::new(),
-            invocation: Mutex::new(()),
+            invocation,
         }
     }
 
@@ -360,6 +361,16 @@ impl RunningApplication {
         &self.identity
     }
 
+    pub fn application_kappas(&self) -> Vec<&str> {
+        let mut kappas = Vec::new();
+        for layer in &self.layers {
+            if kappas.last().copied() != Some(layer.application_kappa.as_str()) {
+                kappas.push(layer.application_kappa.as_str());
+            }
+        }
+        kappas
+    }
+
     pub fn status(&self) -> LayerRuntimeStatus {
         self.layers.iter().map(|layer| layer.layer.status()).fold(
             LayerRuntimeStatus::default(),
@@ -373,6 +384,13 @@ impl RunningApplication {
     }
 
     pub async fn invoke(&self, inputs: Vec<Vec<u8>>) -> Result<LayerInvocation> {
+        let invocation = self.invocations.first().ok_or_else(|| {
+            LiveError::Conflict(format!(
+                "running application {} lost its invocation gate",
+                self.identity.application_kappa
+            ))
+        })?;
+        let _invocation = invocation.lock().await;
         if self.state() != LifecycleState::Running {
             return Err(LiveError::Conflict(format!(
                 "application {} is not running (state {:?})",
@@ -408,6 +426,10 @@ impl RunningApplication {
     }
 
     pub async fn stop(&self) -> Result<()> {
+        let mut invocation_guards = Vec::with_capacity(self.invocations.len());
+        for invocation in &self.invocations {
+            invocation_guards.push(invocation.lock().await);
+        }
         loop {
             let state = self.state();
             match state {
@@ -504,6 +526,7 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
         )));
     }
     let state = AtomicU8::new(LifecycleState::Preparing.value());
+    let mut invocations = Vec::new();
     let application_order = lifecycle_application_order(plan)?;
     let layer_count = plan.layers.len()
         + plan
@@ -528,7 +551,9 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
         } else {
             None
         };
-        let view_intents = Arc::new(ApplicationIntentBroker::new(application_kappa));
+        let invocation = Arc::new(Mutex::new(()));
+        invocations.push(invocation.clone());
+        let view_intents = Arc::new(ApplicationIntentBroker::new(application_kappa, invocation));
         let prepared_start = prepared.len();
         let requested_capabilities = application_requested_capabilities(plan, application_index)?;
         let grant = admitted_grants.get(&application_index).ok_or_else(|| {
@@ -642,6 +667,7 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
         primary_layer,
         layers: prepared,
         state,
+        invocations,
     })
 }
 
@@ -1538,10 +1564,21 @@ mod tests {
     async fn nested_children_follow_depth_first_manifest_order_and_reverse_stop_order() {
         let events = Arc::new(Mutex::new(Vec::new()));
         let registry = named_registry(events.clone());
-        let application = prepare_and_start(&plan_with_nested_siblings(&registry), &registry)
+        let plan = plan_with_nested_siblings(&registry);
+        let expected_kappas = lifecycle_application_order(&plan)
+            .expect("lifecycle order")
+            .into_iter()
+            .map(|application_index| {
+                application_layers(&plan, application_index)
+                    .expect("planned application")
+                    .0
+            })
+            .collect::<Vec<_>>();
+        let application = prepare_and_start(&plan, &registry)
             .await
             .expect("start nested tree");
         assert_eq!(application.status().resident_bytes, 40);
+        assert_eq!(application.application_kappas(), expected_kappas);
         application.stop().await.expect("stop nested tree");
 
         assert_eq!(

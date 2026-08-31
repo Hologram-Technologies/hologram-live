@@ -29,14 +29,17 @@
 
 ## Provider slice
 
+- [x] Add the lightweight host-neutral `hologram-view-surface` registry and
+  attachment trait without pulling server or Tauri dependencies across the
+  boundary.
 - [ ] Add a Desktop-owned registry of available portable surface handles.
-- [ ] Add a View provider that validates during `prepare`, attaches during
+- [x] Add a View provider that validates during `prepare`, attaches during
   `start`, and detaches idempotently during reverse-order `stop` or rollback.
 - [ ] Serve assets from an opaque per-application/layer origin without
   `file://`, workstation paths, or a localhost API redirect.
 - [ ] Define and implement one bounded versioned intent/message round trip
   without exposing general Tauri commands or ambient host APIs.
-- [ ] Return an explicit unavailable-surface blocker for direct headless
+- [x] Return an explicit unavailable-surface blocker for direct headless
   execution before any layer starts.
 - [ ] Keep View non-exit-bearing and preserve root-primary completion.
 
@@ -48,19 +51,24 @@
   preserve equal application manifests.
 - [x] Exercise directory compilation through the enforced fat-archive BDD
   fixture.
-- [ ] Add BDD coverage for the explicit headless unavailable-surface failure.
+- [x] Add BDD coverage for the explicit headless unavailable-surface failure.
+- [x] Unit-test registry publication, prepare-without-attach, start attachment,
+  decoded immutable assets, single detach, and idempotent repeated stop.
 - [ ] Add Desktop coverage for attachment, messaging, rollback, and shutdown.
 - [x] Update README and website `.holo` and Desktop docs for the bundle and
   provider contract.
 - [x] Pass formatting, workspace tests, Clippy, BDD, docs, release build, and
   binary smoke gates for the canonical bundle slice.
+- [x] Pass the same full repository and documentation gates for the
+  host-neutral provider foundation.
 - [ ] Pass Desktop tests and build with the attachment/provider slice.
 - [ ] Commit, open and merge the PR, remove this sprint's worktree, and leave
   the primary checkout synchronized on `main`.
 
 ## Next prioritized work
 
-- [ ] Complete the Desktop attachment/provider slice above.
+- [ ] Register the Tauri portable surface adapter and opaque asset origin.
+- [ ] Complete the bounded intent/message and composed-application slice.
 - [ ] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 - [ ] Link WASI and Hologram Component host interfaces only when admitted by

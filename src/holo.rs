@@ -10,6 +10,7 @@ use crate::holo_provider::{
     RunningApplication,
 };
 use crate::holo_python::PythonRootfsProvider;
+use crate::holo_view_provider::ViewProvider;
 use crate::holo_wasm::WasmProvider;
 use crate::protocol::{
     ApplicationCompletion, HoloInspection, HoloPlan, HoloRunResult, HoloSection, ResidentHolo,
@@ -18,6 +19,7 @@ use crate::store::ObjectStore;
 use crate::util::hex;
 use hologram::archive::{HoloLoader, HoloWriter};
 use hologram::space::{address_bytes, AppManifest, Realization};
+use hologram_view_surface::ViewSurfaceRegistry;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use wasmtime::Engine;
@@ -217,7 +219,7 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
 
 pub fn plan_bytes(bytes: &[u8]) -> Result<HoloPlan> {
     let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
-    direct_registry(Engine::default())?.evaluate(&mut report);
+    direct_registry(Engine::default(), Arc::new(ViewSurfaceRegistry::new()))?.evaluate(&mut report);
     Ok(HoloPlan::from_report(&report, "direct"))
 }
 
@@ -441,9 +443,17 @@ impl HoloRuntime {
 #[derive(Default)]
 pub struct HoloExecutor {
     engine: Engine,
+    view_surfaces: Arc<ViewSurfaceRegistry>,
 }
 
 impl HoloExecutor {
+    pub fn with_view_surfaces(view_surfaces: Arc<ViewSurfaceRegistry>) -> Self {
+        Self {
+            engine: Engine::default(),
+            view_surfaces,
+        }
+    }
+
     pub async fn execute(&self, bytes: &[u8], inputs: Vec<Vec<u8>>) -> Result<HoloRunResult> {
         self.execute_with_grant(bytes, inputs, &EffectiveGrant::local_baseline())
             .await
@@ -480,7 +490,7 @@ impl HoloExecutor {
     ) -> Result<HoloRunResult> {
         let kappa = format!("blake3:{}", blake3::hash(bytes));
         let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
-        let registry = direct_registry(self.engine.clone())?;
+        let registry = direct_registry(self.engine.clone(), self.view_surfaces.clone())?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
         let requested_capabilities_kappa = plan.requested_capabilities.kappa.clone();
@@ -554,13 +564,17 @@ fn not_resident(kappa: &str) -> LiveError {
     ))
 }
 
-fn direct_registry(engine: Engine) -> Result<ProviderRegistry> {
+fn direct_registry(
+    engine: Engine,
+    view_surfaces: Arc<ViewSurfaceRegistry>,
+) -> Result<ProviderRegistry> {
     ProviderRegistry::new(
         ProviderTarget::Direct,
         vec![
             Arc::new(WasmProvider::direct(engine)),
             Arc::new(ComponentProvider::direct()),
             Arc::new(PythonRootfsProvider),
+            Arc::new(ViewProvider::new(view_surfaces)),
         ],
     )
 }
@@ -575,6 +589,7 @@ fn resident_registry(
         vec![
             Arc::new(WasmProvider::resident(engine, root, mailbox_capacity)),
             Arc::new(ComponentProvider::resident()),
+            Arc::new(ViewProvider::headless()),
         ],
     )
 }

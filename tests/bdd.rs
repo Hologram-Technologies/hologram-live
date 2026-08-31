@@ -240,6 +240,25 @@ fn direct_plan_is_payload_free(world: &mut BddWorld) {
     assert!(plan["layers"][0].get("bytes").is_none());
 }
 
+#[then("the direct plan reports that the portable View surface is unavailable")]
+fn direct_plan_reports_unavailable_view_surface(world: &mut BddWorld) {
+    let plan = world.plan_result.as_ref().expect("plan result");
+    assert_eq!(plan["execution_target"], "direct");
+    assert_eq!(plan["runnable"], false);
+    assert_eq!(plan["layers"][0]["provider"]["status"], "unavailable");
+    let reason = plan["layers"][0]["provider"]["reason"]
+        .as_str()
+        .expect("provider reason");
+    assert!(reason.contains("portable View surface"), "{reason}");
+    assert!(reason.contains("direct/headless"), "{reason}");
+    assert!(plan["blockers"]
+        .as_array()
+        .expect("blockers")
+        .iter()
+        .any(|blocker| blocker["kind"] == "provider_unavailable"
+            && blocker["error_code"] == "LIVE_CAPABILITY_MISSING"));
+}
+
 #[then("the component contract selects the bounded component provider")]
 fn component_plan_selects_bounded_provider(world: &mut BddWorld) {
     let plan = world.plan_result.as_ref().expect("plan result");

@@ -6,9 +6,9 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M3.2 canonical portable View bundle and provider
+- Current delivery: M3.2 host-neutral portable View provider foundation
 - Previous delivery: M4.2 deterministic Python Components complete
-- Next runtime milestone: M3.2 Desktop View attachment
+- Next runtime milestone: M3.2 Tauri surface adapter and opaque asset origin
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -693,10 +693,12 @@ only until compilation resolves and binds its immutable digest.
   rather than treating one HTML file as an entire application UI (ADR 018).
 - [x] Define supported surfaces beginning with `portable` and the desktop
   attachment contract (ADR 018).
-- [ ] Attach view layers when their target surface becomes available.
+- [x] Add a host-neutral surface registry and attach/detach View layers when a
+  portable handle is available, without exposing platform types to the server.
 - [ ] Keep views non-exit-bearing and route application exit through the primary Wasm or rootfs layer.
 - [ ] Define the intent/message boundary between the view and its application without granting ambient desktop authority.
-- [ ] Make direct headless execution report an explicit unavailable-surface capability when a required view cannot attach.
+- [x] Make direct headless execution report an explicit unavailable-surface
+  capability when a required view cannot attach.
 - [ ] Demonstrate a composed Wasm + View `.holo` application in Hologram Desktop.
 
 ### M3.3 Inference-model provider
@@ -1155,5 +1157,7 @@ work below.
 - [x] Define ADR 018's canonical portable View bundle, replace the single-file
   placeholder with a deterministic directory compiler, and validate the only
   supported surface fail-closed.
-- [ ] Add the Desktop-owned portable surface registry and View provider without
-  exposing WebView or Tauri types through the shared provider boundary.
+- [x] Add the host-neutral portable surface registry and transactional View
+  provider without exposing WebView or Tauri types through the shared boundary.
+- [ ] Register the Desktop-owned Tauri surface adapter and serve its assets from
+  an opaque application/layer origin.

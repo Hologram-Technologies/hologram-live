@@ -8,6 +8,8 @@ Feature: Compile Hologram applications
     When I compile the application
     Then the compile command succeeds
     And the output is a valid self-contained .holo archive
+    When I plan the compiled archive directly
+    Then the direct plan reports that the portable View surface is unavailable
 
   Scenario: generate and run a Wasm application manifest
     Given a new application directory

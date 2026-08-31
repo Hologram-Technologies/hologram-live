@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::run_hologram;
+use crate::view_surface::DesktopHoloRuntime;
 
 const CHANGE_EVENT: &str = "holo-watch-changed";
 
@@ -83,19 +84,24 @@ pub async fn holo_catalog_run(
         ],
     )
     .await?;
-    run_hologram(
-        &app,
-        vec![
-            OsString::from("--json"),
-            OsString::from("run"),
-            archive.as_os_str().to_owned(),
-            OsString::from("--input-text"),
-            OsString::from(input),
-            OsString::from("--output-format"),
-            OsString::from("text"),
-        ],
-    )
-    .await
+    let bytes = tokio::fs::read(&archive)
+        .await
+        .map_err(|error| format!("read cached .holo application: {error}"))?;
+    let result = app
+        .state::<DesktopHoloRuntime>()
+        .execute(&bytes, vec![input.into_bytes()])
+        .await?;
+    let outputs = result
+        .outputs
+        .iter()
+        .enumerate()
+        .map(|(index, output)| {
+            std::str::from_utf8(output)
+                .map(str::to_owned)
+                .map_err(|error| format!("application output {index} is not UTF-8: {error}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    serde_json::to_string(&outputs).map_err(|error| format!("encode application output: {error}"))
 }
 
 fn catalog_cache_name(kappa: &str) -> Result<String, String> {

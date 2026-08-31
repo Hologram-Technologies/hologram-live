@@ -4,7 +4,7 @@
 
 - State: active
 - Started: 2026-08-30
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-08-31
 - Durable milestone: [M3 — Real multi-layer providers](plans/holo-application-runtime.md#m3--real-multi-layer-providers)
 - Decision: [ADR 018](adrs/018-portable-view-bundle-and-surface.md)
 - Goal: compile complete portable frontends into canonical View payloads and
@@ -32,16 +32,16 @@
 - [x] Add the lightweight host-neutral `hologram-view-surface` registry and
   attachment trait without pulling server or Tauri dependencies across the
   boundary.
-- [ ] Add a Desktop-owned registry of available portable surface handles.
+- [x] Add a Desktop-owned registry of available portable surface handles.
 - [x] Add a View provider that validates during `prepare`, attaches during
   `start`, and detaches idempotently during reverse-order `stop` or rollback.
-- [ ] Serve assets from an opaque per-application/layer origin without
+- [x] Serve assets from an opaque per-application/layer origin without
   `file://`, workstation paths, or a localhost API redirect.
 - [ ] Define and implement one bounded versioned intent/message round trip
   without exposing general Tauri commands or ambient host APIs.
 - [x] Return an explicit unavailable-surface blocker for direct headless
   execution before any layer starts.
-- [ ] Keep View non-exit-bearing and preserve root-primary completion.
+- [x] Keep View non-exit-bearing and preserve root-primary completion.
 
 ## Verification and delivery
 
@@ -55,19 +55,23 @@
 - [x] Unit-test registry publication, prepare-without-attach, start attachment,
   decoded immutable assets, single detach, and idempotent repeated stop.
 - [ ] Add Desktop coverage for attachment, messaging, rollback, and shutdown.
+  - [x] Cover opaque-origin asset requests, rejection, window binding, and
+    detach cleanup in Desktop-owned tests.
+  - [ ] Cover real window attachment/replacement, rollback, messaging, and
+    shutdown through a display-independent integration seam.
 - [x] Update README and website `.holo` and Desktop docs for the bundle and
   provider contract.
 - [x] Pass formatting, workspace tests, Clippy, BDD, docs, release build, and
   binary smoke gates for the canonical bundle slice.
 - [x] Pass the same full repository and documentation gates for the
   host-neutral provider foundation.
-- [ ] Pass Desktop tests and build with the attachment/provider slice.
+- [x] Pass Desktop tests and build with the attachment/provider slice.
 - [ ] Commit, open and merge the PR, remove this sprint's worktree, and leave
   the primary checkout synchronized on `main`.
 
 ## Next prioritized work
 
-- [ ] Register the Tauri portable surface adapter and opaque asset origin.
+- [x] Register the Tauri portable surface adapter and opaque asset origin.
 - [ ] Complete the bounded intent/message and composed-application slice.
 - [ ] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.

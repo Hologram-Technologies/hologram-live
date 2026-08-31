@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod holo_watch;
+mod view_surface;
 
 use serde::Serialize;
 use std::ffi::OsStr;
@@ -258,10 +259,16 @@ fn run_menu_action(app: &AppHandle, arguments: &'static [&'static str], running_
 }
 
 fn main() {
+    let view_assets = std::sync::Arc::new(view_surface::ViewAssetStore::default());
+    let protocol_assets = view_assets.clone();
     tauri::Builder::default()
+        .register_uri_scheme_protocol(view_surface::VIEW_SCHEME, move |context, request| {
+            protocol_assets.response(context.webview_label(), &request)
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .setup(move |app| {
+            view_surface::initialize(app, view_assets.clone())?;
             holo_watch::initialize(app)?;
             let open = MenuItem::with_id(app, "open", "Open Hologram", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;

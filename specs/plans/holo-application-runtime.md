@@ -6,9 +6,9 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M3.2 explicit application sessions and lifecycle usability complete
-- Previous delivery: M3.2 composed Wasm + View Desktop lifecycle proof
-- Next runtime milestone: authenticated private-registry integration coverage
+- Current delivery: authenticated private-registry integration coverage complete
+- Previous delivery: M3.2 explicit application sessions and lifecycle usability
+- Next runtime milestone: capability-gated WASI and Hologram Component host interfaces
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -659,6 +659,18 @@ matched Docker's reported digest, emitted a 105,790,579-byte fat archive, and
 executed with three rows, mean `20.0`, and sum `60.0`. ADR 015 records the
 selection/binding boundary.
 
+Authenticated private-registry follow-up (2026-08-31): `just
+python-private-registry` seeds a disposable loopback OCI registry, restarts the
+same storage behind htpasswd authentication on a fresh port, and uses separate
+Docker configuration directories for anonymous and authenticated clients. It
+proves `compile --check` stays offline, anonymous compilation fails before
+archive emission, Docker login enables digest resolution plus a complete
+compile/run, and neither the reports nor archive contain the fixture username,
+password, or encoded auth value. The rootfs release workflow requires this
+gate before comparing the clean-builder matrix. Docker continues to own
+credential storage and registry transport; provenance contains only requested,
+resolved, and observed image identities.
+
 Rootfs archive-normalization follow-up (2026-08-26): bundle schema 3 now
 re-addresses the exact Docker image config and ordered layer bytes under
 `blobs/sha256/<digest>`, emits only those blobs plus a canonical manifest, and
@@ -756,7 +768,7 @@ only until compilation resolves and binds its immutable digest.
 ### M3 acceptance criteria
 
 - [x] Wasm remains fully compatible behind the provider boundary.
-- [ ] Wasm + View validates ordered multi-layer startup and reverse-order shutdown in the desktop.
+- [x] Wasm + View validates ordered multi-layer startup and reverse-order shutdown in the desktop.
 - [ ] Tensor execution uses a real weightc artifact and reports typed ports/results.
 - [ ] Inference-model execution uses a real `hologram-ai` archive and reports typed completions/status.
 - [ ] Rootfs execution is not marked supported until microVM isolation and cleanup gates pass.
@@ -879,6 +891,8 @@ application/DMG builds pass.
 - [x] Resolve mutable Python rootfs bases to a schema-2 registry manifest
   digest, bind the digest-qualified reference into `FROM`, and report requested
   and resolved identities without mutating the source manifest.
+- [x] Prove authenticated private-registry resolution, compilation, and direct
+  execution without exposing credentials in provenance or archive bytes.
 - [ ] Keep fat/thin archive packaging independent from source-language compilation.
 
 ### Manifest features
@@ -1189,3 +1203,5 @@ work below.
 - [x] Add the bounded intent/message round trip and prove it invokes the
   composed application's own primary before reverse detach/stop.
 - [x] Add the real composed Wasm + View Desktop example and lifecycle proof.
+- [x] Add authenticated private-registry compile/run coverage with offline
+  planning, anonymous rejection, credential leak checks, and a release gate.

@@ -1,4 +1,41 @@
-# Current sprint: M3.2 explicit application sessions
+# Current sprint: authenticated private-registry coverage
+
+## Sprint status
+
+- State: complete
+- Started: 2026-08-31
+- Last reviewed: 2026-08-31
+- Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
+- Decision: [ADR 015](adrs/015-python-rootfs-base-digest-binding.md)
+- Goal: prove mutable Python rootfs bases work through Docker authentication
+  without moving registry credentials into Hologram or build provenance
+- Exit signal: offline validation succeeds, anonymous compilation is rejected,
+  authenticated compilation and execution succeed, and the reports plus archive
+  contain no fixture credentials
+
+## Authenticated registry contract
+
+- [x] Seed disposable registry storage, then restart it behind htpasswd
+  authentication on a fresh loopback port.
+- [x] Keep anonymous and authenticated Docker configurations isolated while
+  preserving portable Buildx plugin discovery.
+- [x] Prove `compile --check` remains offline and credential-free.
+- [x] Prove a real anonymous compile receives 401 and leaves no archive.
+- [x] Log in with `docker login --password-stdin`, bind the raw manifest digest,
+  compile a fat archive, and execute it without runtime credentials.
+- [x] Reject credential-bearing provenance keys and scan JSON plus archive bytes
+  for the fixture username, password, and encoded auth value.
+
+## Verification and delivery
+
+- [x] Add `just python-private-registry` with one machine-readable summary.
+- [x] Require the proof in the rootfs reproducibility release workflow.
+- [x] Update ADR 015, the runtime plan, README, and website Python guide.
+- [x] Pass the focused Docker integration proof and repository gates.
+
+---
+
+# Previous sprint: M3.2 explicit application sessions
 
 ## Sprint status
 
@@ -128,7 +165,7 @@
 - [x] Add the real composed Wasm + View Desktop application and lifecycle proof.
 - [x] Define the explicit application-session API and Desktop lifetime contract
   before keeping a View open beyond one-shot root-primary completion.
-- [ ] Add authenticated private-registry integration coverage without exposing
+- [x] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 - [ ] Link WASI and Hologram Component host interfaces only when admitted by
   the effective capability grant.
@@ -437,7 +474,7 @@ unobserved.
 - [x] Pin the five immutable release assets in the compiler and report the
   patch identity in provenance.
 - [x] Close `DISC-017d` with the clean five-host equality matrix.
-- [ ] Add authenticated private-registry integration coverage without exposing
+- [x] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 
 ---
@@ -566,7 +603,7 @@ existing one low and two high findings.
 
 - [ ] `DISC-017d` — Supply deterministic Python Component build randomness and
   prove clean supported-host equality.
-- [ ] Add authenticated private-registry integration coverage without exposing
+- [x] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 - [ ] Continue M4 deterministic compiler work after both Python profiles have
   clean-build evidence.
@@ -652,7 +689,7 @@ and two high findings.
   eliminate any differing generated filesystem content.
 - [ ] `DISC-017d` — Supply deterministic Python Component build randomness and
   prove clean supported-host equality.
-- [ ] Add authenticated private-registry integration coverage without exposing
+- [x] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 
 ---
@@ -731,7 +768,7 @@ produced the release sidecar, frontend bundle, macOS application, and arm64 DMG.
   byte-identical layer κ values across clean supported hosts.
 - [ ] `DISC-017d` — Supply deterministic Python Component build randomness and
   prove clean supported-host equality.
-- [ ] Add authenticated private-registry integration coverage without exposing
+- [x] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 
 ---
@@ -820,5 +857,5 @@ format compatibility from this period.
   byte-identical layer κ values across clean supported hosts.
 - [ ] `DISC-017d` — Supply deterministic Python Component build randomness and
   prove clean supported-host equality.
-- [ ] Add authenticated private-registry integration coverage without exposing
+- [x] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.

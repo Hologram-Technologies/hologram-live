@@ -700,6 +700,21 @@ reports false with a blocker only until real compilation resolves and binds
 that base to an immutable digest; a digest-pinned check can report true
 immediately.
 
+Authenticated private registries use Docker's existing credential boundary;
+Hologram has no registry username, password, or token option. The repository
+gate starts a disposable loopback registry, proves offline validation and
+anonymous rejection, logs in through an isolated `DOCKER_CONFIG`, then compiles
+and runs the standard-library Python archive. It rejects credential-bearing
+provenance fields and scans both reports and archive bytes for the fixture
+credentials:
+
+```bash
+just python-private-registry | jq .
+```
+
+The rootfs release workflow requires this proof before accepting its
+clean-builder comparison.
+
 `hologram run` preserves the binary-safe `HoloRunResult` envelope by default. Add `--output-format text` for UTF-8 application output or `--output-format json` for JSON application output. One decoded result prints directly; results from multiple `--input` arguments print in order, with JSON results collected into an array. Invalid text or JSON returns a typed protocol error instead of changing the bytes.
 
 The raw envelope keeps output and completion distinct. Core-Wasm v1 returns

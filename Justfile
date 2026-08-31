@@ -50,6 +50,10 @@ python-holo-package output="target/numpy-pandas.holo":
 python-rootfs-repro builds="2":
     ./scripts/check-python-rootfs-reproducibility.sh --build-count "{{builds}}"
 
+# Resolve, compile, and run through a disposable authenticated loopback registry.
+python-private-registry:
+    ./scripts/check-python-private-registry.sh
+
 # Keep production source files small enough to review and refactor.
 file-size:
     ./scripts/check-file-size.sh

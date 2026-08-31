@@ -12,15 +12,16 @@ hologram compile examples/wasm-view/hologram.json \
   --output target/wasm-view.holo
 ```
 
-Import `target/wasm-view.holo` from Hologram Desktop and run it from the
-Applications screen to exercise the current one-shot attachment and
-root-completion lifecycle. Direct CLI execution deliberately reports that the
-portable View surface is unavailable because a headless process cannot attach
-the UI.
+Import `target/wasm-view.holo` from Hologram Desktop and choose **Open
+application**. Its portable frontend opens in a separate native window outside
+the dashboard, and repeated submissions reuse the same prepared Wasm primary.
+Close that window or choose **Stop application** to detach the View and stop
+the session. Direct CLI execution deliberately reports that the portable View
+surface is unavailable because a headless process cannot attach the UI.
 
-The Desktop adapter test compiles this exact manifest, attaches its bundle
-through a display-independent window host, submits one real intent to the Wasm
-primary, preserves root-primary completion, and observes reverse shutdown.
-Keeping the form open for user-driven turns requires the next explicit
-application-session API; the current one-shot contract closes its View when the
-root primary completes.
+The runtime and Desktop adapter tests compile this exact manifest, attach its
+bundle through a display-independent window host, invoke the primary directly
+and through real View intents while the session remains open, then prove
+explicit and window-driven reverse shutdown. The CLI's one-shot executor still
+uses fresh start/invoke/stop semantics; the explicit session API is what owns a
+user-driven View lifetime.

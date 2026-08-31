@@ -320,7 +320,16 @@ fn main() {
                     "start" => run_menu_action(app, &["start"], true),
                     "restart" => run_menu_action(app, &["restart"], true),
                     "stop" => run_menu_action(app, &["stop"], false),
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let failures = app.state::<view_surface::DesktopHoloRuntime>().stop_all().await;
+                            for failure in failures {
+                                eprintln!("stop application session during quit: {failure}");
+                            }
+                            app.exit(0);
+                        });
+                    }
                     _ => {}
                 });
             if let Some(icon) = app.default_window_icon() {
@@ -336,8 +345,28 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else if window.label().starts_with("hologram-view-") {
+                    let label = window.label().to_owned();
+                    let app = window.app_handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        match app
+                            .state::<view_surface::DesktopHoloRuntime>()
+                            .stop_window(&label)
+                            .await
+                        {
+                            Ok(Some(report)) => {
+                                holo_watch::emit_session_event(&app, &report, "stopped");
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                eprintln!("stop closed application session: {error}");
+                            }
+                        }
+                    });
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -358,6 +387,9 @@ fn main() {
             holo_watch::holo_catalog_inspect,
             holo_watch::holo_catalog_import,
             holo_watch::holo_catalog_run,
+            holo_watch::holo_catalog_session_list,
+            holo_watch::holo_catalog_session_start,
+            holo_watch::holo_catalog_session_stop,
             holo_watch::holo_watch_list,
             holo_watch::holo_watch_add,
             holo_watch::holo_watch_remove,

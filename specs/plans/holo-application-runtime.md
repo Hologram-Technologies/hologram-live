@@ -6,9 +6,9 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M3.2 composed Wasm + View Desktop lifecycle proof
-- Previous delivery: M3.2 bounded View intent boundary
-- Next runtime milestone: explicit application sessions and lifecycle usability
+- Current delivery: M3.2 explicit application sessions and lifecycle usability complete
+- Previous delivery: M3.2 composed Wasm + View Desktop lifecycle proof
+- Next runtime milestone: authenticated private-registry integration coverage
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -706,6 +706,16 @@ only until compilation resolves and binds its immutable digest.
 - [x] Make direct headless execution report an explicit unavailable-surface
   capability when a required view cannot attach.
 - [x] Demonstrate a composed Wasm + View `.holo` application in Hologram Desktop.
+- [x] Define explicit application sessions separately from one-shot execution
+  and record user-owned View lifetimes in ADR 019.
+- [x] Serialize direct and View invocation per composed application and wait
+  for every root/child invocation gate before provider shutdown.
+- [x] Prove a compiled Wasm + View session remains attached across direct and
+  View messages and detaches exactly once on explicit repeated stop.
+- [x] Complete Desktop verification for separate native View windows, session
+  list/start/stop commands, window-close ownership, and quit-time shutdown.
+- [x] Pass the full repository, docs, and packaged Desktop release gates for
+  the explicit-session slice.
 
 ### M3.3 Inference-model provider
 
@@ -1036,13 +1046,15 @@ work below.
 - [x] Define application completion and exit status separately from byte outputs.
 - [ ] Add structured logs and diagnostics without treating stdout as a protocol.
 - [ ] Define streaming output only after provider cancellation and backpressure are in place.
-- [ ] Define stateful sessions as an explicit API rather than silently changing per-run fresh-instance behavior.
+- [x] Define stateful sessions as an explicit API rather than silently changing
+  per-run fresh-instance behavior (ADR 019).
 - [ ] Introduce any future guest contract as an explicit, independently selected version.
 
 ## Open decisions to record as ADRs
 
 - [x] Provider trait async and platform-bound requirements.
 - [x] View-bundle canonical encoding and surface protocol (ADR 018).
+- [x] Explicit application sessions and user-owned View lifetimes (ADR 019).
 - [x] Direct-execution capability grant source and safe defaults.
 - [x] Child lifecycle ownership and the current root-primary-only exit boundary.
 - [ ] TensorPlan payload/port schema and weightc adapter contract.

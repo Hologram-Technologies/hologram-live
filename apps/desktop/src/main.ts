@@ -87,6 +87,16 @@ type HoloInspection = {
   directory_embedded: boolean;
 };
 
+type HoloSession = {
+  session_id: string;
+  archive_kappa: string;
+  application_kappa: string;
+  state: string;
+  window_count: number;
+};
+
+type HoloSessionEvent = HoloSession & { lifecycle: "running" | "stopped" };
+
 type ConversationMessage = {
   role: string;
   content: string;
@@ -155,6 +165,7 @@ let archiveExpanded = false;
 let catalogedHolos: HoloInspection[] = [];
 let watchedHoloProjects: WatchedHoloProject[] = [];
 let activeHoloKappa: string | null = null;
+const activeHoloSessions = new Map<string, HoloSession>();
 
 function storedTheme(): Theme | null {
   try {
@@ -293,12 +304,15 @@ async function refresh() {
 
 async function refreshHoloWorkspace() {
   try {
-    const [watches, archives] = await Promise.all([
+    const [watches, archives, sessions] = await Promise.all([
       invoke<WatchedHoloProject[]>("holo_watch_list"),
       invoke<string>("holo_catalog_list"),
+      invoke<HoloSession[]>("holo_catalog_session_list"),
     ]);
     watchedHoloProjects = watches;
     catalogedHolos = JSON.parse(archives) as HoloInspection[];
+    activeHoloSessions.clear();
+    sessions.forEach((session) => activeHoloSessions.set(session.archive_kappa, session));
     if (activeHoloKappa !== null && !catalogedHolos.some((item) => item.kappa === activeHoloKappa)) {
       activeHoloKappa = null;
       renderHoloInspector(null);
@@ -397,6 +411,40 @@ async function runHolo(kappa: string, input: string) {
   } finally {
     button.disabled = currentState !== "ready";
     button.textContent = "Run";
+  }
+}
+
+async function startHoloSession(item: HoloInspection) {
+  const button = holoInspector.querySelector<HTMLButtonElement>(".holo-session-submit");
+  if (button === null) return;
+  button.disabled = true;
+  button.textContent = "Opening…";
+  try {
+    const session = await invoke<HoloSession>("holo_catalog_session_start", { kappa: item.kappa });
+    activeHoloSessions.set(item.kappa, session);
+    renderHoloInspector(item);
+    showNotice("Application opened.", "success");
+  } catch (error) {
+    showNotice(friendlyError(error), "error", true);
+    button.disabled = currentState !== "ready";
+    button.textContent = "Open application";
+  }
+}
+
+async function stopHoloSession(item: HoloInspection, session: HoloSession) {
+  const button = holoInspector.querySelector<HTMLButtonElement>(".holo-session-submit");
+  if (button === null) return;
+  button.disabled = true;
+  button.textContent = "Stopping…";
+  try {
+    await invoke<HoloSession>("holo_catalog_session_stop", { sessionId: session.session_id });
+    activeHoloSessions.delete(item.kappa);
+    renderHoloInspector(item);
+    showNotice("Application stopped.", "success");
+  } catch (error) {
+    showNotice(friendlyError(error), "error", true);
+    button.disabled = currentState !== "ready";
+    button.textContent = "Stop application";
   }
 }
 
@@ -886,6 +934,8 @@ function renderHoloInspector(item: HoloInspection | null) {
     return;
   }
   const directory = item.directory;
+  const portableView = directory?.layers.some((layer) => layer.kind === "view" && layer.surface === "portable") ?? false;
+  const session = activeHoloSessions.get(item.kappa);
   const layers = directory?.layers.map((layer) => `<article class="inspect-layer">
     <div><strong>${layer.position}. ${escapeHtml(layer.kind)}</strong>${directory.primary_layer === layer.position ? '<span class="kind">primary</span>' : ""}</div>
     <p>${escapeHtml(layer.entry)}${layer.contract === null ? "" : ` · ${escapeHtml(layer.contract)}`}${layer.architecture === null ? "" : ` · ${escapeHtml(layer.architecture)}`}${layer.surface === null ? "" : ` · ${escapeHtml(layer.surface)}`}${layer.engine === null ? "" : ` · ${escapeHtml(layer.engine)}`}</p>
@@ -907,7 +957,13 @@ function renderHoloInspector(item: HoloInspection | null) {
     <section class="inspect-section"><h3>Layers</h3><div class="inspect-layers">${layers}</div></section>
     <section class="inspect-section"><h3>Physical sections</h3><ul class="inspect-sections">${sections}</ul></section>
     <p class="inspect-summary">${directory?.blobs.length ?? 0} embedded blob${directory?.blobs.length === 1 ? "" : "s"} · ${directory?.children.length ?? 0} child application${directory?.children.length === 1 ? "" : "s"}</p>
-    <section class="holo-runner inspect-section">
+    ${portableView ? `<section class="holo-runner inspect-section">
+      <h3>Application window</h3>
+      <p class="inspect-muted">${session === undefined
+        ? "Open this application in its own window. It stays available for messages until you close or stop it."
+        : `Running as ${escapeHtml(session.session_id)} · ${session.window_count} window${session.window_count === 1 ? "" : "s"}`}</p>
+      <button class="${session === undefined ? "primary" : "secondary"} command-button holo-session-submit"${session === undefined ? ' data-when="ready"' : ""} type="button">${session === undefined ? "Open application" : "Stop application"}</button>
+    </section>` : `<section class="holo-runner inspect-section">
       <h3>Run application</h3>
       <form class="holo-run-form">
         <label for="holo-run-input">Input</label>
@@ -915,12 +971,19 @@ function renderHoloInspector(item: HoloInspection | null) {
         <button class="primary command-button holo-run-submit" data-when="ready" type="submit">Run</button>
       </form>
       <pre class="holo-run-output" aria-live="polite" hidden></pre>
-    </section>`;
-  holoInspector.querySelector<HTMLFormElement>(".holo-run-form")!.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const input = holoInspector.querySelector<HTMLTextAreaElement>(".holo-run-input")!.value;
-    void runHolo(item.kappa, input);
-  });
+    </section>`}`;
+  if (portableView) {
+    holoInspector.querySelector<HTMLButtonElement>(".holo-session-submit")!.addEventListener("click", () => {
+      if (session === undefined) void startHoloSession(item);
+      else void stopHoloSession(item, session);
+    });
+  } else {
+    holoInspector.querySelector<HTMLFormElement>(".holo-run-form")!.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = holoInspector.querySelector<HTMLTextAreaElement>(".holo-run-input")!.value;
+      void runHolo(item.kappa, input);
+    });
+  }
   syncControls();
 }
 
@@ -1138,6 +1201,18 @@ void listen<ServiceState>("service-state-changed", (event) => {
 
 void listen("holo-watch-changed", () => {
   if (currentState === "ready") void refreshHoloWorkspace();
+});
+
+void listen<HoloSessionEvent>("holo-session-changed", (event) => {
+  if (event.payload.lifecycle === "running") {
+    activeHoloSessions.set(event.payload.archive_kappa, event.payload);
+  } else {
+    activeHoloSessions.delete(event.payload.archive_kappa);
+  }
+  if (activeHoloKappa === event.payload.archive_kappa) {
+    const item = catalogedHolos.find((archive) => archive.kappa === activeHoloKappa);
+    if (item !== undefined) renderHoloInspector(item);
+  }
 });
 
 // --- Text size -------------------------------------------------------------

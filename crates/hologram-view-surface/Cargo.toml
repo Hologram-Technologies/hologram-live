@@ -8,6 +8,9 @@ description = "Host-neutral portable View surface boundary for Hologram"
 repository = "https://github.com/Hologram-Technologies/hologram-live"
 publish = false
 
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
 [lints.rust]
 unsafe_code = "forbid"
 unused_must_use = "deny"

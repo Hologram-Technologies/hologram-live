@@ -37,7 +37,7 @@
   `start`, and detaches idempotently during reverse-order `stop` or rollback.
 - [x] Serve assets from an opaque per-application/layer origin without
   `file://`, workstation paths, or a localhost API redirect.
-- [ ] Define and implement one bounded versioned intent/message round trip
+- [x] Define and implement one bounded versioned intent/message round trip
   without exposing general Tauri commands or ambient host APIs.
 - [x] Return an explicit unavailable-surface blocker for direct headless
   execution before any layer starts.
@@ -55,9 +55,9 @@
 - [x] Unit-test registry publication, prepare-without-attach, start attachment,
   decoded immutable assets, single detach, and idempotent repeated stop.
 - [ ] Add Desktop coverage for attachment, messaging, rollback, and shutdown.
-  - [x] Cover opaque-origin asset requests, rejection, window binding, and
-    detach cleanup in Desktop-owned tests.
-  - [ ] Cover real window attachment/replacement, rollback, messaging, and
+  - [x] Cover opaque-origin asset requests, rejection, window binding,
+    bounded messaging, and detach cleanup in Desktop-owned tests.
+  - [ ] Cover real window attachment/replacement, rollback, and
     shutdown through a display-independent integration seam.
 - [x] Update README and website `.holo` and Desktop docs for the bundle and
   provider contract.
@@ -72,7 +72,8 @@
 ## Next prioritized work
 
 - [x] Register the Tauri portable surface adapter and opaque asset origin.
-- [ ] Complete the bounded intent/message and composed-application slice.
+- [x] Complete the bounded intent/message slice and composed provider proof.
+- [ ] Add the real composed Wasm + View Desktop application and lifecycle proof.
 - [ ] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 - [ ] Link WASI and Hologram Component host interfaces only when admitted by

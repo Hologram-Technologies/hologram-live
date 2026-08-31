@@ -1,6 +1,6 @@
 # ADR 018: Canonical portable View bundles and desktop attachment
 
-- Status: accepted; bundle/compiler, host-neutral provider, and Desktop surface adapter implemented
+- Status: accepted; bundle/compiler, provider, Desktop adapter, and bounded intent v1 implemented
 - Date: 2026-08-30
 
 ## Context
@@ -78,12 +78,22 @@ application-window labels are absent from the main Desktop capability set.
 
 The web content receives no general Tauri invocation object. Application
 communication crosses a versioned Hologram intent boundary owned by the View
-provider. The first protocol will carry bounded named messages between the
+provider. The first protocol carries bounded named messages between the
 attached View layer and its admitted application; it will not expose arbitrary
 commands, shell execution, filesystem paths, or raw host APIs. Network,
 storage, clipboard, notifications, and other host effects require explicit
 capability admission plus a narrow provider-owned interface. Browser APIs that
 cannot be mediated remain disabled.
+
+Intent v1 is a JSON-only same-origin `POST /_hologram/intent` request with
+exact fields `version`, `name`, and UTF-8 `payload`. The only admitted name is
+`application.invoke`. The runtime binds the attachment's application κ to its
+prepared primary layer, serializes invocations, and returns versioned UTF-8
+`outputs`. Payloads are capped at 64 KiB; responses are capped at 16 outputs
+and 1 MiB total. Unknown fields, versions, names, origins, paths, media types,
+non-UTF-8 outputs, and over-limit messages fail closed. The CSP permits
+same-origin connections only so the endpoint is reachable without enabling
+external network access.
 
 Attachment is lifecycle work, not application invocation. `prepare` validates
 and decodes the bundle without displaying it; `start` attaches only after the
@@ -120,13 +130,15 @@ retain equal application manifests.
 
 The provider tests prove `prepare` does not display content, `start` attaches
 the decoded immutable assets, and repeated `stop` detaches exactly once. The
+composed provider test binds a View intent to its own primary, invokes it once,
+and proves reverse View detach then primary stop. Desktop protocol tests prove
+same-origin JSON admission and rejection at the window/token boundary. The
 enforced CLI BDD View fixture compiles into a self-contained `.holo` archive
 and proves direct/headless planning returns an unavailable-surface
 `LIVE_CAPABILITY_MISSING` blocker.
 
 ## Follow-up
 
-- Define and implement the bounded intent/message schema named above.
 - Add a composed Wasm + View example proving ordered startup, attachment,
   message exchange, reverse shutdown, rollback, and headless failure.
 - Add bundle fuzzing and a cross-platform golden fixture to the M8 conformance

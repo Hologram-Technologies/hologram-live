@@ -196,7 +196,7 @@ hologram --json holo plan blake3:… |
   <p>Layer, capability, and child paths in the source manifest are resolved relative to <code>hologram.json</code>. The source document is retained as metadata, while the canonical application manifest and directory are generated from it.</p>
   <div class="note"><strong>One source schema</strong>Schema v4 is required. It supports prebuilt layer paths, typed Python rootfs and Component source recipes, ordered child application archives, delegated capability documents, and explicit Wasm guest contracts. The build recipe is retained as archive metadata.</div>
   <pre><code>&#123;
-  "schema_version": 1,
+  "schema_version": 4,
   "primary": 0,
   "requires": "capabilities.json",
   "layers": [
@@ -220,6 +220,7 @@ hologram holo verify blake3:…
 hologram holo load blake3:…
 hologram run blake3:… --input payload.bin
 hologram holo unload blake3:…</code></pre>
+  <p>The repository's <code>examples/wasm-view/</code> project is the executable form of this two-layer manifest. Its frontend uses the same-origin bounded intent endpoint to call its Wasm primary. Desktop tests compile the project as a real v4 archive and prove attachment, intent delivery, root-primary completion, transactional replacement rollback, and reverse shutdown through a display-independent window-host seam.</p>
 
   <h3>Compose a child application</h3>
   <p>Compile the child first, then reference its self-contained archive from a schema-v4 parent. The compiler verifies the child archive, extracts its canonical application manifest, compiles the delegated capability source, and embeds the child manifest and verified content blobs in a fat parent. A thin parent retains the identical canonical application identity without embedding blobs.</p>

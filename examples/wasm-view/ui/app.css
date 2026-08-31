@@ -1,0 +1,108 @@
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #101114;
+  color: #f7f7f5;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at top, #232942, #101114 55%);
+}
+
+main {
+  width: min(36rem, calc(100vw - 4rem));
+  padding: 3rem;
+  border: 1px solid #343844;
+  border-radius: 1.5rem;
+  background: #17191fcc;
+  box-shadow: 0 2rem 5rem #0008;
+}
+
+.eyebrow {
+  color: #8f9cff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+h1 {
+  margin: 0.4rem 0 0.75rem;
+  font-size: clamp(2.2rem, 8vw, 4rem);
+}
+
+label {
+  display: block;
+  margin: 2rem 0 0.5rem;
+  font-weight: 650;
+}
+
+.controls {
+  display: flex;
+  gap: 0.65rem;
+}
+
+input,
+button,
+output {
+  border-radius: 0.7rem;
+  font: inherit;
+}
+
+input {
+  min-width: 0;
+  flex: 1;
+  padding: 0.8rem 1rem;
+  border: 1px solid #454a5b;
+  background: #101217;
+  color: inherit;
+}
+
+button {
+  padding: 0.8rem 1rem;
+  border: 0;
+  background: #7382ff;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+output {
+  display: block;
+  min-height: 1.5rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #0c0d11;
+  color: #a9ffcf;
+  white-space: pre-wrap;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    background: #f4f5f8;
+    color: #17181c;
+  }
+
+  body {
+    background: radial-gradient(circle at top, #dfe3ff, #f4f5f8 55%);
+  }
+
+  main {
+    border-color: #d8dae4;
+    background: #ffffffdd;
+    box-shadow: 0 2rem 5rem #56608022;
+  }
+
+  input,
+  output {
+    border-color: #c8cad4;
+    background: white;
+  }
+
+  output {
+    color: #17643d;
+  }
+}

@@ -204,6 +204,24 @@ Choose **Add .holo** to import an existing archive through the native file picke
 catalog archives use the same Run panel. Unsupported providers and denied
 capabilities remain explicit runtime errors.
 
+`examples/wasm-view/` is the complete composed example. Its portable frontend
+posts one bounded `application.invoke` intent to an ASCII-uppercase Wasm
+primary:
+
+```bash
+hologram compile examples/wasm-view/hologram.json \
+  --output target/wasm-view.holo
+```
+
+Import `target/wasm-view.holo` in Desktop and choose **Run** to exercise its
+current one-shot attachment and root-completion lifecycle. The same checked-in
+manifest is compiled by the display-independent Desktop lifecycle test, which
+submits a real intent during attachment and proves root-primary completion,
+window replacement rollback, and reverse shutdown without requiring a CI
+display. Keeping the form open for user-driven turns is the next explicit
+application-session milestone; one-shot execution intentionally does not keep a
+View alive after its primary completes.
+
 The Applications list is backed by the same `holo list` and `holo inspect`
 operations shown above, so its archive κ, application κ, layers, capabilities,
 physical sections, and verification state are not reconstructed by the web
@@ -223,7 +241,7 @@ The stable build creates and validates v4 `.holo` archives and rejects every oth
 └─ BLAKE3 footer
 ```
 
-The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. A View source names a directory containing `index.html`; the compiler emits canonical `HOLOVIEW` v1 bytes with portable paths and lexically ordered assets, independent of source timestamps, permissions, and creation order. Only the `portable` surface is accepted. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider. The portable View provider validates during `prepare`, attaches an available host surface during `start`, and detaches idempotently during reverse shutdown. Hologram Desktop publishes the concrete surface and serves immutable assets from an opaque per-attachment `hologram-view` origin bound to that application window; it uses neither `file://`, source paths, nor a localhost server. Dynamic View windows are not included in the main window's Tauri capability assignment, block external navigation and popups, and receive a restrictive CSP. A View can send one bounded v1 message to its own admitted application by posting JSON shaped as `{"version":1,"name":"application.invoke","payload":"text"}` to the same-origin `/_hologram/intent` endpoint; the runtime serializes invocation of that application's prepared primary and returns UTF-8 `outputs`. Other names, versions, origins, content types, paths, and over-limit payloads fail closed, and no general Tauri or host API is exposed. CLI and server execution intentionally publish no surface, so planning reports an explicit direct/headless unavailable-surface blocker. The next View slice is a real composed Wasm + View Desktop example plus display-independent window rollback and shutdown coverage.
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. A View source names a directory containing `index.html`; the compiler emits canonical `HOLOVIEW` v1 bytes with portable paths and lexically ordered assets, independent of source timestamps, permissions, and creation order. Only the `portable` surface is accepted. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider. The portable View provider validates during `prepare`, attaches an available host surface during `start`, and detaches idempotently during reverse shutdown. Hologram Desktop publishes the concrete surface and serves immutable assets from an opaque per-attachment `hologram-view` origin bound to that application window; it uses neither `file://`, source paths, nor a localhost server. Dynamic View windows are not included in the main window's Tauri capability assignment, block external navigation and popups, and receive a restrictive CSP. A View can send one bounded v1 message to its own admitted application by posting JSON shaped as `{"version":1,"name":"application.invoke","payload":"text"}` to the same-origin `/_hologram/intent` endpoint; the runtime serializes invocation of that application's prepared primary and returns UTF-8 `outputs`. Other names, versions, origins, content types, paths, and over-limit payloads fail closed, and no general Tauri or host API is exposed. CLI and server execution intentionally publish no surface, so planning reports an explicit direct/headless unavailable-surface blocker. Desktop window operations run through a display-independent lifecycle seam: replacement is transactional, a failed replacement restores the prior assets and window, detach failure restores the attachment for retry, and repeated detach is safe. The checked-in `examples/wasm-view/` archive proves the composed path through compilation, intent invocation, root completion, and reverse shutdown.
 
 Applications request authority with an optional `capabilities.json`. This is a
 human-authored compiler input, not the object embedded in the archive:

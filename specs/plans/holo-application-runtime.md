@@ -6,9 +6,9 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M3.2 composed Wasm + View Desktop proof
+- Current delivery: M3.2 composed Wasm + View Desktop lifecycle proof
 - Previous delivery: M3.2 bounded View intent boundary
-- Next runtime milestone: M3.2 display-independent window lifecycle proof
+- Next runtime milestone: explicit application sessions and lifecycle usability
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -705,7 +705,7 @@ only until compilation resolves and binds its immutable digest.
   without granting ambient desktop authority.
 - [x] Make direct headless execution report an explicit unavailable-surface
   capability when a required view cannot attach.
-- [ ] Demonstrate a composed Wasm + View `.holo` application in Hologram Desktop.
+- [x] Demonstrate a composed Wasm + View `.holo` application in Hologram Desktop.
 
 ### M3.3 Inference-model provider
 
@@ -1167,13 +1167,13 @@ work below.
   provider without exposing WebView or Tauri types through the shared boundary.
 - [x] Register the Desktop-owned Tauri surface adapter and serve its assets from
   an opaque application/layer origin.
-- [ ] Prove the adapter's attach, asset lookup, path rejection, replacement,
+- [x] Prove the adapter's attach, asset lookup, path rejection, replacement,
   detach, rollback, and shutdown behavior with Desktop-owned tests.
   - [x] Prove opaque-origin asset lookup, `GET`/`HEAD` behavior, MIME and
     security headers, request/path rejection, origin/window binding, and
     asset removal on detach.
-  - [ ] Add an integration seam for real window attach, replacement, rollback,
+  - [x] Add an integration seam for real window attach, replacement, rollback,
     and application-shutdown behavior without requiring a display in CI.
 - [x] Add the bounded intent/message round trip and prove it invokes the
   composed application's own primary before reverse detach/stop.
-- [ ] Add the real composed Wasm + View Desktop example and lifecycle proof.
+- [x] Add the real composed Wasm + View Desktop example and lifecycle proof.

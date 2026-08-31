@@ -1,0 +1,17 @@
+{
+  "schema_version": 4,
+  "primary": 0,
+  "layers": [
+    {
+      "kind": "wasm",
+      "path": "transform.wat",
+      "entry": "holo_run",
+      "contract": "hologram:guest/core-wasm@1"
+    },
+    {
+      "kind": "view",
+      "path": "ui",
+      "surface": "portable"
+    }
+  ]
+}

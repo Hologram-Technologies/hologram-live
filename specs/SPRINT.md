@@ -2,7 +2,7 @@
 
 ## Sprint status
 
-- State: active
+- State: complete
 - Started: 2026-08-30
 - Last reviewed: 2026-08-31
 - Durable milestone: [M3 — Real multi-layer providers](plans/holo-application-runtime.md#m3--real-multi-layer-providers)
@@ -54,10 +54,10 @@
 - [x] Add BDD coverage for the explicit headless unavailable-surface failure.
 - [x] Unit-test registry publication, prepare-without-attach, start attachment,
   decoded immutable assets, single detach, and idempotent repeated stop.
-- [ ] Add Desktop coverage for attachment, messaging, rollback, and shutdown.
+- [x] Add Desktop coverage for attachment, messaging, rollback, and shutdown.
   - [x] Cover opaque-origin asset requests, rejection, window binding,
     bounded messaging, and detach cleanup in Desktop-owned tests.
-  - [ ] Cover real window attachment/replacement, rollback, and
+  - [x] Cover real window attachment/replacement, rollback, and
     shutdown through a display-independent integration seam.
 - [x] Update README and website `.holo` and Desktop docs for the bundle and
   provider contract.
@@ -66,14 +66,16 @@
 - [x] Pass the same full repository and documentation gates for the
   host-neutral provider foundation.
 - [x] Pass Desktop tests and build with the attachment/provider slice.
-- [ ] Commit, open and merge the PR, remove this sprint's worktree, and leave
-  the primary checkout synchronized on `main`.
+- [x] Pass the full repository, docs, and packaged Desktop release gates for
+  the composed example and display-independent lifecycle slice.
 
 ## Next prioritized work
 
 - [x] Register the Tauri portable surface adapter and opaque asset origin.
 - [x] Complete the bounded intent/message slice and composed provider proof.
-- [ ] Add the real composed Wasm + View Desktop application and lifecycle proof.
+- [x] Add the real composed Wasm + View Desktop application and lifecycle proof.
+- [ ] Define the explicit application-session API and Desktop lifetime contract
+  before keeping a View open beyond one-shot root-primary completion.
 - [ ] Add authenticated private-registry integration coverage without exposing
   credentials in build provenance.
 - [ ] Link WASI and Hologram Component host interfaces only when admitted by

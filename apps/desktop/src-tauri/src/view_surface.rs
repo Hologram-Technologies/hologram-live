@@ -68,7 +68,9 @@ pub fn initialize(
     let view_surfaces = Arc::new(ViewSurfaceRegistry::new());
     view_surfaces
         .register_portable(Arc::new(TauriViewSurface {
-            app: app.handle().clone(),
+            windows: Arc::new(TauriWindowHost {
+                app: app.handle().clone(),
+            }),
             assets,
         }))
         .map_err(std::io::Error::other)?;
@@ -77,18 +79,26 @@ pub fn initialize(
 }
 
 pub struct ViewAssetStore {
-    attachments: RwLock<HashMap<String, StoredAttachment>>,
+    state: RwLock<ViewAssetState>,
 }
 
 impl Default for ViewAssetStore {
     fn default() -> Self {
         Self {
-            attachments: RwLock::new(HashMap::new()),
+            state: RwLock::new(ViewAssetState::default()),
         }
     }
 }
 
+#[derive(Default)]
+struct ViewAssetState {
+    next_generation: u64,
+    attachments: HashMap<String, StoredAttachment>,
+}
+
+#[derive(Clone)]
 struct StoredAttachment {
+    generation: u64,
     id: ViewAttachmentId,
     token: String,
     entry: String,
@@ -97,9 +107,16 @@ struct StoredAttachment {
 }
 
 struct StagedAttachment {
+    generation: u64,
     token: String,
     label: String,
     entry: String,
+    previous: Option<StoredAttachment>,
+}
+
+struct RemovedAttachment {
+    label: String,
+    attachment: StoredAttachment,
 }
 
 impl ViewAssetStore {
@@ -122,38 +139,85 @@ impl ViewAssetStore {
                 view.entry
             ));
         }
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| "portable View asset store lock poisoned".to_owned())?;
+        state.next_generation = state.next_generation.wrapping_add(1);
+        if state.next_generation == 0 {
+            state.next_generation = 1;
+        }
+        let generation = state.next_generation;
         let stored = StoredAttachment {
+            generation,
             id: view.id.clone(),
             token: view.id.token.clone(),
             entry: view.entry.clone(),
             assets,
             intents: view.intents.clone(),
         };
-        let mut attachments = self
-            .attachments
-            .write()
-            .map_err(|_| "portable View asset store lock poisoned".to_owned())?;
-        if attachments.contains_key(&label) {
-            return Err(format!(
-                "portable View attachment {} is already active",
-                view.id.token
-            ));
-        }
-        attachments.insert(label.clone(), stored);
+        let previous = state.attachments.insert(label.clone(), stored);
         Ok(StagedAttachment {
+            generation,
             token: view.id.token.clone(),
             label,
             entry: view.entry.clone(),
+            previous,
         })
     }
 
-    fn remove(&self, id: &ViewAttachmentId) -> Result<bool, String> {
-        Ok(self
-            .attachments
+    fn rollback(&self, staged: &StagedAttachment) -> Result<bool, String> {
+        let mut state = self
+            .state
             .write()
-            .map_err(|_| "portable View asset store lock poisoned".to_owned())?
-            .remove(&window_label(&id.token))
-            .is_some())
+            .map_err(|_| "portable View asset store lock poisoned".to_owned())?;
+        if state
+            .attachments
+            .get(&staged.label)
+            .is_none_or(|attachment| attachment.generation != staged.generation)
+        {
+            return Ok(false);
+        }
+        if let Some(previous) = staged.previous.clone() {
+            state.attachments.insert(staged.label.clone(), previous);
+        } else {
+            state.attachments.remove(&staged.label);
+        }
+        Ok(true)
+    }
+
+    fn remove(&self, id: &ViewAttachmentId) -> Result<Option<RemovedAttachment>, String> {
+        let label = window_label(&id.token);
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| "portable View asset store lock poisoned".to_owned())?;
+        if state
+            .attachments
+            .get(&label)
+            .is_none_or(|attachment| attachment.id != *id)
+        {
+            return Ok(None);
+        }
+        Ok(state
+            .attachments
+            .remove(&label)
+            .map(|attachment| RemovedAttachment { label, attachment }))
+    }
+
+    fn restore(&self, removed: RemovedAttachment) -> Result<(), String> {
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| "portable View asset store lock poisoned".to_owned())?;
+        if state.attachments.contains_key(&removed.label) {
+            return Err(format!(
+                "portable View attachment {} changed while detach was rolling back",
+                removed.attachment.id.token
+            ));
+        }
+        state.attachments.insert(removed.label, removed.attachment);
+        Ok(())
     }
 
     pub async fn response(
@@ -232,13 +296,13 @@ impl ViewAssetStore {
         webview_label: &str,
         request: &Request<Vec<u8>>,
     ) -> Result<(ViewAttachmentId, Arc<dyn PortableViewIntentHandler>), AssetError> {
-        let attachments = self.attachments.read().map_err(|_| {
+        let state = self.state.read().map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "portable View asset store lock poisoned".to_owned(),
             )
         })?;
-        let attachment = attachments.get(webview_label).ok_or_else(|| {
+        let attachment = state.attachments.get(webview_label).ok_or_else(|| {
             (
                 StatusCode::FORBIDDEN,
                 "portable View attachment is unavailable".to_owned(),
@@ -266,13 +330,13 @@ impl ViewAssetStore {
                 "invalid portable View URL".to_owned(),
             ));
         }
-        let attachments = self.attachments.read().map_err(|_| {
+        let state = self.state.read().map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "portable View asset store lock poisoned".to_owned(),
             )
         })?;
-        let attachment = attachments.get(webview_label).ok_or_else(|| {
+        let attachment = state.attachments.get(webview_label).ok_or_else(|| {
             (
                 StatusCode::FORBIDDEN,
                 "portable View attachment is unavailable".to_owned(),
@@ -306,7 +370,7 @@ impl ViewAssetStore {
 }
 
 struct TauriViewSurface {
-    app: AppHandle,
+    windows: Arc<dyn ViewWindowHost>,
     assets: Arc<ViewAssetStore>,
 }
 
@@ -314,12 +378,96 @@ impl PortableViewSurface for TauriViewSurface {
     fn attach(&self, view: PortableViewAttachment) -> SurfaceFuture<'_> {
         Box::pin(async move {
             let staged = self.assets.stage(&view)?;
-            let url = attachment_url(&staged.token, &staged.entry)?;
-            let expected_token = staged.token.clone();
-            let build = WebviewWindowBuilder::new(
+            let request = ViewWindowRequest::new(
+                staged.label.clone(),
+                staged.token.clone(),
+                staged.entry.clone(),
+            )?;
+            if staged.previous.is_some() {
+                if let Err(error) = self.windows.close(&staged.label).await {
+                    self.assets.rollback(&staged)?;
+                    return Err(format!("replace portable View window: {error}"));
+                }
+            }
+            if let Err(error) = self.windows.open(request).await {
+                let cleanup_error = self.windows.close(&staged.label).await.err();
+                self.assets.rollback(&staged)?;
+                let restore_error = if let Some(previous) = staged.previous.as_ref() {
+                    self.windows
+                        .open(ViewWindowRequest::new(
+                            staged.label.clone(),
+                            previous.token.clone(),
+                            previous.entry.clone(),
+                        )?)
+                        .await
+                        .err()
+                } else {
+                    None
+                };
+                let mut message = format!("create portable View window: {error}");
+                if let Some(cleanup_error) = cleanup_error {
+                    message.push_str(&format!("; clean up failed window: {cleanup_error}"));
+                }
+                if let Some(restore_error) = restore_error {
+                    message.push_str(&format!("; restore previous window: {restore_error}"));
+                }
+                return Err(message);
+            }
+            Ok(())
+        })
+    }
+
+    fn detach<'a>(&'a self, id: &'a ViewAttachmentId) -> SurfaceFuture<'a> {
+        Box::pin(async move {
+            let Some(removed) = self.assets.remove(id)? else {
+                return Ok(());
+            };
+            if let Err(error) = self.windows.close(&removed.label).await {
+                self.assets.restore(removed)?;
+                return Err(format!("destroy portable View window: {error}"));
+            }
+            Ok(())
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ViewWindowRequest {
+    label: String,
+    token: String,
+    entry: String,
+    url: Url,
+}
+
+impl ViewWindowRequest {
+    fn new(label: String, token: String, entry: String) -> Result<Self, String> {
+        let url = attachment_url(&token, &entry)?;
+        Ok(Self {
+            label,
+            token,
+            entry,
+            url,
+        })
+    }
+}
+
+trait ViewWindowHost: Send + Sync {
+    fn open(&self, request: ViewWindowRequest) -> SurfaceFuture<'_>;
+    fn close<'a>(&'a self, label: &'a str) -> SurfaceFuture<'a>;
+}
+
+struct TauriWindowHost {
+    app: AppHandle,
+}
+
+impl ViewWindowHost for TauriWindowHost {
+    fn open(&self, request: ViewWindowRequest) -> SurfaceFuture<'_> {
+        Box::pin(async move {
+            let expected_token = request.token;
+            WebviewWindowBuilder::new(
                 &self.app,
-                &staged.label,
-                WebviewUrl::CustomProtocol(url),
+                &request.label,
+                WebviewUrl::CustomProtocol(request.url),
             )
             .title("Hologram Application")
             .inner_size(900.0, 650.0)
@@ -328,25 +476,16 @@ impl PortableViewSurface for TauriViewSurface {
             .use_https_scheme(true)
             .on_navigation(move |url| navigation_is_local(url, &expected_token))
             .on_new_window(|_, _| NewWindowResponse::Deny)
-            .build();
-            if let Err(error) = build {
-                let _ = self.assets.remove(&view.id);
-                return Err(format!("create portable View window: {error}"));
-            }
-            Ok(())
+            .build()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
         })
     }
 
-    fn detach<'a>(&'a self, id: &'a ViewAttachmentId) -> SurfaceFuture<'a> {
+    fn close<'a>(&'a self, label: &'a str) -> SurfaceFuture<'a> {
         Box::pin(async move {
-            let label = window_label(&id.token);
-            let removed = self.assets.remove(id)?;
-            if let Some(window) = self.app.get_webview_window(&label) {
-                window
-                    .destroy()
-                    .map_err(|error| format!("destroy portable View window: {error}"))?;
-            } else if !removed {
-                return Ok(());
+            if let Some(window) = self.app.get_webview_window(label) {
+                window.destroy().map_err(|error| error.to_string())?;
             }
             Ok(())
         })
@@ -462,10 +601,14 @@ fn content_type(path: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hologram_live::compile::compile_manifest;
     use hologram_view_surface::{
         IntentFuture, PortableViewAsset, ViewIntentResponse, APPLICATION_INVOKE_INTENT,
         VIEW_INTENT_VERSION,
     };
+    use std::path::Path;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex as StdMutex;
 
     struct EchoIntents;
 
@@ -504,6 +647,113 @@ mod tests {
                 },
             ],
             intents: Arc::new(EchoIntents),
+        }
+    }
+
+    fn attachment_with_html(token: char, html: &'static [u8]) -> PortableViewAttachment {
+        let mut view = attachment(token);
+        view.assets[0].bytes = Arc::from(html);
+        view
+    }
+
+    #[derive(Default)]
+    struct RecordingWindowHost {
+        active: StdMutex<HashMap<String, ViewWindowRequest>>,
+        events: StdMutex<Vec<String>>,
+        fail_next_open: AtomicBool,
+        fail_next_close: AtomicBool,
+    }
+
+    impl RecordingWindowHost {
+        fn fail_next_open(&self) {
+            self.fail_next_open.store(true, Ordering::SeqCst);
+        }
+
+        fn fail_next_close(&self) {
+            self.fail_next_close.store(true, Ordering::SeqCst);
+        }
+
+        fn events(&self) -> Vec<String> {
+            self.events.lock().expect("events").clone()
+        }
+    }
+
+    impl ViewWindowHost for RecordingWindowHost {
+        fn open(&self, request: ViewWindowRequest) -> SurfaceFuture<'_> {
+            Box::pin(async move {
+                if self.fail_next_open.swap(false, Ordering::SeqCst) {
+                    self.events
+                        .lock()
+                        .expect("events")
+                        .push("open:failed".to_owned());
+                    return Err("injected window creation failure".to_owned());
+                }
+                self.events.lock().expect("events").push("open".to_owned());
+                self.active
+                    .lock()
+                    .expect("active windows")
+                    .insert(request.label.clone(), request);
+                Ok(())
+            })
+        }
+
+        fn close<'a>(&'a self, label: &'a str) -> SurfaceFuture<'a> {
+            Box::pin(async move {
+                if self.fail_next_close.swap(false, Ordering::SeqCst) {
+                    self.events
+                        .lock()
+                        .expect("events")
+                        .push("close:failed".to_owned());
+                    return Err("injected window destruction failure".to_owned());
+                }
+                self.events.lock().expect("events").push("close".to_owned());
+                self.active.lock().expect("active windows").remove(label);
+                Ok(())
+            })
+        }
+    }
+
+    struct IntentWindowHost {
+        assets: Arc<ViewAssetStore>,
+        events: StdMutex<Vec<String>>,
+        intent_response: StdMutex<Option<(StatusCode, Vec<u8>)>>,
+    }
+
+    impl ViewWindowHost for IntentWindowHost {
+        fn open(&self, request: ViewWindowRequest) -> SurfaceFuture<'_> {
+            Box::pin(async move {
+                self.events.lock().expect("events").push("open".to_owned());
+                let body = serde_json::to_vec(&ViewIntentRequest {
+                    version: VIEW_INTENT_VERSION,
+                    name: APPLICATION_INVOKE_INTENT.to_owned(),
+                    payload: "desktop lifecycle".to_owned(),
+                })
+                .expect("intent body");
+                let intent = Request::builder()
+                    .method(Method::POST)
+                    .uri(format!(
+                        "{VIEW_SCHEME}://{}/_hologram/intent",
+                        request.token
+                    ))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(body)
+                    .expect("intent request");
+                let response = self.assets.response(&request.label, &intent).await;
+                let status = response.status();
+                *self.intent_response.lock().expect("intent response") =
+                    Some((status, response.into_body()));
+                if status != StatusCode::OK {
+                    return Err(format!("example intent returned {status}"));
+                }
+                Ok(())
+            })
+        }
+
+        fn close<'a>(&'a self, _label: &'a str) -> SurfaceFuture<'a> {
+            Box::pin(async move {
+                self.events.lock().expect("events").push("close".to_owned());
+                Ok(())
+            })
         }
     }
 
@@ -560,7 +810,7 @@ mod tests {
             )
             .await;
         assert_eq!(cross_origin.status(), StatusCode::FORBIDDEN);
-        assert!(store.remove(&first.id).expect("remove"));
+        assert!(store.remove(&first.id).expect("remove").is_some());
         assert_eq!(
             store
                 .response(
@@ -574,7 +824,7 @@ mod tests {
                 .status(),
             StatusCode::FORBIDDEN
         );
-        assert!(store.remove(&second.id).expect("remove second"));
+        assert!(store.remove(&second.id).expect("remove second").is_some());
         assert_eq!(second_staged.entry, "index.html");
     }
 
@@ -666,6 +916,116 @@ mod tests {
         assert_eq!(
             store.response(&staged.label, &wrong_origin).await.status(),
             StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn window_lifecycle_replaces_rolls_back_and_detaches_without_a_display() {
+        let assets = Arc::new(ViewAssetStore::default());
+        let windows = Arc::new(RecordingWindowHost::default());
+        let surface = TauriViewSurface {
+            windows: windows.clone(),
+            assets: assets.clone(),
+        };
+        let first = attachment_with_html('1', b"first");
+        surface.attach(first.clone()).await.expect("attach first");
+
+        let second = attachment_with_html('1', b"second");
+        surface.attach(second.clone()).await.expect("replace first");
+        let url = format!("{VIEW_SCHEME}://{}/", second.id.token);
+        let response = assets
+            .response(&window_label(&second.id.token), &request(Method::GET, &url))
+            .await;
+        assert_eq!(response.body(), b"second");
+
+        windows.fail_next_open();
+        let failed = attachment_with_html('1', b"must roll back");
+        assert!(surface.attach(failed).await.is_err());
+        let response = assets
+            .response(&window_label(&second.id.token), &request(Method::GET, &url))
+            .await;
+        assert_eq!(response.body(), b"second");
+
+        windows.fail_next_close();
+        assert!(surface.detach(&second.id).await.is_err());
+        let response = assets
+            .response(&window_label(&second.id.token), &request(Method::GET, &url))
+            .await;
+        assert_eq!(response.body(), b"second");
+
+        surface
+            .detach(&second.id)
+            .await
+            .expect("detach replacement");
+        surface.detach(&second.id).await.expect("idempotent detach");
+        assert_eq!(
+            windows.events(),
+            [
+                "open",
+                "close",
+                "open",
+                "close",
+                "open:failed",
+                "close",
+                "open",
+                "close:failed",
+                "close"
+            ]
+        );
+        assert!(windows.active.lock().expect("active windows").is_empty());
+        assert_eq!(
+            assets
+                .response(&window_label(&second.id.token), &request(Method::GET, &url))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn composed_wasm_view_example_invokes_and_shuts_down_without_a_display() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("examples/wasm-view/hologram.json");
+        let compiled = compile_manifest(&manifest).expect("compile composed example");
+        assert_eq!(compiled.layer_count, 2);
+
+        let assets = Arc::new(ViewAssetStore::default());
+        let windows = Arc::new(IntentWindowHost {
+            assets: assets.clone(),
+            events: StdMutex::new(Vec::new()),
+            intent_response: StdMutex::new(None),
+        });
+        let surfaces = Arc::new(ViewSurfaceRegistry::new());
+        surfaces
+            .register_portable(Arc::new(TauriViewSurface {
+                windows: windows.clone(),
+                assets,
+            }))
+            .expect("register Desktop surface");
+
+        let result = HoloExecutor::with_view_surfaces(surfaces)
+            .execute(&compiled.bytes, vec![b"root completion".to_vec()])
+            .await
+            .expect("run composed example");
+        assert_eq!(result.outputs, vec![b"ROOT COMPLETION".to_vec()]);
+        assert_eq!(
+            windows.events.lock().expect("events").as_slice(),
+            ["open", "close"]
+        );
+        let (status, body) = windows
+            .intent_response
+            .lock()
+            .expect("intent response")
+            .clone()
+            .expect("intent was sent");
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<ViewIntentResponse>(&body).expect("decode intent response"),
+            ViewIntentResponse {
+                version: VIEW_INTENT_VERSION,
+                outputs: vec!["DESKTOP LIFECYCLE".to_owned()],
+            }
         );
     }
 }

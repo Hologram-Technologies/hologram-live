@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hologram Wasm + View</title>
+    <link rel="stylesheet" href="app.css">
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">COMPOSED .HOLO APPLICATION</p>
+      <h1>Wasm meets View</h1>
+      <p>Send text through the bounded intent endpoint to this application’s Wasm primary.</p>
+      <form id="transform-form">
+        <label for="message">Message</label>
+        <div class="controls">
+          <input id="message" name="message" value="hello hologram" autocomplete="off">
+          <button type="submit">Transform</button>
+        </div>
+      </form>
+      <output id="result" aria-live="polite">Ready</output>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

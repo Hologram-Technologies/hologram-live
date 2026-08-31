@@ -135,11 +135,17 @@ and proves reverse View detach then primary stop. Desktop protocol tests prove
 same-origin JSON admission and rejection at the window/token boundary. The
 enforced CLI BDD View fixture compiles into a self-contained `.holo` archive
 and proves direct/headless planning returns an unavailable-surface
-`LIVE_CAPABILITY_MISSING` blocker.
+`LIVE_CAPABILITY_MISSING` blocker. The Desktop window adapter uses an async,
+display-independent host seam. Its tests prove transactional replacement,
+failed-open rollback to the prior assets and window, idempotent detach, and
+asset removal at shutdown. A second Desktop integration test compiles the
+checked-in `examples/wasm-view/` project, submits a real intent to its prepared
+Wasm primary during attachment, preserves root-primary completion, and observes
+reverse window shutdown.
 
 ## Follow-up
 
-- Add a composed Wasm + View example proving ordered startup, attachment,
-  message exchange, reverse shutdown, rollback, and headless failure.
+- Define an explicit application-session API for longer-lived interactive
+  Views without changing one-shot execution semantics implicitly.
 - Add bundle fuzzing and a cross-platform golden fixture to the M8 conformance
   suite.

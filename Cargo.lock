@@ -1233,6 +1233,7 @@ dependencies = [
  "clap",
  "cucumber",
  "fs4",
+ "hologram-view-surface",
  "hyper-util",
  "kameo",
  "opentelemetry",
@@ -1295,6 +1296,10 @@ dependencies = [
  "uor-foundation-sdk",
  "uor-prism",
 ]
+
+[[package]]
+name = "hologram-view-surface"
+version = "0.1.0"
 
 [[package]]
 name = "http"

@@ -1,6 +1,6 @@
 # ADR 018: Canonical portable View bundles and desktop attachment
 
-- Status: accepted; bundle/compiler slice implemented
+- Status: accepted; bundle/compiler and host-neutral provider slices implemented
 - Date: 2026-08-30
 
 ## Context
@@ -54,12 +54,19 @@ introduced.
 `portable` is the only accepted View surface in this slice. Other values fail
 source validation instead of silently selecting a platform WebView.
 
-The future desktop provider attaches a validated portable bundle to a trusted,
-Desktop-owned surface handle. It serves assets from an opaque per-application,
-per-layer origin; it does not use `file://`, expose a workstation path, or ask
-the application to connect to a localhost server. Asset MIME types are runtime
-delivery metadata inferred from logical paths and are not canonical bundle
-content.
+The portable View provider attaches a validated bundle to a trusted,
+host-owned surface handle. The host-neutral `hologram-view-surface` crate owns
+only attachment identifiers, immutable asset records, the attach/detach trait,
+and a dynamically published portable-surface registry. Platform types stay in
+the host adapter. A prepared layer retains the exact resolved surface handle,
+so replacing or clearing the registry cannot redirect it midway through its
+lifecycle.
+
+The Desktop adapter will own the first concrete handle. It serves assets from
+an opaque per-application, per-layer origin; it does not use `file://`, expose a
+workstation path, or ask the application to connect to a localhost server.
+Asset MIME types are runtime delivery metadata inferred from logical paths and
+are not canonical bundle content.
 
 The web content receives no general Tauri invocation object. Application
 communication crosses a versioned Hologram intent boundary owned by the View
@@ -88,8 +95,9 @@ attached, drop the layer, or reinterpret it as static server content.
   the same canonical application κ.
 - Existing single-file View manifests must move the file to
   `<view-directory>/index.html` and point `path` at the directory.
-- The bundle contract can land and be tested before Desktop attachment exists;
-  `holo plan` remains honest about the missing provider meanwhile.
+- The provider can be lifecycle-tested independently of Tauri. A runtime with
+  an empty registry reports that the portable surface is unavailable rather
+  than claiming the View provider itself is missing.
 - Dynamic module loading, host intents, capability brokers, CSP, navigation,
   popup policy, and external-link handling remain provider implementation work
   under this boundary.
@@ -102,12 +110,16 @@ symlinks, noncanonical ordering, and trailing bytes. Compiler tests verify a
 fat View application embeds the decoded bundle and that fat/thin packages
 retain equal application manifests.
 
-The enforced CLI BDD View fixture now uses a directory source and compiles into
-a self-contained `.holo` archive through the same bundle constructor.
+The provider tests prove `prepare` does not display content, `start` attaches
+the decoded immutable assets, and repeated `stop` detaches exactly once. The
+enforced CLI BDD View fixture compiles into a self-contained `.holo` archive
+and proves direct/headless planning returns an unavailable-surface
+`LIVE_CAPABILITY_MISSING` blocker.
 
 ## Follow-up
 
-- Add the Desktop-owned surface registry and portable View provider.
+- Register a Tauri-owned portable surface adapter and opaque asset protocol in
+  Hologram Desktop.
 - Define and implement the bounded intent/message schema named above.
 - Add a composed Wasm + View example proving ordered startup, attachment,
   message exchange, reverse shutdown, rollback, and headless failure.

@@ -10,7 +10,10 @@ default-run = "hologram"
 publish = false
 
 [workspace]
-members = ["crates/hologram-application-watch"]
+members = [
+    "crates/hologram-application-watch",
+    "crates/hologram-view-surface",
+]
 resolver = "2"
 
 [lib]
@@ -57,6 +60,7 @@ zstd = "0.13"
 # uses only the canonical archive/space surface: model compilation and runtime
 # providers remain outside this crate until their typed adapters are enabled.
 hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "c5e33ec4b3f02381b39485d0563cca1e1714379d", default-features = false, features = ["archive", "space"] }
+hologram-view-surface = { path = "crates/hologram-view-surface" }
 
 [dev-dependencies]
 cucumber = "0.23"

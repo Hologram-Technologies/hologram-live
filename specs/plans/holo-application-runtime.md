@@ -6,9 +6,9 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: M4.2 deterministic Python Component build randomness
-- Previous delivery: M4.2 clean Python rootfs equality complete
-- Next runtime milestone: M3, real multi-layer providers
+- Current delivery: M3.2 canonical portable View bundle and provider
+- Previous delivery: M4.2 deterministic Python Components complete
+- Next runtime milestone: M3.2 Desktop View attachment
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -689,8 +689,10 @@ only until compilation resolves and binds its immutable digest.
 
 ### M3.2 View provider
 
-- [ ] Define a versioned, deterministic view-bundle payload rather than treating one HTML file as an entire application UI.
-- [ ] Define supported surfaces beginning with `portable` and the desktop attachment contract.
+- [x] Define and implement a versioned, deterministic view-bundle payload
+  rather than treating one HTML file as an entire application UI (ADR 018).
+- [x] Define supported surfaces beginning with `portable` and the desktop
+  attachment contract (ADR 018).
 - [ ] Attach view layers when their target surface becomes available.
 - [ ] Keep views non-exit-bearing and route application exit through the primary Wasm or rootfs layer.
 - [ ] Define the intent/message boundary between the view and its application without granting ambient desktop authority.
@@ -818,7 +820,8 @@ application/DMG builds pass.
 
 - [ ] Normalize `.wat` source into WebAssembly binary during compilation so `WasmCodemodule` content is portable Wasm bytes.
 - [ ] Validate Wasm binaries and their selected guest-contract version before writing an archive.
-- [ ] Define deterministic view-bundle construction with stable file ordering, normalized paths, and reproducible bytes.
+- [x] Define deterministic view-bundle construction with stable file ordering,
+  normalized paths, bounded content, and reproducible bytes.
 - [ ] Validate tensor and rootfs payload metadata without claiming to compile formats the selected provider cannot consume.
 - [ ] Keep source-language compilation and archive assembly as explicit stages with actionable diagnostics.
 
@@ -1031,7 +1034,7 @@ work below.
 ## Open decisions to record as ADRs
 
 - [x] Provider trait async and platform-bound requirements.
-- [ ] View-bundle canonical encoding and surface protocol.
+- [x] View-bundle canonical encoding and surface protocol (ADR 018).
 - [x] Direct-execution capability grant source and safe defaults.
 - [x] Child lifecycle ownership and the current root-primary-only exit boundary.
 - [ ] TensorPlan payload/port schema and weightc adapter contract.
@@ -1055,7 +1058,7 @@ work below.
   ADR 017.
 - [x] Prove byte-identical rootfs layer κ values across uncached clean Linux
   builder replicas for both supported target architectures.
-- [ ] Deterministic Python Component output and clean-build equality proof.
+- [x] Deterministic Python Component output and clean-build equality proof.
 
 ## Per-milestone definition of done
 
@@ -1149,3 +1152,8 @@ work below.
   - [x] Pass the two-clean-builds-per-host equality gate in run `33227358037`
     and change completed provenance to `reproducible: true` while preserving
     an honest false value for offline planning.
+- [x] Define ADR 018's canonical portable View bundle, replace the single-file
+  placeholder with a deterministic directory compiler, and validate the only
+  supported surface fail-closed.
+- [ ] Add the Desktop-owned portable surface registry and View provider without
+  exposing WebView or Tauri types through the shared provider boundary.

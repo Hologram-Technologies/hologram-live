@@ -167,6 +167,10 @@ hologram app init ./parent \
   --kind wasm --path parent.wasm --entry holo_run \
   --child worker.holo \
   --child-capabilities worker-capabilities.json
+
+# A portable View source is a directory containing ui/index.html
+hologram app init ./view-app \
+  --kind view --path ui --surface portable
 ```
 
 Use `--yes` for a minimal `app.wasm`/`holo_run` manifest. Existing manifests are preserved unless `--force` is explicit. Packaging remains a compiler choice: use `hologram compile` for a fat archive or add `--thin` for a manifest-only archive.
@@ -217,7 +221,7 @@ The stable build creates and validates v4 `.holo` archives and rejects every oth
 └─ BLAKE3 footer
 ```
 
-The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider.
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. A View source names a directory containing `index.html`; the compiler emits canonical `HOLOVIEW` v1 bytes with portable paths and lexically ordered assets, independent of source timestamps, permissions, and creation order. Only the `portable` surface is accepted. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider. Desktop View attachment is the next provider slice; planning remains explicit about its current absence.
 
 Applications request authority with an optional `capabilities.json`. This is a
 human-authored compiler input, not the object embedded in the archive:

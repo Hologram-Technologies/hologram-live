@@ -615,7 +615,7 @@ fn default_path(kind: LayerKindArg) -> PathBuf {
         LayerKindArg::Wasm => "app.wasm",
         LayerKindArg::Tensor => "model.bin",
         LayerKindArg::Rootfs => "rootfs.img",
-        LayerKindArg::View => "index.html",
+        LayerKindArg::View => "ui",
         LayerKindArg::InferenceModel => "model.bundle",
     }
     .into()
@@ -687,8 +687,7 @@ mod tests {
     #[test]
     fn interactive_flow_generates_multiple_valid_layers() {
         let directory = tempfile::tempdir().expect("tempdir");
-        let input =
-            b"wasm\napp.wasm\n\nholo_run\ny\nview\nindex.html\nportable\nn\n0\ncapabilities.json\n";
+        let input = b"wasm\napp.wasm\n\nholo_run\ny\nview\nui\nportable\nn\n0\ncapabilities.json\n";
         let report = initialize(
             args(directory.path().to_path_buf()),
             true,
@@ -801,7 +800,7 @@ mod tests {
         let directory = tempfile::tempdir().expect("tempdir");
         let mut options = args(directory.path().to_path_buf());
         options.kind = Some(LayerKindArg::View);
-        options.path = Some("index.html".into());
+        options.path = Some("ui".into());
         let error = initialize(options, false, &mut Cursor::new([]), &mut Vec::new())
             .expect_err("missing surface");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");

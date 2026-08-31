@@ -1,10 +1,80 @@
-# Current sprint: M4.2 deterministic Python Components
+# Current sprint: M3.2 portable View bundle and provider
 
 ## Sprint status
 
 - State: active
+- Started: 2026-08-30
+- Last reviewed: 2026-08-30
+- Durable milestone: [M3 — Real multi-layer providers](plans/holo-application-runtime.md#m3--real-multi-layer-providers)
+- Decision: [ADR 018](adrs/018-portable-view-bundle-and-surface.md)
+- Goal: compile complete portable frontends into canonical View payloads and
+  attach them through a narrow Desktop-owned provider boundary
+- Exit signal: a composed Wasm + View application attaches in Desktop,
+  exchanges one bounded intent, retains root-primary completion, rolls back and
+  stops in reverse order, and fails headless with an unavailable-surface error
+
+## Canonical bundle slice
+
+- [x] Replace the raw single-HTML placeholder with a versioned View bundle
+  containing a fixed `index.html` entry and lexically ordered asset bytes.
+- [x] Make a View source path name a directory and reject missing entries,
+  symlinks, special files, non-portable paths, case collisions, and size-limit
+  violations.
+- [x] Exclude timestamps, permissions, ownership, directory creation order,
+  host paths, and MIME guesses from canonical bytes.
+- [x] Accept only the `portable` surface and fail every other selector closed.
+- [x] Update the generator default and enforced View fixture to use `ui/`.
+- [x] Record the bundle, surface, lifecycle, authority, and headless behavior in
+  ADR 018.
+
+## Provider slice
+
+- [ ] Add a Desktop-owned registry of available portable surface handles.
+- [ ] Add a View provider that validates during `prepare`, attaches during
+  `start`, and detaches idempotently during reverse-order `stop` or rollback.
+- [ ] Serve assets from an opaque per-application/layer origin without
+  `file://`, workstation paths, or a localhost API redirect.
+- [ ] Define and implement one bounded versioned intent/message round trip
+  without exposing general Tauri commands or ambient host APIs.
+- [ ] Return an explicit unavailable-surface blocker for direct headless
+  execution before any layer starts.
+- [ ] Keep View non-exit-bearing and preserve root-primary completion.
+
+## Verification and delivery
+
+- [x] Unit-test deterministic construction, strict decoding, missing entry,
+  unsupported surface, noncanonical order, trailing bytes, and symlinks.
+- [x] Verify fat compilation embeds a decodable bundle and fat/thin packages
+  preserve equal application manifests.
+- [x] Exercise directory compilation through the enforced fat-archive BDD
+  fixture.
+- [ ] Add BDD coverage for the explicit headless unavailable-surface failure.
+- [ ] Add Desktop coverage for attachment, messaging, rollback, and shutdown.
+- [x] Update README and website `.holo` and Desktop docs for the bundle and
+  provider contract.
+- [x] Pass formatting, workspace tests, Clippy, BDD, docs, release build, and
+  binary smoke gates for the canonical bundle slice.
+- [ ] Pass Desktop tests and build with the attachment/provider slice.
+- [ ] Commit, open and merge the PR, remove this sprint's worktree, and leave
+  the primary checkout synchronized on `main`.
+
+## Next prioritized work
+
+- [ ] Complete the Desktop attachment/provider slice above.
+- [ ] Add authenticated private-registry integration coverage without exposing
+  credentials in build provenance.
+- [ ] Link WASI and Hologram Component host interfaces only when admitted by
+  the effective capability grant.
+
+---
+
+# Previous sprint: M4.2 deterministic Python Components
+
+## Sprint status
+
+- State: complete
 - Started: 2026-08-27
-- Last reviewed: 2026-08-28
+- Last reviewed: 2026-08-30
 - Durable milestone: [M4 — Compiler completion](plans/holo-application-runtime.md#m4--compiler-completion)
 - Decision: [ADR 013](adrs/013-python-component-build-provenance.md)
 - Discovery: `DISC-017d`
@@ -284,11 +354,11 @@ unobserved.
   archive before accepting its report.
 - [ ] Add a direct patch-application regression test independent of the release
   workflow's existing `git apply --check` step.
-- [ ] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
+- [x] Pass formatting, workspace tests/checks, Clippy, BDD, release/smoke,
   documentation, desktop, and component clean-build gates.
 - [x] Update README, website Python guidance, ADR 013, and the durable runtime
   plan with the released tool boundary and exact commands.
-- [ ] Commit, merge the PR or PR sequence, remove only this sprint's temporary
+- [x] Commit, merge the PR or PR sequence, remove only this sprint's temporary
   worktree, and leave the primary checkout clean on synchronized `main`.
 
 ## Next prioritized work

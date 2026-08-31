@@ -5,7 +5,7 @@
 Hologram Live is a local-first module host for the Hologram ecosystem. This repository produces two independent products:
 
 - **Hologram Server** — the standalone `hologram` binary, containing the CLI and background service.
-- **Hologram Desktop** — a Tauri application that bundles `hologram` as a managed sidecar.
+- **Hologram Desktop** — a Tauri application that bundles `hologram` as a managed sidecar and embeds the shared `.holo` application executor.
 
 The current desktop experience provides a Console dashboard, multi-thread Chat with archiving, content-addressed Files, watched `.holo` Applications, and module discovery in a responsive dark/light interface. A `Cmd/Ctrl+K` command palette reaches every action, and text size is adjustable with `Cmd/Ctrl` `+`/`-`/`0`. Chat routes through a configurable inference engine: the default `echo` engine repeats your message, while `weightc` (one-shot CLI over imported `.wcpu` artifacts) and Ollama-compatible HTTP endpoints serve real model completions.
 
@@ -197,7 +197,9 @@ watches the project for later changes. Builds are debounced and written to the
 desktop cache rather than into the source directory.
 
 Choose **Run** on a ready watched project, enter a text input in its inspector,
-and the desktop loads the latest successful archive and displays its output.
+and the desktop loads the latest successful archive through its in-process
+application executor and displays its output. A portable View layer opens in a
+separate lifecycle-owned application window while its root primary runs.
 Choose **Add .holo** to import an existing archive through the native file picker;
 catalog archives use the same Run panel. Unsupported providers and denied
 capabilities remain explicit runtime errors.
@@ -221,7 +223,7 @@ The stable build creates and validates v4 `.holo` archives and rejects every oth
 └─ BLAKE3 footer
 ```
 
-The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. A View source names a directory containing `index.html`; the compiler emits canonical `HOLOVIEW` v1 bytes with portable paths and lexically ordered assets, independent of source timestamps, permissions, and creation order. Only the `portable` surface is accepted. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider. The portable View provider validates during `prepare`, attaches an available host surface during `start`, and detaches idempotently during reverse shutdown. CLI and server execution intentionally publish no surface, so planning reports an explicit direct/headless unavailable-surface blocker. The Tauri surface adapter is the next Desktop slice.
+The closed layer kinds are `wasm`, `tensor`, `rootfs`, `view`, and v4's non-exit-bearing `inference-model`. A layer records its content κ and entrypoint plus an architecture for rootfs, surface for views, or engine identifier for model services. A View source names a directory containing `index.html`; the compiler emits canonical `HOLOVIEW` v1 bytes with portable paths and lexically ordered assets, independent of source timestamps, permissions, and creation order. Only the `portable` surface is accepted. Fat archives embed referenced blobs; thin archives retain the same application identity while resolving content through a store. Live emits fat archives by default, supports thin output with `--thin`, executes Wasm primary layers through wasmtime, and can directly execute a Python OCI bundle carried by a rootfs layer through the experimental local container provider. The portable View provider validates during `prepare`, attaches an available host surface during `start`, and detaches idempotently during reverse shutdown. Hologram Desktop publishes the concrete surface and serves immutable assets from an opaque per-attachment `hologram-view` origin bound to that application window; it uses neither `file://`, source paths, nor a localhost server. Dynamic View windows are not included in the main window's Tauri capability assignment, block external navigation and popups, and receive a restrictive CSP. CLI and server execution intentionally publish no surface, so planning reports an explicit direct/headless unavailable-surface blocker. The next View slice is the bounded application-intent protocol and a composed Wasm + View proof.
 
 Applications request authority with an optional `capabilities.json`. This is a
 human-authored compiler input, not the object embedded in the archive:

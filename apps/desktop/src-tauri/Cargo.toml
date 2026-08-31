@@ -9,12 +9,15 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 hologram-application-watch = { path = "../../../crates/hologram-application-watch" }
+hologram-live = { path = "../../.." }
+hologram-view-surface = { path = "../../../crates/hologram-view-surface" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = { version = "0.32", default-features = false, features = ["disk", "system"] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
+tokio = { version = "1", features = ["fs"] }
 
 [profile.release]
 lto = "thin"

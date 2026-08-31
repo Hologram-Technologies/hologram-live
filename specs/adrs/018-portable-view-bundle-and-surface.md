@@ -1,6 +1,6 @@
 # ADR 018: Canonical portable View bundles and desktop attachment
 
-- Status: accepted; bundle/compiler and host-neutral provider slices implemented
+- Status: accepted; bundle/compiler, host-neutral provider, and Desktop surface adapter implemented
 - Date: 2026-08-30
 
 ## Context
@@ -62,11 +62,19 @@ the host adapter. A prepared layer retains the exact resolved surface handle,
 so replacing or clearing the registry cannot redirect it midway through its
 lifecycle.
 
-The Desktop adapter will own the first concrete handle. It serves assets from
+The Desktop adapter owns the first concrete handle. It serves assets from
 an opaque per-application, per-layer origin; it does not use `file://`, expose a
 workstation path, or ask the application to connect to a localhost server.
 Asset MIME types are runtime delivery metadata inferred from logical paths and
 are not canonical bundle content.
+
+Each Desktop attachment opens a lifecycle-owned WebView window at
+`hologram-view://<opaque-token>/<entry>`. The protocol resolves immutable
+in-memory assets only when both the token and requesting WebView label match
+the staged attachment. It rejects non-GET/HEAD methods, queries, encoded or
+ambiguous paths, cross-attachment origins, navigation outside the attachment,
+and popup requests. Responses carry a restrictive CSP and `nosniff`; dynamic
+application-window labels are absent from the main Desktop capability set.
 
 The web content receives no general Tauri invocation object. Application
 communication crosses a versioned Hologram intent boundary owned by the View
@@ -118,8 +126,6 @@ and proves direct/headless planning returns an unavailable-surface
 
 ## Follow-up
 
-- Register a Tauri-owned portable surface adapter and opaque asset protocol in
-  Hologram Desktop.
 - Define and implement the bounded intent/message schema named above.
 - Add a composed Wasm + View example proving ordered startup, attachment,
   message exchange, reverse shutdown, rollback, and headless failure.

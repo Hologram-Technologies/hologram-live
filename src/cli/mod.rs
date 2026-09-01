@@ -110,7 +110,7 @@ enum Command {
 
 impl Cli {
     pub fn observability_config(&self) -> (TracingConfig, TelemetryConfig) {
-        let bootstrap = AppConfig::load(self.config.as_deref())
+        let bootstrap = AppConfig::load_for_bootstrap(self.config.as_deref())
             .map(|(config, _)| config)
             .unwrap_or_default();
         let mut tracing = bootstrap.tracing;

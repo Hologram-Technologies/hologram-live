@@ -57,9 +57,9 @@ codec. Upstream PR 143, merge `aad544c`, adds
 of the accepted explicit identifiers. Upstream PR 144, merge `059c39f`, adds
 `WASM_CONTRACT_COMPONENT_STORE_WRITE_V1` under the same closed validation rule;
 Live pins that merge. Upstream PR 145, merge `4fac0b3`, adds the publish and
-subscribe selectors; Live pins that merge as well. Upstream PR 146, commit
-`48905a4`, adds the distinct graph-read selector so exact-root grants are not
-reinterpreted by newer runtimes; Live pins that commit.
+subscribe selectors; Live pins that merge as well. Upstream PR 146, merge
+`01c29de`, adds the distinct graph-read selector so exact-root grants are not
+reinterpreted by newer runtimes; Live pins that merge.
 
 ### Negotiation
 

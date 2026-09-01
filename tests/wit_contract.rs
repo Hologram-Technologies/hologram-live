@@ -35,3 +35,27 @@ fn component_store_write_profile_has_one_fixed_import() {
     assert_eq!(imports, ["  import hologram:host/store-write@1.0.0;"]);
     assert!(world.contains("export guest;"));
 }
+
+#[test]
+fn component_channel_profiles_each_have_one_fixed_import() {
+    fn imports(world: &str) -> Vec<&str> {
+        world
+            .lines()
+            .filter(|line| line.trim_start().starts_with("import "))
+            .collect()
+    }
+
+    let publish =
+        include_str!("../specs/wit/channel-publish/hologram-application-channel-publish-v1.wit");
+    let subscribe = include_str!(
+        "../specs/wit/channel-subscribe/hologram-application-channel-subscribe-v1.wit"
+    );
+    assert_eq!(
+        imports(publish),
+        ["  import hologram:host/channel-publish@1.0.0;"]
+    );
+    assert_eq!(
+        imports(subscribe),
+        ["  import hologram:host/channel-subscribe@1.0.0;"]
+    );
+}

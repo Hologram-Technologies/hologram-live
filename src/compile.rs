@@ -2,7 +2,8 @@ use crate::application_plan::HoloIdentity;
 use crate::error::{LiveError, Result};
 use crate::holo_capability;
 use crate::holo_contract::{
-    normalize_wasm_contract, COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+    normalize_wasm_contract, COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
+    WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
     WASM_CONTRACT_COMPONENT_STORE_WRITE_V1, WASM_CONTRACT_COMPONENT_V1,
 };
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
@@ -486,6 +487,8 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
                         WASM_CONTRACT_COMPONENT_V1
                             | WASM_CONTRACT_COMPONENT_STORE_READ_V1
                             | WASM_CONTRACT_COMPONENT_STORE_WRITE_V1
+                            | WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1
+                            | WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1
                     ) && entry != COMPONENT_V1_ENTRY
                     {
                         return Err(layer_config_error(
@@ -1318,6 +1321,42 @@ mod tests {
             Some("wasmtime-component-store-write-direct")
         );
         assert!(plan.runnable);
+
+        for (contract, expected_provider) in [
+            (
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
+                "wasmtime-component-channel-publish-direct",
+            ),
+            (
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1,
+                "wasmtime-component-channel-subscribe-direct",
+            ),
+        ] {
+            std::fs::write(
+                &manifest_path,
+                format!(
+                    r#"{{
+                        "schema_version": 4,
+                        "primary": 0,
+                        "layers": [{{
+                            "kind":"wasm",
+                            "path":"app.wasm",
+                            "entry":"run",
+                            "contract":"{contract}"
+                        }}]
+                    }}"#
+                ),
+            )
+            .expect("channel manifest");
+            let compiled = compile_manifest(&manifest_path).expect("compile channel profile");
+            let plan = plan_bytes(&compiled.bytes).expect("plan channel profile");
+            assert_eq!(plan.layers[0].contract.as_deref(), Some(contract));
+            assert_eq!(
+                plan.layers[0].provider.name.as_deref(),
+                Some(expected_provider)
+            );
+            assert!(plan.runnable);
+        }
 
         let omitted: CompileManifest = serde_json::from_str(
             r#"{

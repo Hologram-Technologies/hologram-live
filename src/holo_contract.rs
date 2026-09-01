@@ -1,6 +1,7 @@
 //! Canonical guest-contract selection for executable Wasm layers.
 
 pub use hologram::space::{
+    WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1, WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1,
     WASM_CONTRACT_COMPONENT_STORE_READ_V1, WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
     WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V1,
 };
@@ -14,8 +15,14 @@ pub fn normalize_wasm_contract(value: &str) -> std::result::Result<&'static str,
         WASM_CONTRACT_COMPONENT_V1 => Ok(WASM_CONTRACT_COMPONENT_V1),
         WASM_CONTRACT_COMPONENT_STORE_READ_V1 => Ok(WASM_CONTRACT_COMPONENT_STORE_READ_V1),
         WASM_CONTRACT_COMPONENT_STORE_WRITE_V1 => Ok(WASM_CONTRACT_COMPONENT_STORE_WRITE_V1),
+        WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1 => {
+            Ok(WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1)
+        }
+        WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1 => {
+            Ok(WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1)
+        }
         other => Err(format!(
-            "unsupported Wasm guest contract {other:?}; expected {WASM_CONTRACT_CORE_V1:?}, {WASM_CONTRACT_COMPONENT_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_READ_V1:?}, or {WASM_CONTRACT_COMPONENT_STORE_WRITE_V1:?}"
+            "unsupported Wasm guest contract {other:?}; expected {WASM_CONTRACT_CORE_V1:?}, {WASM_CONTRACT_COMPONENT_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_READ_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_WRITE_V1:?}, {WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1:?}, or {WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1:?}"
         )),
     }
 }
@@ -55,6 +62,18 @@ mod tests {
         assert_eq!(
             normalize_wasm_contract(WASM_CONTRACT_COMPONENT_STORE_WRITE_V1),
             Ok(WASM_CONTRACT_COMPONENT_STORE_WRITE_V1)
+        );
+    }
+
+    #[test]
+    fn component_channel_profiles_are_exact() {
+        assert_eq!(
+            normalize_wasm_contract(WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1),
+            Ok(WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1)
+        );
+        assert_eq!(
+            normalize_wasm_contract(WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1),
+            Ok(WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1)
         );
     }
 }

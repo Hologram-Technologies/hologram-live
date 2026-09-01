@@ -66,8 +66,15 @@ interface. It additionally requires nonzero admitted `storage_quota_bytes`,
 checks exact-root membership and content-address integrity on every call, and
 atomically charges newly created blobs against one quota shared for the prepared
 application's lifetime. Existing identical blobs are free; denied calls leave
-no partial blob and public errors omit the target κ. Future channel and mediated
-network interfaces require their corresponding admitted canonical fields;
+no partial blob and public errors omit the target κ. The separate
+channel-publish and channel-subscribe worlds each link only one mediated
+interface after a nonempty exact channel set is admitted. Calls check the κ and
+redact it from failures. Messages are limited to 64 KiB and each in-memory FIFO
+to 64 entries; full mailboxes reject without dropping queued data. Receive is
+nonblocking and at-most-once, so cancellation leaves no waiter. The broker
+exposes no socket, filesystem, durable storage, replay, acknowledgement, or
+broadcast surface. Future mediated network interfaces require their
+corresponding admitted canonical fields;
 clocks, random, environment, process control, secrets, inference, and raw
 sockets remain unavailable while no sufficiently scoped capability exists.
 Under-granted imports must fail before linker construction.

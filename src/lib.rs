@@ -14,6 +14,7 @@ pub mod grpc;
 pub mod history;
 pub mod holo;
 pub mod holo_capability;
+pub mod holo_channel;
 pub mod holo_component;
 pub mod holo_contract;
 pub mod holo_directory;

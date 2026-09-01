@@ -6,7 +6,8 @@ use hologram_live::compile::{
 };
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo_contract::{
-    COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+    COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
+    WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
     WASM_CONTRACT_COMPONENT_STORE_WRITE_V1, WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V1,
 };
 use hologram_live::holo_python::{PythonProfile, PythonRootfsSource};
@@ -341,7 +342,9 @@ fn default_wasm_entry(contract: Option<&str>) -> &'static str {
         Some(
             WASM_CONTRACT_COMPONENT_V1
                 | WASM_CONTRACT_COMPONENT_STORE_READ_V1
-                | WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
+                | WASM_CONTRACT_COMPONENT_STORE_WRITE_V1
+                | WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1
+                | WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1,
         )
     ) {
         COMPONENT_V1_ENTRY
@@ -751,6 +754,14 @@ mod tests {
         );
         assert_eq!(
             default_wasm_entry(Some(WASM_CONTRACT_COMPONENT_STORE_WRITE_V1)),
+            COMPONENT_V1_ENTRY
+        );
+        assert_eq!(
+            default_wasm_entry(Some(WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1)),
+            COMPONENT_V1_ENTRY
+        );
+        assert_eq!(
+            default_wasm_entry(Some(WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1)),
             COMPONENT_V1_ENTRY
         );
     }

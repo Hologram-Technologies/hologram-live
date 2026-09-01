@@ -1,6 +1,6 @@
 # ADR 011: `.holo` guest contracts use the Wasm layer auxiliary tag
 
-- Status: accepted and implemented for import-free, store-read, and store-write Component v1 profiles
+- Status: accepted and implemented for import-free, store-read, store-write, channel-publish, and channel-subscribe Component v1 profiles
 - Date: 2026-08-25
 
 ## Context
@@ -31,6 +31,10 @@ Its values are exact, namespaced identifiers:
   mediated object-store read import.
 - `hologram:guest/component-store-write@1`: Component Model v1 with the fixed
   mediated content-addressed object-store write import.
+- `hologram:guest/component-channel-publish@1`: Component Model v1 with the
+  fixed mediated channel publish import.
+- `hologram:guest/component-channel-subscribe@1`: Component Model v1 with the
+  fixed mediated channel subscribe import.
 
 The empty alias remains the compiler default while core-Wasm v1 is current, so
 existing compatible archives retain their canonical bytes and application κ.
@@ -49,7 +53,8 @@ codec. Upstream PR 143, merge `aad544c`, adds
 `WASM_CONTRACT_COMPONENT_STORE_READ_V1`; Live pins that merge and requires one
 of the accepted explicit identifiers. Upstream PR 144, merge `059c39f`, adds
 `WASM_CONTRACT_COMPONENT_STORE_WRITE_V1` under the same closed validation rule;
-Live pins that merge.
+Live pins that merge. Upstream PR 145, merge `4fac0b3`, adds the publish and
+subscribe selectors; Live pins that merge as well.
 
 ### Negotiation
 
@@ -90,6 +95,12 @@ the host safely materializes that exact content address. Keeping a separate
 interface avoids changing the shipped `hologram:host/store@1.0.0` read shape or
 granting reads to a write-only guest.
 
+`component-channel-publish@1` and `component-channel-subscribe@1` use separate
+worlds under [`../wit/channel-publish/`](../wit/channel-publish/) and
+[`../wit/channel-subscribe/`](../wit/channel-subscribe/). The first imports
+only `hologram:host/channel-publish@1.0.0`; the second imports only
+`hologram:host/channel-subscribe@1.0.0`. Both retain the same guest `run` shape.
+
 ### Host-interface admission
 
 The base `component@1` world imports nothing. Every host-enabled profile uses a
@@ -110,12 +121,32 @@ only when its new bytes fit the remaining quota. Existing identical blobs cost
 no additional quota; rejected root, hash, quota, or store operations do not
 write a partial blob. Public errors do not include the target κ.
 
+Channel preparation similarly requires at least one exact entry in the
+profile's requested `publish_channels` or `subscribe_channels` set. Admission
+has already proved that request is contained by the trusted effective grant or
+attenuated child grant. Every host call compares the supplied channel κ against
+that retained set before touching the broker, and public failures omit the κ.
+
+The v1 broker is runtime-owned and host-neutral. Each exact channel is a FIFO
+work queue with a 64-message mailbox and a 64 KiB per-message limit. Publish is
+nonblocking: it enqueues once or returns explicit backpressure without dropping
+or overwriting an earlier message. `try-receive` is also nonblocking: it removes
+and returns one oldest message or returns `none`. Concurrent subscribers
+therefore compete atomically and delivery is at-most-once. V1 deliberately has
+no broadcast, replay, acknowledgement, durable persistence, cross-process
+transport, or ordering guarantee across different channels. A broker lives for
+its owning executor/runtime; direct executions made through one executor and
+all applications in one resident runtime share it. Broker destruction discards
+unconsumed messages. Because receive never waits or registers a waiter,
+invocation cancellation and stop use the existing Component epoch boundary and
+leave no pending subscription state.
+
 | Proposed interface | Required canonical capability | v1 disposition |
 | --- | --- | --- |
 | `hologram:host/store.read` | target κ is an admitted `storage_roots` entry | shipped only in `component-store-read@1` |
 | `hologram:host/store-write.write` | target κ is an admitted `storage_roots` entry and newly materialized bytes fit `storage_quota_bytes` | shipped only in `component-store-write@1` |
-| `hologram:host/channel.publish` | channel κ is in `publish_channels` | withheld from base world |
-| `hologram:host/channel.subscribe` | channel κ is in `subscribe_channels` | withheld from base world |
+| `hologram:host/channel-publish.publish` | channel κ is in `publish_channels` | shipped only in `component-channel-publish@1` |
+| `hologram:host/channel-subscribe.try-receive` | channel κ is in `subscribe_channels` | shipped only in `component-channel-subscribe@1` |
 | `hologram:host/network.fetch` | `network_fetch` | withheld from base world |
 | `hologram:host/network.announce` | `network_announce` | withheld from base world |
 | Wasm memory and execution | `memory_max_bytes`, `cpu_time_per_event_ms`, and `priority_weight` | runtime ceilings ship in base v1; nonzero admitted memory/time scalars only tighten them; priority scheduling remains deferred |
@@ -166,9 +197,10 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- The import-free and mediated object-read/object-write Component providers, resource
-  enforcement, and locked pure-Python wheel packaging are current
-  capabilities. Native Python packages, transitive storage-closure traversal,
-  and any capability-gated WASI profile remain explicit follow-up work.
+- The import-free, mediated object-read/object-write, and bounded channel
+  publish/subscribe Component providers, resource enforcement, and locked
+  pure-Python wheel packaging are current capabilities. Native Python packages,
+  transitive storage-closure traversal, durable/distributed messaging, and any
+  capability-gated WASI profile remain explicit follow-up work.
 - New host authority requires both a versioned contract profile and a canonical
   capability field before an import can be linked.

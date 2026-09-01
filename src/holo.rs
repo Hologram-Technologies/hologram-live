@@ -3,6 +3,7 @@ use crate::application_plan::{explain_application, ApplicationPlan, PlanLimits};
 use crate::audit::{AuditEvent, AuditLog};
 use crate::error::{LiveError, Result};
 use crate::holo_capability::EffectiveGrant;
+use crate::holo_channel::ChannelBroker;
 use crate::holo_component::ComponentProvider;
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_provider::{
@@ -100,8 +101,14 @@ impl HoloCatalog {
         let mut report = explain_application(&bytes, PlanLimits::default(), |content| {
             self.resolve_content(content)
         })?;
-        resident_registry(Engine::default(), None, 1, Some(self.store.clone()))?
-            .evaluate(&mut report);
+        resident_registry(
+            Engine::default(),
+            None,
+            1,
+            Some(self.store.clone()),
+            Arc::new(ChannelBroker::default()),
+        )?
+        .evaluate(&mut report);
         Ok(HoloPlan::from_report(&report, "resident"))
     }
 
@@ -224,6 +231,7 @@ pub fn plan_bytes(bytes: &[u8]) -> Result<HoloPlan> {
         Engine::default(),
         Arc::new(ViewSurfaceRegistry::new()),
         None,
+        Arc::new(ChannelBroker::default()),
     )?
     .evaluate(&mut report);
     Ok(HoloPlan::from_report(&report, "direct"))
@@ -250,6 +258,7 @@ pub struct HoloRuntime {
     resident: Mutex<HashMap<String, ResidentEntry>>,
     effective_grant: EffectiveGrant,
     audit: Option<AuditLog>,
+    channel_broker: Arc<ChannelBroker>,
 }
 
 /// Cloning is cheap: the actor reference and counters are shared handles.
@@ -300,7 +309,19 @@ impl HoloRuntime {
             resident: Mutex::new(HashMap::new()),
             effective_grant,
             audit: None,
+            channel_broker: Arc::new(ChannelBroker::default()),
         }
+    }
+
+    pub fn new_with_grant_and_channel_broker(
+        catalog: Arc<HoloCatalog>,
+        mailbox_capacity: usize,
+        effective_grant: EffectiveGrant,
+        channel_broker: Arc<ChannelBroker>,
+    ) -> Self {
+        let mut runtime = Self::new_with_grant(catalog, mailbox_capacity, effective_grant);
+        runtime.channel_broker = channel_broker;
+        runtime
     }
 
     pub fn new_with_grant_and_audit(
@@ -331,6 +352,7 @@ impl HoloRuntime {
             Some(self.actors.get_or_init(ActorSystem::start).root().clone()),
             self.mailbox_capacity,
             Some(self.catalog.store.clone()),
+            self.channel_broker.clone(),
         )?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
@@ -452,6 +474,7 @@ pub struct HoloExecutor {
     engine: Engine,
     view_surfaces: Arc<ViewSurfaceRegistry>,
     object_store: Option<Arc<ObjectStore>>,
+    channel_broker: Arc<ChannelBroker>,
 }
 
 /// An explicitly managed direct application lifetime.
@@ -521,6 +544,7 @@ impl HoloExecutor {
             engine: Engine::default(),
             view_surfaces,
             object_store: None,
+            channel_broker: Arc::new(ChannelBroker::default()),
         }
     }
 
@@ -529,6 +553,16 @@ impl HoloExecutor {
             engine: Engine::default(),
             view_surfaces: Arc::new(ViewSurfaceRegistry::new()),
             object_store: Some(object_store),
+            channel_broker: Arc::new(ChannelBroker::default()),
+        }
+    }
+
+    pub fn with_channel_broker(channel_broker: Arc<ChannelBroker>) -> Self {
+        Self {
+            engine: Engine::default(),
+            view_surfaces: Arc::new(ViewSurfaceRegistry::new()),
+            object_store: None,
+            channel_broker,
         }
     }
 
@@ -609,6 +643,7 @@ impl HoloExecutor {
             self.engine.clone(),
             self.view_surfaces.clone(),
             self.object_store.clone(),
+            self.channel_broker.clone(),
         )?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
@@ -683,6 +718,7 @@ fn direct_registry(
     engine: Engine,
     view_surfaces: Arc<ViewSurfaceRegistry>,
     object_store: Option<Arc<ObjectStore>>,
+    channel_broker: Arc<ChannelBroker>,
 ) -> Result<ProviderRegistry> {
     ProviderRegistry::new(
         ProviderTarget::Direct,
@@ -691,6 +727,10 @@ fn direct_registry(
             Arc::new(ComponentProvider::direct()),
             Arc::new(ComponentProvider::store_read_direct(object_store.clone())),
             Arc::new(ComponentProvider::store_write_direct(object_store)),
+            Arc::new(ComponentProvider::channel_publish_direct(
+                channel_broker.clone(),
+            )),
+            Arc::new(ComponentProvider::channel_subscribe_direct(channel_broker)),
             Arc::new(PythonRootfsProvider),
             Arc::new(ViewProvider::new(view_surfaces)),
         ],
@@ -702,6 +742,7 @@ fn resident_registry(
     root: Option<kameo::actor::ActorRef<crate::actor::RootSupervisor>>,
     mailbox_capacity: usize,
     object_store: Option<Arc<ObjectStore>>,
+    channel_broker: Arc<ChannelBroker>,
 ) -> Result<ProviderRegistry> {
     ProviderRegistry::new(
         ProviderTarget::Resident,
@@ -710,6 +751,12 @@ fn resident_registry(
             Arc::new(ComponentProvider::resident()),
             Arc::new(ComponentProvider::store_read_resident(object_store.clone())),
             Arc::new(ComponentProvider::store_write_resident(object_store)),
+            Arc::new(ComponentProvider::channel_publish_resident(
+                channel_broker.clone(),
+            )),
+            Arc::new(ComponentProvider::channel_subscribe_resident(
+                channel_broker,
+            )),
             Arc::new(ViewProvider::headless()),
         ],
     )
@@ -1236,6 +1283,120 @@ mod tests {
             Some(bytes.to_vec())
         );
         runtime.unload(&kappa).await.expect("unload");
+    }
+
+    #[tokio::test]
+    async fn component_channels_run_direct_and_resident_on_shared_brokers() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let channel = address_bytes(b"runtime channel").to_string();
+        let publish_capabilities = channel_capabilities("publish_channels", &channel);
+        let subscribe_capabilities = channel_capabilities("subscribe_channels", &channel);
+        let publish_archive = channel_archive(true, &publish_capabilities);
+        let subscribe_archive = channel_archive(false, &subscribe_capabilities);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(
+            &grant_path,
+            format!(r#"{{"publish_channels":["{channel}"],"subscribe_channels":["{channel}"]}}"#),
+        )
+        .expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+        let input = channel_publish_input(&channel, b"shared message");
+
+        let direct = HoloExecutor::default();
+        direct
+            .execute_with_grant(&publish_archive, vec![input.clone()], &grant)
+            .await
+            .expect("direct publish");
+        let received = direct
+            .execute_with_grant(
+                &subscribe_archive,
+                vec![channel.as_bytes().to_vec()],
+                &grant,
+            )
+            .await
+            .expect("direct subscribe");
+        assert_eq!(received.outputs, [b"shared message"]);
+
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let catalog = Arc::new(HoloCatalog::new(store));
+        let runtime = HoloRuntime::new_with_grant(catalog.clone(), 8, grant);
+        let publisher = catalog
+            .import("channel-publish.holo".to_owned(), publish_archive)
+            .expect("import publisher")
+            .kappa;
+        let subscriber = catalog
+            .import("channel-subscribe.holo".to_owned(), subscribe_archive)
+            .expect("import subscriber")
+            .kappa;
+        runtime.load(&publisher).await.expect("load publisher");
+        runtime.load(&subscriber).await.expect("load subscriber");
+        runtime
+            .run(&publisher, vec![input])
+            .await
+            .expect("resident publish");
+        let received = runtime
+            .run(&subscriber, vec![channel.as_bytes().to_vec()])
+            .await
+            .expect("resident subscribe");
+        assert_eq!(received.outputs, [b"shared message"]);
+    }
+
+    #[tokio::test]
+    async fn component_channel_profiles_deny_missing_authority_before_instantiation() {
+        let empty = crate::holo_capability::empty_canonical();
+        for (publishes, field, interface) in [
+            (true, "publish_channels", "channel-publish"),
+            (false, "subscribe_channels", "channel-subscribe"),
+        ] {
+            let archive = channel_archive(publishes, &empty);
+            let error = HoloExecutor::default()
+                .execute(&archive, Vec::new())
+                .await
+                .expect_err("channel profile requires authority");
+            assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+            assert!(error.to_string().contains(field), "{error}");
+            assert!(error.to_string().contains(interface), "{error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn component_channel_children_are_attenuated_to_delegated_sets() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let channel = address_bytes(b"delegated channel").to_string();
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(
+            &grant_path,
+            format!(r#"{{"publish_channels":["{channel}"],"subscribe_channels":["{channel}"]}}"#),
+        )
+        .expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+
+        for (publishes, field) in [(true, "publish_channels"), (false, "subscribe_channels")] {
+            let capabilities = channel_capabilities(field, &channel);
+            let admitted = parent_with_channel_child(publishes, &capabilities, &capabilities);
+            let result = HoloExecutor::default()
+                .execute_with_grant(&admitted, vec![b"parent".to_vec()], &grant)
+                .await
+                .expect("attenuated channel child prepares");
+            assert_eq!(result.outputs, [b"parent"]);
+
+            let empty = crate::holo_capability::empty_canonical();
+            let denied = parent_with_channel_child(publishes, &capabilities, &empty);
+            let error = HoloExecutor::default()
+                .execute_with_grant(&denied, Vec::new(), &grant)
+                .await
+                .expect_err("empty delegation cannot admit child channel");
+            assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+            assert!(error.to_string().contains("delegated grant"), "{error}");
+        }
     }
 
     #[tokio::test]
@@ -1782,6 +1943,48 @@ mod tests {
         input
     }
 
+    fn channel_publish_input(channel: &str, message: &[u8]) -> Vec<u8> {
+        let mut input = channel.as_bytes().to_vec();
+        input.push(b'\n');
+        input.extend_from_slice(message);
+        input
+    }
+
+    fn channel_capabilities(field: &str, channel: &str) -> Vec<u8> {
+        crate::holo_capability::compile_source(
+            std::path::Path::new("channel-capabilities.json"),
+            format!(r#"{{"{field}":["{channel}"]}}"#).as_bytes(),
+        )
+        .expect("channel capabilities")
+    }
+
+    fn channel_archive(publishes: bool, capabilities: &[u8]) -> Vec<u8> {
+        let (component, contract): (&[u8], &str) = if publishes {
+            (
+                include_bytes!("../tests/fixtures/component-channel-publish/channel-publish.wasm"),
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
+            )
+        } else {
+            (
+                include_bytes!(
+                    "../tests/fixtures/component-channel-subscribe/channel-subscribe.wasm"
+                ),
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1,
+            )
+        };
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                contract,
+            )],
+            children: Vec::new(),
+        };
+        current_archive(&manifest, &[capabilities, component])
+    }
+
     fn store_read_archive(capabilities: &[u8]) -> Vec<u8> {
         let component = include_bytes!("../tests/fixtures/component-store-read/store-read.wasm");
         let manifest = AppManifest {
@@ -1884,6 +2087,60 @@ mod tests {
             child_component,
         ];
         if delegated != child_capabilities {
+            contents.push(delegated);
+        }
+        current_archive(&parent_manifest, &contents)
+    }
+
+    fn parent_with_channel_child(
+        publishes: bool,
+        child_capabilities: &[u8],
+        delegated: &[u8],
+    ) -> Vec<u8> {
+        let parent_capabilities = crate::holo_capability::empty_canonical();
+        let parent_component = include_bytes!("../tests/fixtures/component-echo/echo.wat");
+        let (child_component, contract): (&[u8], &str) = if publishes {
+            (
+                include_bytes!("../tests/fixtures/component-channel-publish/channel-publish.wasm"),
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
+            )
+        } else {
+            (
+                include_bytes!(
+                    "../tests/fixtures/component-channel-subscribe/channel-subscribe.wasm"
+                ),
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1,
+            )
+        };
+        let child_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(child_capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(child_component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                contract,
+            )],
+            children: Vec::new(),
+        }
+        .canonicalize();
+        let parent_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(&parent_capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(parent_component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_V1,
+            )],
+            children: vec![(address_bytes(&child_manifest), address_bytes(delegated))],
+        };
+        let mut contents: Vec<&[u8]> = vec![
+            parent_capabilities.as_slice(),
+            parent_component,
+            child_manifest.as_slice(),
+            child_capabilities,
+            child_component,
+        ];
+        if delegated != child_capabilities && delegated != parent_capabilities.as_slice() {
             contents.push(delegated);
         }
         current_archive(&parent_manifest, &contents)

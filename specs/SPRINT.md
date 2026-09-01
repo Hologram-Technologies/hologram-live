@@ -1,4 +1,53 @@
-# Current sprint: capability-gated Component object writes
+# Current sprint: capability-gated Component channels
+
+## Sprint status
+
+- State: complete
+- Started: 2026-09-01
+- Last reviewed: 2026-09-01
+- Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
+- Decision: [ADR 011](adrs/011-holo-guest-contract-negotiation.md)
+- Goal: ship separate publish-only and subscribe-only Component worlds over a
+  bounded host-neutral broker without adding ambient sockets
+- Exit signal: direct and resident guests exchange only on exactly admitted
+  channels, missing authority fails before linking, and delivery,
+  backpressure, cancellation, and lifetime behavior are explicit and tested
+
+## Contract and mediation
+
+- [x] Add canonical `component-channel-publish@1` and
+  `component-channel-subscribe@1` selectors with one fixed import each.
+- [x] Require a nonempty exact `publish_channels` or `subscribe_channels`
+  request before linker construction and preserve child attenuation.
+- [x] Use a runtime-owned in-memory broker with 64 KiB messages and 64-message
+  per-channel mailboxes; publish and receive are nonblocking.
+- [x] Specify FIFO, at-most-once work-queue delivery with no replay,
+  acknowledgement, broadcast, durable persistence, or ambient network.
+- [x] Return explicit backpressure without dropping or overwriting queued
+  messages; cancellation leaves no registered waiter because receive never
+  blocks.
+
+## Verification and delivery
+
+- [x] Exercise allowed/denied publish and subscribe, empty receive, FIFO,
+  at-most-once consumption, oversize rejection, and full-mailbox behavior.
+- [x] Prove direct/resident shared-broker parity, pre-link denial, child
+  attenuation, compiler/provider selection, and enforced BDD coverage.
+- [x] Update ADR 011, the runtime plan, README, architecture, security, website,
+  and actual-capabilities inventory.
+- [x] Pass formatting, workspace tests, Clippy, BDD, documentation, release,
+  smoke, and clean Component reproducibility gates.
+
+## Next prioritized work
+
+- [ ] Add a typed graph resolver before treating storage roots as transitive
+  readable or writable closures.
+- [ ] Introduce endpoint-scoped network capabilities before any mediated fetch
+  profile; do not expose raw sockets from the current booleans.
+
+---
+
+# Previous sprint: capability-gated Component object writes
 
 ## Sprint status
 

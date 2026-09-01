@@ -270,7 +270,9 @@ Endpoint entries use the exact form
 and narrow for children only on exact origin and path-segment boundaries.
 Schema-1 documents remain compatible when their legacy network booleans are
 absent or false; `true` is rejected rather than interpreted as ambient access.
-Scopes alone link no network interface, and raw sockets remain unavailable.
+Scopes alone link no network interface. Only the explicit
+`component-network-fetch@1` profile can use an admitted fetch scope; raw sockets
+and announce/listen interfaces remain unavailable.
 
 Set `"requires": "capabilities.json"` in `hologram.json`. `compile --check`
 validates the version, fields, and canonical sorted κ and endpoint lists;
@@ -435,6 +437,18 @@ checks the supplied channel κ. The runtime-owned broker provides nonblocking
 backpressure. One successful receive consumes one message; empty receive
 returns immediately. This v1 boundary is an in-memory, at-most-once work queue,
 not broadcast, replay, acknowledgement, persistence, or network transport.
+
+Bounded outbound HTTPS GET uses the separate
+`hologram:guest/component-network-fetch@1` profile. Its world imports only
+`hologram:host/network-fetch@1.0.0`, and preparation requires at least one
+admitted `network_fetch_endpoints` scope. Targets use the same canonical
+host/port/path grammar and are rechecked per call. Live resolves DNS under a
+public-address-only policy, pins the connection to checked addresses, disables
+redirects and environment proxies, and inherits no guest headers, credentials,
+cookies, or client identity. The host caps targets at 2 KiB, responses at 1
+MiB, transport time at 1.5 seconds, and concurrent fetches at eight. Direct and
+resident execution share these rules; raw WASI networking and announce/listen
+remain unavailable.
 
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as

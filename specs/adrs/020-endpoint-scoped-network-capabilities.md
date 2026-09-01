@@ -1,6 +1,6 @@
 # ADR 020: Network authority is endpoint-scoped before mediation
 
-- Status: accepted; capability schema implemented, mediated network profiles deferred
+- Status: accepted; capability schema implemented, fetch profile shipped by ADR 021
 - Date: 2026-09-01
 
 ## Context
@@ -58,15 +58,15 @@ Endpoint contents are authority and may reveal internal topology. Admission
 errors, traces, audit rows, and run reports expose only capability-object
 identities and endpoint counts, never endpoint strings.
 
-### No network interface in this slice
+### No network interface in this capability slice
 
 This decision makes authority sufficiently specific; it does not add a guest
 network interface. Raw WASI sockets, DNS, HTTP, listen sockets, and host client
-handles remain unavailable. A later mediated-fetch contract requires a new
-fixed guest-contract selector and may link only after the request has been
-admitted and a nonempty fetch scope retained.
+handles remain unavailable from the capability schema alone. ADR 021's
+mediated-fetch contract uses a new fixed guest-contract selector and links only
+after the request has been admitted and a nonempty fetch scope retained.
 
-The future mediator must parse the requested URL into the same canonical
+The ADR 021 mediator parses the requested URL into the same canonical
 origin/path model, disable automatic redirects or reauthorize every redirect,
 resolve DNS through host policy, reject resolved addresses forbidden by that
 policy on every connection, re-check authority after resolution, and enforce
@@ -85,8 +85,8 @@ and profile; fetch authority cannot be reused for them.
   compatibility input only for no-network requests.
 - No application can perform a network operation merely because this schema
   exists.
-- A mediated fetch profile, bounded runtime client, DNS/address policy, and
-  direct/resident parity remain follow-up work.
+- ADR 021 adds a bounded mediated-fetch profile; announce/listen and raw sockets
+  remain unavailable.
 
 ## Verification
 

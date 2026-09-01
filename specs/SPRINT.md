@@ -1,4 +1,4 @@
-# Current sprint: endpoint-scoped network capabilities
+# Current sprint: bounded mediated Component fetch
 
 ## Sprint status
 
@@ -6,12 +6,26 @@
 - Started: 2026-09-01
 - Last reviewed: 2026-09-01
 - Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
-- Decision: [ADR 020](adrs/020-endpoint-scoped-network-capabilities.md)
-- Goal: replace ambient boolean network authority with canonical endpoint sets
-  before any guest network interface is linked
-- Exit signal: existing no-network identities remain stable, legacy ambient
-  flags fail closed, and exact HTTPS origin/path scopes attenuate across child
-  delegation without exposing raw sockets or mediated fetch
+- Decision: [ADR 021](adrs/021-bounded-mediated-component-fetch.md)
+- Goal: expose admitted endpoint scopes through one bounded HTTPS GET import
+  without raw sockets or ambient host network state
+- Exit signal: pre-link admission, per-call scope checks, DNS/address policy,
+  redirect isolation, byte/time/concurrency limits, and direct/resident parity
+  pass together
+
+## Mediated fetch contract
+
+- [x] Add the canonical `component-network-fetch@1` selector upstream and a
+  WIT world with exactly one `hologram:host/network-fetch@1.0.0` import.
+- [x] Refuse linker construction without a nonempty admitted fetch scope and
+  reauthorize every canonical target at the host-call boundary.
+- [x] Resolve DNS through host policy, reject forbidden destinations, pin
+  connections to checked results, and disable redirects and environment proxy
+  inheritance.
+- [x] Enforce 2 KiB target, 1 MiB response, 1.5-second, and eight-operation
+  process-wide concurrency ceilings.
+- [x] Keep errors and traces free of endpoint values and retain raw sockets,
+  announce, listen, guest credentials, cookies, and headers as unavailable.
 
 ## Contract and migration
 

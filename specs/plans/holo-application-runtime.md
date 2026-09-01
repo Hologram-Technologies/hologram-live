@@ -8,9 +8,9 @@
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
 - Chat/View product reference: [UOR-R4 WASM Chat](../references/uor-r4-wasm-chat.md)
   for visual and interaction prior art; it is not a runtime dependency
-- Current delivery: endpoint-scoped network capabilities before mediated fetch
-- Previous delivery: capability-gated typed storage graph reads complete
-- Next runtime slice: bounded mediated fetch over a distinct fixed Component contract
+- Current delivery: bounded mediated fetch over a distinct fixed Component contract
+- Previous delivery: endpoint-scoped network capabilities complete
+- Next runtime slice: choose the next capability profile without widening fetch into announce/listen
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -278,6 +278,10 @@ dependencies until an explicit child invocation contract is introduced.
   `component-channel-subscribe@1` profiles over a runtime-owned broker, with
   exact-set admission, bounded nonblocking FIFO mailboxes, explicit
   backpressure, and no ambient sockets.
+- [x] Add `component-network-fetch@1` with one HTTPS GET import, pre-link
+  endpoint admission, per-call canonical containment, public-address DNS
+  pinning, no redirects or ambient proxy/credential state, and fixed target,
+  response, duration, and concurrency ceilings.
 - [x] Prove missing profile authority fails before linker construction and the
   same attenuation holds for direct, resident, and child preparation.
 - [ ] Complete the remaining capability-gated Hologram and WASI host-interface profiles.

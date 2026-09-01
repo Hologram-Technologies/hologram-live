@@ -77,6 +77,16 @@ Feature: Resident .holo wasm execution
     And the capability audit contains no source document or payload data
     And I stop the local service
 
+  Scenario: mediated Component fetch rejects private DNS without leaking the endpoint
+    Given a network-fetch Component targeting a private endpoint
+    And a fresh Hologram home
+    When I compile the application
+    Then the compile command succeeds
+    When I run the network-fetch archive with its development grant
+    Then the mediated fetch fails under host address policy without leaking its endpoint
+    And the capability audit records "allowed" from "direct_development_file" for principal "local-cli"
+    And the capability audit contains no source document or payload data
+
   Scenario: resident execution exposes authorization evidence over HTTP
     Given the example wasm application manifest
     When I compile the application

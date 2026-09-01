@@ -1,0 +1,21 @@
+package hologram:application-network-fetch@1.0.0;
+
+/// The Hologram Component Model v1 guest interface with mediated HTTPS GET.
+interface guest {
+  enum error-code {
+    invalid-input,
+    failed,
+  }
+
+  record guest-error {
+    code: error-code,
+    message: string,
+  }
+
+  run: func(input: list<u8>) -> result<list<u8>, guest-error>;
+}
+
+world application {
+  import hologram:host/network-fetch@1.0.0;
+  export guest;
+}

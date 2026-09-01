@@ -18,6 +18,7 @@ pub mod holo_channel;
 pub mod holo_component;
 pub mod holo_contract;
 pub mod holo_directory;
+mod holo_fetch;
 pub mod holo_format;
 pub mod holo_graph;
 pub mod holo_provider;

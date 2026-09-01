@@ -33,7 +33,7 @@
 - [x] Pass upstream `no_std`, workspace, conformance, and test gates.
 - [x] Pass Live formatting, workspace tests, Clippy, BDD, documentation,
   release, smoke, and clean Component reproducibility gates.
-- [ ] Merge the upstream contract before pinning its durable merge commit in
+- [x] Merge the upstream contract before pinning its durable merge commit in
   Live.
 
 ## Next prioritized work

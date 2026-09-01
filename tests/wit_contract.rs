@@ -15,7 +15,7 @@ fn component_v1_world_remains_import_free() {
 }
 
 #[test]
-fn component_store_read_profile_has_one_fixed_import() {
+fn component_store_read_profiles_share_one_fixed_import() {
     let world = include_str!("../specs/wit/store-read/hologram-application-store-read-v1.wit");
     let imports = world
         .lines()
@@ -23,6 +23,13 @@ fn component_store_read_profile_has_one_fixed_import() {
         .collect::<Vec<_>>();
     assert_eq!(imports, ["  import hologram:host/store@1.0.0;"]);
     assert!(world.contains("export guest;"));
+
+    // Exact-root and typed-graph authority are selected by distinct contracts,
+    // while deliberately retaining the same narrow guest ABI.
+    assert_ne!(
+        hologram_live::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+        hologram_live::holo_contract::WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1
+    );
 }
 
 #[test]

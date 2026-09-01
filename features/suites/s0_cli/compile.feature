@@ -46,6 +46,19 @@ Feature: Compile Hologram applications
     When I run the store-read archive with its development grant
     Then the run output is "bdd store bytes"
 
+  Scenario: mediate a capability-gated Component typed graph read
+    Given a Component store-graph-read application manifest
+    And a fresh Hologram home
+    And an admitted typed object graph in the local registry
+    When I compile the application
+    Then the compile command succeeds
+    When I plan the compiled archive directly
+    Then the store-graph-read contract selects the bounded graph component provider
+    When I run the compiled archive without a development grant
+    Then the run fails with an authorization-denied error
+    When I run the store-graph-read archive with its development grant
+    Then the run output is "bdd graph leaf"
+
   Scenario: mediate a capability-gated Component object write
     Given a Component store-write application manifest
     And a fresh Hologram home

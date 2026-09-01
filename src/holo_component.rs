@@ -3,6 +3,7 @@
 use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
 use crate::holo_channel::{ChannelBroker, ChannelError};
+use crate::holo_graph::{resolve_storage_graph, StorageGraphLimits};
 use crate::holo_provider::{
     LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
     PreparedLayer, ProviderTarget,
@@ -128,6 +129,7 @@ pub struct ComponentProvider {
 enum ComponentProfile {
     ImportFree,
     StoreRead,
+    StoreGraphRead,
     StoreWrite,
     ChannelPublish,
     ChannelSubscribe,
@@ -165,6 +167,24 @@ impl ComponentProvider {
             target,
             limits: ComponentLimits::default(),
             profile: ComponentProfile::StoreRead,
+            object_store,
+            channel_broker: None,
+        }
+    }
+
+    pub fn store_graph_read_direct(object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self::store_graph_read(ProviderTarget::Direct, object_store)
+    }
+
+    pub fn store_graph_read_resident(object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self::store_graph_read(ProviderTarget::Resident, object_store)
+    }
+
+    fn store_graph_read(target: ProviderTarget, object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self {
+            target,
+            limits: ComponentLimits::default(),
+            profile: ComponentProfile::StoreGraphRead,
             object_store,
             channel_broker: None,
         }
@@ -258,6 +278,9 @@ impl LayerProvider for ComponentProvider {
             ComponentProfile::StoreRead => {
                 crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1
             }
+            ComponentProfile::StoreGraphRead => {
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1
+            }
             ComponentProfile::StoreWrite => {
                 crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_WRITE_V1
             }
@@ -281,6 +304,12 @@ impl LayerProvider for ComponentProvider {
             }
             (ProviderTarget::Resident, ComponentProfile::StoreRead) => {
                 "wasmtime-component-store-read-resident"
+            }
+            (ProviderTarget::Direct, ComponentProfile::StoreGraphRead) => {
+                "wasmtime-component-store-graph-read-direct"
+            }
+            (ProviderTarget::Resident, ComponentProfile::StoreGraphRead) => {
+                "wasmtime-component-store-graph-read-resident"
             }
             (ProviderTarget::Direct, ComponentProfile::StoreWrite) => {
                 "wasmtime-component-store-write-direct"
@@ -365,6 +394,36 @@ impl LayerProvider for ComponentProvider {
                 ComponentHost::StoreRead(StoreReadHost {
                     object_store,
                     roots: Arc::from(roots),
+                })
+            }
+            ComponentProfile::StoreGraphRead => {
+                let roots = context
+                    .requested_capabilities
+                    .capabilities
+                    .storage_roots
+                    .clone();
+                if roots.is_empty() {
+                    return Err(LiveError::Authorization(format!(
+                        "Component graph-read interface hologram:host/store@1.0.0 requires at least one admitted storage_roots entry for application {}",
+                        context.identity.application_kappa
+                    )));
+                }
+                let object_store = self.object_store.clone().ok_or_else(|| {
+                    LiveError::Capability(
+                        "Component graph-read interface has no object-store backend".to_owned(),
+                    )
+                })?;
+                let resolver_store = object_store.clone();
+                let closure = tokio::task::spawn_blocking(move || {
+                    resolve_storage_graph(&resolver_store, &roots, StorageGraphLimits::default())
+                })
+                .await
+                .map_err(|error| {
+                    LiveError::Conflict(format!("join typed storage graph resolution: {error}"))
+                })??;
+                ComponentHost::StoreRead(StoreReadHost {
+                    object_store,
+                    roots: Arc::from(closure.readable),
                 })
             }
             ComponentProfile::StoreWrite => {

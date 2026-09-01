@@ -60,7 +60,14 @@ imports nothing. The separate `component-store-read@1` world imports only the
 mediated object-store read interface. It requires a nonempty admitted
 `storage_roots` request before linker construction, retains only those
 contained roots, and checks the exact target before touching the store;
-direct, resident, and delegated-child paths share the same rule. The separate
+direct, resident, and delegated-child paths share the same rule. The distinct
+`component-store-graph-read@1` profile uses the same read-only host ABI but
+turns an admitted root into authority only after a local, bounded typed-graph
+walk verifies every κ and canonical realization frame. Unknown types are
+opaque leaves; incomplete graphs, malformed claimed types, and depth, object,
+edge, or aggregate-byte limit violations fail before linking. Public failures
+omit object κ values, child delegation remains root-subset attenuation, and
+the exact-root read/write profiles are unchanged. The separate
 `component-store-write@1` world imports only the mediated write
 interface. It additionally requires nonzero admitted `storage_quota_bytes`,
 checks exact-root membership and content-address integrity on every call, and

@@ -8,10 +8,9 @@
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
 - Chat/View product reference: [UOR-R4 WASM Chat](../references/uor-r4-wasm-chat.md)
   for visual and interaction prior art; it is not a runtime dependency
-- Current delivery: capability-gated Component channel publish/subscribe profiles complete
-- Previous delivery: capability-gated Component `store.write` profile complete
-- Next runtime slice: typed graph resolution for widened storage authority
-- Following runtime slice: endpoint-scoped network capabilities before mediated fetch
+- Current delivery: capability-gated typed storage graph reads complete
+- Previous delivery: capability-gated Component channel publish/subscribe profiles complete
+- Next runtime slice: endpoint-scoped network capabilities before mediated fetch
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -1255,7 +1254,8 @@ work below.
   `publish_channels` or `subscribe_channels` set, and specify bounded message
   size, mailbox/backpressure, cancellation, delivery, and lifecycle semantics
   before linking either profile; do not expose ambient sockets.
-- [ ] Add a typed graph resolver before widening storage-root authority from an
-  exact object to a transitive readable or writable closure.
+- [x] Add a distinct typed graph-read contract and resolve admitted roots into
+  complete local, κ-verified, bounded readable closures without widening the
+  exact-root read or write profiles.
 - [ ] Replace boolean network authority with endpoint-scoped capabilities before
   adding a mediated fetch profile; raw WASI sockets remain unavailable.

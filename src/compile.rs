@@ -3,8 +3,9 @@ use crate::error::{LiveError, Result};
 use crate::holo_capability;
 use crate::holo_contract::{
     normalize_wasm_contract, COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
-    WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
-    WASM_CONTRACT_COMPONENT_STORE_WRITE_V1, WASM_CONTRACT_COMPONENT_V1,
+    WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1, WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1,
+    WASM_CONTRACT_COMPONENT_STORE_READ_V1, WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
+    WASM_CONTRACT_COMPONENT_V1,
 };
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
@@ -486,6 +487,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
                         contract,
                         WASM_CONTRACT_COMPONENT_V1
                             | WASM_CONTRACT_COMPONENT_STORE_READ_V1
+                            | WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1
                             | WASM_CONTRACT_COMPONENT_STORE_WRITE_V1
                             | WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1
                             | WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1
@@ -1293,6 +1295,33 @@ mod tests {
         assert_eq!(
             plan.layers[0].provider.name.as_deref(),
             Some("wasmtime-component-store-read-direct")
+        );
+        assert!(plan.runnable);
+
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "primary": 0,
+                "layers": [{
+                    "kind":"wasm",
+                    "path":"app.wasm",
+                    "entry":"run",
+                    "contract":"hologram:guest/component-store-graph-read@1"
+                }]
+            }"#,
+        )
+        .expect("store-graph-read manifest");
+        let store_graph_read =
+            compile_manifest(&manifest_path).expect("compile store-graph-read profile");
+        let plan = plan_bytes(&store_graph_read.bytes).expect("plan store-graph-read profile");
+        assert_eq!(
+            plan.layers[0].contract.as_deref(),
+            Some(crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1)
+        );
+        assert_eq!(
+            plan.layers[0].provider.name.as_deref(),
+            Some("wasmtime-component-store-graph-read-direct")
         );
         assert!(plan.runnable);
 

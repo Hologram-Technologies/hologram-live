@@ -108,9 +108,10 @@ numeric process exit status, and it links no WASI or ambient host interface.
 
 Guest-contract selection is canonical but remains separate from the callable
 entry. Source schema v4 maps a Wasm `contract` field to the identity-bearing
-layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; explicit
-core-v1, `hologram:guest/component@1`, and
-`hologram:guest/component-store-read@1`, and
+layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; the explicit
+`hologram:guest/core-wasm@1`, `hologram:guest/component@1`,
+`hologram:guest/component-store-read@1`,
+`hologram:guest/component-store-graph-read@1`,
 `hologram:guest/component-store-write@1`,
 `hologram:guest/component-channel-publish@1`, and
 `hologram:guest/component-channel-subscribe@1` tags are accepted. Inspection and
@@ -135,6 +136,17 @@ grant, links `hologram:host/store@1.0.0`, and checks every target before calling
 the runtime object store. Direct execution supplies the configured registry;
 resident execution supplies the catalog store. No other Hologram or WASI
 interface enters that linker.
+
+The graph-read profile is a distinct canonical contract even though it reuses
+the same narrow store-read WIT ABI. During preparation, a bounded resolver walks
+only registered canonical UOR realization edges from the admitted root set.
+Each object is fetched locally and re-hashed; unknown types terminate traversal
+as opaque leaves, while malformed typed frames, missing descendants, or depth,
+object, edge, and aggregate-byte limit violations fail before linker
+construction. The resulting first-seen closure becomes the host's read set for
+the prepared lifetime. Direct and resident execution use the same resolver,
+and child delegation remains an exact subset relation over graph roots. The
+exact-root read and write profiles do not inherit these semantics.
 
 The store-write profile is another separate fixed world. Its linker contains
 only `hologram:host/store-write@1.0.0` after admission proves a nonempty exact

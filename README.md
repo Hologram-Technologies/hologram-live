@@ -348,8 +348,10 @@ fresh instance for each input.
 The callable `entry` stays separate from guest-contract selection. Source
 manifest schema v4 requires `contract` for Wasm layers; the compiler writes it
 to the canonical, identity-bearing `aux` tag. Empty or omitted contracts are
-rejected. The other accepted identifier is
-`hologram:guest/component@1`:
+rejected. In addition to core Wasm, the closed set contains import-free
+Component v1 plus the store-read, store-write, channel-publish, and
+channel-subscribe profiles described below. An import-free Component manifest
+uses `hologram:guest/component@1`:
 
 ```json
 {
@@ -401,6 +403,18 @@ the bytes hash to the caller-supplied κ. Newly materialized blobs consume the
 prepared application's lifetime quota, existing identical blobs consume no
 additional quota, and a rejected call leaves no partial blob. Direct, resident,
 and delegated-child paths use the same rules and expose no ambient WASI surface.
+
+Components exchange bounded in-process messages through two separate profiles:
+`hologram:guest/component-channel-publish@1` imports only
+`hologram:host/channel-publish@1.0.0`, while
+`hologram:guest/component-channel-subscribe@1` imports only
+`hologram:host/channel-subscribe@1.0.0`. Preparation requires a nonempty exact
+request admitted by `publish_channels` or `subscribe_channels`, and every call
+checks the supplied channel κ. The runtime-owned broker provides nonblocking
+64 KiB messages and 64-message FIFO mailboxes with explicit full-mailbox
+backpressure. One successful receive consumes one message; empty receive
+returns immediately. This v1 boundary is an in-memory, at-most-once work queue,
+not broadcast, replay, acknowledgement, persistence, or network transport.
 
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as

@@ -111,7 +111,9 @@ entry. Source schema v4 maps a Wasm `contract` field to the identity-bearing
 layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; explicit
 core-v1, `hologram:guest/component@1`, and
 `hologram:guest/component-store-read@1`, and
-`hologram:guest/component-store-write@1` tags are accepted. Inspection and
+`hologram:guest/component-store-write@1`,
+`hologram:guest/component-channel-publish@1`, and
+`hologram:guest/component-channel-subscribe@1` tags are accepted. Inspection and
 planning expose the normalized selector, and provider lookup is keyed by both
 layer kind and exact contract. Component archives therefore reach only the
 dedicated direct or resident Component provider and never the core provider.
@@ -144,6 +146,17 @@ hash, quota, and backend failures are checked before or within the atomic store
 operation and do not leave partial content. Direct and resident providers use
 the same object-store boundary, and child providers retain only attenuated
 roots and quota.
+
+Channel publish and subscribe are two further fixed worlds, never optional
+imports on the base world. After exact `publish_channels` or
+`subscribe_channels` admission, the provider links only its corresponding
+host interface and retains only that exact set. Direct executions made through
+one executor and resident applications in one runtime share a host-neutral
+in-memory broker. Each channel is a 64-message FIFO of messages up to 64 KiB;
+publish and receive never wait, a full mailbox rejects without overwrite, and
+one receive removes one message. Broker lifetime bounds message lifetime. V1
+has no durable, replay, broadcast, acknowledgement, cross-process, or network
+semantics, so cancellation cannot leave a registered channel waiter.
 
 Python `wasi-component` is a compiler adapter over this provider, not a new
 runtime layer. It chooses an exact `componentize-py 0.25.0` wheel URL/SHA-256

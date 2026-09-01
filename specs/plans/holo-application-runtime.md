@@ -8,10 +8,10 @@
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
 - Chat/View product reference: [UOR-R4 WASM Chat](../references/uor-r4-wasm-chat.md)
   for visual and interaction prior art; it is not a runtime dependency
-- Current delivery: capability-gated Component `store.write` profile complete
-- Previous delivery: capability-gated Component `store.read` profile complete
-- Next runtime slice: capability-gated channel publish/subscribe Component profiles
-- Following runtime slice: typed graph resolution for widened storage authority
+- Current delivery: capability-gated Component channel publish/subscribe profiles complete
+- Previous delivery: capability-gated Component `store.write` profile complete
+- Next runtime slice: typed graph resolution for widened storage authority
+- Following runtime slice: endpoint-scoped network capabilities before mediated fetch
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -275,6 +275,10 @@ dependencies until an explicit child invocation contract is introduced.
   only `hologram:host/store-write@1.0.0` after root and quota admission, and
   atomically materialize only exact-address, hash-matching bytes within a
   prepared application's shared lifetime quota.
+- [x] Add separate `component-channel-publish@1` and
+  `component-channel-subscribe@1` profiles over a runtime-owned broker, with
+  exact-set admission, bounded nonblocking FIFO mailboxes, explicit
+  backpressure, and no ambient sockets.
 - [x] Prove missing profile authority fails before linker construction and the
   same attenuation holds for direct, resident, and child preparation.
 - [ ] Complete the remaining capability-gated Hologram and WASI host-interface profiles.
@@ -1246,7 +1250,7 @@ work below.
   attenuation, bounded accounting, redacted failures, and no partial write on
   rejection. Update ADR 011, WIT, capability documentation, BDD, and release
   gates with the implementation.
-- [ ] Define separate fixed-import channel publish and subscribe profiles over
+- [x] Define separate fixed-import channel publish and subscribe profiles over
   a host-neutral broker boundary. Require exact membership in the admitted
   `publish_channels` or `subscribe_channels` set, and specify bounded message
   size, mailbox/backpressure, cancellation, delivery, and lifecycle semantics

@@ -2,6 +2,7 @@
 
 use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
+use crate::holo_channel::{ChannelBroker, ChannelError};
 use crate::holo_provider::{
     LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
     PreparedLayer, ProviderTarget,
@@ -31,6 +32,20 @@ mod store_read_bindings {
 mod store_write_bindings {
     wasmtime::component::bindgen!({
         path: "specs/wit/store-write",
+        world: "application",
+    });
+}
+
+mod channel_publish_bindings {
+    wasmtime::component::bindgen!({
+        path: "specs/wit/channel-publish",
+        world: "application",
+    });
+}
+
+mod channel_subscribe_bindings {
+    wasmtime::component::bindgen!({
+        path: "specs/wit/channel-subscribe",
         world: "application",
     });
 }
@@ -106,6 +121,7 @@ pub struct ComponentProvider {
     limits: ComponentLimits,
     profile: ComponentProfile,
     object_store: Option<Arc<ObjectStore>>,
+    channel_broker: Option<Arc<ChannelBroker>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,6 +129,8 @@ enum ComponentProfile {
     ImportFree,
     StoreRead,
     StoreWrite,
+    ChannelPublish,
+    ChannelSubscribe,
 }
 
 impl ComponentProvider {
@@ -130,6 +148,7 @@ impl ComponentProvider {
             limits: ComponentLimits::default(),
             profile: ComponentProfile::ImportFree,
             object_store: None,
+            channel_broker: None,
         }
     }
 
@@ -147,6 +166,7 @@ impl ComponentProvider {
             limits: ComponentLimits::default(),
             profile: ComponentProfile::StoreRead,
             object_store,
+            channel_broker: None,
         }
     }
 
@@ -164,6 +184,53 @@ impl ComponentProvider {
             limits: ComponentLimits::default(),
             profile: ComponentProfile::StoreWrite,
             object_store,
+            channel_broker: None,
+        }
+    }
+
+    pub fn channel_publish_direct(channel_broker: Arc<ChannelBroker>) -> Self {
+        Self::channel(
+            ProviderTarget::Direct,
+            ComponentProfile::ChannelPublish,
+            channel_broker,
+        )
+    }
+
+    pub fn channel_publish_resident(channel_broker: Arc<ChannelBroker>) -> Self {
+        Self::channel(
+            ProviderTarget::Resident,
+            ComponentProfile::ChannelPublish,
+            channel_broker,
+        )
+    }
+
+    pub fn channel_subscribe_direct(channel_broker: Arc<ChannelBroker>) -> Self {
+        Self::channel(
+            ProviderTarget::Direct,
+            ComponentProfile::ChannelSubscribe,
+            channel_broker,
+        )
+    }
+
+    pub fn channel_subscribe_resident(channel_broker: Arc<ChannelBroker>) -> Self {
+        Self::channel(
+            ProviderTarget::Resident,
+            ComponentProfile::ChannelSubscribe,
+            channel_broker,
+        )
+    }
+
+    fn channel(
+        target: ProviderTarget,
+        profile: ComponentProfile,
+        channel_broker: Arc<ChannelBroker>,
+    ) -> Self {
+        Self {
+            target,
+            limits: ComponentLimits::default(),
+            profile,
+            object_store: None,
+            channel_broker: Some(channel_broker),
         }
     }
 
@@ -174,6 +241,7 @@ impl ComponentProvider {
             limits,
             profile: ComponentProfile::ImportFree,
             object_store: None,
+            channel_broker: None,
         }
     }
 }
@@ -192,6 +260,12 @@ impl LayerProvider for ComponentProvider {
             }
             ComponentProfile::StoreWrite => {
                 crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_WRITE_V1
+            }
+            ComponentProfile::ChannelPublish => {
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1
+            }
+            ComponentProfile::ChannelSubscribe => {
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1
             }
         })
     }
@@ -213,6 +287,18 @@ impl LayerProvider for ComponentProvider {
             }
             (ProviderTarget::Resident, ComponentProfile::StoreWrite) => {
                 "wasmtime-component-store-write-resident"
+            }
+            (ProviderTarget::Direct, ComponentProfile::ChannelPublish) => {
+                "wasmtime-component-channel-publish-direct"
+            }
+            (ProviderTarget::Resident, ComponentProfile::ChannelPublish) => {
+                "wasmtime-component-channel-publish-resident"
+            }
+            (ProviderTarget::Direct, ComponentProfile::ChannelSubscribe) => {
+                "wasmtime-component-channel-subscribe-direct"
+            }
+            (ProviderTarget::Resident, ComponentProfile::ChannelSubscribe) => {
+                "wasmtime-component-channel-subscribe-resident"
             }
         }
     }
@@ -312,6 +398,53 @@ impl LayerProvider for ComponentProvider {
                     quota_remaining: Arc::new(Mutex::new(request.storage_quota_bytes)),
                 })
             }
+            ComponentProfile::ChannelPublish => {
+                let channels = context
+                    .requested_capabilities
+                    .capabilities
+                    .publish_channels
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                if channels.is_empty() {
+                    return Err(LiveError::Authorization(format!(
+                        "Component interface hologram:host/channel-publish@1.0.0 requires at least one admitted publish_channels entry for application {}",
+                        context.identity.application_kappa
+                    )));
+                }
+                ComponentHost::ChannelPublish(ChannelHost {
+                    broker: self.channel_broker.clone().ok_or_else(|| {
+                        LiveError::Capability(
+                            "Component channel-publish interface has no broker backend".to_owned(),
+                        )
+                    })?,
+                    channels: Arc::from(channels),
+                })
+            }
+            ComponentProfile::ChannelSubscribe => {
+                let channels = context
+                    .requested_capabilities
+                    .capabilities
+                    .subscribe_channels
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                if channels.is_empty() {
+                    return Err(LiveError::Authorization(format!(
+                        "Component interface hologram:host/channel-subscribe@1.0.0 requires at least one admitted subscribe_channels entry for application {}",
+                        context.identity.application_kappa
+                    )));
+                }
+                ComponentHost::ChannelSubscribe(ChannelHost {
+                    broker: self.channel_broker.clone().ok_or_else(|| {
+                        LiveError::Capability(
+                            "Component channel-subscribe interface has no broker backend"
+                                .to_owned(),
+                        )
+                    })?,
+                    channels: Arc::from(channels),
+                })
+            }
         };
         let kappa = context.identity.archive_kappa;
         let position = context.layer.position;
@@ -344,6 +477,8 @@ enum ComponentHost {
     ImportFree,
     StoreRead(StoreReadHost),
     StoreWrite(StoreWriteHost),
+    ChannelPublish(ChannelHost),
+    ChannelSubscribe(ChannelHost),
 }
 
 #[derive(Clone)]
@@ -357,6 +492,12 @@ struct StoreWriteHost {
     object_store: Arc<ObjectStore>,
     roots: Arc<[String]>,
     quota_remaining: Arc<Mutex<u64>>,
+}
+
+#[derive(Clone)]
+struct ChannelHost {
+    broker: Arc<ChannelBroker>,
+    channels: Arc<[String]>,
 }
 
 impl store_read_bindings::hologram::host::store::Host for ComponentStore {
@@ -403,6 +544,40 @@ impl store_write_bindings::hologram::host::store_write::Host for ComponentStore 
             *quota_remaining -= byte_count;
         }
         Ok(())
+    }
+}
+
+impl channel_publish_bindings::hologram::host::channel_publish::Host for ComponentStore {
+    fn publish(&mut self, channel: String, message: Vec<u8>) -> std::result::Result<(), String> {
+        let ComponentHost::ChannelPublish(host) = &self.host else {
+            return Err("channel.publish is not linked for this contract".to_owned());
+        };
+        if !host.channels.iter().any(|allowed| allowed == &channel) {
+            return Err("channel is outside the application's admitted publish set".to_owned());
+        }
+        host.broker
+            .publish(&channel, message)
+            .map_err(|error| match error {
+                ChannelError::MessageTooLarge => {
+                    "channel message exceeds the host limit".to_owned()
+                }
+                ChannelError::MailboxFull => "channel mailbox is full; retry later".to_owned(),
+                ChannelError::StateUnavailable => "channel broker is unavailable".to_owned(),
+            })
+    }
+}
+
+impl channel_subscribe_bindings::hologram::host::channel_subscribe::Host for ComponentStore {
+    fn try_receive(&mut self, channel: String) -> std::result::Result<Option<Vec<u8>>, String> {
+        let ComponentHost::ChannelSubscribe(host) = &self.host else {
+            return Err("channel.subscribe is not linked for this contract".to_owned());
+        };
+        if !host.channels.iter().any(|allowed| allowed == &channel) {
+            return Err("channel is outside the application's admitted subscribe set".to_owned());
+        }
+        host.broker
+            .try_receive(&channel)
+            .map_err(|_| "channel broker is unavailable".to_owned())
     }
 }
 
@@ -540,6 +715,38 @@ fn instantiate(
                     ))
                 })?;
         }
+        ComponentHost::ChannelPublish(_) => {
+            channel_publish_bindings::hologram::host::channel_publish::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component channel.publish interface: {error}"))
+            })?;
+            channel_publish_bindings::Application::instantiate(&mut store, component, &linker)
+                .map_err(|error| {
+                    LiveError::Protocol(format!(
+                        "Component channel-publish v1 must export hologram:application-channel-publish/application@1.0.0 and import only hologram:host/channel-publish@1.0.0: {error}"
+                    ))
+                })?;
+        }
+        ComponentHost::ChannelSubscribe(_) => {
+            channel_subscribe_bindings::hologram::host::channel_subscribe::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!(
+                    "link Component channel.subscribe interface: {error}"
+                ))
+            })?;
+            channel_subscribe_bindings::Application::instantiate(&mut store, component, &linker)
+                .map_err(|error| {
+                    LiveError::Protocol(format!(
+                        "Component channel-subscribe v1 must export hologram:application-channel-subscribe/application@1.0.0 and import only hologram:host/channel-subscribe@1.0.0: {error}"
+                    ))
+                })?;
+        }
     }
     Ok(())
 }
@@ -629,6 +836,69 @@ fn run_once(
             result.map_err(|error| {
                 LiveError::Protocol(format!(
                     "Component store-write v1 guest returned {:?}: {}",
+                    error.code, error.message
+                ))
+            })?
+        }
+        ComponentHost::ChannelPublish(_) => {
+            channel_publish_bindings::hologram::host::channel_publish::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component channel.publish interface: {error}"))
+            })?;
+            let bindings =
+                channel_publish_bindings::Application::instantiate(&mut store, component, &linker)
+                    .map_err(|error| {
+                        LiveError::Protocol(format!(
+                            "instantiate Component channel-publish v1: {error}"
+                        ))
+                    })?;
+            let result = bindings
+                .hologram_application_channel_publish_guest()
+                .call_run(&mut store, input)
+                .map_err(|error| {
+                    LiveError::Protocol(format!(
+                        "execute Component channel-publish v1 run: {error}"
+                    ))
+                })?;
+            result.map_err(|error| {
+                LiveError::Protocol(format!(
+                    "Component channel-publish v1 guest returned {:?}: {}",
+                    error.code, error.message
+                ))
+            })?
+        }
+        ComponentHost::ChannelSubscribe(_) => {
+            channel_subscribe_bindings::hologram::host::channel_subscribe::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!(
+                    "link Component channel.subscribe interface: {error}"
+                ))
+            })?;
+            let bindings = channel_subscribe_bindings::Application::instantiate(
+                &mut store, component, &linker,
+            )
+            .map_err(|error| {
+                LiveError::Protocol(format!(
+                    "instantiate Component channel-subscribe v1: {error}"
+                ))
+            })?;
+            let result = bindings
+                .hologram_application_channel_subscribe_guest()
+                .call_run(&mut store, input)
+                .map_err(|error| {
+                    LiveError::Protocol(format!(
+                        "execute Component channel-subscribe v1 run: {error}"
+                    ))
+                })?;
+            result.map_err(|error| {
+                LiveError::Protocol(format!(
+                    "Component channel-subscribe v1 guest returned {:?}: {}",
                     error.code, error.message
                 ))
             })?
@@ -791,10 +1061,25 @@ mod tests {
         include_bytes!("../tests/fixtures/component-store-write/store-write.wasm")
     }
 
+    fn channel_publish_component() -> &'static [u8] {
+        include_bytes!("../tests/fixtures/component-channel-publish/channel-publish.wasm")
+    }
+
+    fn channel_subscribe_component() -> &'static [u8] {
+        include_bytes!("../tests/fixtures/component-channel-subscribe/channel-subscribe.wasm")
+    }
+
     fn store_write_input(kappa: &str, bytes: &[u8]) -> Vec<u8> {
         let mut input = kappa.as_bytes().to_vec();
         input.push(b'\n');
         input.extend_from_slice(bytes);
+        input
+    }
+
+    fn channel_publish_input(channel: &str, message: &[u8]) -> Vec<u8> {
+        let mut input = channel.as_bytes().to_vec();
+        input.push(b'\n');
+        input.extend_from_slice(message);
         input
     }
 
@@ -1067,6 +1352,108 @@ mod tests {
     }
 
     #[test]
+    fn channel_publish_and_subscribe_are_exact_fifo_and_at_most_once() {
+        let broker = Arc::new(ChannelBroker::default());
+        let channel = "blake3:0000000000000000000000000000000000000000000000000000000000000000";
+        let publisher = PreparedComponent::compile(
+            "fixture",
+            channel_publish_component(),
+            ComponentLimits::default(),
+            ComponentHost::ChannelPublish(ChannelHost {
+                broker: broker.clone(),
+                channels: Arc::from([channel.to_owned()]),
+            }),
+        )
+        .expect("compile channel publisher");
+        let subscriber = PreparedComponent::compile(
+            "fixture",
+            channel_subscribe_component(),
+            ComponentLimits::default(),
+            ComponentHost::ChannelSubscribe(ChannelHost {
+                broker,
+                channels: Arc::from([channel.to_owned()]),
+            }),
+        )
+        .expect("compile channel subscriber");
+
+        for message in [b"one".as_slice(), b"two".as_slice()] {
+            assert_eq!(
+                publisher
+                    .run_inputs(
+                        vec![channel_publish_input(channel, message)],
+                        &AtomicBool::new(false),
+                    )
+                    .expect("publish admitted message"),
+                vec![channel.as_bytes().to_vec()]
+            );
+        }
+        assert_eq!(
+            subscriber
+                .run_inputs(
+                    vec![channel.as_bytes().to_vec(), channel.as_bytes().to_vec()],
+                    &AtomicBool::new(false),
+                )
+                .expect("receive in order"),
+            vec![b"one".to_vec(), b"two".to_vec()]
+        );
+        assert_eq!(
+            subscriber
+                .run_inputs(vec![channel.as_bytes().to_vec()], &AtomicBool::new(false),)
+                .expect("empty mailbox is nonblocking"),
+            vec![Vec::<u8>::new()]
+        );
+    }
+
+    #[test]
+    fn channel_authority_and_backpressure_errors_are_redacted() {
+        let broker = Arc::new(ChannelBroker::new(3, 1));
+        let allowed = "blake3:0000000000000000000000000000000000000000000000000000000000000000";
+        let denied = "blake3:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let publisher = PreparedComponent::compile(
+            "fixture",
+            channel_publish_component(),
+            ComponentLimits::default(),
+            ComponentHost::ChannelPublish(ChannelHost {
+                broker,
+                channels: Arc::from([allowed.to_owned()]),
+            }),
+        )
+        .expect("compile publisher");
+
+        let error = publisher
+            .run_inputs(
+                vec![channel_publish_input(denied, b"one")],
+                &AtomicBool::new(false),
+            )
+            .expect_err("deny channel outside publish set");
+        assert!(error.to_string().contains("outside"), "{error}");
+        assert!(!error.to_string().contains(denied), "{error}");
+
+        publisher
+            .run_inputs(
+                vec![channel_publish_input(allowed, b"one")],
+                &AtomicBool::new(false),
+            )
+            .expect("fill mailbox");
+        let error = publisher
+            .run_inputs(
+                vec![channel_publish_input(allowed, b"two")],
+                &AtomicBool::new(false),
+            )
+            .expect_err("full mailbox rejects");
+        assert!(error.to_string().contains("full"), "{error}");
+        assert!(!error.to_string().contains(allowed), "{error}");
+
+        let error = publisher
+            .run_inputs(
+                vec![channel_publish_input(allowed, b"four")],
+                &AtomicBool::new(false),
+            )
+            .expect_err("oversized message rejects");
+        assert!(error.to_string().contains("limit"), "{error}");
+    }
+
+    #[test]
     fn component_profiles_do_not_accept_each_others_worlds() {
         let error = PreparedComponent::compile(
             "fixture",
@@ -1136,6 +1523,22 @@ mod tests {
                 .contains("hologram:application-store-write"),
             "{error}"
         );
+
+        let error = PreparedComponent::compile(
+            "fixture",
+            channel_publish_component(),
+            ComponentLimits::default(),
+            ComponentHost::ChannelSubscribe(ChannelHost {
+                broker: Arc::new(ChannelBroker::default()),
+                channels: Arc::from([
+                    "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                        .to_owned(),
+                ]),
+            }),
+        )
+        .err()
+        .expect("subscribe profile rejects publish world");
+        assert!(error.to_string().contains("channel-subscribe"), "{error}");
     }
 
     #[test]

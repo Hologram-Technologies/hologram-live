@@ -160,6 +160,33 @@ fn component_store_write_manifest(world: &mut BddWorld) {
     world.temporary = Some(temporary);
 }
 
+#[given("a Component channel-publish application manifest")]
+fn component_channel_publish_manifest(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create scenario directory");
+    std::fs::copy(
+        workspace_root().join("tests/fixtures/component-channel-publish/channel-publish.wasm"),
+        temporary.path().join("application.component.wasm"),
+    )
+    .expect("copy channel-publish component fixture");
+    std::fs::write(
+        temporary.path().join("hologram.json"),
+        r#"{
+          "schema_version": 4,
+          "primary": 0,
+          "requires": "capabilities.json",
+          "layers": [{
+            "kind":"wasm",
+            "path":"application.component.wasm",
+            "entry":"run",
+            "contract":"hologram:guest/component-channel-publish@1"
+          }]
+        }"#,
+    )
+    .expect("write channel-publish component manifest");
+    world.manifest = Some(temporary.path().join("hologram.json"));
+    world.temporary = Some(temporary);
+}
+
 #[given("an admitted object in the local registry")]
 fn admitted_registry_object(world: &mut BddWorld) {
     let store = hologram_live::store::ObjectStore::open(
@@ -194,6 +221,19 @@ fn admitted_writable_object_target(world: &mut BddWorld) {
     std::fs::write(&grant, capabilities).expect("write development grant");
     world.development_grant = Some(grant);
     world.object_kappa = Some(kappa);
+}
+
+#[given("an admitted publish channel")]
+fn admitted_publish_channel(world: &mut BddWorld) {
+    let channel = hologram::space::address_bytes(b"bdd channel").to_string();
+    let capabilities = format!(r#"{{"publish_channels":["{channel}"]}}"#);
+    let temporary = world.temporary.as_ref().expect("scenario directory");
+    std::fs::write(temporary.path().join("capabilities.json"), &capabilities)
+        .expect("write capabilities");
+    let grant = temporary.path().join("development-grant.json");
+    std::fs::write(&grant, capabilities).expect("write development grant");
+    world.development_grant = Some(grant);
+    world.object_kappa = Some(channel);
 }
 
 #[given("a Wasm application that requests network fetch")]
@@ -395,6 +435,21 @@ fn component_plan_selects_store_write_provider(world: &mut BddWorld) {
     );
 }
 
+#[then("the channel-publish contract selects the mediated component provider")]
+fn component_plan_selects_channel_publish_provider(world: &mut BddWorld) {
+    let plan = world.plan_result.as_ref().expect("plan result");
+    assert_eq!(plan["execution_target"], "direct");
+    assert_eq!(plan["runnable"], true);
+    assert_eq!(
+        plan["layers"][0]["contract"],
+        "hologram:guest/component-channel-publish@1"
+    );
+    assert_eq!(
+        plan["layers"][0]["provider"]["name"],
+        "wasmtime-component-channel-publish-direct"
+    );
+}
+
 #[then("the resident plan identifies the imported archive")]
 fn resident_plan_identifies_archive(world: &mut BddWorld) {
     let plan = world.plan_result.as_ref().expect("plan result");
@@ -555,6 +610,51 @@ fn run_store_write_with_grant(world: &mut BddWorld) {
         String::from_utf8_lossy(&output.stderr)
     );
     world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
+}
+
+#[when("I run the channel-publish archive with its development grant")]
+fn run_channel_publish_with_grant(world: &mut BddWorld) {
+    let channel = world.object_kappa.as_ref().expect("channel kappa");
+    let input_path = world
+        .temporary
+        .as_ref()
+        .expect("scenario directory")
+        .path()
+        .join("channel-publish-input.bin");
+    let mut input = channel.as_bytes().to_vec();
+    input.push(b'\n');
+    input.extend_from_slice(b"bdd channel message");
+    std::fs::write(&input_path, input).expect("write channel input");
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("run")
+        .arg(world.output_path.as_ref().expect("compiled archive"))
+        .arg("--development-grant")
+        .arg(world.development_grant.as_ref().expect("development grant"))
+        .arg("--input")
+        .arg(input_path)
+        .env("HOME", home_path(world))
+        .output()
+        .expect("run channel-publish archive with grant");
+    assert!(
+        output.status.success(),
+        "channel-publish run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
+}
+
+#[then("the admitted channel is returned")]
+fn admitted_channel_is_returned(world: &mut BddWorld) {
+    let channel = world.object_kappa.as_ref().expect("channel kappa");
+    let result = world.run_result.as_ref().expect("run result");
+    let output = result["outputs"][0]
+        .as_array()
+        .expect("first output")
+        .iter()
+        .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("byte in range"))
+        .collect::<Vec<_>>();
+    assert_eq!(output, channel.as_bytes());
 }
 
 #[then("the admitted object bytes are present in the local registry")]

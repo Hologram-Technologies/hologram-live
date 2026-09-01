@@ -1,0 +1,6 @@
+package hologram:host@1.0.0;
+
+/// Publish one bounded message to an admitted channel without waiting.
+interface channel-publish {
+  publish: func(channel: string, message: list<u8>) -> result<_, string>;
+}

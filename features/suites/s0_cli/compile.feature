@@ -58,3 +58,16 @@ Feature: Compile Hologram applications
     Then the run fails with an authorization-denied error
     When I run the store-write archive with its development grant
     Then the admitted object bytes are present in the local registry
+
+  Scenario: mediate a capability-gated Component channel publish
+    Given a Component channel-publish application manifest
+    And a fresh Hologram home
+    And an admitted publish channel
+    When I compile the application
+    Then the compile command succeeds
+    When I plan the compiled archive directly
+    Then the channel-publish contract selects the mediated component provider
+    When I run the compiled archive without a development grant
+    Then the run fails with an authorization-denied error
+    When I run the channel-publish archive with its development grant
+    Then the admitted channel is returned

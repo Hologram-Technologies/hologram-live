@@ -67,6 +67,14 @@ This document is deliberately strict about what the current stable build does an
   storage roots and nonzero quota. Each call checks the root, verifies the
   content address, and atomically charges only newly materialized bytes against
   a lifetime-shared quota. Rejections are redacted and leave no partial blob.
+- Capability-gated Component channels under separate publish-only and
+  subscribe-only contracts. Each linker exposes exactly one mediated channel
+  interface after nonempty exact-set admission. A runtime-owned in-memory
+  broker enforces 64 KiB messages, 64-message FIFO mailboxes, nonblocking
+  receive, explicit backpressure, and at-most-once consumption across direct
+  executions sharing one executor or resident applications sharing one
+  runtime. It does not provide broadcast, replay, acknowledgement, durability,
+  cross-process transport, or sockets.
 - Python `wasi-component` source compilation with bundled CPython 3.14, locked
   universal-wheel dependencies, exact SHA-256-pinned componentizer wheels for
   all five server-release hosts, non-canonical build provenance, and direct or
@@ -76,7 +84,7 @@ This document is deliberately strict about what the current stable build does an
 ## Present as an extension seam, not implemented by the default module set
 
 - WASI and capability-gated Component host imports beyond the shipped
-  exact-root object-read and object-write profiles.
+  exact-root object-read/object-write and bounded channel profiles.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
 - Uniform engine enforcement of scalar CPU, memory, deadline, priority, and
   concurrency budgets across providers; Component v1 currently enforces its

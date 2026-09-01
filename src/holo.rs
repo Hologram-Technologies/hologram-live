@@ -1667,7 +1667,7 @@ mod tests {
         let wasm = std::fs::read(wasm_path).expect("fixture wasm");
         let capabilities = crate::holo_capability::compile_source(
             std::path::Path::new("request.json"),
-            br#"{"network_fetch":true}"#,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
         )
         .expect("network request");
         let manifest = AppManifest {
@@ -1716,7 +1716,11 @@ mod tests {
             .expect_err("an explicit but insufficient grant must remain denied");
         assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
 
-        std::fs::write(&grant_path, br#"{"network_fetch":true}"#).expect("grant");
+        std::fs::write(
+            &grant_path,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
+        )
+        .expect("grant");
         let grant = EffectiveGrant::from_development_file(
             &grant_path,
             crate::holo_capability::GrantSource::DirectDevelopmentFile,
@@ -1753,7 +1757,7 @@ mod tests {
         assert!(rows.iter().all(|row| row["principal"] == "local-cli"));
         assert!(!audit_rows.contains("still denied"));
         assert!(!audit_rows.contains("authorized"));
-        assert!(!audit_rows.contains("network_fetch"));
+        assert!(!audit_rows.contains("network_fetch_endpoints"));
     }
 
     #[tokio::test]

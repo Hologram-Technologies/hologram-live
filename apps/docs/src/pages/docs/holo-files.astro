@@ -114,21 +114,21 @@ import { sitePath } from '../../lib/site';
   <h3>Capability requests</h3>
   <p>The <code>requires</code> operand points to an upstream canonical <code>CapabilitySet</code>, not to JSON. Authors may declare the request in a versioned <code>capabilities.json</code>; the compiler validates it and converts it to canonical realization bytes before calculating the κ stored in <code>AppManifest.requires</code>.</p>
   <pre><code>&#123;
-  "schema_version": 1,
+  "schema_version": 2,
   "storage_roots": [],
   "storage_quota_bytes": 0,
-  "network_fetch": false,
-  "network_announce": false,
+  "network_fetch_endpoints": [],
+  "network_announce_endpoints": [],
   "publish_channels": [],
   "subscribe_channels": [],
   "memory_max_bytes": 0,
   "cpu_time_per_event_ms": 0,
   "priority_weight": 0
 &#125;</code></pre>
-  <p>κ arrays must be strictly sorted, contain no duplicates, and use canonical <code>blake3:&lt;64 lowercase hex&gt;</code> labels. Unknown fields and schema versions fail during both <code>compile --check</code> and <code>compile</code>, with the source path and invalid field/index in the diagnostic. Omitting <code>requires</code> produces the same canonical empty set as the document above. The upstream budget convention uses <code>0</code> for unbounded; set a nonzero budget to request a finite ceiling.</p>
+  <p>κ arrays must be strictly sorted, contain no duplicates, and use canonical <code>blake3:&lt;64 lowercase hex&gt;</code> labels. Network arrays use exact canonical <code>https://lowercase-host:port/path-prefix</code> scopes, are also strictly sorted, and attenuate only by exact origin plus a path-segment boundary. Schema-1 documents remain accepted only when their legacy network booleans are absent or false; a true boolean is rejected rather than becoming ambient authority. Unknown fields and schema versions fail during both <code>compile --check</code> and <code>compile</code>, with the source path and invalid field/index in the diagnostic. Omitting <code>requires</code> produces the same canonical empty set as the document above. The upstream budget convention uses <code>0</code> for unbounded; set a nonzero budget to request a finite ceiling.</p>
   <p>Capability objects must always be canonical upstream <code>CapabilitySet</code> bytes. The canonical empty set is the only deny-all representation. Zero-byte and otherwise malformed objects are rejected even when their content address matches.</p>
   <div class="note"><strong>Request is not authority</strong>The capability object inside a <code>.holo</code> file is controlled by the application and only says what it requests. It is not an effective grant. Live decodes and admits the root request against a trusted effective grant, then proves every delegated child grant attenuates its parent's admitted grant and admits that child's request. Any failure occurs before provider preparation.</div>
-  <p>The default local grant contains no storage roots, channels, or network flags. A broader request fails with <code>LIVE_AUTHORIZATION_DENIED</code> before a provider prepares. Direct local demos may opt in with <code>hologram run application.holo --development-grant development-grant.json</code>. Resident applications use only <code>holo.development_grant</code> from trusted service configuration; callers cannot attach self-asserted grants to a remote request.</p>
+  <p>The default local grant contains no storage roots, channels, or network endpoint scopes. A broader request fails with <code>LIVE_AUTHORIZATION_DENIED</code> before a provider prepares. Endpoint values never appear in audit rows or admission diagnostics. Defining a scope does not link networking: raw sockets remain unavailable and a bounded mediated-fetch profile is separate follow-up work. Direct local demos may opt in with <code>hologram run application.holo --development-grant development-grant.json</code>. Resident applications use only <code>holo.development_grant</code> from trusted service configuration; callers cannot attach self-asserted grants to a remote request.</p>
   <pre><code>hologram --json run application.holo \
   --development-grant development-grant.json |
   jq '&#123;authorization, grant_source, requested_capabilities_kappa, effective_grant_kappa&#125;'</code></pre>

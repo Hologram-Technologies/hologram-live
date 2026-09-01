@@ -940,8 +940,8 @@ mod tests {
         std::fs::write(
             directory.path().join("capabilities.json"),
             r#"{
-                "schema_version": 1,
-                "network_fetch": true,
+                "schema_version": 2,
+                "network_fetch_endpoints": ["https://api.example.com:443/v1"],
                 "storage_quota_bytes": 4096
             }"#,
         )
@@ -976,7 +976,7 @@ mod tests {
             .find_map(|(label, bytes)| (label == manifest.requires.as_bytes()).then_some(bytes))
             .expect("embedded capabilities");
         let decoded = holo_capability::decode_canonical(capabilities).expect("canonical set");
-        assert!(decoded.network_fetch);
+        assert_eq!(decoded.network_fetch_endpoints.len(), 1);
         assert_eq!(decoded.storage_quota_bytes, 4096);
     }
 
@@ -1073,7 +1073,7 @@ mod tests {
         std::fs::write(directory.path().join("parent.wasm"), b"parent wasm").expect("parent");
         std::fs::write(
             directory.path().join("worker-capabilities.json"),
-            r#"{"schema_version":1,"network_fetch":true}"#,
+            r#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
         )
         .expect("delegated capabilities");
         let manifest_path = directory.path().join("hologram.json");

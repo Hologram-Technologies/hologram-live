@@ -167,7 +167,7 @@ the deny-all representation; a zero-byte object is malformed even when its κ
 matches.
 
 Ordinary direct and local-service execution use the canonical empty local
-baseline, which grants no storage roots, channels, or network flags. A direct
+baseline, which grants no storage roots, channels, or network endpoint scopes. A direct
 local file may opt into a source-schema grant through the explicit
 `--development-grant` flag. A resident runtime may use
 `holo.development_grant` from host configuration only while listening on

@@ -81,7 +81,11 @@ to 64 entries; full mailboxes reject without dropping queued data. Receive is
 nonblocking and at-most-once, so cancellation leaves no waiter. The broker
 exposes no socket, filesystem, durable storage, replay, acknowledgement, or
 broadcast surface. Future mediated network interfaces require their
-corresponding admitted canonical fields;
+corresponding admitted canonical endpoint sets. ADR 020 restricts those sets to
+explicit HTTPS host, port, and path-prefix scopes with child attenuation and
+redacted diagnostics, but ships no network import. A future mediator must
+reauthorize redirects and resolved addresses and bound request bytes, response
+bytes, duration, and concurrency;
 clocks, random, environment, process control, secrets, inference, and raw
 sockets remain unavailable while no sufficiently scoped capability exists.
 Under-granted imports must fail before linker construction.

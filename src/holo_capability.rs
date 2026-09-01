@@ -1,10 +1,13 @@
 use crate::error::{LiveError, Result};
-use hologram::space::{Capabilities, CapabilitySet, KappaLabel71, Realization};
+use hologram::space::{
+    Capabilities, CapabilitySet, KappaLabel71, NetworkEndpointScope, Realization,
+};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 
-const SOURCE_SCHEMA_VERSION: u16 = 1;
+const SOURCE_SCHEMA_VERSION: u16 = 2;
+const LEGACY_SOURCE_SCHEMA_VERSION: u16 = 1;
 const BLAKE3_LABEL_LENGTH: usize = 71;
 
 /// Human-authored capability request compiled into the upstream canonical
@@ -15,8 +18,12 @@ pub struct CapabilitySource {
     pub schema_version: u16,
     pub storage_roots: Vec<String>,
     pub storage_quota_bytes: u64,
-    pub network_fetch: bool,
-    pub network_announce: bool,
+    pub network_fetch_endpoints: Vec<String>,
+    pub network_announce_endpoints: Vec<String>,
+    /// Schema-v1 compatibility only. `true` is rejected because it names no endpoint.
+    pub network_fetch: Option<bool>,
+    /// Schema-v1 compatibility only. `true` is rejected because it names no endpoint.
+    pub network_announce: Option<bool>,
     pub publish_channels: Vec<String>,
     pub subscribe_channels: Vec<String>,
     pub memory_max_bytes: u64,
@@ -30,8 +37,10 @@ impl Default for CapabilitySource {
             schema_version: SOURCE_SCHEMA_VERSION,
             storage_roots: Vec::new(),
             storage_quota_bytes: 0,
-            network_fetch: false,
-            network_announce: false,
+            network_fetch_endpoints: Vec::new(),
+            network_announce_endpoints: Vec::new(),
+            network_fetch: None,
+            network_announce: None,
             publish_channels: Vec::new(),
             subscribe_channels: Vec::new(),
             memory_max_bytes: 0,
@@ -74,8 +83,8 @@ pub fn empty_capabilities() -> Capabilities {
     Capabilities {
         storage_roots: Vec::new(),
         storage_quota_bytes: 0,
-        network_fetch: false,
-        network_announce: false,
+        network_fetch_endpoints: Vec::new(),
+        network_announce_endpoints: Vec::new(),
         publish_channels: Vec::new(),
         subscribe_channels: Vec::new(),
         memory_max_bytes: 0,
@@ -360,12 +369,12 @@ pub fn authorize_child_delegation(
 
 fn summary(capabilities: &Capabilities) -> String {
     format!(
-        "storage_roots={}, publish_channels={}, subscribe_channels={}, network_fetch={}, network_announce={}, storage_quota_bytes={}, memory_max_bytes={}, cpu_time_per_event_ms={}, priority_weight={}",
+        "storage_roots={}, publish_channels={}, subscribe_channels={}, network_fetch_endpoints={}, network_announce_endpoints={}, storage_quota_bytes={}, memory_max_bytes={}, cpu_time_per_event_ms={}, priority_weight={}",
         capabilities.storage_roots.len(),
         capabilities.publish_channels.len(),
         capabilities.subscribe_channels.len(),
-        capabilities.network_fetch,
-        capabilities.network_announce,
+        capabilities.network_fetch_endpoints.len(),
+        capabilities.network_announce_endpoints.len(),
         capabilities.storage_quota_bytes,
         capabilities.memory_max_bytes,
         capabilities.cpu_time_per_event_ms,
@@ -375,21 +384,67 @@ fn summary(capabilities: &Capabilities) -> String {
 
 impl CapabilitySource {
     fn canonicalize(self, path: &Path) -> Result<Vec<u8>> {
-        if self.schema_version != SOURCE_SCHEMA_VERSION {
-            return Err(source_error(
-                path,
-                "schema_version",
-                &format!(
-                    "unsupported value {}; expected {SOURCE_SCHEMA_VERSION}",
-                    self.schema_version
-                ),
-            ));
+        match self.schema_version {
+            SOURCE_SCHEMA_VERSION => {
+                if self.network_fetch.is_some() || self.network_announce.is_some() {
+                    let field = if self.network_fetch.is_some() {
+                        "network_fetch"
+                    } else {
+                        "network_announce"
+                    };
+                    return Err(source_error(
+                        path,
+                        field,
+                        "schema 2 uses network_fetch_endpoints and network_announce_endpoints",
+                    ));
+                }
+            }
+            LEGACY_SOURCE_SCHEMA_VERSION => {
+                if !self.network_fetch_endpoints.is_empty()
+                    || !self.network_announce_endpoints.is_empty()
+                {
+                    return Err(source_error(
+                        path,
+                        "network_fetch_endpoints",
+                        "endpoint scopes require schema_version 2",
+                    ));
+                }
+                if self.network_fetch == Some(true) || self.network_announce == Some(true) {
+                    let field = if self.network_fetch == Some(true) {
+                        "network_fetch"
+                    } else {
+                        "network_announce"
+                    };
+                    return Err(source_error(
+                        path,
+                        field,
+                        "schema 1 boolean network authority is no longer accepted; name exact schema 2 endpoint scopes",
+                    ));
+                }
+            }
+            version => {
+                return Err(source_error(
+                    path,
+                    "schema_version",
+                    &format!(
+                        "unsupported value {version}; expected {LEGACY_SOURCE_SCHEMA_VERSION} or {SOURCE_SCHEMA_VERSION}"
+                    ),
+                ));
+            }
         }
         let capabilities = Capabilities {
             storage_roots: parse_labels(path, "storage_roots", &self.storage_roots)?,
             storage_quota_bytes: self.storage_quota_bytes,
-            network_fetch: self.network_fetch,
-            network_announce: self.network_announce,
+            network_fetch_endpoints: parse_endpoints(
+                path,
+                "network_fetch_endpoints",
+                &self.network_fetch_endpoints,
+            )?,
+            network_announce_endpoints: parse_endpoints(
+                path,
+                "network_announce_endpoints",
+                &self.network_announce_endpoints,
+            )?,
             publish_channels: parse_labels(path, "publish_channels", &self.publish_channels)?,
             subscribe_channels: parse_labels(path, "subscribe_channels", &self.subscribe_channels)?,
             memory_max_bytes: self.memory_max_bytes,
@@ -398,6 +453,40 @@ impl CapabilitySource {
         };
         Ok(CapabilitySet::new(capabilities).canonicalize())
     }
+}
+
+fn parse_endpoints(
+    path: &Path,
+    field: &str,
+    values: &[String],
+) -> Result<Vec<NetworkEndpointScope>> {
+    for (index, pair) in values.windows(2).enumerate() {
+        if pair[0] >= pair[1] {
+            let reason = if pair[0] == pair[1] {
+                "duplicates the previous value"
+            } else {
+                "is not in ascending lexical order"
+            };
+            return Err(source_error(
+                path,
+                &format!("{field}[{}]", index + 1),
+                reason,
+            ));
+        }
+    }
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            NetworkEndpointScope::parse(value).map_err(|error| {
+                source_error(
+                    path,
+                    &format!("{field}[{index}]"),
+                    &format!("expected canonical https://host:port/path-prefix scope: {error:?}"),
+                )
+            })
+        })
+        .collect()
 }
 
 fn parse_labels(path: &Path, field: &str, values: &[String]) -> Result<Vec<KappaLabel71>> {
@@ -462,10 +551,10 @@ mod tests {
         };
         let source = format!(
             r#"{{
-                "schema_version": 1,
+                "schema_version": 2,
                 "storage_roots": ["{lower}", "{upper}"],
                 "storage_quota_bytes": 4096,
-                "network_fetch": true,
+                "network_fetch_endpoints": ["https://api.example.com:443/v1"],
                 "memory_max_bytes": 1048576,
                 "cpu_time_per_event_ms": 50,
                 "priority_weight": 2
@@ -476,7 +565,11 @@ mod tests {
         let decoded = decode_canonical(&bytes).expect("decode canonical capabilities");
         assert_eq!(decoded.storage_roots.len(), 2);
         assert_eq!(decoded.storage_quota_bytes, 4096);
-        assert!(decoded.network_fetch);
+        assert_eq!(decoded.network_fetch_endpoints.len(), 1);
+        assert_eq!(
+            decoded.network_fetch_endpoints[0].as_str(),
+            "https://api.example.com:443/v1"
+        );
         assert_eq!(decoded.memory_max_bytes, 1_048_576);
         assert_eq!(decoded.cpu_time_per_event_ms, 50);
         assert_eq!(decoded.priority_weight, 2);
@@ -508,7 +601,7 @@ mod tests {
         assert!(error.to_string().contains("ambient_authority"), "{error}");
 
         let error =
-            compile_source(path, br#"{"schema_version":2}"#).expect_err("unsupported version");
+            compile_source(path, br#"{"schema_version":3}"#).expect_err("unsupported version");
         assert!(error.to_string().contains("schema_version"), "{error}");
 
         let low = address_bytes(b"low").to_string();
@@ -520,6 +613,30 @@ mod tests {
             error.to_string().contains("ascending lexical order"),
             "{error}"
         );
+
+        let error = compile_source(path, br#"{"schema_version":1,"network_fetch":true}"#)
+            .expect_err("legacy ambient fetch");
+        assert!(error.to_string().contains("no longer accepted"), "{error}");
+
+        let error = compile_source(
+            path,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com/v1"]}"#,
+        )
+        .expect_err("implicit port");
+        assert!(
+            error.to_string().contains("network_fetch_endpoints[0]"),
+            "{error}"
+        );
+
+        let error = compile_source(
+            path,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://z.example.com:443/","https://a.example.com:443/"]}"#,
+        )
+        .expect_err("unstable endpoint order");
+        assert!(
+            error.to_string().contains("ascending lexical order"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -527,6 +644,12 @@ mod tests {
         let explicit = compile_source(Path::new("capabilities.json"), b"{}")
             .expect("explicit empty capabilities");
         assert_eq!(explicit, empty_canonical());
+        let legacy = compile_source(
+            Path::new("legacy-capabilities.json"),
+            br#"{"schema_version":1,"network_fetch":false,"network_announce":false}"#,
+        )
+        .expect("legacy no-network capabilities");
+        assert_eq!(legacy, empty_canonical());
         assert_eq!(
             decode_canonical(&explicit).expect("decode"),
             empty_capabilities()
@@ -560,7 +683,8 @@ mod tests {
             .authorize("blake3:application", &request)
             .expect("baseline admits empty request");
 
-        let source = br#"{"network_fetch":true}"#;
+        let source =
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#;
         let bytes = Arc::<[u8]>::from(
             compile_source(Path::new("network.json"), source).expect("network request"),
         );
@@ -571,27 +695,110 @@ mod tests {
             .authorize("blake3:application", &request)
             .expect_err("baseline denies network fetch");
         assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
-        assert!(error.to_string().contains("network_fetch=true"), "{error}");
+        assert!(
+            error.to_string().contains("network_fetch_endpoints=1"),
+            "{error}"
+        );
     }
 
     #[test]
     fn explicit_development_grant_uses_upstream_attenuation() {
         let directory = tempfile::tempdir().expect("tempdir");
         let path = directory.path().join("grant.json");
-        std::fs::write(&path, r#"{"network_fetch":true}"#).expect("grant");
+        std::fs::write(
+            &path,
+            r#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
+        )
+        .expect("grant");
         let grant =
             EffectiveGrant::from_development_file(&path, GrantSource::DirectDevelopmentFile)
                 .expect("development grant");
         let bytes = Arc::<[u8]>::from(
-            compile_source(Path::new("request.json"), br#"{"network_fetch":true}"#)
-                .expect("request"),
+            compile_source(
+                Path::new("request.json"),
+                br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1/models"]}"#,
+            )
+            .expect("request"),
         );
         let request =
             RequestedCapabilities::decode(hologram::space::address_bytes(&bytes).as_ref(), bytes)
                 .expect("request");
         grant
             .authorize("blake3:application", &request)
-            .expect("matching grant admits request");
+            .expect("narrower path grant admits request");
         assert_eq!(grant.source.name(), "direct_development_file");
+
+        let sibling = Arc::<[u8]>::from(
+            compile_source(
+                Path::new("sibling.json"),
+                br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v10"]}"#,
+            )
+            .expect("sibling request"),
+        );
+        let sibling = RequestedCapabilities::decode(
+            hologram::space::address_bytes(&sibling).as_ref(),
+            sibling,
+        )
+        .expect("sibling request");
+        grant
+            .authorize("blake3:application", &sibling)
+            .expect_err("path-prefix lookalike must be denied");
+    }
+
+    #[test]
+    fn child_endpoint_delegation_attenuates_and_redacts_values() {
+        let compile = |name: &str, endpoint: &str| {
+            Arc::<[u8]>::from(
+                compile_source(
+                    Path::new(name),
+                    format!(r#"{{"schema_version":2,"network_fetch_endpoints":["{endpoint}"]}}"#)
+                        .as_bytes(),
+                )
+                .expect("endpoint capabilities"),
+            )
+        };
+        let parent = compile("parent.json", "https://api.example.com:443/v1");
+        let parent_capabilities = decode_canonical(&parent).expect("parent");
+        let delegated = compile("delegated.json", "https://api.example.com:443/v1/models");
+        let delegated = DelegatedCapabilities::decode(
+            hologram::space::address_bytes(&delegated).as_ref(),
+            delegated,
+        )
+        .expect("delegated");
+        let request = compile("request.json", "https://api.example.com:443/v1/models/read");
+        let request = RequestedCapabilities::decode(
+            hologram::space::address_bytes(&request).as_ref(),
+            request,
+        )
+        .expect("request");
+        authorize_child_delegation(
+            "blake3:parent",
+            "blake3:parent-grant",
+            &parent_capabilities,
+            "blake3:child",
+            &delegated,
+            &request,
+        )
+        .expect("narrowed child endpoint");
+
+        let amplified = compile("amplified.json", "https://api.example.com:443/v10");
+        let amplified = DelegatedCapabilities::decode(
+            hologram::space::address_bytes(&amplified).as_ref(),
+            amplified,
+        )
+        .expect("amplified");
+        let error = authorize_child_delegation(
+            "blake3:parent",
+            "blake3:parent-grant",
+            &parent_capabilities,
+            "blake3:child",
+            &amplified,
+            &request,
+        )
+        .expect_err("sibling path amplification");
+        let message = error.to_string();
+        assert!(message.contains("network_fetch_endpoints=1"), "{message}");
+        assert!(!message.contains("api.example.com"), "{message}");
+        assert!(!message.contains("/v10"), "{message}");
     }
 }

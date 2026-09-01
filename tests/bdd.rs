@@ -300,7 +300,8 @@ fn wasm_manifest_with_network_request(world: &mut BddWorld) {
         temporary.path().join("transform.wat"),
     )
     .expect("copy Wasm fixture");
-    let capabilities = r#"{"schema_version":1,"network_fetch":true}"#;
+    let capabilities =
+        r#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#;
     std::fs::write(temporary.path().join("capabilities.json"), capabilities)
         .expect("write capability request");
     let grant = temporary.path().join("development-grant.json");
@@ -832,7 +833,7 @@ fn capability_audit_is_non_secret(world: &mut BddWorld) {
     let path = home_path(world).join(".local/state/hologram/audit.jsonl");
     let encoded = std::fs::read_to_string(path).expect("read audit log");
     for forbidden in [
-        "network_fetch",
+        "network_fetch_endpoints",
         "storage_roots",
         "development-grant.json",
         "authorized",

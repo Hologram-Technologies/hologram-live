@@ -170,20 +170,20 @@ leave no pending subscription state.
 | `hologram:host/store-write.write` | target κ is an admitted `storage_roots` entry and newly materialized bytes fit `storage_quota_bytes` | shipped only in `component-store-write@1` |
 | `hologram:host/channel-publish.publish` | channel κ is in `publish_channels` | shipped only in `component-channel-publish@1` |
 | `hologram:host/channel-subscribe.try-receive` | channel κ is in `subscribe_channels` | shipped only in `component-channel-subscribe@1` |
-| `hologram:host/network.fetch` | `network_fetch` | withheld from base world |
-| `hologram:host/network.announce` | `network_announce` | withheld from base world |
+| `hologram:host/network.fetch` | target is contained by `network_fetch_endpoints` | withheld pending a separate mediated profile |
+| `hologram:host/network.announce` | target is contained by `network_announce_endpoints` | withheld pending a separate mediated profile |
 | Wasm memory and execution | `memory_max_bytes`, `cpu_time_per_event_ms`, and `priority_weight` | runtime ceilings ship in base v1; nonzero admitted memory/time scalars only tighten them; priority scheduling remains deferred |
 | WASI filesystem preopens | `storage_roots` plus `storage_quota_bytes` for writes | no ambient directories; deferred profile only |
-| WASI HTTP or outbound sockets | `network_fetch` | raw sockets withheld; deferred mediated profile only |
-| WASI listen sockets | `network_announce` | raw sockets withheld; deferred mediated profile only |
+| WASI HTTP or outbound sockets | no raw-socket capability | raw sockets withheld; deferred mediated profile only |
+| WASI listen sockets | no raw-socket capability | raw sockets withheld; deferred mediated profile only |
 | WASI clocks, random, environment, args, stdio, DNS, secrets, or process control | no canonical field | unavailable until the capability schema is extended |
 | Hologram inference or model sessions | no canonical field | unavailable until a scoped model capability exists |
 
-`network_fetch` and `network_announce` are currently booleans, so they are not
-sufficient authority for unrestricted raw sockets. A future profile should
-prefer mediated Hologram interfaces or first introduce endpoint-scoped
-capabilities. Invocation input/output replaces WASI stdin/stdout, and the
-runtime does not inherit host arguments or environment variables.
+ADR 020 replaces the former booleans with canonical HTTPS endpoint scopes and
+path-prefix attenuation. No network interface is linked in this slice. A future
+profile must remain mediated and bounded; endpoint authority never implies raw
+sockets. Invocation input/output replaces WASI stdin/stdout, and the runtime
+does not inherit host arguments or environment variables.
 
 Python uses this unchanged base world. The source compiler pins
 `componentize-py 0.25.0` and passes `--stub-wasi`, which replaces CPython's WASI

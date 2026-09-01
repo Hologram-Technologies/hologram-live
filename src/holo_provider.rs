@@ -1345,7 +1345,7 @@ mod tests {
     fn network_capabilities() -> Vec<u8> {
         crate::holo_capability::compile_source(
             std::path::Path::new("network.json"),
-            br#"{"network_fetch":true}"#,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
         )
         .expect("network capabilities")
     }
@@ -1353,7 +1353,11 @@ mod tests {
     fn network_grant() -> EffectiveGrant {
         let directory = tempfile::tempdir().expect("tempdir");
         let path = directory.path().join("grant.json");
-        std::fs::write(&path, br#"{"network_fetch":true}"#).expect("grant");
+        std::fs::write(
+            &path,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
+        )
+        .expect("grant");
         EffectiveGrant::from_development_file(
             &path,
             crate::holo_capability::GrantSource::DirectDevelopmentFile,
@@ -1457,7 +1461,7 @@ mod tests {
         let registry = registry(events.clone(), None, None, None);
         let requested = crate::holo_capability::compile_source(
             std::path::Path::new("request.json"),
-            br#"{"network_fetch":true}"#,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
         )
         .expect("network request");
 
@@ -1661,12 +1665,16 @@ mod tests {
         let registry = registry(events.clone(), Some(0), None, None);
         let requested = crate::holo_capability::compile_source(
             std::path::Path::new("request.json"),
-            br#"{"network_fetch":true}"#,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
         )
         .expect("network request");
         let directory = tempfile::tempdir().expect("tempdir");
         let grant_path = directory.path().join("grant.json");
-        std::fs::write(&grant_path, br#"{"network_fetch":true}"#).expect("grant");
+        std::fs::write(
+            &grant_path,
+            br#"{"schema_version":2,"network_fetch_endpoints":["https://api.example.com:443/v1"]}"#,
+        )
+        .expect("grant");
         let grant = EffectiveGrant::from_development_file(
             &grant_path,
             crate::holo_capability::GrantSource::DirectDevelopmentFile,

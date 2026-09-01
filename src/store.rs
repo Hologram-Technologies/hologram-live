@@ -69,6 +69,21 @@ impl ObjectStore {
     /// creating user-facing metadata. This is used for payloads unpacked from
     /// fat `.holo` archives so thin archives can resolve the same kappa later.
     pub fn cache_addressed(&self, id: &str, bytes: &[u8]) -> Result<()> {
+        self.cache_addressed_bounded(id, bytes, u64::MAX)?;
+        Ok(())
+    }
+
+    /// Cache verified bytes when their newly materialized size fits `max_new_bytes`.
+    ///
+    /// Returns `true` only when this call created the blob. The address check,
+    /// existence check, byte ceiling, and atomic write share the store lock so
+    /// capability mediators can account persistent storage without a race.
+    pub fn cache_addressed_bounded(
+        &self,
+        id: &str,
+        bytes: &[u8],
+        max_new_bytes: u64,
+    ) -> Result<bool> {
         let digest = validate_id(id)?;
         let actual = blake3::hash(bytes).to_hex().to_string();
         if actual != digest {
@@ -81,10 +96,17 @@ impl ObjectStore {
             .lock()
             .map_err(|_| LiveError::Conflict("object store lock poisoned".to_owned()))?;
         let path = self.blob_path(digest);
-        if !path.exists() {
-            atomic_write(&path, bytes)?;
+        if path.exists() {
+            return Ok(false);
         }
-        Ok(())
+        let byte_count = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if byte_count > max_new_bytes {
+            return Err(LiveError::Capability(
+                "addressed object exceeds the permitted new-byte ceiling".to_owned(),
+            ));
+        }
+        atomic_write(&path, bytes)?;
+        Ok(true)
     }
 
     pub fn get_cached(&self, id: &str) -> Result<Option<Vec<u8>>> {

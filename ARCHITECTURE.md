@@ -110,7 +110,8 @@ Guest-contract selection is canonical but remains separate from the callable
 entry. Source schema v4 maps a Wasm `contract` field to the identity-bearing
 layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; explicit
 core-v1, `hologram:guest/component@1`, and
-`hologram:guest/component-store-read@1` tags are accepted. Inspection and
+`hologram:guest/component-store-read@1`, and
+`hologram:guest/component-store-write@1` tags are accepted. Inspection and
 planning expose the normalized selector, and provider lookup is keyed by both
 layer kind and exact contract. Component archives therefore reach only the
 dedicated direct or resident Component provider and never the core provider.
@@ -132,6 +133,17 @@ grant, links `hologram:host/store@1.0.0`, and checks every target before calling
 the runtime object store. Direct execution supplies the configured registry;
 resident execution supplies the catalog store. No other Hologram or WASI
 interface enters that linker.
+
+The store-write profile is another separate fixed world. Its linker contains
+only `hologram:host/store-write@1.0.0` after admission proves a nonempty exact
+root set and nonzero quota. The host verifies each supplied κ against the bytes
+and performs an atomic bounded cache insertion. A quota counter shared by every
+fresh store in the prepared application charges newly materialized blobs for
+the application's lifetime; an existing identical blob costs nothing. Root,
+hash, quota, and backend failures are checked before or within the atomic store
+operation and do not leave partial content. Direct and resident providers use
+the same object-store boundary, and child providers retain only attenuated
+roots and quota.
 
 Python `wasi-component` is a compiler adapter over this provider, not a new
 runtime layer. It chooses an exact `componentize-py 0.25.0` wheel URL/SHA-256

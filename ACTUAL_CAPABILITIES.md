@@ -61,6 +61,12 @@ This document is deliberately strict about what the current stable build does an
   pre-link admission and per-call exact-root check, and child applications are
   restricted by their delegated grant. No ambient filesystem or WASI surface
   is linked.
+- Capability-gated Component object writes under the separate
+  `hologram:guest/component-store-write@1` contract. Its fixed WIT world imports
+  only `hologram:host/store-write@1.0.0`; preparation requires exact admitted
+  storage roots and nonzero quota. Each call checks the root, verifies the
+  content address, and atomically charges only newly materialized bytes against
+  a lifetime-shared quota. Rejections are redacted and leave no partial blob.
 - Python `wasi-component` source compilation with bundled CPython 3.14, locked
   universal-wheel dependencies, exact SHA-256-pinned componentizer wheels for
   all five server-release hosts, non-canonical build provenance, and direct or
@@ -70,7 +76,7 @@ This document is deliberately strict about what the current stable build does an
 ## Present as an extension seam, not implemented by the default module set
 
 - WASI and capability-gated Component host imports beyond the shipped
-  exact-root object-read profile.
+  exact-root object-read and object-write profiles.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
 - Uniform engine enforcement of scalar CPU, memory, deadline, priority, and
   concurrency budgets across providers; Component v1 currently enforces its

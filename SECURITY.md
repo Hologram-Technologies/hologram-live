@@ -60,8 +60,14 @@ imports nothing. The separate `component-store-read@1` world imports only the
 mediated object-store read interface. It requires a nonempty admitted
 `storage_roots` request before linker construction, retains only those
 contained roots, and checks the exact target before touching the store;
-direct, resident, and delegated-child paths share the same rule. Future write,
-channel, and mediated network interfaces require their corresponding admitted canonical fields;
+direct, resident, and delegated-child paths share the same rule. The separate
+`component-store-write@1` world imports only the mediated write
+interface. It additionally requires nonzero admitted `storage_quota_bytes`,
+checks exact-root membership and content-address integrity on every call, and
+atomically charges newly created blobs against one quota shared for the prepared
+application's lifetime. Existing identical blobs are free; denied calls leave
+no partial blob and public errors omit the target κ. Future channel and mediated
+network interfaces require their corresponding admitted canonical fields;
 clocks, random, environment, process control, secrets, inference, and raw
 sockets remain unavailable while no sufficiently scoped capability exists.
 Under-granted imports must fail before linker construction.

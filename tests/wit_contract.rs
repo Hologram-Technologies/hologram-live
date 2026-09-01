@@ -24,3 +24,14 @@ fn component_store_read_profile_has_one_fixed_import() {
     assert_eq!(imports, ["  import hologram:host/store@1.0.0;"]);
     assert!(world.contains("export guest;"));
 }
+
+#[test]
+fn component_store_write_profile_has_one_fixed_import() {
+    let world = include_str!("../specs/wit/store-write/hologram-application-store-write-v1.wit");
+    let imports = world
+        .lines()
+        .filter(|line| line.trim_start().starts_with("import "))
+        .collect::<Vec<_>>();
+    assert_eq!(imports, ["  import hologram:host/store-write@1.0.0;"]);
+    assert!(world.contains("export guest;"));
+}

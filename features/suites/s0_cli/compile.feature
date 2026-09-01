@@ -45,3 +45,16 @@ Feature: Compile Hologram applications
     Then the run fails with an authorization-denied error
     When I run the store-read archive with its development grant
     Then the run output is "bdd store bytes"
+
+  Scenario: mediate a capability-gated Component object write
+    Given a Component store-write application manifest
+    And a fresh Hologram home
+    And an admitted writable object target
+    When I compile the application
+    Then the compile command succeeds
+    When I plan the compiled archive directly
+    Then the store-write contract selects the mediated component provider
+    When I run the compiled archive without a development grant
+    Then the run fails with an authorization-denied error
+    When I run the store-write archive with its development grant
+    Then the admitted object bytes are present in the local registry

@@ -6,10 +6,10 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: capability-gated Component `store.read` profile complete
-- Previous delivery: authenticated private-registry integration coverage
-- Next runtime slice: capability-gated Component `store.write`
-- Following runtime slice: capability-gated channel publish/subscribe Component profiles
+- Current delivery: capability-gated Component `store.write` profile complete
+- Previous delivery: capability-gated Component `store.read` profile complete
+- Next runtime slice: capability-gated channel publish/subscribe Component profiles
+- Following runtime slice: typed graph resolution for widened storage authority
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -269,6 +269,10 @@ dependencies until an explicit child invocation contract is introduced.
 - [x] Add the explicit `hologram:guest/component-store-read@1` profile, link
   only `hologram:host/store@1.0.0` after admission, and mediate every target κ
   against the declared roots contained by the effective grant.
+- [x] Add the explicit `hologram:guest/component-store-write@1` profile, link
+  only `hologram:host/store-write@1.0.0` after root and quota admission, and
+  atomically materialize only exact-address, hash-matching bytes within a
+  prepared application's shared lifetime quota.
 - [x] Prove missing profile authority fails before linker construction and the
   same attenuation holds for direct, resident, and child preparation.
 - [ ] Complete the remaining capability-gated Hologram and WASI host-interface profiles.
@@ -1214,13 +1218,13 @@ work below.
 - [x] Add the real composed Wasm + View Desktop example and lifecycle proof.
 - [x] Add authenticated private-registry compile/run coverage with offline
   planning, anonymous rejection, credential leak checks, and a release gate.
-- [ ] Define and ship `hologram:guest/component-store-write@1` as a fixed-import
+- [x] Define and ship `hologram:guest/component-store-write@1` as a fixed-import
   profile without changing the import-free or store-read worlds. In the first
   safe slice, accept only a caller-supplied content address that exactly matches
   an admitted `storage_roots` entry, verify the bytes hash to that address, and
   enforce a nonzero admitted `storage_quota_bytes` budget before touching the
   object store; do not imply transitive graph authority.
-- [ ] Prove store-write admission and quota enforcement before linker
+- [x] Prove store-write admission and quota enforcement before linker
   construction, per-call address/hash checks, direct/resident parity, child
   attenuation, bounded accounting, redacted failures, and no partial write on
   rejection. Update ADR 011, WIT, capability documentation, BDD, and release

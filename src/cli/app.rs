@@ -6,8 +6,8 @@ use hologram_live::compile::{
 };
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo_contract::{
-    COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_STORE_READ_V1, WASM_CONTRACT_COMPONENT_V1,
-    WASM_CONTRACT_CORE_V1,
+    COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+    WASM_CONTRACT_COMPONENT_STORE_WRITE_V1, WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V1,
 };
 use hologram_live::holo_python::{PythonProfile, PythonRootfsSource};
 use hologram_live::holo_wasm::CORE_WASM_V1_DEFAULT_ENTRY;
@@ -338,7 +338,11 @@ fn layer_from_args(args: &InitArgs) -> Result<CompileLayer> {
 fn default_wasm_entry(contract: Option<&str>) -> &'static str {
     if matches!(
         contract,
-        Some(WASM_CONTRACT_COMPONENT_V1 | WASM_CONTRACT_COMPONENT_STORE_READ_V1)
+        Some(
+            WASM_CONTRACT_COMPONENT_V1
+                | WASM_CONTRACT_COMPONENT_STORE_READ_V1
+                | WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
+        )
     ) {
         COMPONENT_V1_ENTRY
     } else {
@@ -743,6 +747,10 @@ mod tests {
         );
         assert_eq!(
             default_wasm_entry(Some(WASM_CONTRACT_COMPONENT_STORE_READ_V1)),
+            COMPONENT_V1_ENTRY
+        );
+        assert_eq!(
+            default_wasm_entry(Some(WASM_CONTRACT_COMPONENT_STORE_WRITE_V1)),
             COMPONENT_V1_ENTRY
         );
     }

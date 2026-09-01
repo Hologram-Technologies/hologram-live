@@ -1,6 +1,6 @@
 # ADR 011: `.holo` guest contracts use the Wasm layer auxiliary tag
 
-- Status: accepted and implemented for import-free and store-read Component v1 profiles
+- Status: accepted and implemented for import-free, store-read, and store-write Component v1 profiles
 - Date: 2026-08-25
 
 ## Context
@@ -29,6 +29,8 @@ Its values are exact, namespaced identifiers:
 - `hologram:guest/component@1`: Hologram Component Model v1;
 - `hologram:guest/component-store-read@1`: Component Model v1 with the fixed
   mediated object-store read import.
+- `hologram:guest/component-store-write@1`: Component Model v1 with the fixed
+  mediated content-addressed object-store write import.
 
 The empty alias remains the compiler default while core-Wasm v1 is current, so
 existing compatible archives retain their canonical bytes and application κ.
@@ -45,7 +47,9 @@ an empty tag, but Live neither emits nor accepts it. Wasm `aux` changed upstream
 to admit the supported contract identifiers without changing the canonical
 codec. Upstream PR 143, merge `aad544c`, adds
 `WASM_CONTRACT_COMPONENT_STORE_READ_V1`; Live pins that merge and requires one
-of the accepted explicit identifiers.
+of the accepted explicit identifiers. Upstream PR 144, merge `059c39f`, adds
+`WASM_CONTRACT_COMPONENT_STORE_WRITE_V1` under the same closed validation rule;
+Live pins that merge.
 
 ### Negotiation
 
@@ -78,6 +82,14 @@ shape and imports exactly `hologram:host/store@1.0.0`, whose `read` function
 takes one object κ and returns its bytes or a public error string. It does not
 import WASI or any other Hologram interface.
 
+`component-store-write@1` uses the separate `application` world under
+[`../wit/store-write/`](../wit/store-write/). It retains the same guest `run`
+shape and imports exactly `hologram:host/store-write@1.0.0`. Its `write`
+function accepts an expected object κ and bytes and returns success only when
+the host safely materializes that exact content address. Keeping a separate
+interface avoids changing the shipped `hologram:host/store@1.0.0` read shape or
+granting reads to a write-only guest.
+
 ### Host-interface admission
 
 The base `component@1` world imports nothing. Every host-enabled profile uses a
@@ -89,12 +101,19 @@ ambient fallback. For `component-store-read@1`, at least one requested
 by the effective grant; the host retains only that admitted intersection and
 checks every requested κ before touching the object store. The current safe
 slice serves an explicitly named root itself; traversing its referenced closure
-requires a future typed graph resolver.
+requires a future typed graph resolver. For `component-store-write@1`, the
+request must also contain a nonzero `storage_quota_bytes` value. The provider
+retains the exact admitted roots and a lifetime-shared remaining quota before
+linker construction. Each call checks exact-root membership, verifies that the
+bytes hash to the caller-supplied κ, and atomically materializes a missing blob
+only when its new bytes fit the remaining quota. Existing identical blobs cost
+no additional quota; rejected root, hash, quota, or store operations do not
+write a partial blob. Public errors do not include the target κ.
 
 | Proposed interface | Required canonical capability | v1 disposition |
 | --- | --- | --- |
 | `hologram:host/store.read` | target κ is an admitted `storage_roots` entry | shipped only in `component-store-read@1` |
-| `hologram:host/store.write` | target κ is under `storage_roots` and `storage_quota_bytes > 0` | withheld from base world |
+| `hologram:host/store-write.write` | target κ is an admitted `storage_roots` entry and newly materialized bytes fit `storage_quota_bytes` | shipped only in `component-store-write@1` |
 | `hologram:host/channel.publish` | channel κ is in `publish_channels` | withheld from base world |
 | `hologram:host/channel.subscribe` | channel κ is in `subscribe_channels` | withheld from base world |
 | `hologram:host/network.fetch` | `network_fetch` | withheld from base world |
@@ -147,7 +166,7 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- The import-free and mediated object-read Component providers, resource
+- The import-free and mediated object-read/object-write Component providers, resource
   enforcement, and locked pure-Python wheel packaging are current
   capabilities. Native Python packages, transitive storage-closure traversal,
   and any capability-gated WASI profile remain explicit follow-up work.

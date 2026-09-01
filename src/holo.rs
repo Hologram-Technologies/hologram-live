@@ -689,7 +689,8 @@ fn direct_registry(
         vec![
             Arc::new(WasmProvider::direct(engine)),
             Arc::new(ComponentProvider::direct()),
-            Arc::new(ComponentProvider::store_read_direct(object_store)),
+            Arc::new(ComponentProvider::store_read_direct(object_store.clone())),
+            Arc::new(ComponentProvider::store_write_direct(object_store)),
             Arc::new(PythonRootfsProvider),
             Arc::new(ViewProvider::new(view_surfaces)),
         ],
@@ -707,7 +708,8 @@ fn resident_registry(
         vec![
             Arc::new(WasmProvider::resident(engine, root, mailbox_capacity)),
             Arc::new(ComponentProvider::resident()),
-            Arc::new(ComponentProvider::store_read_resident(object_store)),
+            Arc::new(ComponentProvider::store_read_resident(object_store.clone())),
+            Arc::new(ComponentProvider::store_write_resident(object_store)),
             Arc::new(ViewProvider::headless()),
         ],
     )
@@ -1186,6 +1188,129 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn component_store_write_runs_direct_and_resident_with_the_same_authority() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let bytes = b"capability mediated write";
+        let target = address_bytes(bytes).to_string();
+        let quota = u64::try_from(bytes.len()).expect("fixture length");
+        let capabilities = storage_write_capabilities(&target, quota);
+        let archive = store_write_archive(&capabilities);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(
+            &grant_path,
+            format!(r#"{{"storage_roots":["{target}"],"storage_quota_bytes":{quota}}}"#),
+        )
+        .expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+        let input = store_write_input(&target, bytes);
+
+        let direct = HoloExecutor::with_object_store(store.clone())
+            .execute_with_grant(&archive, vec![input.clone()], &grant)
+            .await
+            .expect("direct store.write");
+        assert_eq!(direct.outputs, [target.as_bytes()]);
+        assert_eq!(
+            store.get_cached(&target).expect("direct object"),
+            Some(bytes.to_vec())
+        );
+
+        let catalog = Arc::new(HoloCatalog::new(store.clone()));
+        let runtime = HoloRuntime::new_with_grant(catalog.clone(), 8, grant);
+        let kappa = catalog
+            .import("component-store-write.holo".to_owned(), archive)
+            .expect("import")
+            .kappa;
+        runtime.load(&kappa).await.expect("resident load");
+        let resident = runtime
+            .run(&kappa, vec![input])
+            .await
+            .expect("resident store.write");
+        assert_eq!(resident.outputs, [target.as_bytes()]);
+        assert_eq!(
+            store.get_cached(&target).expect("resident object"),
+            Some(bytes.to_vec())
+        );
+        runtime.unload(&kappa).await.expect("unload");
+    }
+
+    #[tokio::test]
+    async fn component_store_write_denies_missing_roots_or_quota_before_instantiation() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path()).expect("store"));
+        let bytes = b"never written";
+        let target = address_bytes(bytes).to_string();
+
+        let error = HoloExecutor::with_object_store(store.clone())
+            .execute(&store_write_archive(canonical_capabilities()), Vec::new())
+            .await
+            .expect_err("profile requires a storage root");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("storage_roots"), "{error}");
+        assert!(error.to_string().contains("store-write@1.0.0"));
+
+        let roots_without_quota = storage_capabilities(&target);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(&grant_path, format!(r#"{{"storage_roots":["{target}"]}}"#)).expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+        let error = HoloExecutor::with_object_store(store)
+            .execute_with_grant(
+                &store_write_archive(&roots_without_quota),
+                Vec::new(),
+                &grant,
+            )
+            .await
+            .expect_err("profile requires write quota");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("storage_quota_bytes"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn component_store_write_child_is_attenuated_to_its_delegated_quota() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let bytes = b"child-writable";
+        let target = address_bytes(bytes).to_string();
+        let quota = u64::try_from(bytes.len()).expect("fixture length");
+        let capabilities = storage_write_capabilities(&target, quota);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(
+            &grant_path,
+            format!(r#"{{"storage_roots":["{target}"],"storage_quota_bytes":{quota}}}"#),
+        )
+        .expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+
+        let admitted = parent_with_store_write_child(&capabilities, &capabilities);
+        let result = HoloExecutor::with_object_store(store.clone())
+            .execute_with_grant(&admitted, vec![b"parent".to_vec()], &grant)
+            .await
+            .expect("attenuated child prepares");
+        assert_eq!(result.outputs, [b"parent"]);
+
+        let insufficient = storage_write_capabilities(&target, quota - 1);
+        let denied = parent_with_store_write_child(&capabilities, &insufficient);
+        let error = HoloExecutor::with_object_store(store)
+            .execute_with_grant(&denied, Vec::new(), &grant)
+            .await
+            .expect_err("smaller delegated quota cannot admit child request");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("delegated grant"), "{error}");
+    }
+
+    #[tokio::test]
     async fn malformed_component_and_wrong_entry_fail_closed() {
         let malformed = component_archive(b"not a WebAssembly component", "run");
         let error = HoloExecutor::default()
@@ -1642,6 +1767,21 @@ mod tests {
         .expect("storage capabilities")
     }
 
+    fn storage_write_capabilities(root: &str, quota: u64) -> Vec<u8> {
+        crate::holo_capability::compile_source(
+            std::path::Path::new("storage-write-capabilities.json"),
+            format!(r#"{{"storage_roots":["{root}"],"storage_quota_bytes":{quota}}}"#).as_bytes(),
+        )
+        .expect("storage write capabilities")
+    }
+
+    fn store_write_input(kappa: &str, bytes: &[u8]) -> Vec<u8> {
+        let mut input = kappa.as_bytes().to_vec();
+        input.push(b'\n');
+        input.extend_from_slice(bytes);
+        input
+    }
+
     fn store_read_archive(capabilities: &[u8]) -> Vec<u8> {
         let component = include_bytes!("../tests/fixtures/component-store-read/store-read.wasm");
         let manifest = AppManifest {
@@ -1651,6 +1791,21 @@ mod tests {
                 address_bytes(component),
                 crate::holo_contract::COMPONENT_V1_ENTRY,
                 crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+            )],
+            children: Vec::new(),
+        };
+        current_archive(&manifest, &[capabilities, component])
+    }
+
+    fn store_write_archive(capabilities: &[u8]) -> Vec<u8> {
+        let component = include_bytes!("../tests/fixtures/component-store-write/store-write.wasm");
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
             )],
             children: Vec::new(),
         };
@@ -1691,6 +1846,44 @@ mod tests {
             child_component,
         ];
         if delegated != child_capabilities && delegated != parent_capabilities.as_slice() {
+            contents.push(delegated);
+        }
+        current_archive(&parent_manifest, &contents)
+    }
+
+    fn parent_with_store_write_child(child_capabilities: &[u8], delegated: &[u8]) -> Vec<u8> {
+        let parent_capabilities = child_capabilities;
+        let parent_component = include_bytes!("../tests/fixtures/component-echo/echo.wat");
+        let child_component =
+            include_bytes!("../tests/fixtures/component-store-write/store-write.wasm");
+        let child_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(child_capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(child_component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
+            )],
+            children: Vec::new(),
+        }
+        .canonicalize();
+        let parent_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(parent_capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(parent_component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_V1,
+            )],
+            children: vec![(address_bytes(&child_manifest), address_bytes(delegated))],
+        };
+        let mut contents: Vec<&[u8]> = vec![
+            parent_capabilities,
+            parent_component,
+            child_manifest.as_slice(),
+            child_component,
+        ];
+        if delegated != child_capabilities {
             contents.push(delegated);
         }
         current_archive(&parent_manifest, &contents)

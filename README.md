@@ -392,6 +392,16 @@ profile authority returns `LIVE_AUTHORIZATION_DENIED` before linker
 construction. No filesystem, network, clock, environment, or other WASI
 interface is added by this profile.
 
+Components that need mediated object writes select
+`hologram:guest/component-store-write@1`. Its fixed world imports only
+`hologram:host/store-write@1.0.0`; it cannot read. The request and trusted grant
+must contain the exact destination κ in `storage_roots` and a nonzero
+`storage_quota_bytes`. Before any write, Live checks the exact root and proves
+the bytes hash to the caller-supplied κ. Newly materialized blobs consume the
+prepared application's lifetime quota, existing identical blobs consume no
+additional quota, and a rejected call leaves no partial blob. Direct, resident,
+and delegated-child paths use the same rules and expose no ambient WASI surface.
+
 `hologram run` accepts a project directory, its `hologram.json`, a local
 self-contained `.holo` file, or a catalog κ. Project references are compiled as
 fat archives in memory and are not written or imported. Repeat `--input` for

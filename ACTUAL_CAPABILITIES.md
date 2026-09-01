@@ -61,6 +61,14 @@ This document is deliberately strict about what the current stable build does an
   pre-link admission and per-call exact-root check, and child applications are
   restricted by their delegated grant. No ambient filesystem or WASI surface
   is linked.
+- Capability-gated typed graph reads under the distinct
+  `hologram:guest/component-store-graph-read@1` contract. The fixed import
+  remains only `hologram:host/store@1.0.0`, but provider preparation resolves
+  complete local closures through registered canonical UOR realization edges,
+  verifies every κ, and enforces depth, object, edge, and aggregate-byte
+  ceilings before linking. Unknown types are opaque leaves; malformed or
+  incomplete typed closures fail closed. Exact-root reads and writes retain
+  their original semantics, and child grants attenuate graph roots.
 - Capability-gated Component object writes under the separate
   `hologram:guest/component-store-write@1` contract. Its fixed WIT world imports
   only `hologram:host/store-write@1.0.0`; preparation requires exact admitted
@@ -84,7 +92,8 @@ This document is deliberately strict about what the current stable build does an
 ## Present as an extension seam, not implemented by the default module set
 
 - WASI and capability-gated Component host imports beyond the shipped
-  exact-root object-read/object-write and bounded channel profiles.
+  exact-root object-read/object-write, typed graph-read, and bounded channel
+  profiles.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
 - Uniform engine enforcement of scalar CPU, memory, deadline, priority, and
   concurrency budgets across providers; Component v1 currently enforces its

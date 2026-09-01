@@ -29,6 +29,9 @@ Its values are exact, namespaced identifiers:
 - `hologram:guest/component@1`: Hologram Component Model v1;
 - `hologram:guest/component-store-read@1`: Component Model v1 with the fixed
   mediated object-store read import.
+- `hologram:guest/component-store-graph-read@1`: Component Model v1 with the
+  same fixed read-only import over a complete bounded typed realization
+  closure.
 - `hologram:guest/component-store-write@1`: Component Model v1 with the fixed
   mediated content-addressed object-store write import.
 - `hologram:guest/component-channel-publish@1`: Component Model v1 with the
@@ -54,7 +57,9 @@ codec. Upstream PR 143, merge `aad544c`, adds
 of the accepted explicit identifiers. Upstream PR 144, merge `059c39f`, adds
 `WASM_CONTRACT_COMPONENT_STORE_WRITE_V1` under the same closed validation rule;
 Live pins that merge. Upstream PR 145, merge `4fac0b3`, adds the publish and
-subscribe selectors; Live pins that merge as well.
+subscribe selectors; Live pins that merge as well. Upstream PR 146, merge
+`01c29de`, adds the distinct graph-read selector so exact-root grants are not
+reinterpreted by newer runtimes; Live pins that merge.
 
 ### Negotiation
 
@@ -87,6 +92,13 @@ shape and imports exactly `hologram:host/store@1.0.0`, whose `read` function
 takes one object κ and returns its bytes or a public error string. It does not
 import WASI or any other Hologram interface.
 
+`component-store-graph-read@1` deliberately reuses that exact WIT world and
+single read-only host import. Its distinct canonical selector changes only the
+authority interpretation: provider preparation must resolve the admitted roots
+through registered typed UOR realization edges before the import is linked.
+This keeps guest binaries ABI-compatible while preventing exact-root archives
+from silently gaining descendant access.
+
 `component-store-write@1` uses the separate `application` world under
 [`../wit/store-write/`](../wit/store-write/). It retains the same guest `run`
 shape and imports exactly `hologram:host/store-write@1.0.0`. Its `write`
@@ -111,8 +123,18 @@ ambient fallback. For `component-store-read@1`, at least one requested
 `storage_roots` entry is required. Admission proves those roots are contained
 by the effective grant; the host retains only that admitted intersection and
 checks every requested κ before touching the object store. The current safe
-slice serves an explicitly named root itself; traversing its referenced closure
-requires a future typed graph resolver. For `component-store-write@1`, the
+slice serves an explicitly named root itself. For
+`component-store-graph-read@1`, the same admission first supplies the exact
+root set to a local breadth-first resolver. Every first-seen object is re-hashed
+against its κ. Only registered canonical realization IRIs contribute edges;
+unknown or untagged objects are opaque leaves. A claimed registered type must
+have a complete canonical frame. Missing members, malformed frames, or the
+host's depth, object, edge, or aggregate-byte ceiling fail before linker
+construction, and public errors omit object identities. The complete resolved
+closure becomes the read set for the prepared lifetime. Child attenuation
+remains the exact subset relation over roots; resolving a root never lets a
+child request a root its delegated grant did not contain. No network resolver
+is consulted. For `component-store-write@1`, the
 request must also contain a nonzero `storage_quota_bytes` value. The provider
 retains the exact admitted roots and a lifetime-shared remaining quota before
 linker construction. Each call checks exact-root membership, verifies that the
@@ -144,6 +166,7 @@ leave no pending subscription state.
 | Proposed interface | Required canonical capability | v1 disposition |
 | --- | --- | --- |
 | `hologram:host/store.read` | target κ is an admitted `storage_roots` entry | shipped only in `component-store-read@1` |
+| `hologram:host/store.read` over typed closure | target κ is reachable from an admitted `storage_roots` entry through registered canonical realization edges | shipped only in `component-store-graph-read@1`; complete local bounded resolution before linking |
 | `hologram:host/store-write.write` | target κ is an admitted `storage_roots` entry and newly materialized bytes fit `storage_quota_bytes` | shipped only in `component-store-write@1` |
 | `hologram:host/channel-publish.publish` | channel κ is in `publish_channels` | shipped only in `component-channel-publish@1` |
 | `hologram:host/channel-subscribe.try-receive` | channel κ is in `subscribe_channels` | shipped only in `component-channel-subscribe@1` |
@@ -197,10 +220,10 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- The import-free, mediated object-read/object-write, and bounded channel
+- The import-free, exact object-read/object-write, typed graph-read, and bounded channel
   publish/subscribe Component providers, resource enforcement, and locked
   pure-Python wheel packaging are current capabilities. Native Python packages,
-  transitive storage-closure traversal, durable/distributed messaging, and any
+  transitive graph writes, durable/distributed messaging, and any
   capability-gated WASI profile remain explicit follow-up work.
 - New host authority requires both a versioned contract profile and a canonical
   capability field before an import can be linked.

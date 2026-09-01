@@ -1,4 +1,50 @@
-# Current sprint: capability-gated Component channels
+# Current sprint: capability-gated typed storage graph reads
+
+## Sprint status
+
+- State: complete
+- Started: 2026-09-01
+- Last reviewed: 2026-09-01
+- Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
+- Decision: [ADR 011](adrs/011-holo-guest-contract-negotiation.md)
+- Goal: resolve admitted UOR realization roots into bounded local read closures
+  without widening the shipped exact-root read or write profiles
+- Exit signal: a distinct canonical contract resolves only verified complete
+  typed closures before linking, with direct/resident parity and child-root
+  attenuation
+
+## Contract and mediation
+
+- [x] Add canonical `component-store-graph-read@1` upstream while preserving
+  `component-store-read@1` as exact-root-only.
+- [x] Walk only registered canonical realization edges; treat unknown and
+  untagged objects as opaque leaves.
+- [x] Re-hash every reachable object and require the complete closure locally
+  before constructing the linker; do not consult a network resolver.
+- [x] Bound traversal to depth 16, 512 objects, 4,096 edges, and 64 MiB of
+  aggregate object bytes.
+- [x] Reuse only the fixed `hologram:host/store@1.0.0` read import and preserve
+  exact root-subset attenuation for child applications.
+
+## Verification and delivery
+
+- [x] Exercise typed descendants, opaque leaves, duplicate edges, missing and
+  malformed objects, and every traversal limit with redacted failures.
+- [x] Prove direct/resident parity, exact-read non-widening, pre-link failure,
+  child attenuation, compiler/provider selection, and enforced BDD coverage.
+- [x] Update ADR 011, the runtime plan, README, architecture, security, website,
+  and actual-capabilities inventory.
+- [x] Pass formatting, workspace tests, Clippy, BDD, documentation, release,
+  smoke, and clean Component reproducibility gates.
+
+## Next prioritized work
+
+- [ ] Introduce endpoint-scoped network capabilities before any mediated fetch
+  profile; do not expose raw sockets from the current booleans.
+
+---
+
+# Previous sprint: capability-gated Component channels
 
 ## Sprint status
 

@@ -726,6 +726,9 @@ fn direct_registry(
             Arc::new(WasmProvider::direct(engine)),
             Arc::new(ComponentProvider::direct()),
             Arc::new(ComponentProvider::store_read_direct(object_store.clone())),
+            Arc::new(ComponentProvider::store_graph_read_direct(
+                object_store.clone(),
+            )),
             Arc::new(ComponentProvider::store_write_direct(object_store)),
             Arc::new(ComponentProvider::channel_publish_direct(
                 channel_broker.clone(),
@@ -750,6 +753,9 @@ fn resident_registry(
             Arc::new(WasmProvider::resident(engine, root, mailbox_capacity)),
             Arc::new(ComponentProvider::resident()),
             Arc::new(ComponentProvider::store_read_resident(object_store.clone())),
+            Arc::new(ComponentProvider::store_graph_read_resident(
+                object_store.clone(),
+            )),
             Arc::new(ComponentProvider::store_write_resident(object_store)),
             Arc::new(ComponentProvider::channel_publish_resident(
                 channel_broker.clone(),
@@ -765,7 +771,7 @@ fn resident_registry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hologram::space::{address_bytes, Layer, Realization};
+    use hologram::space::{address_bytes, Channel, Layer, Realization};
     use hologram_view_surface::{
         PortableViewAttachment, PortableViewSurface, SurfaceFuture, ViewIntentRequest,
         APPLICATION_INVOKE_INTENT, VIEW_INTENT_VERSION,
@@ -1181,6 +1187,146 @@ mod tests {
             .expect("resident store.read");
         assert_eq!(resident.outputs, [b"capability mediated"]);
         runtime.unload(&kappa).await.expect("unload");
+    }
+
+    #[tokio::test]
+    async fn component_store_graph_read_resolves_descendants_direct_and_resident() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let leaf = store
+            .put("file", "text/plain", None, b"graph descendant")
+            .expect("put leaf");
+        let root_bytes = Channel {
+            type_shape: Some(address_bytes(b"graph descendant")),
+            decl_payload: b"typed graph root".to_vec(),
+        }
+        .canonicalize();
+        let root = address_bytes(&root_bytes).to_string();
+        store
+            .cache_addressed(&root, &root_bytes)
+            .expect("cache typed root");
+        let capabilities = storage_capabilities(&root);
+        let archive = store_graph_read_archive(&capabilities);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(&grant_path, format!(r#"{{"storage_roots":["{root}"]}}"#)).expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+
+        let direct = HoloExecutor::with_object_store(store.clone())
+            .execute_with_grant(&archive, vec![leaf.id.as_bytes().to_vec()], &grant)
+            .await
+            .expect("direct graph read");
+        assert_eq!(direct.outputs, [b"graph descendant"]);
+
+        let exact_error = HoloExecutor::with_object_store(store.clone())
+            .execute_with_grant(
+                &store_read_archive(&capabilities),
+                vec![leaf.id.as_bytes().to_vec()],
+                &grant,
+            )
+            .await
+            .expect_err("exact-root profile must not inherit graph semantics");
+        assert!(exact_error.to_string().contains("outside"), "{exact_error}");
+
+        let catalog = Arc::new(HoloCatalog::new(store));
+        let runtime = HoloRuntime::new_with_grant(catalog.clone(), 8, grant);
+        let kappa = catalog
+            .import("component-store-graph-read.holo".to_owned(), archive)
+            .expect("import")
+            .kappa;
+        runtime.load(&kappa).await.expect("resident load");
+        let resident = runtime
+            .run(&kappa, vec![leaf.id.as_bytes().to_vec()])
+            .await
+            .expect("resident graph read");
+        assert_eq!(resident.outputs, [b"graph descendant"]);
+        runtime.unload(&kappa).await.expect("unload");
+    }
+
+    #[tokio::test]
+    async fn component_store_graph_read_rejects_incomplete_closure_before_instantiation() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let missing = address_bytes(b"absent graph member");
+        let root_bytes = Channel {
+            type_shape: Some(missing),
+            decl_payload: Vec::new(),
+        }
+        .canonicalize();
+        let root = address_bytes(&root_bytes).to_string();
+        store
+            .cache_addressed(&root, &root_bytes)
+            .expect("cache typed root");
+        let capabilities = storage_capabilities(&root);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(&grant_path, format!(r#"{{"storage_roots":["{root}"]}}"#)).expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+        let error = HoloExecutor::with_object_store(store)
+            .execute_with_grant(
+                &store_graph_read_archive(&capabilities),
+                vec![missing.to_string().into_bytes()],
+                &grant,
+            )
+            .await
+            .expect_err("incomplete closure");
+        assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
+        assert!(error.to_string().contains("incomplete"), "{error}");
+        assert!(!error.to_string().contains(&missing.to_string()), "{error}");
+    }
+
+    #[tokio::test]
+    async fn component_store_graph_read_child_preserves_root_attenuation() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let leaf = store
+            .put("file", "text/plain", None, b"child graph leaf")
+            .expect("put leaf");
+        let root_bytes = Channel {
+            type_shape: Some(address_bytes(b"child graph leaf")),
+            decl_payload: Vec::new(),
+        }
+        .canonicalize();
+        let root = address_bytes(&root_bytes).to_string();
+        store
+            .cache_addressed(&root, &root_bytes)
+            .expect("cache typed root");
+        let capabilities = storage_capabilities(&root);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(&grant_path, format!(r#"{{"storage_roots":["{root}"]}}"#)).expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+
+        let admitted = parent_with_store_graph_read_child(&capabilities, &capabilities);
+        let result = HoloExecutor::with_object_store(store.clone())
+            .execute_with_grant(&admitted, vec![b"parent".to_vec()], &grant)
+            .await
+            .expect("attenuated graph child prepares");
+        assert_eq!(result.outputs, [b"parent"]);
+        assert_eq!(
+            store.get(&leaf.id).expect("leaf remains readable"),
+            b"child graph leaf"
+        );
+
+        let denied = parent_with_store_graph_read_child(
+            &capabilities,
+            &crate::holo_capability::empty_canonical(),
+        );
+        let error = HoloExecutor::with_object_store(store)
+            .execute_with_grant(&denied, Vec::new(), &grant)
+            .await
+            .expect_err("empty delegation cannot admit graph root");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("delegated grant"), "{error}");
     }
 
     #[tokio::test]
@@ -2000,6 +2146,21 @@ mod tests {
         current_archive(&manifest, &[capabilities, component])
     }
 
+    fn store_graph_read_archive(capabilities: &[u8]) -> Vec<u8> {
+        let component = include_bytes!("../tests/fixtures/component-store-read/store-read.wasm");
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1,
+            )],
+            children: Vec::new(),
+        };
+        current_archive(&manifest, &[capabilities, component])
+    }
+
     fn store_write_archive(capabilities: &[u8]) -> Vec<u8> {
         let component = include_bytes!("../tests/fixtures/component-store-write/store-write.wasm");
         let manifest = AppManifest {
@@ -2016,6 +2177,26 @@ mod tests {
     }
 
     fn parent_with_store_read_child(child_capabilities: &[u8], delegated: &[u8]) -> Vec<u8> {
+        parent_with_store_child(
+            child_capabilities,
+            delegated,
+            crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+        )
+    }
+
+    fn parent_with_store_graph_read_child(child_capabilities: &[u8], delegated: &[u8]) -> Vec<u8> {
+        parent_with_store_child(
+            child_capabilities,
+            delegated,
+            crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1,
+        )
+    }
+
+    fn parent_with_store_child(
+        child_capabilities: &[u8],
+        delegated: &[u8],
+        contract: &str,
+    ) -> Vec<u8> {
         let parent_capabilities = crate::holo_capability::empty_canonical();
         let parent_component = include_bytes!("../tests/fixtures/component-echo/echo.wat");
         let child_component =
@@ -2026,7 +2207,7 @@ mod tests {
             layers: vec![Layer::wasm_with_contract(
                 address_bytes(child_component),
                 crate::holo_contract::COMPONENT_V1_ENTRY,
-                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+                contract,
             )],
             children: Vec::new(),
         }

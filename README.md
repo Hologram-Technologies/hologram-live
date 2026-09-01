@@ -394,6 +394,18 @@ profile authority returns `LIVE_AUTHORIZATION_DENIED` before linker
 construction. No filesystem, network, clock, environment, or other WASI
 interface is added by this profile.
 
+Typed transitive reads use the distinct
+`hologram:guest/component-store-graph-read@1` contract, so an existing exact
+root grant never widens implicitly. It exposes the same single
+`hologram:host/store@1.0.0` import, but preparation resolves each admitted root
+through registered canonical UOR realization edges. Unknown or untagged bytes
+are opaque leaves. Every reachable object must already exist locally and
+re-hash to its κ; malformed typed frames, incomplete closures, and host depth,
+object, edge, or 64 MiB aggregate-byte limit violations fail before linker
+construction. The resolved read set is shared by direct and resident providers,
+while child applications may receive only root κ values admitted by their
+delegated grant. The write profile remains exact-root-only.
+
 Components that need mediated object writes select
 `hologram:guest/component-store-write@1`. Its fixed world imports only
 `hologram:host/store-write@1.0.0`; it cannot read. The request and trusted grant
@@ -983,7 +995,7 @@ The default build does not yet provide:
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives—including Python Components with locked pure-Python wheels and the capability-gated Component object-read profile—execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, inference-model provider invocation, resident rootfs execution, native Component dependencies, remaining Hologram host profiles, capability-gated WASI, deterministic Python Component output, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives—including Python Components with locked pure-Python wheels and the capability-gated exact-object and typed-graph read profiles—execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, inference-model provider invocation, resident rootfs execution, native Component dependencies, remaining Hologram host profiles, capability-gated WASI, transitive graph writes, deterministic Python Component output, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

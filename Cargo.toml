@@ -59,7 +59,7 @@ zstd = "0.13"
 # `InferenceModel` layer. Live accepts only the current v4 archive contract. The stable default still
 # uses only the canonical archive/space surface: model compilation and runtime
 # providers remain outside this crate until their typed adapters are enabled.
-hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "3af5826c32e9672f82ae7c5447608de8ee0ae01e", default-features = false, features = ["archive", "space"] }
+hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "2bda6a9a9476872dade705bd61ece4209607f6da", default-features = false, features = ["archive", "space"] }
 hologram-view-surface = { path = "crates/hologram-view-surface" }
 
 [dev-dependencies]

@@ -1,4 +1,54 @@
-# Current sprint: capability-gated Component object reads
+# Current sprint: capability-gated Component object writes
+
+## Sprint status
+
+- State: complete
+- Started: 2026-08-31
+- Last reviewed: 2026-08-31
+- Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
+- Decision: [ADR 011](adrs/011-holo-guest-contract-negotiation.md)
+- Goal: ship an exact-root content-addressed write interface without adding
+  reads, ambient WASI, or transitive graph authority
+- Exit signal: direct and resident guests atomically materialize only admitted
+  κ-addressed bytes within lifetime quota, missing authority fails before
+  linking, and child preparation preserves root and quota attenuation
+
+## Contract and mediation
+
+- [x] Add the canonical `hologram:guest/component-store-write@1` selector and
+  a WIT world importing only `hologram:host/store-write@1.0.0`.
+- [x] Require nonempty admitted `storage_roots` and nonzero
+  `storage_quota_bytes` before linker construction.
+- [x] Check every target, content hash, and remaining quota before atomically
+  materializing a missing object; charge no quota for an existing identical
+  blob and leave no partial blob after rejection.
+- [x] Share quota across every fresh guest store for the prepared application's
+  lifetime and preserve root/quota attenuation for children.
+
+## Verification and delivery
+
+- [x] Exercise allowed, outside-root, mismatched-hash, exhausted-quota, and
+  existing-object host calls with a generated Component fixture.
+- [x] Prove matching direct/resident behavior, pre-link denial, and child
+  attenuation through unit and enforced BDD coverage.
+- [x] Update ADR 011, the runtime plan, README, architecture, security, website,
+  and actual-capabilities inventory.
+- [x] Pass formatting, workspace tests, Clippy, BDD, documentation, release,
+  smoke, and clean Component reproducibility gates.
+
+## Next prioritized work
+
+- [ ] Define fixed-import channel publish and subscribe profiles with exact
+  channel admission, bounded messages, backpressure, cancellation, and explicit
+  delivery/lifecycle semantics.
+- [ ] Add a typed graph resolver before treating storage roots as transitive
+  readable or writable closures.
+- [ ] Introduce endpoint-scoped network capabilities before any mediated fetch
+  profile; do not expose raw sockets from the current booleans.
+
+---
+
+# Previous sprint: capability-gated Component object reads
 
 ## Sprint status
 

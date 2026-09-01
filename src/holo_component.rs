@@ -28,6 +28,13 @@ mod store_read_bindings {
     });
 }
 
+mod store_write_bindings {
+    wasmtime::component::bindgen!({
+        path: "specs/wit/store-write",
+        world: "application",
+    });
+}
+
 pub const COMPONENT_MEMORY_MAX_BYTES: usize = 64 * 1024 * 1024;
 pub const COMPONENT_INSTANCE_MAX: usize = 128;
 pub const COMPONENT_TABLE_MAX: usize = 32;
@@ -105,6 +112,7 @@ pub struct ComponentProvider {
 enum ComponentProfile {
     ImportFree,
     StoreRead,
+    StoreWrite,
 }
 
 impl ComponentProvider {
@@ -142,6 +150,23 @@ impl ComponentProvider {
         }
     }
 
+    pub fn store_write_direct(object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self::store_write(ProviderTarget::Direct, object_store)
+    }
+
+    pub fn store_write_resident(object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self::store_write(ProviderTarget::Resident, object_store)
+    }
+
+    fn store_write(target: ProviderTarget, object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self {
+            target,
+            limits: ComponentLimits::default(),
+            profile: ComponentProfile::StoreWrite,
+            object_store,
+        }
+    }
+
     #[cfg(test)]
     fn with_limits(target: ProviderTarget, limits: ComponentLimits) -> Self {
         Self {
@@ -165,6 +190,9 @@ impl LayerProvider for ComponentProvider {
             ComponentProfile::StoreRead => {
                 crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1
             }
+            ComponentProfile::StoreWrite => {
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_WRITE_V1
+            }
         })
     }
 
@@ -179,6 +207,12 @@ impl LayerProvider for ComponentProvider {
             }
             (ProviderTarget::Resident, ComponentProfile::StoreRead) => {
                 "wasmtime-component-store-read-resident"
+            }
+            (ProviderTarget::Direct, ComponentProfile::StoreWrite) => {
+                "wasmtime-component-store-write-direct"
+            }
+            (ProviderTarget::Resident, ComponentProfile::StoreWrite) => {
+                "wasmtime-component-store-write-resident"
             }
         }
     }
@@ -247,6 +281,37 @@ impl LayerProvider for ComponentProvider {
                     roots: Arc::from(roots),
                 })
             }
+            ComponentProfile::StoreWrite => {
+                let request = &context.requested_capabilities.capabilities;
+                let roots = request
+                    .storage_roots
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                if roots.is_empty() {
+                    return Err(LiveError::Authorization(format!(
+                        "Component interface hologram:host/store-write@1.0.0 requires at least one admitted storage_roots entry for application {}",
+                        context.identity.application_kappa
+                    )));
+                }
+                if request.storage_quota_bytes == 0 {
+                    return Err(LiveError::Authorization(format!(
+                        "Component interface hologram:host/store-write@1.0.0 requires a nonzero admitted storage_quota_bytes value for application {}",
+                        context.identity.application_kappa
+                    )));
+                }
+                let object_store = self.object_store.clone().ok_or_else(|| {
+                    LiveError::Capability(
+                        "Component interface hologram:host/store-write@1.0.0 has no object-store backend"
+                            .to_owned(),
+                    )
+                })?;
+                ComponentHost::StoreWrite(StoreWriteHost {
+                    object_store,
+                    roots: Arc::from(roots),
+                    quota_remaining: Arc::new(Mutex::new(request.storage_quota_bytes)),
+                })
+            }
         };
         let kappa = context.identity.archive_kappa;
         let position = context.layer.position;
@@ -278,12 +343,20 @@ struct ComponentStore {
 enum ComponentHost {
     ImportFree,
     StoreRead(StoreReadHost),
+    StoreWrite(StoreWriteHost),
 }
 
 #[derive(Clone)]
 struct StoreReadHost {
     object_store: Arc<ObjectStore>,
     roots: Arc<[String]>,
+}
+
+#[derive(Clone)]
+struct StoreWriteHost {
+    object_store: Arc<ObjectStore>,
+    roots: Arc<[String]>,
+    quota_remaining: Arc<Mutex<u64>>,
 }
 
 impl store_read_bindings::hologram::host::store::Host for ComponentStore {
@@ -298,6 +371,38 @@ impl store_read_bindings::hologram::host::store::Host for ComponentStore {
             LiveError::NotFound(_) => "object was not found".to_owned(),
             _ => "object-store read failed".to_owned(),
         })
+    }
+}
+
+impl store_write_bindings::hologram::host::store_write::Host for ComponentStore {
+    fn write(&mut self, kappa: String, bytes: Vec<u8>) -> std::result::Result<(), String> {
+        let ComponentHost::StoreWrite(host) = &mut self.host else {
+            return Err("store.write is not linked for this contract".to_owned());
+        };
+        if !host.roots.iter().any(|root| root == &kappa) {
+            return Err("object is outside the application's admitted storage roots".to_owned());
+        }
+        let mut quota_remaining = host
+            .quota_remaining
+            .lock()
+            .map_err(|_| "store.write quota state is unavailable".to_owned())?;
+        let created = host
+            .object_store
+            .cache_addressed_bounded(&kappa, &bytes, *quota_remaining)
+            .map_err(|error| match error {
+                LiveError::InvalidHolo(_) => {
+                    "object bytes do not match the admitted content address".to_owned()
+                }
+                LiveError::Capability(_) => {
+                    "write exceeds the application's admitted storage quota".to_owned()
+                }
+                _ => "object-store write failed".to_owned(),
+            })?;
+        if created {
+            let byte_count = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+            *quota_remaining -= byte_count;
+        }
+        Ok(())
     }
 }
 
@@ -420,6 +525,21 @@ fn instantiate(
                     ))
                 })?;
         }
+        ComponentHost::StoreWrite(_) => {
+            store_write_bindings::hologram::host::store_write::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component store.write interface: {error}"))
+            })?;
+            store_write_bindings::Application::instantiate(&mut store, component, &linker)
+                .map_err(|error| {
+                    LiveError::Protocol(format!(
+                        "Component store-write v1 must export hologram:application-store-write/application@1.0.0 and import only hologram:host/store-write@1.0.0: {error}"
+                    ))
+                })?;
+        }
     }
     Ok(())
 }
@@ -481,6 +601,34 @@ fn run_once(
             result.map_err(|error| {
                 LiveError::Protocol(format!(
                     "Component store-read v1 guest returned {:?}: {}",
+                    error.code, error.message
+                ))
+            })?
+        }
+        ComponentHost::StoreWrite(_) => {
+            store_write_bindings::hologram::host::store_write::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component store.write interface: {error}"))
+            })?;
+            let bindings =
+                store_write_bindings::Application::instantiate(&mut store, component, &linker)
+                    .map_err(|error| {
+                        LiveError::Protocol(format!(
+                            "instantiate Component store-write v1: {error}"
+                        ))
+                    })?;
+            let result = bindings
+                .hologram_application_store_write_guest()
+                .call_run(&mut store, input)
+                .map_err(|error| {
+                    LiveError::Protocol(format!("execute Component store-write v1 run: {error}"))
+                })?;
+            result.map_err(|error| {
+                LiveError::Protocol(format!(
+                    "Component store-write v1 guest returned {:?}: {}",
                     error.code, error.message
                 ))
             })?
@@ -639,6 +787,17 @@ mod tests {
         include_bytes!("../tests/fixtures/component-store-read/store-read.wasm")
     }
 
+    fn store_write_component() -> &'static [u8] {
+        include_bytes!("../tests/fixtures/component-store-write/store-write.wasm")
+    }
+
+    fn store_write_input(kappa: &str, bytes: &[u8]) -> Vec<u8> {
+        let mut input = kappa.as_bytes().to_vec();
+        input.push(b'\n');
+        input.extend_from_slice(bytes);
+        input
+    }
+
     fn spinning_wat() -> String {
         let marker = "    (func $hologram:application/guest@1.0.0#run (;3;)";
         let source = echo_wat();
@@ -756,6 +915,158 @@ mod tests {
     }
 
     #[test]
+    fn store_write_host_only_materializes_an_exact_address_within_quota() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let object_store = Arc::new(ObjectStore::open(directory.path()).expect("store"));
+        let bytes = b"capability mediated write";
+        let allowed = hologram::space::address_bytes(bytes).to_string();
+        let component = PreparedComponent::compile(
+            "fixture",
+            store_write_component(),
+            ComponentLimits::default(),
+            ComponentHost::StoreWrite(StoreWriteHost {
+                object_store: object_store.clone(),
+                roots: Arc::from([allowed.clone()]),
+                quota_remaining: Arc::new(Mutex::new(
+                    u64::try_from(bytes.len()).expect("fixture length"),
+                )),
+            }),
+        )
+        .expect("compile store-write component");
+
+        assert_eq!(
+            component
+                .run_inputs(
+                    vec![store_write_input(&allowed, bytes)],
+                    &AtomicBool::new(false),
+                )
+                .expect("write admitted root"),
+            vec![allowed.as_bytes().to_vec()]
+        );
+        assert_eq!(
+            object_store
+                .get_cached(&allowed)
+                .expect("read written object"),
+            Some(bytes.to_vec())
+        );
+    }
+
+    #[test]
+    fn store_write_quota_is_shared_across_inputs_and_charges_only_new_blobs() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let object_store = Arc::new(ObjectStore::open(directory.path()).expect("store"));
+        let first_bytes = b"one";
+        let second_bytes = b"second";
+        let first = hologram::space::address_bytes(first_bytes).to_string();
+        let second = hologram::space::address_bytes(second_bytes).to_string();
+        let component = PreparedComponent::compile(
+            "fixture",
+            store_write_component(),
+            ComponentLimits::default(),
+            ComponentHost::StoreWrite(StoreWriteHost {
+                object_store: object_store.clone(),
+                roots: Arc::from([first.clone(), second.clone()]),
+                quota_remaining: Arc::new(Mutex::new(
+                    u64::try_from(first_bytes.len()).expect("fixture length"),
+                )),
+            }),
+        )
+        .expect("compile store-write component");
+
+        let error = component
+            .run_inputs(
+                vec![
+                    store_write_input(&first, first_bytes),
+                    store_write_input(&second, second_bytes),
+                ],
+                &AtomicBool::new(false),
+            )
+            .expect_err("second new blob exceeds lifetime quota");
+        assert!(error.to_string().contains("quota"), "{error}");
+        assert_eq!(
+            object_store.get_cached(&first).expect("first lookup"),
+            Some(first_bytes.to_vec())
+        );
+        assert_eq!(
+            object_store.get_cached(&second).expect("second lookup"),
+            None
+        );
+
+        assert_eq!(
+            component
+                .run_inputs(
+                    vec![store_write_input(&first, first_bytes)],
+                    &AtomicBool::new(false),
+                )
+                .expect("existing blob consumes no additional quota"),
+            vec![first.as_bytes().to_vec()]
+        );
+    }
+
+    #[test]
+    fn store_write_rejections_are_redacted_and_leave_no_partial_blob() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let object_store = Arc::new(ObjectStore::open(directory.path()).expect("store"));
+        let expected = b"expected bytes";
+        let allowed = hologram::space::address_bytes(expected).to_string();
+        let denied_bytes = b"outside bytes";
+        let denied = hologram::space::address_bytes(denied_bytes).to_string();
+
+        let compile = |quota_remaining| {
+            PreparedComponent::compile(
+                "fixture",
+                store_write_component(),
+                ComponentLimits::default(),
+                ComponentHost::StoreWrite(StoreWriteHost {
+                    object_store: object_store.clone(),
+                    roots: Arc::from([allowed.clone()]),
+                    quota_remaining: Arc::new(Mutex::new(quota_remaining)),
+                }),
+            )
+            .expect("compile store-write component")
+        };
+
+        let error = compile(u64::MAX)
+            .run_inputs(
+                vec![store_write_input(&denied, denied_bytes)],
+                &AtomicBool::new(false),
+            )
+            .expect_err("deny object outside roots");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(error.to_string().contains("outside"), "{error}");
+        assert!(!error.to_string().contains(&denied), "{error}");
+        assert_eq!(
+            object_store.get_cached(&denied).expect("denied lookup"),
+            None
+        );
+
+        let error = compile(u64::MAX)
+            .run_inputs(
+                vec![store_write_input(&allowed, b"wrong bytes")],
+                &AtomicBool::new(false),
+            )
+            .expect_err("deny hash mismatch");
+        assert!(error.to_string().contains("do not match"), "{error}");
+        assert!(!error.to_string().contains(&allowed), "{error}");
+        assert_eq!(
+            object_store.get_cached(&allowed).expect("mismatch lookup"),
+            None
+        );
+
+        let error = compile(1)
+            .run_inputs(
+                vec![store_write_input(&allowed, expected)],
+                &AtomicBool::new(false),
+            )
+            .expect_err("deny quota overflow");
+        assert!(error.to_string().contains("quota"), "{error}");
+        assert_eq!(
+            object_store.get_cached(&allowed).expect("quota lookup"),
+            None
+        );
+    }
+
+    #[test]
     fn component_profiles_do_not_accept_each_others_worlds() {
         let error = PreparedComponent::compile(
             "fixture",
@@ -789,6 +1100,40 @@ mod tests {
             error
                 .to_string()
                 .contains("hologram:application-store-read"),
+            "{error}"
+        );
+
+        let error = PreparedComponent::compile(
+            "fixture",
+            store_write_component(),
+            ComponentLimits::default(),
+            ComponentHost::ImportFree,
+        )
+        .err()
+        .expect("base profile rejects store-write import");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(error.to_string().contains("store-write"), "{error}");
+
+        let error = PreparedComponent::compile(
+            "fixture",
+            store_read_component(),
+            ComponentLimits::default(),
+            ComponentHost::StoreWrite(StoreWriteHost {
+                object_store: Arc::new(ObjectStore::open(directory.path()).expect("store")),
+                roots: Arc::from([
+                    "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                        .to_owned(),
+                ]),
+                quota_remaining: Arc::new(Mutex::new(1)),
+            }),
+        )
+        .err()
+        .expect("store-write profile rejects store-read world");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(
+            error
+                .to_string()
+                .contains("hologram:application-store-write"),
             "{error}"
         );
     }

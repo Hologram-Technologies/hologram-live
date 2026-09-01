@@ -1,0 +1,6 @@
+package hologram:host@1.0.0;
+
+/// Write content-addressed bytes through capability mediation.
+interface store-write {
+  write: func(kappa: string, bytes: list<u8>) -> result<_, string>;
+}

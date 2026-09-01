@@ -1,4 +1,4 @@
-//! Bounded execution for the import-free Hologram Component Model v1 world.
+//! Bounded execution for Hologram Component Model v1 contract profiles.
 
 use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
@@ -6,6 +6,7 @@ use crate::holo_provider::{
     LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
     PreparedLayer, ProviderTarget,
 };
+use crate::store::ObjectStore;
 use hologram::space::LayerKind;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,6 +17,13 @@ use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder};
 mod bindings {
     wasmtime::component::bindgen!({
         path: "specs/wit",
+        world: "application",
+    });
+}
+
+mod store_read_bindings {
+    wasmtime::component::bindgen!({
+        path: "specs/wit/store-read",
         world: "application",
     });
 }
@@ -89,6 +97,14 @@ fn tighten_u64(host: u64, requested: u64, granted: u64) -> u64 {
 pub struct ComponentProvider {
     target: ProviderTarget,
     limits: ComponentLimits,
+    profile: ComponentProfile,
+    object_store: Option<Arc<ObjectStore>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComponentProfile {
+    ImportFree,
+    StoreRead,
 }
 
 impl ComponentProvider {
@@ -104,12 +120,36 @@ impl ComponentProvider {
         Self {
             target,
             limits: ComponentLimits::default(),
+            profile: ComponentProfile::ImportFree,
+            object_store: None,
+        }
+    }
+
+    pub fn store_read_direct(object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self::store_read(ProviderTarget::Direct, object_store)
+    }
+
+    pub fn store_read_resident(object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self::store_read(ProviderTarget::Resident, object_store)
+    }
+
+    fn store_read(target: ProviderTarget, object_store: Option<Arc<ObjectStore>>) -> Self {
+        Self {
+            target,
+            limits: ComponentLimits::default(),
+            profile: ComponentProfile::StoreRead,
+            object_store,
         }
     }
 
     #[cfg(test)]
     fn with_limits(target: ProviderTarget, limits: ComponentLimits) -> Self {
-        Self { target, limits }
+        Self {
+            target,
+            limits,
+            profile: ComponentProfile::ImportFree,
+            object_store: None,
+        }
     }
 }
 
@@ -120,13 +160,26 @@ impl LayerProvider for ComponentProvider {
     }
 
     fn contract(&self) -> Option<&'static str> {
-        Some(crate::holo_contract::WASM_CONTRACT_COMPONENT_V1)
+        Some(match self.profile {
+            ComponentProfile::ImportFree => crate::holo_contract::WASM_CONTRACT_COMPONENT_V1,
+            ComponentProfile::StoreRead => {
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1
+            }
+        })
     }
 
     fn name(&self) -> &'static str {
-        match self.target {
-            ProviderTarget::Direct => "wasmtime-component-direct",
-            ProviderTarget::Resident => "wasmtime-component-resident",
+        match (self.target, self.profile) {
+            (ProviderTarget::Direct, ComponentProfile::ImportFree) => "wasmtime-component-direct",
+            (ProviderTarget::Resident, ComponentProfile::ImportFree) => {
+                "wasmtime-component-resident"
+            }
+            (ProviderTarget::Direct, ComponentProfile::StoreRead) => {
+                "wasmtime-component-store-read-direct"
+            }
+            (ProviderTarget::Resident, ComponentProfile::StoreRead) => {
+                "wasmtime-component-store-read-resident"
+            }
         }
     }
 
@@ -167,12 +220,40 @@ impl LayerProvider for ComponentProvider {
             )));
         }
         let limits = self.limits.tighten(&context);
+        let host = match self.profile {
+            ComponentProfile::ImportFree => ComponentHost::ImportFree,
+            ComponentProfile::StoreRead => {
+                let roots = context
+                    .requested_capabilities
+                    .capabilities
+                    .storage_roots
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                if roots.is_empty() {
+                    return Err(LiveError::Authorization(format!(
+                        "Component interface hologram:host/store@1.0.0 requires at least one admitted storage_roots entry for application {}",
+                        context.identity.application_kappa
+                    )));
+                }
+                let object_store = self.object_store.clone().ok_or_else(|| {
+                    LiveError::Capability(
+                        "Component interface hologram:host/store@1.0.0 has no object-store backend"
+                            .to_owned(),
+                    )
+                })?;
+                ComponentHost::StoreRead(StoreReadHost {
+                    object_store,
+                    roots: Arc::from(roots),
+                })
+            }
+        };
         let kappa = context.identity.archive_kappa;
         let position = context.layer.position;
         let payload = context.layer.content;
         let resident_bytes = payload.len();
         let compiled = tokio::task::spawn_blocking(move || {
-            PreparedComponent::compile(&kappa, &payload, limits)
+            PreparedComponent::compile(&kappa, &payload, limits, host)
         })
         .await
         .map_err(|error| LiveError::Conflict(format!("join component prepare: {error}")))??;
@@ -190,17 +271,51 @@ impl LayerProvider for ComponentProvider {
 
 struct ComponentStore {
     limits: StoreLimits,
+    host: ComponentHost,
+}
+
+#[derive(Clone)]
+enum ComponentHost {
+    ImportFree,
+    StoreRead(StoreReadHost),
+}
+
+#[derive(Clone)]
+struct StoreReadHost {
+    object_store: Arc<ObjectStore>,
+    roots: Arc<[String]>,
+}
+
+impl store_read_bindings::hologram::host::store::Host for ComponentStore {
+    fn read(&mut self, kappa: String) -> std::result::Result<Vec<u8>, String> {
+        let ComponentHost::StoreRead(host) = &self.host else {
+            return Err("store.read is not linked for this contract".to_owned());
+        };
+        if !host.roots.iter().any(|root| root == &kappa) {
+            return Err("object is outside the application's admitted storage roots".to_owned());
+        }
+        host.object_store.get(&kappa).map_err(|error| match error {
+            LiveError::NotFound(_) => "object was not found".to_owned(),
+            _ => "object-store read failed".to_owned(),
+        })
+    }
 }
 
 struct PreparedComponent {
     engine: Engine,
     component: Component,
     limits: ComponentLimits,
+    host: ComponentHost,
     serial: Mutex<()>,
 }
 
 impl PreparedComponent {
-    fn compile(kappa: &str, bytes: &[u8], limits: ComponentLimits) -> Result<Self> {
+    fn compile(
+        kappa: &str,
+        bytes: &[u8],
+        limits: ComponentLimits,
+        host: ComponentHost,
+    ) -> Result<Self> {
         let mut config = Config::new();
         config
             .wasm_component_model(true)
@@ -215,11 +330,12 @@ impl PreparedComponent {
 
         // Instantiate once during preparation so a component with the wrong
         // imports or exported world fails before any application layer starts.
-        instantiate(&engine, &component, limits)?;
+        instantiate(&engine, &component, limits, &host)?;
         Ok(Self {
             engine,
             component,
             limits,
+            host,
             serial: Mutex::new(()),
         })
     }
@@ -239,13 +355,18 @@ impl PreparedComponent {
                 &self.component,
                 self.limits,
                 &input,
+                &self.host,
             )?);
         }
         Ok(outputs)
     }
 }
 
-fn new_store(engine: &Engine, limits: ComponentLimits) -> Result<Store<ComponentStore>> {
+fn new_store(
+    engine: &Engine,
+    limits: ComponentLimits,
+    host: &ComponentHost,
+) -> Result<Store<ComponentStore>> {
     let store_limits = StoreLimitsBuilder::new()
         .memory_size(limits.memory_max_bytes)
         .instances(COMPONENT_INSTANCE_MAX)
@@ -256,6 +377,7 @@ fn new_store(engine: &Engine, limits: ComponentLimits) -> Result<Store<Component
         engine,
         ComponentStore {
             limits: store_limits,
+            host: host.clone(),
         },
     );
     store.limiter(|state| &mut state.limits);
@@ -267,14 +389,38 @@ fn new_store(engine: &Engine, limits: ComponentLimits) -> Result<Store<Component
     Ok(store)
 }
 
-fn instantiate(engine: &Engine, component: &Component, limits: ComponentLimits) -> Result<()> {
-    let linker = Linker::new(engine);
-    let mut store = new_store(engine, limits)?;
-    bindings::Application::instantiate(&mut store, component, &linker).map_err(|error| {
-        LiveError::Protocol(format!(
-            "Component v1 must export the import-free hologram:application/application@1.0.0 world: {error}"
-        ))
-    })?;
+fn instantiate(
+    engine: &Engine,
+    component: &Component,
+    limits: ComponentLimits,
+    host: &ComponentHost,
+) -> Result<()> {
+    let mut linker = Linker::new(engine);
+    let mut store = new_store(engine, limits, host)?;
+    match host {
+        ComponentHost::ImportFree => {
+            bindings::Application::instantiate(&mut store, component, &linker).map_err(|error| {
+                LiveError::Protocol(format!(
+                    "Component v1 must export the import-free hologram:application/application@1.0.0 world: {error}"
+                ))
+            })?;
+        }
+        ComponentHost::StoreRead(_) => {
+            store_read_bindings::hologram::host::store::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component store.read interface: {error}"))
+            })?;
+            store_read_bindings::Application::instantiate(&mut store, component, &linker)
+                .map_err(|error| {
+                    LiveError::Protocol(format!(
+                        "Component store-read v1 must export hologram:application-store-read/application@1.0.0 and import only hologram:host/store@1.0.0: {error}"
+                    ))
+                })?;
+        }
+    }
     Ok(())
 }
 
@@ -283,6 +429,7 @@ fn run_once(
     component: &Component,
     limits: ComponentLimits,
     input: &[u8],
+    host: &ComponentHost,
 ) -> Result<Vec<u8>> {
     if input.len() > limits.input_max_bytes {
         return Err(LiveError::Capability(format!(
@@ -291,20 +438,54 @@ fn run_once(
             limits.input_max_bytes
         )));
     }
-    let linker = Linker::new(engine);
-    let mut store = new_store(engine, limits)?;
-    let bindings = bindings::Application::instantiate(&mut store, component, &linker)
-        .map_err(|error| LiveError::Protocol(format!("instantiate Component v1: {error}")))?;
-    let result = bindings
-        .hologram_application_guest()
-        .call_run(&mut store, input)
-        .map_err(|error| LiveError::Protocol(format!("execute Component v1 run: {error}")))?;
-    let output = result.map_err(|error| {
-        LiveError::Protocol(format!(
-            "Component v1 guest returned {:?}: {}",
-            error.code, error.message
-        ))
-    })?;
+    let mut linker = Linker::new(engine);
+    let mut store = new_store(engine, limits, host)?;
+    let output = match host {
+        ComponentHost::ImportFree => {
+            let bindings = bindings::Application::instantiate(&mut store, component, &linker)
+                .map_err(|error| {
+                    LiveError::Protocol(format!("instantiate Component v1: {error}"))
+                })?;
+            let result = bindings
+                .hologram_application_guest()
+                .call_run(&mut store, input)
+                .map_err(|error| {
+                    LiveError::Protocol(format!("execute Component v1 run: {error}"))
+                })?;
+            result.map_err(|error| {
+                LiveError::Protocol(format!(
+                    "Component v1 guest returned {:?}: {}",
+                    error.code, error.message
+                ))
+            })?
+        }
+        ComponentHost::StoreRead(_) => {
+            store_read_bindings::hologram::host::store::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component store.read interface: {error}"))
+            })?;
+            let bindings =
+                store_read_bindings::Application::instantiate(&mut store, component, &linker)
+                    .map_err(|error| {
+                        LiveError::Protocol(format!("instantiate Component store-read v1: {error}"))
+                    })?;
+            let result = bindings
+                .hologram_application_store_read_guest()
+                .call_run(&mut store, input)
+                .map_err(|error| {
+                    LiveError::Protocol(format!("execute Component store-read v1 run: {error}"))
+                })?;
+            result.map_err(|error| {
+                LiveError::Protocol(format!(
+                    "Component store-read v1 guest returned {:?}: {}",
+                    error.code, error.message
+                ))
+            })?
+        }
+    };
     if output.len() > limits.output_max_bytes {
         return Err(LiveError::Capability(format!(
             "Component v1 output is {} bytes; limit is {} bytes",
@@ -454,6 +635,10 @@ mod tests {
         include_str!("../tests/fixtures/component-echo/echo.wat")
     }
 
+    fn store_read_component() -> &'static [u8] {
+        include_bytes!("../tests/fixtures/component-store-read/store-read.wasm")
+    }
+
     fn spinning_wat() -> String {
         let marker = "    (func $hologram:application/guest@1.0.0#run (;3;)";
         let source = echo_wat();
@@ -504,6 +689,7 @@ mod tests {
             "fixture",
             echo_wat().as_bytes(),
             ComponentLimits::default(),
+            ComponentHost::ImportFree,
         )
         .expect("compile echo component");
         let cancelled = AtomicBool::new(false);
@@ -519,6 +705,7 @@ mod tests {
             "fixture",
             echo_wat().as_bytes(),
             ComponentLimits::default(),
+            ComponentHost::ImportFree,
         )
         .expect("compile echo component");
         let error = component
@@ -531,14 +718,95 @@ mod tests {
     }
 
     #[test]
+    fn store_read_host_only_serves_an_explicit_root() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let object_store = Arc::new(ObjectStore::open(directory.path()).expect("store"));
+        let allowed = object_store
+            .put("file", "application/octet-stream", None, b"allowed bytes")
+            .expect("allowed object");
+        let denied = object_store
+            .put("file", "application/octet-stream", None, b"denied bytes")
+            .expect("denied object");
+        let component = PreparedComponent::compile(
+            "fixture",
+            store_read_component(),
+            ComponentLimits::default(),
+            ComponentHost::StoreRead(StoreReadHost {
+                object_store,
+                roots: Arc::from([allowed.id.clone()]),
+            }),
+        )
+        .expect("compile store-read component");
+
+        assert_eq!(
+            component
+                .run_inputs(
+                    vec![allowed.id.as_bytes().to_vec()],
+                    &AtomicBool::new(false),
+                )
+                .expect("read admitted root"),
+            vec![b"allowed bytes".to_vec()]
+        );
+        let error = component
+            .run_inputs(vec![denied.id.as_bytes().to_vec()], &AtomicBool::new(false))
+            .expect_err("deny object outside roots");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(error.to_string().contains("outside"), "{error}");
+        assert!(!error.to_string().contains(&denied.id), "{error}");
+    }
+
+    #[test]
+    fn component_profiles_do_not_accept_each_others_worlds() {
+        let error = PreparedComponent::compile(
+            "fixture",
+            store_read_component(),
+            ComponentLimits::default(),
+            ComponentHost::ImportFree,
+        )
+        .err()
+        .expect("base profile rejects store import");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(error.to_string().contains("hologram:host/store"), "{error}");
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let object_store = Arc::new(ObjectStore::open(directory.path()).expect("store"));
+        let error = PreparedComponent::compile(
+            "fixture",
+            echo_wat().as_bytes(),
+            ComponentLimits::default(),
+            ComponentHost::StoreRead(StoreReadHost {
+                object_store,
+                roots: Arc::from([
+                    "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+                        .to_owned(),
+                ]),
+            }),
+        )
+        .err()
+        .expect("store profile rejects base world");
+        assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
+        assert!(
+            error
+                .to_string()
+                .contains("hologram:application-store-read"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn undeclared_component_import_is_rejected_during_preparation() {
         let imported = br#"(component
           (type $forbidden-type (func))
           (import "forbidden" (func $forbidden (type $forbidden-type)))
         )"#;
-        let error = PreparedComponent::compile("fixture", imported, ComponentLimits::default())
-            .err()
-            .expect("undeclared import");
+        let error = PreparedComponent::compile(
+            "fixture",
+            imported,
+            ComponentLimits::default(),
+            ComponentHost::ImportFree,
+        )
+        .err()
+        .expect("undeclared import");
         assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR", "{error}");
         assert!(error.to_string().contains("forbidden"));
     }
@@ -549,8 +817,13 @@ mod tests {
             input_max_bytes: 2,
             ..ComponentLimits::default()
         };
-        let component = PreparedComponent::compile("fixture", echo_wat().as_bytes(), limits)
-            .expect("compile echo component");
+        let component = PreparedComponent::compile(
+            "fixture",
+            echo_wat().as_bytes(),
+            limits,
+            ComponentHost::ImportFree,
+        )
+        .expect("compile echo component");
         let error = component
             .run_inputs(vec![b"three".to_vec()], &AtomicBool::new(false))
             .expect_err("oversized input");
@@ -558,8 +831,13 @@ mod tests {
 
         limits.input_max_bytes = 16;
         limits.output_max_bytes = 2;
-        let component = PreparedComponent::compile("fixture", echo_wat().as_bytes(), limits)
-            .expect("compile echo component");
+        let component = PreparedComponent::compile(
+            "fixture",
+            echo_wat().as_bytes(),
+            limits,
+            ComponentHost::ImportFree,
+        )
+        .expect("compile echo component");
         let error = component
             .run_inputs(vec![b"three".to_vec()], &AtomicBool::new(false))
             .expect_err("oversized output");
@@ -572,14 +850,24 @@ mod tests {
             memory_max_bytes: 512 * 1024,
             ..ComponentLimits::default()
         };
-        let error = PreparedComponent::compile("fixture", echo_wat().as_bytes(), limits)
-            .err()
-            .expect("fixture requires more memory");
+        let error = PreparedComponent::compile(
+            "fixture",
+            echo_wat().as_bytes(),
+            limits,
+            ComponentHost::ImportFree,
+        )
+        .err()
+        .expect("fixture requires more memory");
         assert_eq!(error.code(), "LIVE_PROTOCOL_ERROR");
 
         limits = ComponentLimits::default();
-        let mut component = PreparedComponent::compile("fixture", echo_wat().as_bytes(), limits)
-            .expect("compile echo component");
+        let mut component = PreparedComponent::compile(
+            "fixture",
+            echo_wat().as_bytes(),
+            limits,
+            ComponentHost::ImportFree,
+        )
+        .expect("compile echo component");
         component.limits.fuel_per_input = 10;
         let error = component
             .run_inputs(vec![b"fuel".to_vec()], &AtomicBool::new(false))
@@ -595,8 +883,13 @@ mod tests {
             ..ComponentLimits::default()
         };
         let compiled = Arc::new(
-            PreparedComponent::compile("fixture", spinning_wat().as_bytes(), limits)
-                .expect("compile spinning component"),
+            PreparedComponent::compile(
+                "fixture",
+                spinning_wat().as_bytes(),
+                limits,
+                ComponentHost::ImportFree,
+            )
+            .expect("compile spinning component"),
         );
         let layer = ComponentLayer {
             position: 0,
@@ -618,6 +911,7 @@ mod tests {
             "isolated",
             echo_wat().as_bytes(),
             ComponentLimits::default(),
+            ComponentHost::ImportFree,
         )
         .expect("compile isolated component");
         assert_eq!(
@@ -636,8 +930,13 @@ mod tests {
             ..ComponentLimits::default()
         };
         let compiled = Arc::new(
-            PreparedComponent::compile("fixture", spinning_wat().as_bytes(), limits)
-                .expect("compile spinning component"),
+            PreparedComponent::compile(
+                "fixture",
+                spinning_wat().as_bytes(),
+                limits,
+                ComponentHost::ImportFree,
+            )
+            .expect("compile spinning component"),
         );
         let layer = Arc::new(ComponentLayer {
             position: 0,

@@ -1,0 +1,6 @@
+package hologram:host@1.0.0;
+
+/// Read content-addressed bytes through capability mediation.
+interface store {
+  read: func(kappa: string) -> result<list<u8>, string>;
+}

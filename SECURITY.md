@@ -56,8 +56,12 @@ provider with fixed memory, fuel, input/output, and wall-time ceilings. It uses
 a fresh store per input and an isolated epoch-interruptible engine so timeout,
 stop, or dropped-future cancellation terminates synchronous guest work without
 interrupting another application or core Wasm. The first Component Model world
-imports nothing. Future storage, channel, and mediated
-network interfaces require their corresponding admitted canonical fields;
+imports nothing. The separate `component-store-read@1` world imports only the
+mediated object-store read interface. It requires a nonempty admitted
+`storage_roots` request before linker construction, retains only those
+contained roots, and checks the exact target before touching the store;
+direct, resident, and delegated-child paths share the same rule. Future write,
+channel, and mediated network interfaces require their corresponding admitted canonical fields;
 clocks, random, environment, process control, secrets, inference, and raw
 sockets remain unavailable while no sufficiently scoped capability exists.
 Under-granted imports must fail before linker construction.

@@ -32,3 +32,16 @@ Feature: Compile Hologram applications
     Then the component contract selects the bounded component provider
     When I run the compiled archive directly with input "hello component"
     Then the run output is "hello component"
+
+  Scenario: mediate a capability-gated Component object read
+    Given a Component store-read application manifest
+    And a fresh Hologram home
+    And an admitted object in the local registry
+    When I compile the application
+    Then the compile command succeeds
+    When I plan the compiled archive directly
+    Then the store-read contract selects the mediated component provider
+    When I run the compiled archive without a development grant
+    Then the run fails with an authorization-denied error
+    When I run the store-read archive with its development grant
+    Then the run output is "bdd store bytes"

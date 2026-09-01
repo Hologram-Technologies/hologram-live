@@ -55,6 +55,12 @@ This document is deliberately strict about what the current stable build does an
   memory and CPU-time scalars can only tighten them. Timeout and cancellation
   use a component-local epoch-interruptible engine. No WASI or ambient host
   interface is linked.
+- Capability-gated Component object reads under the separate
+  `hologram:guest/component-store-read@1` contract. Its fixed WIT world imports
+  only `hologram:host/store@1.0.0`; direct and resident modes share the same
+  pre-link admission and per-call exact-root check, and child applications are
+  restricted by their delegated grant. No ambient filesystem or WASI surface
+  is linked.
 - Python `wasi-component` source compilation with bundled CPython 3.14, locked
   universal-wheel dependencies, exact SHA-256-pinned componentizer wheels for
   all five server-release hosts, non-canonical build provenance, and direct or
@@ -63,8 +69,8 @@ This document is deliberately strict about what the current stable build does an
 
 ## Present as an extension seam, not implemented by the default module set
 
-- WASI or capability-gated Component host imports beyond the import-free v1
-  world.
+- WASI and capability-gated Component host imports beyond the shipped
+  exact-root object-read profile.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
 - Uniform engine enforcement of scalar CPU, memory, deadline, priority, and
   concurrency budgets across providers; Component v1 currently enforces its

@@ -18,6 +18,7 @@ struct BddWorld {
     plugin_list: Option<serde_json::Value>,
     model_id: Option<String>,
     development_grant: Option<PathBuf>,
+    object_kappa: Option<String>,
 }
 
 impl Drop for BddWorld {
@@ -103,6 +104,52 @@ fn component_v1_manifest(world: &mut BddWorld) {
     .expect("write component manifest");
     world.manifest = Some(temporary.path().join("hologram.json"));
     world.temporary = Some(temporary);
+}
+
+#[given("a Component store-read application manifest")]
+fn component_store_read_manifest(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create scenario directory");
+    std::fs::copy(
+        workspace_root().join("tests/fixtures/component-store-read/store-read.wasm"),
+        temporary.path().join("application.component.wasm"),
+    )
+    .expect("copy store-read component fixture");
+    std::fs::write(
+        temporary.path().join("hologram.json"),
+        r#"{
+          "schema_version": 4,
+          "primary": 0,
+          "requires": "capabilities.json",
+          "layers": [{
+            "kind":"wasm",
+            "path":"application.component.wasm",
+            "entry":"run",
+            "contract":"hologram:guest/component-store-read@1"
+          }]
+        }"#,
+    )
+    .expect("write store-read component manifest");
+    world.manifest = Some(temporary.path().join("hologram.json"));
+    world.temporary = Some(temporary);
+}
+
+#[given("an admitted object in the local registry")]
+fn admitted_registry_object(world: &mut BddWorld) {
+    let store = hologram_live::store::ObjectStore::open(
+        home_path(world).join(".local/share/hologram/registry"),
+    )
+    .expect("open registry");
+    let object = store
+        .put("file", "text/plain", None, b"bdd store bytes")
+        .expect("put registry object");
+    let capabilities = format!(r#"{{"storage_roots":["{}"]}}"#, object.id);
+    let temporary = world.temporary.as_ref().expect("scenario directory");
+    std::fs::write(temporary.path().join("capabilities.json"), &capabilities)
+        .expect("write capabilities");
+    let grant = temporary.path().join("development-grant.json");
+    std::fs::write(&grant, capabilities).expect("write development grant");
+    world.development_grant = Some(grant);
+    world.object_kappa = Some(object.id);
 }
 
 #[given("a Wasm application that requests network fetch")]
@@ -274,6 +321,21 @@ fn component_plan_selects_bounded_provider(world: &mut BddWorld) {
     assert_eq!(plan["blockers"].as_array().expect("blockers").len(), 0);
 }
 
+#[then("the store-read contract selects the mediated component provider")]
+fn component_plan_selects_store_read_provider(world: &mut BddWorld) {
+    let plan = world.plan_result.as_ref().expect("plan result");
+    assert_eq!(plan["execution_target"], "direct");
+    assert_eq!(plan["runnable"], true);
+    assert_eq!(
+        plan["layers"][0]["contract"],
+        "hologram:guest/component-store-read@1"
+    );
+    assert_eq!(
+        plan["layers"][0]["provider"]["name"],
+        "wasmtime-component-store-read-direct"
+    );
+}
+
 #[then("the resident plan identifies the imported archive")]
 fn resident_plan_identifies_archive(world: &mut BddWorld) {
     let plan = world.plan_result.as_ref().expect("plan result");
@@ -378,6 +440,27 @@ fn run_local_archive_with_grant(world: &mut BddWorld, input: String) {
     assert!(
         output.status.success(),
         "granted local run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
+}
+
+#[when("I run the store-read archive with its development grant")]
+fn run_store_read_with_grant(world: &mut BddWorld) {
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("run")
+        .arg(world.output_path.as_ref().expect("compiled archive"))
+        .arg("--development-grant")
+        .arg(world.development_grant.as_ref().expect("development grant"))
+        .arg("--input-text")
+        .arg(world.object_kappa.as_ref().expect("object kappa"))
+        .env("HOME", home_path(world))
+        .output()
+        .expect("run store-read archive with grant");
+    assert!(
+        output.status.success(),
+        "store-read run failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));

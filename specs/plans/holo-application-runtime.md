@@ -6,9 +6,9 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
-- Current delivery: authenticated private-registry integration coverage complete
-- Previous delivery: M3.2 explicit application sessions and lifecycle usability
-- Next runtime milestone: capability-gated WASI and Hologram Component host interfaces
+- Current delivery: capability-gated Component `store.read` profile complete
+- Previous delivery: authenticated private-registry integration coverage
+- Next runtime milestone: capability-gated `store.write` and channel Component profiles
 - Tracking rule: check an item only after its acceptance criteria and listed verification pass
 
 This is the living implementation plan for turning `.holo` archives into complete Hologram applications. It records the strict current v4 baseline, the recommended application-runtime milestone, an interactive manifest generator, and every prioritized follow-on area: capabilities, multi-layer providers, compiler completion, isolation, installation and content lifecycle, trust, and conformance.
@@ -265,7 +265,12 @@ dependencies until an explicit child invocation contract is introduced.
   proved Component v1 failed closed before its provider landed, and the current
   provider remains isolated from core Wasm.
 - [x] Add a Wasmtime Component Model provider without weakening core-Wasm guest-contract v1 compatibility.
-- [ ] Link WASI and Hologram host interfaces only when admitted by the effective capability grant.
+- [x] Add the explicit `hologram:guest/component-store-read@1` profile, link
+  only `hologram:host/store@1.0.0` after admission, and mediate every target κ
+  against the declared roots contained by the effective grant.
+- [x] Prove missing profile authority fails before linker construction and the
+  same attenuation holds for direct, resident, and child preparation.
+- [ ] Complete the remaining capability-gated Hologram and WASI host-interface profiles.
 - [x] Prove a dependency-free Python application bundled with pinned CPython can execute directly and resident.
 - [x] Prove a locked pure-Python dependency is included without reading the developer's ambient virtual environment.
 - [x] Resolve componentize-py through an exact URL/SHA-256 wheel for every
@@ -1132,6 +1137,9 @@ work below.
 - [x] Execute import-free Component v1 directly and resident through its exact
   provider with fresh-store memory/fuel limits, byte ceilings, deadline, and
   cancellation interruption.
+- [x] Execute the fixed-import Component store-read profile directly and
+  resident, deny missing roots before linking, enforce per-call target checks,
+  and preserve parent-to-child attenuation.
 - [x] Package and execute dependency-free Python against Component v1 without
   introducing ambient WASI.
 - [x] Package and execute a SHA-256-locked pure-Python wheel without consulting

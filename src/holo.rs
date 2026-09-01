@@ -100,7 +100,8 @@ impl HoloCatalog {
         let mut report = explain_application(&bytes, PlanLimits::default(), |content| {
             self.resolve_content(content)
         })?;
-        resident_registry(Engine::default(), None, 1)?.evaluate(&mut report);
+        resident_registry(Engine::default(), None, 1, Some(self.store.clone()))?
+            .evaluate(&mut report);
         Ok(HoloPlan::from_report(&report, "resident"))
     }
 
@@ -219,7 +220,12 @@ pub fn inspect_bytes(kappa: &str, name: &str, bytes: &[u8]) -> Result<HoloInspec
 
 pub fn plan_bytes(bytes: &[u8]) -> Result<HoloPlan> {
     let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
-    direct_registry(Engine::default(), Arc::new(ViewSurfaceRegistry::new()))?.evaluate(&mut report);
+    direct_registry(
+        Engine::default(),
+        Arc::new(ViewSurfaceRegistry::new()),
+        None,
+    )?
+    .evaluate(&mut report);
     Ok(HoloPlan::from_report(&report, "direct"))
 }
 
@@ -324,6 +330,7 @@ impl HoloRuntime {
             self.engine.clone(),
             Some(self.actors.get_or_init(ActorSystem::start).root().clone()),
             self.mailbox_capacity,
+            Some(self.catalog.store.clone()),
         )?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
@@ -444,6 +451,7 @@ impl HoloRuntime {
 pub struct HoloExecutor {
     engine: Engine,
     view_surfaces: Arc<ViewSurfaceRegistry>,
+    object_store: Option<Arc<ObjectStore>>,
 }
 
 /// An explicitly managed direct application lifetime.
@@ -512,6 +520,15 @@ impl HoloExecutor {
         Self {
             engine: Engine::default(),
             view_surfaces,
+            object_store: None,
+        }
+    }
+
+    pub fn with_object_store(object_store: Arc<ObjectStore>) -> Self {
+        Self {
+            engine: Engine::default(),
+            view_surfaces: Arc::new(ViewSurfaceRegistry::new()),
+            object_store: Some(object_store),
         }
     }
 
@@ -588,7 +605,11 @@ impl HoloExecutor {
     ) -> Result<HoloApplicationSession> {
         let kappa = format!("blake3:{}", blake3::hash(bytes));
         let mut report = explain_application(bytes, PlanLimits::default(), |_| Ok(None))?;
-        let registry = direct_registry(self.engine.clone(), self.view_surfaces.clone())?;
+        let registry = direct_registry(
+            self.engine.clone(),
+            self.view_surfaces.clone(),
+            self.object_store.clone(),
+        )?;
         registry.evaluate(&mut report);
         let plan = report.into_application_plan()?;
         let requested_capabilities_kappa = plan.requested_capabilities.kappa.clone();
@@ -661,12 +682,14 @@ fn not_resident(kappa: &str) -> LiveError {
 fn direct_registry(
     engine: Engine,
     view_surfaces: Arc<ViewSurfaceRegistry>,
+    object_store: Option<Arc<ObjectStore>>,
 ) -> Result<ProviderRegistry> {
     ProviderRegistry::new(
         ProviderTarget::Direct,
         vec![
             Arc::new(WasmProvider::direct(engine)),
             Arc::new(ComponentProvider::direct()),
+            Arc::new(ComponentProvider::store_read_direct(object_store)),
             Arc::new(PythonRootfsProvider),
             Arc::new(ViewProvider::new(view_surfaces)),
         ],
@@ -677,12 +700,14 @@ fn resident_registry(
     engine: Engine,
     root: Option<kameo::actor::ActorRef<crate::actor::RootSupervisor>>,
     mailbox_capacity: usize,
+    object_store: Option<Arc<ObjectStore>>,
 ) -> Result<ProviderRegistry> {
     ProviderRegistry::new(
         ProviderTarget::Resident,
         vec![
             Arc::new(WasmProvider::resident(engine, root, mailbox_capacity)),
             Arc::new(ComponentProvider::resident()),
+            Arc::new(ComponentProvider::store_read_resident(object_store)),
             Arc::new(ViewProvider::headless()),
         ],
     )
@@ -1065,6 +1090,99 @@ mod tests {
         assert_eq!(result.completion, ApplicationCompletion::Returned);
         assert_eq!(runtime.list().await.expect("list")[0].processed, 1);
         runtime.unload(&kappa).await.expect("unload component");
+    }
+
+    #[tokio::test]
+    async fn component_store_read_runs_direct_and_resident_with_the_same_authority() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let object = store
+            .put("file", "text/plain", None, b"capability mediated")
+            .expect("put object");
+        let capabilities = storage_capabilities(&object.id);
+        let archive = store_read_archive(&capabilities);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(
+            &grant_path,
+            format!(r#"{{"storage_roots":["{}"]}}"#, object.id),
+        )
+        .expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+
+        let direct = HoloExecutor::with_object_store(store.clone())
+            .execute_with_grant(&archive, vec![object.id.as_bytes().to_vec()], &grant)
+            .await
+            .expect("direct store.read");
+        assert_eq!(direct.outputs, [b"capability mediated"]);
+
+        let catalog = Arc::new(HoloCatalog::new(store));
+        let runtime = HoloRuntime::new_with_grant(catalog.clone(), 8, grant);
+        let kappa = catalog
+            .import("component-store-read.holo".to_owned(), archive)
+            .expect("import")
+            .kappa;
+        runtime.load(&kappa).await.expect("resident load");
+        let resident = runtime
+            .run(&kappa, vec![object.id.as_bytes().to_vec()])
+            .await
+            .expect("resident store.read");
+        assert_eq!(resident.outputs, [b"capability mediated"]);
+        runtime.unload(&kappa).await.expect("unload");
+    }
+
+    #[tokio::test]
+    async fn component_store_read_denies_missing_authority_before_instantiation() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path()).expect("store"));
+        let archive = store_read_archive(canonical_capabilities());
+        let error = HoloExecutor::with_object_store(store)
+            .execute(&archive, Vec::new())
+            .await
+            .expect_err("profile requires a storage root");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("storage_roots"), "{error}");
+        assert!(error.to_string().contains("hologram:host/store@1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn component_store_read_child_is_attenuated_to_its_delegated_root() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let object = store
+            .put("file", "text/plain", None, b"child-readable")
+            .expect("put object");
+        let capabilities = storage_capabilities(&object.id);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(
+            &grant_path,
+            format!(r#"{{"storage_roots":["{}"]}}"#, object.id),
+        )
+        .expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+
+        let admitted = parent_with_store_read_child(&capabilities, &capabilities);
+        let result = HoloExecutor::with_object_store(store.clone())
+            .execute_with_grant(&admitted, vec![b"parent".to_vec()], &grant)
+            .await
+            .expect("attenuated child prepares");
+        assert_eq!(result.outputs, [b"parent"]);
+
+        let empty = crate::holo_capability::empty_canonical();
+        let denied = parent_with_store_read_child(&capabilities, &empty);
+        let error = HoloExecutor::with_object_store(store)
+            .execute_with_grant(&denied, Vec::new(), &grant)
+            .await
+            .expect_err("empty delegation cannot admit child root");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(error.to_string().contains("delegated grant"), "{error}");
     }
 
     #[tokio::test]
@@ -1514,5 +1632,67 @@ mod tests {
             children: Vec::new(),
         };
         current_archive(&manifest, &[capabilities.as_slice(), component])
+    }
+
+    fn storage_capabilities(root: &str) -> Vec<u8> {
+        crate::holo_capability::compile_source(
+            std::path::Path::new("storage-capabilities.json"),
+            format!(r#"{{"storage_roots":["{root}"]}}"#).as_bytes(),
+        )
+        .expect("storage capabilities")
+    }
+
+    fn store_read_archive(capabilities: &[u8]) -> Vec<u8> {
+        let component = include_bytes!("../tests/fixtures/component-store-read/store-read.wasm");
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+            )],
+            children: Vec::new(),
+        };
+        current_archive(&manifest, &[capabilities, component])
+    }
+
+    fn parent_with_store_read_child(child_capabilities: &[u8], delegated: &[u8]) -> Vec<u8> {
+        let parent_capabilities = crate::holo_capability::empty_canonical();
+        let parent_component = include_bytes!("../tests/fixtures/component-echo/echo.wat");
+        let child_component =
+            include_bytes!("../tests/fixtures/component-store-read/store-read.wasm");
+        let child_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(child_capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(child_component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+            )],
+            children: Vec::new(),
+        }
+        .canonicalize();
+        let parent_manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(&parent_capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(parent_component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_V1,
+            )],
+            children: vec![(address_bytes(&child_manifest), address_bytes(delegated))],
+        };
+        let mut contents: Vec<&[u8]> = vec![
+            parent_capabilities.as_slice(),
+            parent_component,
+            child_manifest.as_slice(),
+            child_capabilities,
+            child_component,
+        ];
+        if delegated != child_capabilities && delegated != parent_capabilities.as_slice() {
+            contents.push(delegated);
+        }
+        current_archive(&parent_manifest, &contents)
     }
 }

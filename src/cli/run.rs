@@ -12,6 +12,7 @@ use serde_json::Value;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Args)]
 pub struct RunArgs {
@@ -145,7 +146,10 @@ async fn execute_local(
         actors.root(),
     )
     .await?;
-    let result = HoloExecutor::default()
+    let object_store = Arc::new(hologram_live::store::ObjectStore::open(
+        config.paths.data_dir.join("registry"),
+    )?);
+    let result = HoloExecutor::with_object_store(object_store)
         .execute_with_grant_and_audit(&bytes, inputs, &grant, &audit, "local-cli")
         .await?;
     print_result(cli, &result, output_format)

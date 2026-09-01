@@ -1,6 +1,6 @@
 # ADR 011: `.holo` guest contracts use the Wasm layer auxiliary tag
 
-- Status: accepted and implemented for import-free Component v1
+- Status: accepted and implemented for import-free and store-read Component v1 profiles
 - Date: 2026-08-25
 
 ## Context
@@ -26,7 +26,9 @@ Its values are exact, namespaced identifiers:
 
 - empty string: invalid;
 - `hologram:guest/core-wasm@1`: explicit core-Wasm v1;
-- `hologram:guest/component@1`: Hologram Component Model v1.
+- `hologram:guest/component@1`: Hologram Component Model v1;
+- `hologram:guest/component-store-read@1`: Component Model v1 with the fixed
+  mediated object-store read import.
 
 The empty alias remains the compiler default while core-Wasm v1 is current, so
 existing compatible archives retain their canonical bytes and application κ.
@@ -40,9 +42,10 @@ The coordinated upstream validation change landed in
 `WASM_CONTRACT_CORE_V1`, `WASM_CONTRACT_COMPONENT_V1`, and
 `Layer::wasm_with_contract`; the upstream `Layer::wasm` helper still produces
 an empty tag, but Live neither emits nor accepts it. Wasm `aux` changed upstream
-to permit well-formed supported contract identifiers without changing the
-canonical codec. Live pins the merge and requires either accepted explicit
-identifier.
+to admit the supported contract identifiers without changing the canonical
+codec. Upstream PR 143, merge `aad544c`, adds
+`WASM_CONTRACT_COMPONENT_STORE_READ_V1`; Live pins that merge and requires one
+of the accepted explicit identifiers.
 
 ### Negotiation
 
@@ -69,16 +72,28 @@ It imports no host interfaces. A successful result maps to application
 completion `returned`; a guest error or component trap is a typed operation
 error. Component v1 does not create a numeric process exit status.
 
+`component-store-read@1` uses the `application` world under
+[`../wit/store-read/`](../wit/store-read/). It retains the same guest `run`
+shape and imports exactly `hologram:host/store@1.0.0`, whose `read` function
+takes one object κ and returns its bytes or a public error string. It does not
+import WASI or any other Hologram interface.
+
 ### Host-interface admission
 
-The base `component@1` world imports nothing. Future profiles must use a new
-contract identifier and declare a fixed import set. The linker is constructed
-only after the application request has been admitted against the trusted
-effective grant. There is no ambient fallback.
+The base `component@1` world imports nothing. Every host-enabled profile uses a
+new contract identifier and a fixed import set. The linker is constructed only
+after the application request has been admitted against the trusted effective
+grant and profile-specific required fields have been checked. There is no
+ambient fallback. For `component-store-read@1`, at least one requested
+`storage_roots` entry is required. Admission proves those roots are contained
+by the effective grant; the host retains only that admitted intersection and
+checks every requested κ before touching the object store. The current safe
+slice serves an explicitly named root itself; traversing its referenced closure
+requires a future typed graph resolver.
 
 | Proposed interface | Required canonical capability | v1 disposition |
 | --- | --- | --- |
-| `hologram:host/store.read` | target κ is under `storage_roots` | withheld from base world |
+| `hologram:host/store.read` | target κ is an admitted `storage_roots` entry | shipped only in `component-store-read@1` |
 | `hologram:host/store.write` | target κ is under `storage_roots` and `storage_quota_bytes > 0` | withheld from base world |
 | `hologram:host/channel.publish` | channel κ is in `publish_channels` | withheld from base world |
 | `hologram:host/channel.subscribe` | channel κ is in `subscribe_channels` | withheld from base world |
@@ -132,8 +147,9 @@ admission mapping, and error codes.
 - Existing core-Wasm archives and κ values remain unchanged.
 - Component archives fail closed on older runtimes and never silently execute
   under the core-Wasm ABI.
-- The import-free Component provider, resource enforcement, and locked
-  pure-Python wheel packaging are current capabilities. Native Python packages
+- The import-free and mediated object-read Component providers, resource
+  enforcement, and locked pure-Python wheel packaging are current
+  capabilities. Native Python packages, transitive storage-closure traversal,
   and any capability-gated WASI profile remain explicit follow-up work.
 - New host authority requires both a versioned contract profile and a canonical
   capability field before an import can be linked.

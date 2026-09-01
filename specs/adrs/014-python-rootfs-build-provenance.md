@@ -78,7 +78,7 @@ hologram --json compile hologram.json --output application.holo \
 
 ## Follow-up
 
-- Keep ADR 015's registry resolver compatible with authenticated registries and
+- Keep ADR 015's now-verified authenticated registry resolver compatible with
   future OCI-native builders.
 - Add dependency inventory and SBOM material for the installed rootfs closure.
 - Define retention and signing when this evidence graduates to an attestation.

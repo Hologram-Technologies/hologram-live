@@ -47,6 +47,17 @@ The resolver does not mutate `hologram.json` or add registry evidence to the
 archive. Docker's raw-manifest command owns registry transport, authentication,
 and media negotiation.
 
+The authenticated integration gate uses two isolated Docker configuration
+directories. It seeds disposable registry storage without authentication,
+restarts that storage behind htpasswd authentication on a fresh loopback port,
+and first runs Hologram with the anonymous configuration. `compile --check`
+succeeds without contacting the registry, while real compilation receives a
+401 and leaves no archive. After `docker login --password-stdin` populates only
+the authenticated configuration, the same source compiles and executes. The
+gate recursively rejects credential-bearing provenance fields and scans JSON
+reports and archive bytes for the fixture username, password, and encoded auth
+value.
+
 ## Consequences
 
 - A tag may move before resolution, but it cannot redirect the build after
@@ -64,7 +75,5 @@ and media negotiation.
 
 ## Follow-up
 
-- Add authenticated private-registry integration coverage without persisting
-  credentials in provenance.
 - Produce SBOM and signed-attestation material over resolved inputs and output
   identities.

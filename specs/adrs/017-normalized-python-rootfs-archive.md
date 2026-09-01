@@ -140,5 +140,6 @@ proof for the current rootfs contract.
 
 - Pin every build-time acquisition, including the uv installer artifact, and
   eliminate or normalize any differing generated filesystem content.
-- Add authenticated private-registry coverage and signed SBOM/attestation
-  material without moving observational evidence into canonical identity.
+- Add signed SBOM/attestation material without moving observational evidence
+  into canonical identity. Authenticated private-registry coverage is complete
+  under ADR 015.

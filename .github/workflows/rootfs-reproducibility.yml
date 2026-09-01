@@ -8,6 +8,16 @@ permissions:
   contents: read
 
 jobs:
+  private-registry:
+    name: authenticated private registry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - name: Prove authenticated resolution without credential provenance
+        run: ./scripts/check-python-private-registry.sh
+
   clean-build:
     name: ${{ matrix.target }} clean build ${{ matrix.replica }}
     timeout-minutes: 60
@@ -40,7 +50,7 @@ jobs:
           if-no-files-found: error
 
   compare:
-    needs: clean-build
+    needs: [private-registry, clean-build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7

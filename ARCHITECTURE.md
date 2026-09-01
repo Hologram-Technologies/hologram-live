@@ -113,8 +113,9 @@ layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; the explici
 `hologram:guest/component-store-read@1`,
 `hologram:guest/component-store-graph-read@1`,
 `hologram:guest/component-store-write@1`,
-`hologram:guest/component-channel-publish@1`, and
-`hologram:guest/component-channel-subscribe@1` tags are accepted. Inspection and
+`hologram:guest/component-channel-publish@1`,
+`hologram:guest/component-channel-subscribe@1`, and
+`hologram:guest/component-network-fetch@1` tags are accepted. Inspection and
 planning expose the normalized selector, and provider lookup is keyed by both
 layer kind and exact contract. Component archives therefore reach only the
 dedicated direct or resident Component provider and never the core provider.

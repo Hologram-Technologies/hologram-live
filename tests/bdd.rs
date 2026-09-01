@@ -321,6 +321,35 @@ fn wasm_manifest_with_network_request(world: &mut BddWorld) {
     world.temporary = Some(temporary);
 }
 
+#[given("a network-fetch Component targeting a private endpoint")]
+fn component_network_fetch_private_target(world: &mut BddWorld) {
+    let temporary = tempfile::tempdir().expect("create scenario directory");
+    std::fs::copy(
+        workspace_root().join("tests/fixtures/component-network-fetch/network-fetch.wasm"),
+        temporary.path().join("network-fetch.wasm"),
+    )
+    .expect("copy network-fetch fixture");
+    let capabilities =
+        r#"{"schema_version":2,"network_fetch_endpoints":["https://localhost:443/v1"]}"#;
+    std::fs::write(temporary.path().join("capabilities.json"), capabilities)
+        .expect("write capability request");
+    let grant = temporary.path().join("development-grant.json");
+    std::fs::write(&grant, capabilities).expect("write development grant");
+    std::fs::write(
+        temporary.path().join("hologram.json"),
+        r#"{
+          "schema_version": 4,
+          "primary": 0,
+          "requires": "capabilities.json",
+          "layers": [{"kind":"wasm","path":"network-fetch.wasm","entry":"run","contract":"hologram:guest/component-network-fetch@1"}]
+        }"#,
+    )
+    .expect("write manifest");
+    world.manifest = Some(temporary.path().join("hologram.json"));
+    world.development_grant = Some(grant);
+    world.temporary = Some(temporary);
+}
+
 #[given("a new application directory")]
 fn new_application_directory(world: &mut BddWorld) {
     let temporary = tempfile::tempdir().expect("create application directory");
@@ -631,6 +660,41 @@ fn run_local_archive_with_grant(world: &mut BddWorld, input: String) {
     world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
 }
 
+#[when("I run the network-fetch archive with its development grant")]
+fn run_network_fetch_with_grant(world: &mut BddWorld) {
+    let input_path = world
+        .temporary
+        .as_ref()
+        .expect("scenario directory")
+        .path()
+        .join("network-target.txt");
+    std::fs::write(&input_path, "https://localhost:443/v1").expect("write target");
+    world.command_output = Some(
+        Command::new(env!("CARGO_BIN_EXE_hologram"))
+            .arg("--json")
+            .arg("run")
+            .arg(world.output_path.as_ref().expect("compiled archive"))
+            .arg("--development-grant")
+            .arg(world.development_grant.as_ref().expect("development grant"))
+            .arg("--input")
+            .arg(input_path)
+            .env("HOME", home_path(world))
+            .output()
+            .expect("run network-fetch archive"),
+    );
+}
+
+#[then("the mediated fetch fails under host address policy without leaking its endpoint")]
+fn mediated_fetch_private_dns_is_redacted(world: &mut BddWorld) {
+    let output = world.command_output.as_ref().expect("run output");
+    assert!(!output.status.success(), "private fetch must fail");
+    let encoded = String::from_utf8_lossy(&output.stdout);
+    let error: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON error");
+    assert_eq!(error["code"], "LIVE_PROTOCOL_ERROR", "{encoded}");
+    assert!(encoded.contains("forbidden"), "{encoded}");
+    assert!(!encoded.contains("localhost"), "{encoded}");
+}
+
 #[when("I run the store-read archive with its development grant")]
 fn run_store_read_with_grant(world: &mut BddWorld) {
     let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
@@ -838,6 +902,7 @@ fn capability_audit_is_non_secret(world: &mut BddWorld) {
         "development-grant.json",
         "authorized",
         "resident grant",
+        "localhost",
     ] {
         assert!(!encoded.contains(forbidden), "audit leaked {forbidden}");
     }

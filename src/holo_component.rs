@@ -3,6 +3,7 @@
 use crate::application_plan::ProviderContext;
 use crate::error::{LiveError, Result};
 use crate::holo_channel::{ChannelBroker, ChannelError};
+use crate::holo_fetch::{default_fetch_runtime, FetchRuntime};
 use crate::holo_graph::{resolve_storage_graph, StorageGraphLimits};
 use crate::holo_provider::{
     LayerCompletion, LayerInvocation, LayerPrepareContext, LayerProvider, LayerRuntimeStatus,
@@ -10,6 +11,7 @@ use crate::holo_provider::{
 };
 use crate::store::ObjectStore;
 use hologram::space::LayerKind;
+use hologram::space::NetworkEndpointScope;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -47,6 +49,13 @@ mod channel_publish_bindings {
 mod channel_subscribe_bindings {
     wasmtime::component::bindgen!({
         path: "specs/wit/channel-subscribe",
+        world: "application",
+    });
+}
+
+mod network_fetch_bindings {
+    wasmtime::component::bindgen!({
+        path: "specs/wit/network-fetch",
         world: "application",
     });
 }
@@ -133,6 +142,7 @@ enum ComponentProfile {
     StoreWrite,
     ChannelPublish,
     ChannelSubscribe,
+    NetworkFetch,
 }
 
 impl ComponentProvider {
@@ -240,6 +250,24 @@ impl ComponentProvider {
         )
     }
 
+    pub fn network_fetch_direct() -> Self {
+        Self::network_fetch(ProviderTarget::Direct)
+    }
+
+    pub fn network_fetch_resident() -> Self {
+        Self::network_fetch(ProviderTarget::Resident)
+    }
+
+    fn network_fetch(target: ProviderTarget) -> Self {
+        Self {
+            target,
+            limits: ComponentLimits::default(),
+            profile: ComponentProfile::NetworkFetch,
+            object_store: None,
+            channel_broker: None,
+        }
+    }
+
     fn channel(
         target: ProviderTarget,
         profile: ComponentProfile,
@@ -290,6 +318,9 @@ impl LayerProvider for ComponentProvider {
             ComponentProfile::ChannelSubscribe => {
                 crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1
             }
+            ComponentProfile::NetworkFetch => {
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1
+            }
         })
     }
 
@@ -328,6 +359,12 @@ impl LayerProvider for ComponentProvider {
             }
             (ProviderTarget::Resident, ComponentProfile::ChannelSubscribe) => {
                 "wasmtime-component-channel-subscribe-resident"
+            }
+            (ProviderTarget::Direct, ComponentProfile::NetworkFetch) => {
+                "wasmtime-component-network-fetch-direct"
+            }
+            (ProviderTarget::Resident, ComponentProfile::NetworkFetch) => {
+                "wasmtime-component-network-fetch-resident"
             }
         }
     }
@@ -504,6 +541,23 @@ impl LayerProvider for ComponentProvider {
                     channels: Arc::from(channels),
                 })
             }
+            ComponentProfile::NetworkFetch => {
+                let scopes = context
+                    .requested_capabilities
+                    .capabilities
+                    .network_fetch_endpoints
+                    .clone();
+                if scopes.is_empty() {
+                    return Err(LiveError::Authorization(format!(
+                        "Component interface hologram:host/network-fetch@1.0.0 requires at least one admitted network_fetch_endpoints entry for application {}",
+                        context.identity.application_kappa
+                    )));
+                }
+                ComponentHost::NetworkFetch(NetworkFetchHost {
+                    runtime: default_fetch_runtime(),
+                    scopes: Arc::from(scopes),
+                })
+            }
         };
         let kappa = context.identity.archive_kappa;
         let position = context.layer.position;
@@ -538,6 +592,7 @@ enum ComponentHost {
     StoreWrite(StoreWriteHost),
     ChannelPublish(ChannelHost),
     ChannelSubscribe(ChannelHost),
+    NetworkFetch(NetworkFetchHost),
 }
 
 #[derive(Clone)]
@@ -557,6 +612,12 @@ struct StoreWriteHost {
 struct ChannelHost {
     broker: Arc<ChannelBroker>,
     channels: Arc<[String]>,
+}
+
+#[derive(Clone)]
+struct NetworkFetchHost {
+    runtime: Arc<FetchRuntime>,
+    scopes: Arc<[NetworkEndpointScope]>,
 }
 
 impl store_read_bindings::hologram::host::store::Host for ComponentStore {
@@ -637,6 +698,27 @@ impl channel_subscribe_bindings::hologram::host::channel_subscribe::Host for Com
         host.broker
             .try_receive(&channel)
             .map_err(|_| "channel broker is unavailable".to_owned())
+    }
+}
+
+impl network_fetch_bindings::hologram::host::network_fetch::Host for ComponentStore {
+    fn fetch(
+        &mut self,
+        target: String,
+    ) -> std::result::Result<network_fetch_bindings::hologram::host::network_fetch::Response, String>
+    {
+        let ComponentHost::NetworkFetch(host) = &self.host else {
+            return Err("network.fetch is not linked for this contract".to_owned());
+        };
+        host.runtime
+            .fetch(&host.scopes, &target)
+            .map(
+                |response| network_fetch_bindings::hologram::host::network_fetch::Response {
+                    status: response.status,
+                    body: response.body,
+                },
+            )
+            .map_err(str::to_owned)
     }
 }
 
@@ -806,6 +888,21 @@ fn instantiate(
                     ))
                 })?;
         }
+        ComponentHost::NetworkFetch(_) => {
+            network_fetch_bindings::hologram::host::network_fetch::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component network.fetch interface: {error}"))
+            })?;
+            network_fetch_bindings::Application::instantiate(&mut store, component, &linker)
+                .map_err(|error| {
+                    LiveError::Protocol(format!(
+                        "Component network-fetch v1 must export hologram:application-network-fetch/application@1.0.0 and import only hologram:host/network-fetch@1.0.0: {error}"
+                    ))
+                })?;
+        }
     }
     Ok(())
 }
@@ -962,6 +1059,34 @@ fn run_once(
                 ))
             })?
         }
+        ComponentHost::NetworkFetch(_) => {
+            network_fetch_bindings::hologram::host::network_fetch::add_to_linker::<
+                _,
+                wasmtime::component::HasSelf<ComponentStore>,
+            >(&mut linker, |state| state)
+            .map_err(|error| {
+                LiveError::Conflict(format!("link Component network.fetch interface: {error}"))
+            })?;
+            let bindings =
+                network_fetch_bindings::Application::instantiate(&mut store, component, &linker)
+                    .map_err(|error| {
+                        LiveError::Protocol(format!(
+                            "instantiate Component network-fetch v1: {error}"
+                        ))
+                    })?;
+            let result = bindings
+                .hologram_application_network_fetch_guest()
+                .call_run(&mut store, input)
+                .map_err(|error| {
+                    LiveError::Protocol(format!("execute Component network-fetch v1 run: {error}"))
+                })?;
+            result.map_err(|error| {
+                LiveError::Protocol(format!(
+                    "Component network-fetch v1 guest returned {:?}: {}",
+                    error.code, error.message
+                ))
+            })?
+        }
     };
     if output.len() > limits.output_max_bytes {
         return Err(LiveError::Capability(format!(
@@ -1107,6 +1232,7 @@ fn cancelled_error() -> LiveError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::holo_fetch::{FetchResponse, FetchTransport};
 
     fn echo_wat() -> &'static str {
         include_str!("../tests/fixtures/component-echo/echo.wat")
@@ -1126,6 +1252,21 @@ mod tests {
 
     fn channel_subscribe_component() -> &'static [u8] {
         include_bytes!("../tests/fixtures/component-channel-subscribe/channel-subscribe.wasm")
+    }
+
+    fn network_fetch_component() -> &'static [u8] {
+        include_bytes!("../tests/fixtures/component-network-fetch/network-fetch.wasm")
+    }
+
+    struct FixtureFetchTransport;
+
+    impl FetchTransport for FixtureFetchTransport {
+        fn get(&self, _target: &str) -> std::result::Result<FetchResponse, &'static str> {
+            Ok(FetchResponse {
+                status: 206,
+                body: b"bounded response".to_vec(),
+            })
+        }
     }
 
     fn store_write_input(kappa: &str, bytes: &[u8]) -> Vec<u8> {
@@ -1464,6 +1605,37 @@ mod tests {
     }
 
     #[test]
+    fn network_fetch_component_uses_only_the_admitted_mediator() {
+        let target = "https://api.example.com:443/v1/models";
+        let component = PreparedComponent::compile(
+            "fixture",
+            network_fetch_component(),
+            ComponentLimits::default(),
+            ComponentHost::NetworkFetch(NetworkFetchHost {
+                runtime: Arc::new(FetchRuntime::new(Arc::new(FixtureFetchTransport), 1)),
+                scopes: Arc::from([
+                    NetworkEndpointScope::parse("https://api.example.com:443/v1").expect("scope"),
+                ]),
+            }),
+        )
+        .expect("compile network-fetch component");
+
+        let output = component
+            .run_inputs(vec![target.as_bytes().to_vec()], &AtomicBool::new(false))
+            .expect("fetch admitted target");
+        let mut expected = 206_u16.to_be_bytes().to_vec();
+        expected.extend_from_slice(b"bounded response");
+        assert_eq!(output, vec![expected]);
+
+        let denied = "https://api.example.com:443/v10/secret";
+        let error = component
+            .run_inputs(vec![denied.as_bytes().to_vec()], &AtomicBool::new(false))
+            .expect_err("deny sibling prefix");
+        assert!(error.to_string().contains("outside"), "{error}");
+        assert!(!error.to_string().contains(denied), "{error}");
+    }
+
+    #[test]
     fn channel_authority_and_backpressure_errors_are_redacted() {
         let broker = Arc::new(ChannelBroker::new(3, 1));
         let allowed = "blake3:0000000000000000000000000000000000000000000000000000000000000000";
@@ -1598,6 +1770,36 @@ mod tests {
         .err()
         .expect("subscribe profile rejects publish world");
         assert!(error.to_string().contains("channel-subscribe"), "{error}");
+
+        let error = PreparedComponent::compile(
+            "fixture",
+            network_fetch_component(),
+            ComponentLimits::default(),
+            ComponentHost::ImportFree,
+        )
+        .err()
+        .expect("base profile rejects network-fetch import");
+        assert!(error.to_string().contains("network-fetch"), "{error}");
+
+        let error = PreparedComponent::compile(
+            "fixture",
+            echo_wat().as_bytes(),
+            ComponentLimits::default(),
+            ComponentHost::NetworkFetch(NetworkFetchHost {
+                runtime: Arc::new(FetchRuntime::new(Arc::new(FixtureFetchTransport), 1)),
+                scopes: Arc::from([
+                    NetworkEndpointScope::parse("https://api.example.com:443/v1").expect("scope"),
+                ]),
+            }),
+        )
+        .err()
+        .expect("network-fetch profile rejects base world");
+        assert!(
+            error
+                .to_string()
+                .contains("hologram:application-network-fetch"),
+            "{error}"
+        );
     }
 
     #[test]

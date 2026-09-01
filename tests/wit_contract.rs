@@ -66,3 +66,15 @@ fn component_channel_profiles_each_have_one_fixed_import() {
         ["  import hologram:host/channel-subscribe@1.0.0;"]
     );
 }
+
+#[test]
+fn component_network_fetch_profile_has_one_fixed_import() {
+    let world =
+        include_str!("../specs/wit/network-fetch/hologram-application-network-fetch-v1.wit");
+    let imports = world
+        .lines()
+        .filter(|line| line.trim_start().starts_with("import "))
+        .collect::<Vec<_>>();
+    assert_eq!(imports, ["  import hologram:host/network-fetch@1.0.0;"]);
+    assert!(world.contains("export guest;"));
+}

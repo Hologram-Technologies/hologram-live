@@ -88,6 +88,13 @@ This document is deliberately strict about what the current stable build does an
   executions sharing one executor or resident applications sharing one
   runtime. It does not provide broadcast, replay, acknowledgement, durability,
   cross-process transport, or sockets.
+- Capability-gated HTTPS GET under the separate
+  `hologram:guest/component-network-fetch@1` contract. Its only import is
+  `hologram:host/network-fetch@1.0.0`; admission requires a nonempty exact
+  endpoint scope set. The host disables redirects and proxies, filters and pins
+  DNS results to public destinations, inherits no guest credentials or headers,
+  and applies 2 KiB target, 1 MiB response, 1.5-second, and eight-operation
+  concurrency ceilings. Raw sockets and announce/listen remain unavailable.
 - Python `wasi-component` source compilation with bundled CPython 3.14, locked
   universal-wheel dependencies, exact SHA-256-pinned componentizer wheels for
   all five server-release hosts, non-canonical build provenance, and direct or
@@ -97,7 +104,8 @@ This document is deliberately strict about what the current stable build does an
 ## Present as an extension seam, not implemented by the default module set
 
 - WASI and capability-gated Component host imports beyond the shipped
-  exact-root object-read/object-write, typed graph-read, and bounded channel
+  exact-root object-read/object-write, typed graph-read, bounded channel, and
+  bounded HTTPS GET
   profiles.
 - Independently addressable or explicitly invokable child applications; current children share their parent's lifecycle and only the root primary is invoked.
 - Uniform engine enforcement of scalar CPU, memory, deadline, priority, and

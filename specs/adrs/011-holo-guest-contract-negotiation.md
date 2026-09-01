@@ -1,6 +1,6 @@
 # ADR 011: `.holo` guest contracts use the Wasm layer auxiliary tag
 
-- Status: accepted and implemented for import-free, store-read, store-write, channel-publish, and channel-subscribe Component v1 profiles
+- Status: accepted and implemented for import-free, store, channel, and network-fetch Component v1 profiles
 - Date: 2026-08-25
 
 ## Context
@@ -38,6 +38,8 @@ Its values are exact, namespaced identifiers:
   fixed mediated channel publish import.
 - `hologram:guest/component-channel-subscribe@1`: Component Model v1 with the
   fixed mediated channel subscribe import.
+- `hologram:guest/component-network-fetch@1`: Component Model v1 with the fixed
+  bounded HTTPS GET import.
 
 The empty alias remains the compiler default while core-Wasm v1 is current, so
 existing compatible archives retain their canonical bytes and application κ.
@@ -113,6 +115,11 @@ worlds under [`../wit/channel-publish/`](../wit/channel-publish/) and
 only `hologram:host/channel-publish@1.0.0`; the second imports only
 `hologram:host/channel-subscribe@1.0.0`. Both retain the same guest `run` shape.
 
+`component-network-fetch@1` uses the world under
+[`../wit/network-fetch/`](../wit/network-fetch/). It imports only
+`hologram:host/network-fetch@1.0.0`; the operation accepts one canonical HTTPS
+target and returns a status plus bounded body.
+
 ### Host-interface admission
 
 The base `component@1` world imports nothing. Every host-enabled profile uses a
@@ -149,6 +156,13 @@ has already proved that request is contained by the trusted effective grant or
 attenuated child grant. Every host call compares the supplied channel κ against
 that retained set before touching the broker, and public failures omit the κ.
 
+Network-fetch preparation requires at least one admitted
+`network_fetch_endpoints` scope. Each call reparses the target through the same
+canonical upstream endpoint model before the host transport resolves or
+connects. ADR 021 defines the public-address DNS policy, redirect prohibition,
+credential isolation, and byte, duration, and concurrency ceilings. Failures
+and traces omit endpoint strings.
+
 The v1 broker is runtime-owned and host-neutral. Each exact channel is a FIFO
 work queue with a 64-message mailbox and a 64 KiB per-message limit. Publish is
 nonblocking: it enqueues once or returns explicit backpressure without dropping
@@ -170,7 +184,7 @@ leave no pending subscription state.
 | `hologram:host/store-write.write` | target κ is an admitted `storage_roots` entry and newly materialized bytes fit `storage_quota_bytes` | shipped only in `component-store-write@1` |
 | `hologram:host/channel-publish.publish` | channel κ is in `publish_channels` | shipped only in `component-channel-publish@1` |
 | `hologram:host/channel-subscribe.try-receive` | channel κ is in `subscribe_channels` | shipped only in `component-channel-subscribe@1` |
-| `hologram:host/network.fetch` | target is contained by `network_fetch_endpoints` | withheld pending a separate mediated profile |
+| `hologram:host/network-fetch.fetch` | target is contained by `network_fetch_endpoints` | shipped only in `component-network-fetch@1`; ADR 021 bounds DNS, redirects, bytes, time, and concurrency |
 | `hologram:host/network.announce` | target is contained by `network_announce_endpoints` | withheld pending a separate mediated profile |
 | Wasm memory and execution | `memory_max_bytes`, `cpu_time_per_event_ms`, and `priority_weight` | runtime ceilings ship in base v1; nonzero admitted memory/time scalars only tighten them; priority scheduling remains deferred |
 | WASI filesystem preopens | `storage_roots` plus `storage_quota_bytes` for writes | no ambient directories; deferred profile only |
@@ -180,9 +194,9 @@ leave no pending subscription state.
 | Hologram inference or model sessions | no canonical field | unavailable until a scoped model capability exists |
 
 ADR 020 replaces the former booleans with canonical HTTPS endpoint scopes and
-path-prefix attenuation. No network interface is linked in this slice. A future
-profile must remain mediated and bounded; endpoint authority never implies raw
-sockets. Invocation input/output replaces WASI stdin/stdout, and the runtime
+path-prefix attenuation. ADR 021 links only the bounded GET mediator for the
+distinct network-fetch profile; endpoint authority never implies raw sockets.
+Invocation input/output replaces WASI stdin/stdout, and the runtime
 does not inherit host arguments or environment variables.
 
 Python uses this unchanged base world. The source compiler pins

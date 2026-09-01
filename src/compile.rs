@@ -3,9 +3,9 @@ use crate::error::{LiveError, Result};
 use crate::holo_capability;
 use crate::holo_contract::{
     normalize_wasm_contract, COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
-    WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1, WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1,
-    WASM_CONTRACT_COMPONENT_STORE_READ_V1, WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
-    WASM_CONTRACT_COMPONENT_V1,
+    WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1, WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1,
+    WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
+    WASM_CONTRACT_COMPONENT_STORE_WRITE_V1, WASM_CONTRACT_COMPONENT_V1,
 };
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
@@ -491,6 +491,7 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
                             | WASM_CONTRACT_COMPONENT_STORE_WRITE_V1
                             | WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1
                             | WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1
+                            | WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1
                     ) && entry != COMPONENT_V1_ENTRY
                     {
                         return Err(layer_config_error(
@@ -1359,6 +1360,10 @@ mod tests {
             (
                 crate::holo_contract::WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1,
                 "wasmtime-component-channel-subscribe-direct",
+            ),
+            (
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1,
+                "wasmtime-component-network-fetch-direct",
             ),
         ] {
             std::fs::write(

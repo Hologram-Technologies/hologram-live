@@ -1,0 +1,11 @@
+package hologram:host@1.0.0;
+
+/// A host-mediated, bounded HTTPS GET operation.
+interface network-fetch {
+  record response {
+    status: u16,
+    body: list<u8>,
+  }
+
+  fetch: func(target: string) -> result<response, string>;
+}

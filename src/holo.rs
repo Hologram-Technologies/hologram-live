@@ -734,6 +734,7 @@ fn direct_registry(
                 channel_broker.clone(),
             )),
             Arc::new(ComponentProvider::channel_subscribe_direct(channel_broker)),
+            Arc::new(ComponentProvider::network_fetch_direct()),
             Arc::new(PythonRootfsProvider),
             Arc::new(ViewProvider::new(view_surfaces)),
         ],
@@ -763,6 +764,7 @@ fn resident_registry(
             Arc::new(ComponentProvider::channel_subscribe_resident(
                 channel_broker,
             )),
+            Arc::new(ComponentProvider::network_fetch_resident()),
             Arc::new(ViewProvider::headless()),
         ],
     )
@@ -1510,6 +1512,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn component_network_fetch_denies_missing_authority_before_instantiation() {
+        let archive = network_fetch_archive(&crate::holo_capability::empty_canonical());
+        let error = HoloExecutor::default()
+            .execute(&archive, Vec::new())
+            .await
+            .expect_err("network-fetch profile requires authority");
+        assert_eq!(error.code(), "LIVE_AUTHORIZATION_DENIED");
+        assert!(
+            error.to_string().contains("network_fetch_endpoints"),
+            "{error}"
+        );
+        assert!(error.to_string().contains("network-fetch"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn component_network_fetch_rejects_private_dns_direct_and_resident() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let target = "https://localhost:443/v1";
+        let capabilities = network_fetch_capabilities(target);
+        let archive = network_fetch_archive(&capabilities);
+        let grant_path = directory.path().join("grant.json");
+        std::fs::write(
+            &grant_path,
+            format!(r#"{{"schema_version":2,"network_fetch_endpoints":["{target}"]}}"#),
+        )
+        .expect("grant");
+        let grant = EffectiveGrant::from_development_file(
+            &grant_path,
+            crate::holo_capability::GrantSource::DirectDevelopmentFile,
+        )
+        .expect("grant");
+
+        let direct_error = HoloExecutor::default()
+            .execute_with_grant(&archive, vec![target.as_bytes().to_vec()], &grant)
+            .await
+            .expect_err("direct private destination denied");
+        assert!(
+            direct_error.to_string().contains("forbidden"),
+            "{direct_error}"
+        );
+        assert!(
+            !direct_error.to_string().contains("localhost"),
+            "{direct_error}"
+        );
+
+        let store = Arc::new(ObjectStore::open(directory.path().join("store")).expect("store"));
+        let catalog = Arc::new(HoloCatalog::new(store));
+        let runtime = HoloRuntime::new_with_grant(catalog.clone(), 8, grant);
+        let kappa = catalog
+            .import("component-network-fetch.holo".to_owned(), archive)
+            .expect("import")
+            .kappa;
+        runtime.load(&kappa).await.expect("resident load");
+        let resident_error = runtime
+            .run(&kappa, vec![target.as_bytes().to_vec()])
+            .await
+            .expect_err("resident private destination denied");
+        assert!(
+            resident_error.to_string().contains("forbidden"),
+            "{resident_error}"
+        );
+        assert!(
+            !resident_error.to_string().contains("localhost"),
+            "{resident_error}"
+        );
+        runtime.unload(&kappa).await.expect("unload");
+    }
+
+    #[tokio::test]
     async fn component_channel_children_are_attenuated_to_delegated_sets() {
         let directory = tempfile::tempdir().expect("tempdir");
         let channel = address_bytes(b"delegated channel").to_string();
@@ -2129,6 +2200,30 @@ mod tests {
                 address_bytes(component),
                 crate::holo_contract::COMPONENT_V1_ENTRY,
                 contract,
+            )],
+            children: Vec::new(),
+        };
+        current_archive(&manifest, &[capabilities, component])
+    }
+
+    fn network_fetch_capabilities(target: &str) -> Vec<u8> {
+        crate::holo_capability::compile_source(
+            std::path::Path::new("network-fetch-capabilities.json"),
+            format!(r#"{{"schema_version":2,"network_fetch_endpoints":["{target}"]}}"#).as_bytes(),
+        )
+        .expect("network fetch capabilities")
+    }
+
+    fn network_fetch_archive(capabilities: &[u8]) -> Vec<u8> {
+        let component =
+            include_bytes!("../tests/fixtures/component-network-fetch/network-fetch.wasm");
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: address_bytes(capabilities),
+            layers: vec![Layer::wasm_with_contract(
+                address_bytes(component),
+                crate::holo_contract::COMPONENT_V1_ENTRY,
+                crate::holo_contract::WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1,
             )],
             children: Vec::new(),
         };

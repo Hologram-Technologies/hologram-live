@@ -80,12 +80,14 @@ redact it from failures. Messages are limited to 64 KiB and each in-memory FIFO
 to 64 entries; full mailboxes reject without dropping queued data. Receive is
 nonblocking and at-most-once, so cancellation leaves no waiter. The broker
 exposes no socket, filesystem, durable storage, replay, acknowledgement, or
-broadcast surface. Future mediated network interfaces require their
-corresponding admitted canonical endpoint sets. ADR 020 restricts those sets to
-explicit HTTPS host, port, and path-prefix scopes with child attenuation and
-redacted diagnostics, but ships no network import. A future mediator must
-reauthorize redirects and resolved addresses and bound request bytes, response
-bytes, duration, and concurrency;
+broadcast surface. The separate `component-network-fetch@1` world links only
+`hologram:host/network-fetch@1.0.0` after a nonempty canonical endpoint set is
+admitted. Every GET reparses and reauthorizes the target. The runtime resolves
+DNS afresh, filters forbidden addresses, pins HTTPS to accepted results,
+disables redirects and environment proxies, and inherits no headers,
+credentials, cookies, or client identity. Fixed target, response, duration, and
+process-wide concurrency ceilings apply, and diagnostics omit endpoint values.
+ADR 021 records this boundary;
 clocks, random, environment, process control, secrets, inference, and raw
 sockets remain unavailable while no sufficiently scoped capability exists.
 Under-granted imports must fail before linker construction.

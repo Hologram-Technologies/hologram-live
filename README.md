@@ -252,11 +252,11 @@ human-authored compiler input, not the object embedded in the archive:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "storage_roots": [],
   "storage_quota_bytes": 0,
-  "network_fetch": false,
-  "network_announce": false,
+  "network_fetch_endpoints": [],
+  "network_announce_endpoints": [],
   "publish_channels": [],
   "subscribe_channels": [],
   "memory_max_bytes": 0,
@@ -265,8 +265,16 @@ human-authored compiler input, not the object embedded in the archive:
 }
 ```
 
+Endpoint entries use the exact form
+`https://lowercase-host:explicit-port/path-prefix`, must be strictly sorted,
+and narrow for children only on exact origin and path-segment boundaries.
+Schema-1 documents remain compatible when their legacy network booleans are
+absent or false; `true` is rejected rather than interpreted as ambient access.
+Scopes alone link no network interface, and raw sockets remain unavailable.
+
 Set `"requires": "capabilities.json"` in `hologram.json`. `compile --check`
-validates the version, fields, and canonical sorted κ lists; `compile` converts
+validates the version, fields, and canonical sorted κ and endpoint lists;
+`compile` converts
 the JSON into the upstream canonical `CapabilitySet` bytes and stores that
 object's κ in `AppManifest.requires`. Omitting `requires` produces the canonical
 empty request. A request describes what an application needs—it is never itself
@@ -290,7 +298,7 @@ empty set represents a deny-all request; zero-byte or otherwise malformed
 objects are rejected even when their content address is correct.
 
 Ordinary local execution uses the built-in baseline grant: no storage roots,
-publish/subscribe channels, or network flags. A non-empty request therefore
+publish/subscribe channels, or network endpoint scopes. A non-empty request therefore
 fails with `LIVE_AUTHORIZATION_DENIED`. For an explicit local demo, provide a
 separate trusted capability source as the effective grant:
 

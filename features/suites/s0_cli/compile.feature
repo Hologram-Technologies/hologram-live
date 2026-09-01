@@ -84,3 +84,15 @@ Feature: Compile Hologram applications
     Then the run fails with an authorization-denied error
     When I run the channel-publish archive with its development grant
     Then the admitted channel is returned
+
+  Scenario: admit an endpoint-scoped request without exposing network imports
+    Given a Wasm application that requests network fetch
+    And a fresh Hologram home
+    When I compile the application
+    Then the compile command succeeds
+    When I run the compiled archive without a development grant
+    Then the run fails with an authorization-denied error
+    When I run the compiled archive with its development grant and input "endpoint scope"
+    Then the run output is "ENDPOINT SCOPE"
+    And the run reports allowed authorization from "direct_development_file"
+    And the capability audit contains no source document or payload data

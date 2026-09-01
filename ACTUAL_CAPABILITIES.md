@@ -24,6 +24,11 @@ This document is deliberately strict about what the current stable build does an
 - First-class `.holo` fixture creation, import, list, inspect, payload-free plan, verify, and remove through CLI, native gRPC, JSON/HTTP, and OpenAPI surfaces.
 - `.holo` compiler/runtime/execution path: strict v4 reads and writes with required verified application directories, fat or thin packaging, explicit archive object κ / footer fingerprint / canonical application κ reporting, required source-schema-v4 Wasm guest-contract tags, exact `(LayerKind, contract)` provider selection, complete pre-provider resolution and re-hashing of root and child closures with deterministic limits/blockers, explanatory local or catalog-backed plans (including unsupported providers), transactional depth-first manifest-order prepare/start and exact reverse stop/rollback, root-primary-only invocation, aggregate tree status, multi-layer core-Wasm execution with nonzero primary positions, manifest-declared callable exports, direct service-free execution, κ-backed thin payload resolution, and idempotent resident load/unload sessions over supervised Wasmtime actors with lifecycle status.
 - `.holo` capability admission: canonical requests are distinct from trusted effective grants; zero-byte and malformed capability objects fail closed; the default local baseline has no storage/channel/network authority, explicit development grants are restricted to direct files or loopback service configuration, denial occurs before provider preparation, and durable audit rows plus run/resident results report non-secret request/grant identities, relation, principal, trusted source, and outcome across CLI, JSON/HTTP, and Protobuf/gRPC.
+- Endpoint-scoped network authority in canonical capability objects: schema 2
+  accepts strictly ordered HTTPS host/port/path-prefix scopes, child delegation
+  attenuates on exact origin and path-segment boundaries, legacy no-network
+  objects retain their identities, and legacy ambient flags fail closed. No
+  network guest interface or raw socket is linked in this slice.
 - Typed `.holo` completion across CLI, JSON/HTTP, and Protobuf/gRPC: byte
   outputs remain separate from `returned` callable completion and real
   `exited { code }` process status; complete authorization evidence and a typed

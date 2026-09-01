@@ -44,7 +44,7 @@ export_timeout_secs = 5
   <div class="note"><strong>Telemetry remains local by default</strong>Leave <code>telemetry.endpoint</code> unset to prevent any telemetry network connection.</div>
 
   <h2><code>.holo</code> development grants</h2>
-  <p>Resident applications normally receive the local baseline grant, which has no storage roots, channels, or network flags. Set <code>holo.development_grant</code> only for a local demo that intentionally needs more authority. The file uses the same source schema as <code>capabilities.json</code>, but it is read from trusted host configuration and is never taken from the archive or a remote request. This option is rejected when <code>server.listen</code> is not loopback.</p>
+  <p>Resident applications normally receive the local baseline grant, which has no storage roots, channels, or network endpoint scopes. Set <code>holo.development_grant</code> only for a local demo that intentionally needs more authority. The file uses the same source schema as <code>capabilities.json</code>, but it is read from trusted host configuration and is never taken from the archive or a remote request. Endpoint scopes do not enable networking without a separately shipped mediated guest profile. This option is rejected when <code>server.listen</code> is not loopback.</p>
 
   <h2>Environment overrides</h2>
   <div class="table-wrap"><table>

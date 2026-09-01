@@ -1,4 +1,49 @@
-# Current sprint: capability-gated typed storage graph reads
+# Current sprint: endpoint-scoped network capabilities
+
+## Sprint status
+
+- State: active
+- Started: 2026-09-01
+- Last reviewed: 2026-09-01
+- Durable milestone: [M3.1a — Component-model and Python/WASI proof](plans/holo-application-runtime.md#m31a-component-model-and-pythonwasi-proof)
+- Decision: [ADR 020](adrs/020-endpoint-scoped-network-capabilities.md)
+- Goal: replace ambient boolean network authority with canonical endpoint sets
+  before any guest network interface is linked
+- Exit signal: existing no-network identities remain stable, legacy ambient
+  flags fail closed, and exact HTTPS origin/path scopes attenuate across child
+  delegation without exposing raw sockets or mediated fetch
+
+## Contract and migration
+
+- [x] Add canonical HTTPS host, explicit-port, and path-prefix scope parsing
+  upstream with exact-origin and path-segment containment.
+- [x] Preserve the canonical bytes of legacy no-network capability objects and
+  make legacy nonzero ambient flags invalid instead of wildcard authority.
+- [x] Add source schema 2 endpoint lists while retaining schema 1 only for
+  absent/false legacy network booleans.
+- [x] Keep endpoint strings out of admission summaries, traces, audit rows, and
+  run reports.
+- [x] Keep every guest network import and raw WASI socket unavailable in this
+  schema-only slice.
+
+## Verification and delivery
+
+- [x] Exercise endpoint syntax, sorted/deduplicated canonicalization, narrowed
+  and denied delegation, legacy migration, and redacted failures.
+- [x] Pass upstream `no_std`, workspace, conformance, and test gates.
+- [x] Pass Live formatting, workspace tests, Clippy, BDD, documentation,
+  release, smoke, and clean Component reproducibility gates.
+- [ ] Merge the upstream contract before pinning its durable merge commit in
+  Live.
+
+## Next prioritized work
+
+- [ ] Define a distinct bounded mediated-fetch Component profile with redirect,
+  DNS/address, request/response byte, duration, and concurrency enforcement.
+
+---
+
+# Previous sprint: capability-gated typed storage graph reads
 
 ## Sprint status
 

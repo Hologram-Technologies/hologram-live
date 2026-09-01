@@ -6,6 +6,8 @@
 - Created: 2026-08-25
 - Format target: strict `.holo` v4 reads and writes
 - Active execution tracker: [`specs/SPRINT.md`](../SPRINT.md)
+- Chat/View product reference: [UOR-R4 WASM Chat](../references/uor-r4-wasm-chat.md)
+  for visual and interaction prior art; it is not a runtime dependency
 - Current delivery: capability-gated Component `store.write` profile complete
 - Previous delivery: capability-gated Component `store.read` profile complete
 - Next runtime slice: capability-gated channel publish/subscribe Component profiles
@@ -741,6 +743,14 @@ only until compilation resolves and binds its immutable digest.
 
 ### M3.3 Inference-model provider
 
+Chat product reference (reviewed 2026-09-01):
+[`Casey-allard/uor-r4-wasm-chat`](../references/uor-r4-wasm-chat.md) supplies a
+working chat-window comparison for streaming states, stop/cancel, rich response
+rendering, attachments, model readiness, and optional telemetry. Hologram keeps
+its service-backed conversation history, host-neutral provider boundary, and
+trusted-dashboard/guest-View separation; the reference adds no dependency or
+ambient authority.
+
 - [x] Upgrade the archive/space boundary to `.holo` v4 and reject every other physical version.
 - [x] Represent `InferenceModel` as a non-exit-bearing service layer with required entry and engine tags.
 - [x] Include model entry, engine, content κ, and embedded size in verified inspection output.
@@ -750,6 +760,13 @@ only until compilation resolves and binds its immutable digest.
 - [ ] Add `hologram ai compile` and `hologram ai infer` by delegating source acquisition, compilation, loading, and sessions to `hologram-ai`.
 - [ ] Route a selected archive model into Chat and the OpenAI/Ollama compatibility modules.
 - [ ] Define model residency, cancellation, resource budgets, and session reuse at the provider boundary.
+- [ ] Define typed queued, preparing, streaming, stopped, completed, and failed
+  chat-turn events before adding Desktop token streaming and a Stop action.
+- [ ] Add bounded, sanitized rich-response and κ-addressed attachment
+  affordances; keep plain text as the safe fallback and derive model/readiness
+  controls from admitted provider state.
+- [ ] Keep any diagnostics rail optional, collapsible, and backed only by typed
+  provider telemetry.
 - [ ] Prove a real pinned model can compile in `hologram-ai`, import into Live, and answer a prompt end to end.
 
 ### M3.3a Tensor provider

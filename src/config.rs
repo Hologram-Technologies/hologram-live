@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 
 const CURRENT_SCHEMA_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerRole {
+    #[default]
     Node,
     ControlPlane,
 }
@@ -34,22 +35,34 @@ pub enum TargetPreference {
 #[serde(deny_unknown_fields)]
 pub struct AppConfig {
     pub schema_version: u32,
+    #[serde(default)]
     pub role: ServerRole,
+    #[serde(default)]
     pub paths: PathsConfig,
+    #[serde(default)]
     pub server: ServerConfig,
+    #[serde(default)]
     pub client: ClientConfig,
+    #[serde(default)]
     pub auth: AuthConfig,
+    #[serde(default)]
     pub tracing: TracingConfig,
+    #[serde(default)]
     pub telemetry: TelemetryConfig,
+    #[serde(default)]
     pub modules: ModulesConfig,
+    #[serde(default)]
     pub update: UpdateConfig,
+    #[serde(default)]
     pub inference: InferenceConfig,
+    #[serde(default)]
     pub holo: HoloConfig,
+    #[serde(default)]
     pub plugins: PluginsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct PathsConfig {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,
@@ -58,7 +71,7 @@ pub struct PathsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
     pub listen: String,
     pub max_rpc_bytes: usize,
@@ -68,7 +81,7 @@ pub struct ServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct ClientConfig {
     pub preference: TargetPreference,
     pub local_endpoint: String,
@@ -78,14 +91,14 @@ pub struct ClientConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct AuthConfig {
     pub required: bool,
     pub token_env: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct TracingConfig {
     pub filter: String,
     pub format: String,
@@ -94,7 +107,7 @@ pub struct TracingConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct TelemetryConfig {
     /// Enables creation of application metrics and trace context.
     pub enabled: bool,
@@ -105,20 +118,20 @@ pub struct TelemetryConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct ModulesConfig {
     pub enabled: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct UpdateConfig {
     pub manifest_url: Option<String>,
     pub channel: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct InferenceConfig {
     /// echo | weightc | ollama
     pub engine: String,
@@ -136,7 +149,7 @@ pub struct InferenceConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct HoloConfig {
     /// Explicit development-only effective grant for resident applications.
     /// Relative paths resolve from `paths.config_dir`.
@@ -158,7 +171,7 @@ pub struct HoloResidentConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct PluginsConfig {
     /// Master switch for subprocess plugin modules. Defaults to off.
     pub enabled: bool,
@@ -616,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_current_configuration_fields_are_rejected() {
+    fn missing_section_fields_fall_back_to_defaults() {
         let mut value = toml::Value::try_from(AppConfig::default()).expect("serialize config");
         value
             .get_mut("server")
@@ -624,9 +637,73 @@ mod tests {
             .expect("server table")
             .remove("max_rpc_bytes");
         let source = toml::to_string(&value).expect("encode config");
-        let error =
-            toml::from_str::<AppConfig>(&source).expect_err("missing current field must fail");
-        assert!(error.to_string().contains("max_rpc_bytes"), "{error}");
+        let config = toml::from_str::<AppConfig>(&source).expect("field added after this file");
+        assert_eq!(
+            config.server.max_rpc_bytes,
+            ServerConfig::default().max_rpc_bytes
+        );
+        config.validate().expect("defaulted config validates");
+    }
+
+    /// A config written before `[inference]`, `[holo]`, and `[plugins]` existed
+    /// must still boot: `schema_version` is unchanged, so the file is current
+    /// as far as its author knew.
+    #[test]
+    fn configuration_predating_a_whole_section_still_loads() {
+        let source = r#"
+schema_version = 2
+role = "node"
+
+[server]
+listen = "127.0.0.1:11435"
+
+[modules]
+enabled = ["dev.hologram.live.system"]
+"#;
+        let config = toml::from_str::<AppConfig>(source).expect("older config must load");
+        assert_eq!(config.inference.engine, InferenceConfig::default().engine);
+        assert!(config.holo.resident.is_empty());
+        assert!(!config.plugins.enabled);
+        assert_eq!(config.server.listen, "127.0.0.1:11435");
+        assert_eq!(config.modules.enabled, ["dev.hologram.live.system"]);
+        config.validate().expect("older config validates");
+    }
+
+    #[test]
+    fn missing_schema_version_is_rejected() {
+        let error = toml::from_str::<AppConfig>("role = \"node\"\n")
+            .expect_err("schema_version anchors compatibility and is never guessed");
+        assert!(error.to_string().contains("schema_version"), "{error}");
+    }
+
+    #[test]
+    fn unknown_configuration_fields_are_still_rejected() {
+        let mut value = toml::Value::try_from(AppConfig::default()).expect("serialize config");
+        value
+            .get_mut("server")
+            .and_then(toml::Value::as_table_mut)
+            .expect("server table")
+            .insert("listne".to_owned(), toml::Value::String("oops".to_owned()));
+        let source = toml::to_string(&value).expect("encode config");
+        let error = toml::from_str::<AppConfig>(&source).expect_err("typo must fail");
+        assert!(error.to_string().contains("listne"), "{error}");
+    }
+
+    #[test]
+    fn plugin_entries_still_require_every_field() {
+        let source = r#"
+schema_version = 2
+
+[plugins]
+enabled = true
+
+[[plugins.modules]]
+id = "dev.example.plugin"
+path = "/usr/local/bin/plugin"
+"#;
+        let error = toml::from_str::<AppConfig>(source)
+            .expect_err("hand-authored list entries stay strict");
+        assert!(error.to_string().contains("sha256"), "{error}");
     }
 
     #[test]

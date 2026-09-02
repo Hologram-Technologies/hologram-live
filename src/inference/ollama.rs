@@ -240,6 +240,18 @@ impl InferenceEngine for OllamaEngine {
                     }
                 }
             }
+            // The byte stream ended (connection closed, proxy reset, killed
+            // model process, ...) without a `done: true` line ever arriving.
+            // Falling off the end here without sending anything would let
+            // the channel just close and `ReceiverStream` end silently — the
+            // exact "neither Done nor Err" case the contract on
+            // `complete_stream` forbids, since a consumer could not tell a
+            // truncated answer from a normal short one. Report it instead.
+            let _ = sender
+                .send(Err(LiveError::Protocol(
+                    "ollama stream ended before a done line".to_owned(),
+                )))
+                .await;
         });
 
         Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(
@@ -403,6 +415,111 @@ mod tests {
             Some(TokenUsage {
                 prompt_tokens: 18,
                 completion_tokens: 42
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_errs_when_the_body_ends_without_a_done_line() {
+        use tokio_stream::StreamExt;
+
+        // No `done: true` line: simulates a killed model process, a proxy
+        // reset, or a connection that closes mid-stream.
+        let body = concat!(
+            "{\"response\":\"Hel\",\"done\":false}\n",
+            "{\"response\":\"lo\",\"done\":false}\n"
+        );
+        let router = axum::Router::new().route(
+            "/api/generate",
+            axum::routing::post(move || async move { body }),
+        );
+        let endpoint = spawn_stub(router).await;
+        let engine = OllamaEngine::new(&config_for(&endpoint)).expect("build the engine");
+
+        let mut stream = engine
+            .complete_stream(CompletionRequest {
+                prompt: "hi".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the stub responds successfully");
+
+        let mut deltas = Vec::new();
+        let mut error = None;
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(CompletionEvent::Delta(text)) => deltas.push(text),
+                Ok(CompletionEvent::Done(_)) => {
+                    panic!("a truncated stream must never send Done")
+                }
+                Err(received) => {
+                    error = Some(received);
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(deltas, vec!["Hel".to_owned(), "lo".to_owned()]);
+        assert!(
+            error.is_some(),
+            "truncation before a done line must surface as Err, not a silent end"
+        );
+        assert!(
+            stream.next().await.is_none(),
+            "nothing follows the terminal Err"
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_reassembles_a_json_line_split_across_chunk_boundaries() {
+        use tokio_stream::StreamExt;
+
+        // Two body frames whose split falls *inside* the first JSON object's
+        // `response` field, plus a second object in the same frame as the
+        // tail of the first. Proves the buffer — not `bytes_stream()`'s
+        // chunking — determines line boundaries: a `chunk.split('\n')`
+        // implementation would misparse `"{\"response\":\"Hel` as its own
+        // line and fail this test.
+        let router = axum::Router::new().route(
+            "/api/generate",
+            axum::routing::post(|| async {
+                let frames = vec![
+                    Ok::<_, std::io::Error>(axum::body::Bytes::from_static(
+                        b"{\"response\":\"Hel",
+                    )),
+                    Ok(axum::body::Bytes::from_static(
+                        b"lo\",\"done\":false}\n{\"response\":\"\",\"done\":true,\"prompt_eval_count\":1,\"eval_count\":2}\n",
+                    )),
+                ];
+                axum::body::Body::from_stream(tokio_stream::iter(frames))
+            }),
+        );
+        let endpoint = spawn_stub(router).await;
+        let engine = OllamaEngine::new(&config_for(&endpoint)).expect("build the engine");
+
+        let mut stream = engine
+            .complete_stream(CompletionRequest {
+                prompt: "hi".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the stub responds successfully");
+
+        let mut deltas = Vec::new();
+        let mut summary = None;
+        while let Some(event) = stream.next().await {
+            match event.expect("the reassembled lines are well-formed") {
+                CompletionEvent::Delta(text) => deltas.push(text),
+                CompletionEvent::Done(done) => summary = Some(done),
+            }
+        }
+
+        assert_eq!(deltas.concat(), "Hello");
+        assert_eq!(
+            summary.expect("the stream terminates with Done").usage,
+            Some(TokenUsage {
+                prompt_tokens: 1,
+                completion_tokens: 2
             })
         );
     }

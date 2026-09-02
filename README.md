@@ -137,6 +137,13 @@ injected by an environment override. Unknown fields are still rejected rather th
 ignored, and a `schema_version` newer than the running build supports is refused
 rather than silently downgraded.
 
+Removing a field from the schema comes with a `schema_version` bump and an entry
+in the retired-key table in `src/config.rs`. A file written before the bump keeps
+starting: the retired key is dropped during the upgrade, named in a warning, and
+gone from the rewritten file. Files already at the current version are not swept,
+so an unrecognised key there stays a startup error rather than being discarded as
+though it had been retired.
+
 ### Files
 
 ```bash

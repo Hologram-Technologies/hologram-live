@@ -165,3 +165,87 @@ impl InferenceEngine for OllamaEngine {
             .collect())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::InferenceConfig;
+
+    /// Binds an ephemeral port and serves `router`, returning its base URL.
+    /// Uses axum directly rather than a new dev-dependency.
+    pub(super) async fn spawn_stub(router: axum::Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port");
+        let address = listener.local_addr().expect("read the bound address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        format!("http://{address}")
+    }
+
+    fn config_for(endpoint: &str) -> InferenceConfig {
+        InferenceConfig {
+            engine: "ollama".to_owned(),
+            default_model: "test-model".to_owned(),
+            ollama_endpoint: endpoint.to_owned(),
+            ..InferenceConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_reports_the_counts_ollama_sends() {
+        let router = axum::Router::new().route(
+            "/api/generate",
+            axum::routing::post(|| async {
+                axum::Json(serde_json::json!({
+                    "response": "hello",
+                    "prompt_eval_count": 18,
+                    "eval_count": 42,
+                    "eval_duration": 1_000_000_000_u64,
+                }))
+            }),
+        );
+        let endpoint = spawn_stub(router).await;
+        let engine = OllamaEngine::new(&config_for(&endpoint)).expect("build the engine");
+
+        let completion = engine
+            .complete(CompletionRequest {
+                prompt: "hi".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the stub responds successfully");
+
+        assert_eq!(completion.text, "hello");
+        assert_eq!(
+            completion.usage,
+            Some(TokenUsage {
+                prompt_tokens: 18,
+                completion_tokens: 42
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn generate_omits_usage_when_ollama_sends_no_counts() {
+        let router = axum::Router::new().route(
+            "/api/generate",
+            axum::routing::post(|| async {
+                axum::Json(serde_json::json!({ "response": "hello" }))
+            }),
+        );
+        let endpoint = spawn_stub(router).await;
+        let engine = OllamaEngine::new(&config_for(&endpoint)).expect("build the engine");
+
+        let completion = engine
+            .complete(CompletionRequest {
+                prompt: "hi".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the stub responds successfully");
+
+        assert_eq!(completion.usage, None);
+    }
+}

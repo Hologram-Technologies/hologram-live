@@ -10,6 +10,52 @@ const CURRENT_SCHEMA_VERSION: u32 = 2;
 /// Anything older is refused rather than guessed at.
 const MINIMUM_SUPPORTED_SCHEMA_VERSION: u32 = 1;
 
+/// A key removed from the schema, and the `schema_version` that removed it.
+#[derive(Debug, Clone, Copy)]
+struct RetiredKey {
+    /// Dotted path to the key, such as `server.max_rpc_bytes`. A path with no
+    /// dot names a whole top-level table.
+    path: &'static str,
+    /// First `schema_version` that no longer accepts the key.
+    removed_in: u32,
+}
+
+/// Keys this build no longer accepts.
+///
+/// `deny_unknown_fields` is kept deliberately, so a file still carrying a
+/// removed key would otherwise be refused outright. Removing a field therefore
+/// means bumping `CURRENT_SCHEMA_VERSION` and listing the field here: files
+/// written before the bump keep starting, and the key is dropped as part of the
+/// upgrade. An entry can go once `MINIMUM_SUPPORTED_SCHEMA_VERSION` has passed
+/// its `removed_in`, because no readable file can contain it any more.
+const RETIRED_KEYS: &[RetiredKey] = &[];
+
+/// Drops retired keys from a parsed configuration, returning the paths removed.
+///
+/// Only keys retired *after* `from` are considered. A file already at the
+/// current version is left untouched, so an unrecognised key there stays a hard
+/// error rather than being silently discarded as a typo.
+fn prune_retired_keys(table: &mut toml::Table, from: u32, retired: &[RetiredKey]) -> Vec<String> {
+    let mut dropped = Vec::new();
+    for key in retired.iter().filter(|key| key.removed_in > from) {
+        if remove_dotted(table, key.path) {
+            dropped.push(key.path.to_owned());
+        }
+    }
+    dropped
+}
+
+/// Removes a dotted path, reporting whether anything was there.
+fn remove_dotted(table: &mut toml::Table, path: &str) -> bool {
+    match path.split_once('.') {
+        None => table.remove(path).is_some(),
+        Some((head, rest)) => table
+            .get_mut(head)
+            .and_then(toml::Value::as_table_mut)
+            .is_some_and(|inner| remove_dotted(inner, rest)),
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerRole {
@@ -358,7 +404,7 @@ impl AppConfig {
         let mut config = if exists {
             let source =
                 std::fs::read_to_string(&path).map_err(|error| LiveError::io(&path, error))?;
-            toml::from_str::<Self>(&source)?
+            Self::from_source(&source, upgrade, &path, RETIRED_KEYS)?
         } else {
             Self::default()
         };
@@ -374,6 +420,41 @@ impl AppConfig {
         config.expand_paths();
         config.validate()?;
         Ok((config, path))
+    }
+
+    /// Parses a configuration file, dropping keys retired by a newer schema.
+    ///
+    /// The prune has to happen on the raw table: `deny_unknown_fields` rejects a
+    /// retired key during deserialisation, before `schema_version` is ever read,
+    /// so the upgrade path in `migrate` would never be reached.
+    fn from_source(
+        source: &str,
+        upgrade: bool,
+        path: &Path,
+        retired: &[RetiredKey],
+    ) -> Result<Self> {
+        if !upgrade {
+            return Ok(toml::from_str::<Self>(source)?);
+        }
+        let mut table = toml::from_str::<toml::Table>(source)?;
+        // A file with no readable version is left alone; deserialisation below
+        // reports the missing or malformed field.
+        if let Some(from) = table
+            .get("schema_version")
+            .and_then(toml::Value::as_integer)
+            .and_then(|version| u32::try_from(version).ok())
+        {
+            let dropped = prune_retired_keys(&mut table, from, retired);
+            if !dropped.is_empty() {
+                tracing::warn!(
+                    config.path = %path.display(),
+                    config.schema_from = from,
+                    config.dropped_keys = %dropped.join(", "),
+                    "dropped configuration keys retired by a newer schema"
+                );
+            }
+        }
+        Ok(toml::Value::Table(table).try_into::<Self>()?)
     }
 
     /// Brings a parsed configuration up to `CURRENT_SCHEMA_VERSION`, reporting
@@ -716,6 +797,112 @@ mod tests {
         let path = dir.join("live.toml");
         std::fs::write(&path, body).expect("write scratch config");
         (dir, path)
+    }
+
+    const LEGACY: &[RetiredKey] = &[
+        RetiredKey {
+            path: "server.legacy_timeout_secs",
+            removed_in: 2,
+        },
+        RetiredKey {
+            path: "legacy",
+            removed_in: 2,
+        },
+    ];
+
+    /// The point of the mechanism: a file written before a field was removed
+    /// still starts, instead of being refused by `deny_unknown_fields`.
+    #[test]
+    fn keys_retired_by_a_newer_schema_are_dropped_when_upgrading() {
+        let source = r#"
+schema_version = 1
+
+[server]
+listen = "127.0.0.1:11435"
+legacy_timeout_secs = 5
+
+[legacy]
+whatever = true
+"#;
+        let config = AppConfig::from_source(source, true, Path::new("live.toml"), LEGACY)
+            .expect("a file predating the removal must still load");
+        // Everything the current schema still knows about survives the prune.
+        assert_eq!(config.server.listen, "127.0.0.1:11435");
+        assert_eq!(
+            config.schema_version, 1,
+            "migrate stamps the version, not this"
+        );
+    }
+
+    /// Typo protection is the reason `deny_unknown_fields` was kept, so a file
+    /// already at the current version must not have stray keys swept away.
+    #[test]
+    fn retired_keys_are_not_dropped_from_a_current_file() {
+        let source = format!(
+            "schema_version = {CURRENT_SCHEMA_VERSION}\n\n[server]\nlegacy_timeout_secs = 5\n"
+        );
+        let error = AppConfig::from_source(&source, true, Path::new("live.toml"), LEGACY)
+            .expect_err("a current file keeps strict field checking");
+        assert!(error.to_string().contains("legacy_timeout_secs"), "{error}");
+    }
+
+    #[test]
+    fn bootstrap_parsing_never_prunes() {
+        let source = "schema_version = 1\n\n[server]\nlegacy_timeout_secs = 5\n";
+        let error = AppConfig::from_source(source, false, Path::new("live.toml"), LEGACY)
+            .expect_err("the bootstrap read stays strict");
+        assert!(error.to_string().contains("legacy_timeout_secs"), "{error}");
+    }
+
+    #[test]
+    fn pruning_reports_only_the_paths_it_actually_removed() {
+        let mut table =
+            toml::from_str::<toml::Table>("schema_version = 1\n\n[server]\nlisten = \"x\"\n")
+                .expect("parse table");
+
+        let dropped = prune_retired_keys(&mut table, 1, LEGACY);
+
+        assert!(
+            dropped.is_empty(),
+            "nothing retired was present: {dropped:?}"
+        );
+        assert!(table.contains_key("server"), "untouched keys stay");
+    }
+
+    #[test]
+    fn pruning_skips_keys_retired_at_or_before_the_files_version() {
+        let mut table = toml::from_str::<toml::Table>("[server]\nlegacy_timeout_secs = 5\n")
+            .expect("parse table");
+
+        // The file is already at 2, so a key retired in 2 is not swept.
+        let dropped = prune_retired_keys(&mut table, 2, LEGACY);
+
+        assert!(dropped.is_empty(), "{dropped:?}");
+    }
+
+    #[test]
+    fn dotted_removal_handles_nested_and_top_level_paths() {
+        let mut table = toml::from_str::<toml::Table>("[a]\nb = 1\nkeep = 2\n\n[top]\nx = 1\n")
+            .expect("parse table");
+
+        assert!(remove_dotted(&mut table, "a.b"));
+        assert!(remove_dotted(&mut table, "top"));
+        assert!(
+            !remove_dotted(&mut table, "a.missing"),
+            "absent key reports false"
+        );
+        assert!(
+            !remove_dotted(&mut table, "missing.deep"),
+            "absent parent reports false"
+        );
+
+        assert!(!table.contains_key("top"));
+        let a = table
+            .get("a")
+            .and_then(toml::Value::as_table)
+            .expect("table a");
+        assert!(!a.contains_key("b"));
+        assert!(a.contains_key("keep"), "siblings survive");
     }
 
     #[test]

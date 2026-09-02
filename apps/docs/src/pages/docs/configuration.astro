@@ -78,6 +78,7 @@ enabled = false
 modules = []</code></pre>
   <p>Schema version 2 is current, and a file written by an earlier build still starts. Missing sections and fields fall back to the defaults shown above, and an older <code>schema_version</code> is upgraded and written back so the next start reads a current file. The rewrite records only what the file itself declares: values injected by an environment override are applied to the running process but never persisted.</p>
   <p>Two cases are still refused rather than guessed at. Unknown fields are rejected instead of ignored, so a misspelled key is a startup error rather than a setting that silently does nothing. A <code>schema_version</code> newer than the running build supports is refused instead of being downgraded, since a newer file may carry settings this build would drop on write.</p>
+  <p>When a key is removed from the schema, the removal comes with a <code>schema_version</code> bump, and files written before that bump keep starting: the retired key is dropped during the upgrade, named in a warning, and absent from the rewritten file. Files already at the current version are not swept this way, so an unrecognised key there remains a startup error rather than being discarded as though it were retired.</p>
   <div class="note"><strong>Telemetry remains local by default</strong>Leave <code>telemetry.endpoint</code> unset to prevent any telemetry network connection.</div>
 
   <h2><code>.holo</code> development grants</h2>

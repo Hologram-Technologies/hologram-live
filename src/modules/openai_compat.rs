@@ -1,18 +1,20 @@
-//! OpenAI-compatible HTTP API (non-streaming subset).
+//! OpenAI-compatible HTTP API.
 //!
 //! A thin translation layer over the Phase-1 inference core: chat messages
 //! render to the same `role: content` transcript the native chat module uses,
-//! and completions come from the configured [`InferenceEngine`]. Token
-//! streaming is not supported; `stream: true` is rejected with a typed 400 in
-//! the `OpenAI` error envelope.
+//! and completions come from the configured [`InferenceEngine`]. `stream:
+//! true` is accepted by every engine — natively where the engine supports
+//! it, emulated (a completed response replayed as deltas) otherwise — and
+//! the `x-hologram-stream` response header discloses which one happened.
 
 use crate::app::AppState;
 use crate::error::LiveError;
-use crate::inference::{CompletionRequest, InferenceEngine};
+use crate::inference::{CompletionEvent, CompletionRequest, InferenceEngine};
 use crate::models::{ModelCatalog, ModelInfo};
 use crate::module::{LiveModule, ModuleDescriptor};
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -61,12 +63,48 @@ pub struct ChatCompletionRequest {
     pub seed: Option<u64>,
     #[serde(default)]
     pub stream: Option<bool>,
+    #[serde(default)]
+    pub stream_options: Option<StreamOptions>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+}
+
+#[derive(Debug, Default, Deserialize, ToSchema)]
+pub struct StreamOptions {
+    /// Adds a usage-bearing chunk with empty `choices` before `[DONE]`. The
+    /// only standard way a streaming client can obtain counts.
+    #[serde(default)]
+    pub include_usage: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ChatCompletionChunk {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub choices: Vec<ChunkChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ChunkChoice {
+    pub index: u32,
+    pub delta: ChunkDelta,
+    pub finish_reason: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize, ToSchema)]
+pub struct ChunkDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -137,7 +175,7 @@ pub struct OpenAiErrorBody {
 #[derive(Debug)]
 pub struct OpenAiError {
     status: StatusCode,
-    body: OpenAiErrorBody,
+    pub(crate) body: OpenAiErrorBody,
 }
 
 impl OpenAiError {
@@ -208,12 +246,16 @@ impl IntoResponse for OpenAiError {
         ChatCompletion,
         ChatChoice,
         Usage,
+        StreamOptions,
+        ChatCompletionChunk,
+        ChunkChoice,
+        ChunkDelta,
         ModelList,
         ModelObject,
         OpenAiErrorEnvelope,
         OpenAiErrorBody
     )),
-    tags((name = "openai-compat", description = "OpenAI-compatible API (non-streaming)"))
+    tags((name = "openai-compat", description = "OpenAI-compatible API"))
 )]
 struct OpenAiApiDoc;
 
@@ -230,13 +272,15 @@ struct OpenAiApiDoc;
 pub async fn chat_completions(
     State(state): State<AppState>,
     Json(request): Json<ChatCompletionRequest>,
-) -> Result<Json<ChatCompletion>, OpenAiError> {
+) -> Result<Response, OpenAiError> {
     let engine = state.chat().engine().clone();
     let catalog = state.models().clone();
     let default_model = state.config().inference.default_model.clone();
-    Ok(Json(
-        complete_chat(engine, catalog, &default_model, request).await?,
-    ))
+    if request.stream == Some(true) {
+        return stream_chat(engine, catalog, &default_model, request).await;
+    }
+    let completion = complete_chat(engine, catalog, &default_model, request).await?;
+    Ok(Json(completion).into_response())
 }
 
 #[utoipa::path(
@@ -298,6 +342,143 @@ async fn complete_chat(
         }],
         usage: completion.usage.map(Usage::from),
     })
+}
+
+/// Streaming half of `chat_completions`, kept free of `AppState` so tests can
+/// drive it with a bare engine and catalog.
+async fn stream_chat(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: ChatCompletionRequest,
+) -> Result<Response, OpenAiError> {
+    if request.messages.is_empty() {
+        return Err(OpenAiError::invalid_request("messages must not be empty"));
+    }
+    let model = resolve_model(&engine, &catalog, default_model, &request.model).await?;
+    let kind = engine.stream_kind();
+    let include_usage = request
+        .stream_options
+        .as_ref()
+        .is_some_and(|options| options.include_usage);
+    let created = unix_seconds();
+    let id = completion_id(created, &model);
+    let events = engine
+        .complete_stream(CompletionRequest {
+            prompt: render_prompt(&request.messages),
+            max_tokens: request.max_tokens,
+            temperature: request.temperature,
+            seed: request.seed,
+            session_key: None,
+        })
+        .await
+        .map_err(OpenAiError::from)?;
+
+    let (sender, receiver) = tokio::sync::mpsc::channel(16);
+    tokio::spawn(async move {
+        use tokio_stream::StreamExt;
+
+        let chunk = |choices, usage| ChatCompletionChunk {
+            id: id.clone(),
+            object: "chat.completion.chunk".to_owned(),
+            created,
+            model: model.clone(),
+            choices,
+            usage,
+        };
+        // `send` must be a macro, not a closure: async closures are unstable,
+        // and `try_send` would silently truncate the stream whenever a slow
+        // client let the 16-slot channel fill. `.send().await` applies
+        // backpressure instead.
+        macro_rules! send {
+            ($value:expr) => {{
+                let encoded = serde_json::to_string(&$value).unwrap_or_default();
+                sender
+                    .send(Ok::<_, std::convert::Infallible>(
+                        Event::default().data(encoded),
+                    ))
+                    .await
+            }};
+        }
+
+        let role = chunk(
+            vec![ChunkChoice {
+                index: 0,
+                delta: ChunkDelta {
+                    role: Some("assistant".to_owned()),
+                    content: None,
+                },
+                finish_reason: None,
+            }],
+            None,
+        );
+        if send!(role).is_err() {
+            return;
+        }
+
+        let mut events = events;
+        let mut usage = None;
+        while let Some(event) = events.next().await {
+            match event {
+                Ok(CompletionEvent::Delta(text)) => {
+                    let delta = chunk(
+                        vec![ChunkChoice {
+                            index: 0,
+                            delta: ChunkDelta {
+                                role: None,
+                                content: Some(text),
+                            },
+                            finish_reason: None,
+                        }],
+                        None,
+                    );
+                    if send!(delta).is_err() {
+                        return;
+                    }
+                }
+                Ok(CompletionEvent::Done(summary)) => usage = summary.usage,
+                Err(error) => {
+                    // Status is already 200, so in-band is the only honest
+                    // way to report this (§4). Return rather than break: a
+                    // finish_reason of "stop" after a failure would claim a
+                    // clean completion that did not happen.
+                    let envelope = OpenAiErrorEnvelope {
+                        error: OpenAiError::from(error).body,
+                    };
+                    let _ = send!(envelope);
+                    let _ = sender.send(Ok(Event::default().data("[DONE]"))).await;
+                    return;
+                }
+            }
+        }
+
+        let stop = chunk(
+            vec![ChunkChoice {
+                index: 0,
+                delta: ChunkDelta::default(),
+                finish_reason: Some("stop".to_owned()),
+            }],
+            None,
+        );
+        let _ = send!(stop);
+
+        if include_usage {
+            if let Some(usage) = usage {
+                let final_chunk = chunk(Vec::new(), Some(Usage::from(usage)));
+                let _ = send!(final_chunk);
+            }
+        }
+
+        let _ = sender.send(Ok(Event::default().data("[DONE]"))).await;
+    });
+
+    let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
+    let mut response = Sse::new(stream).into_response();
+    response.headers_mut().insert(
+        "x-hologram-stream",
+        axum::http::HeaderValue::from_static(kind.header_value()),
+    );
+    Ok(response)
 }
 
 /// Resolves the requested model to the label echoed in the response. The
@@ -448,6 +629,7 @@ mod tests {
             temperature: None,
             seed: None,
             stream: None,
+            stream_options: None,
         }
     }
 
@@ -535,23 +717,74 @@ mod tests {
         );
     }
 
+    /// Was `stream_true_is_rejected`. D1 reverses that behaviour: every engine
+    /// accepts stream: true, and the header says whether it was real.
     #[tokio::test]
-    async fn stream_true_is_rejected_with_an_openai_error() {
+    async fn streaming_emits_ordered_chunks_and_marks_emulation() {
         let fixture = fixture();
-        let mut streamed = request("", &["hi"]);
-        streamed.stream = Some(true);
-        let error = complete_chat(
+        let mut request = request("", &["Hello"]);
+        request.stream = Some(true);
+
+        let response = stream_chat(
             Arc::new(crate::inference::EchoEngine),
             fixture.catalog.clone(),
-            "",
-            streamed,
+            "echo",
+            request,
         )
         .await
-        .expect_err("must fail");
+        .expect("the echo engine streams by emulation");
 
-        assert_eq!(error.status, StatusCode::BAD_REQUEST);
-        assert_eq!(error.body.kind, "invalid_request_error");
-        assert!(error.body.message.contains("streaming"));
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+
+        let body = collect_sse(response).await;
+        assert!(
+            body.contains("\"role\":\"assistant\""),
+            "the first chunk announces the role: {body}"
+        );
+        assert!(body.contains("\"content\":\"Hello\""), "{body}");
+        assert!(body.contains("\"finish_reason\":\"stop\""), "{body}");
+        assert!(body.trim_end().ends_with("data: [DONE]"), "{body}");
+    }
+
+    /// Reads a streaming response body to a String for assertion.
+    async fn collect_sse(response: Response) -> String {
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("read the streamed body");
+        String::from_utf8(bytes.to_vec()).expect("utf-8")
+    }
+
+    #[tokio::test]
+    async fn include_usage_adds_no_chunk_when_the_engine_measured_nothing() {
+        let fixture = fixture();
+        let mut request = request("", &["Hello"]);
+        request.stream = Some(true);
+        request.stream_options = Some(StreamOptions {
+            include_usage: true,
+        });
+
+        let response = stream_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            request,
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+
+        let body = collect_sse(response).await;
+        assert!(
+            !body.contains("\"usage\""),
+            "echo measures nothing, so no usage chunk is emitted (D3): {body}"
+        );
     }
 
     #[tokio::test]

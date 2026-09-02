@@ -10,7 +10,7 @@ The daemon never executes model weights in-process. Chat and model management ca
 
 - `echo` — local fallback that repeats the user message; remains the default.
 - `weightc` — spawns the external `weightc ask <artifact-dir> <prompt> --json` one-shot CLI against an imported `.wcpu` artifact directory, bounded by `request_timeout_secs`.
-- `ollama` — proxies non-streaming `POST /api/generate` to an Ollama-compatible HTTP endpoint.
+- `ollama` — proxies `POST /api/generate` to an Ollama-compatible HTTP endpoint, streaming natively when asked to.
 
 Imported `.wcpu` artifact directories are copied under `data_dir/models/<digest>/` and recorded in the content-addressed object store as manifest JSON with `kind = "model"`. The daemon renders conversation history as a plain `role: content` transcript; engines apply their own chat templates.
 

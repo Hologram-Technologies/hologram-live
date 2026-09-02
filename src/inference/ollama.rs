@@ -1,6 +1,9 @@
 //! Ollama-compatible HTTP engine (`POST {endpoint}/api/generate`).
 
-use super::{Completion, CompletionRequest, InferenceEngine, TokenUsage};
+use super::{
+    Completion, CompletionEvent, CompletionRequest, CompletionStream, CompletionSummary,
+    InferenceEngine, StreamKind, TokenUsage,
+};
 use crate::config::InferenceConfig;
 use crate::error::{LiveError, Result};
 use crate::models::ModelInfo;
@@ -24,6 +27,57 @@ impl OllamaEngine {
             model: config.default_model.clone(),
             client,
         })
+    }
+
+    /// Builds and sends the shared `/api/generate` request, checking the
+    /// response status before returning it. Both `complete` and
+    /// `complete_stream` call this so the request body they send — and the
+    /// point at which a non-2xx status becomes a typed error — cannot drift
+    /// between the two paths. `stream` is the only difference between them.
+    async fn send_generate(
+        &self,
+        request: &CompletionRequest,
+        stream: bool,
+    ) -> Result<reqwest::Response> {
+        if self.model.trim().is_empty() {
+            return Err(LiveError::Capability(
+                "the ollama engine requires inference.default_model to name a model tag".to_owned(),
+            ));
+        }
+        let options = if request.max_tokens.is_some()
+            || request.temperature.is_some()
+            || request.seed.is_some()
+        {
+            Some(OllamaOptions {
+                num_predict: request.max_tokens,
+                temperature: request.temperature,
+                seed: request.seed,
+            })
+        } else {
+            None
+        };
+        let body = OllamaGenerateRequest {
+            model: &self.model,
+            prompt: &request.prompt,
+            stream,
+            options,
+        };
+        let response = self
+            .client
+            .post(format!("{}/api/generate", self.endpoint))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| LiveError::Transport(format!("ollama generate: {error}")))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(LiveError::Transport(format!(
+                "ollama generate failed ({status}): {}",
+                super::stderr_tail(body.trim())
+            )));
+        }
+        Ok(response)
     }
 }
 
@@ -54,6 +108,18 @@ struct OllamaGenerateResponse {
     eval_duration: Option<u64>,
 }
 
+/// One NDJSON line of a streaming `/api/generate` response. The terminal line
+/// carries `done: true` and the counts.
+#[derive(Debug, Deserialize)]
+struct OllamaStreamLine {
+    #[serde(default)]
+    response: String,
+    #[serde(default)]
+    done: bool,
+    prompt_eval_count: Option<u64>,
+    eval_count: Option<u64>,
+}
+
 #[derive(Debug, Deserialize)]
 struct OllamaTagsResponse {
     #[serde(default)]
@@ -74,45 +140,8 @@ impl InferenceEngine for OllamaEngine {
     }
 
     async fn complete(&self, request: CompletionRequest) -> Result<Completion> {
-        if self.model.trim().is_empty() {
-            return Err(LiveError::Capability(
-                "the ollama engine requires inference.default_model to name a model tag".to_owned(),
-            ));
-        }
         let started = Instant::now();
-        let options = if request.max_tokens.is_some()
-            || request.temperature.is_some()
-            || request.seed.is_some()
-        {
-            Some(OllamaOptions {
-                num_predict: request.max_tokens,
-                temperature: request.temperature,
-                seed: request.seed,
-            })
-        } else {
-            None
-        };
-        let body = OllamaGenerateRequest {
-            model: &self.model,
-            prompt: &request.prompt,
-            stream: false,
-            options,
-        };
-        let response = self
-            .client
-            .post(format!("{}/api/generate", self.endpoint))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|error| LiveError::Transport(format!("ollama generate: {error}")))?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(LiveError::Transport(format!(
-                "ollama generate failed ({status}): {}",
-                super::stderr_tail(body.trim())
-            )));
-        }
+        let response = self.send_generate(&request, false).await?;
         let parsed: OllamaGenerateResponse = response
             .json()
             .await
@@ -132,6 +161,90 @@ impl InferenceEngine for OllamaEngine {
             elapsed_millis: super::elapsed_millis(started),
             usage: TokenUsage::from_counts(parsed.prompt_eval_count, parsed.eval_count),
         })
+    }
+
+    fn stream_kind(&self) -> StreamKind {
+        StreamKind::Native
+    }
+
+    async fn complete_stream(&self, request: CompletionRequest) -> Result<CompletionStream> {
+        use tokio_stream::StreamExt;
+
+        // Status is checked inside `send_generate` before we return here, so
+        // any rejected request or upstream failure that is knowable up front
+        // surfaces as a typed `Err` from this method — never as an item
+        // inside the stream. Only once that succeeds do we commit to
+        // returning a stream at all.
+        let response = self.send_generate(&request, true).await?;
+        let started = Instant::now();
+        let model = self.model.clone();
+        let (sender, receiver) = tokio::sync::mpsc::channel(16);
+
+        tokio::spawn(async move {
+            let mut body = response.bytes_stream();
+            let mut buffered = Vec::new();
+            while let Some(chunk) = body.next().await {
+                let chunk = match chunk {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        let _ = sender
+                            .send(Err(LiveError::Transport(format!(
+                                "ollama stream failed: {error}"
+                            ))))
+                            .await;
+                        return;
+                    }
+                };
+                buffered.extend_from_slice(&chunk);
+                // NDJSON: a line is only complete once its newline arrives, so
+                // a partial tail (split across chunk boundaries) stays
+                // buffered for the next chunk rather than being parsed early.
+                while let Some(index) = buffered.iter().position(|byte| *byte == b'\n') {
+                    let line: Vec<u8> = buffered.drain(..=index).collect();
+                    let trimmed = String::from_utf8_lossy(&line).trim().to_owned();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    let parsed: OllamaStreamLine = match serde_json::from_str(&trimmed) {
+                        Ok(parsed) => parsed,
+                        Err(error) => {
+                            let _ = sender
+                                .send(Err(LiveError::Protocol(format!(
+                                    "parse ollama stream line: {error}"
+                                ))))
+                                .await;
+                            return;
+                        }
+                    };
+                    if !parsed.response.is_empty()
+                        && sender
+                            .send(Ok(CompletionEvent::Delta(parsed.response.clone())))
+                            .await
+                            .is_err()
+                    {
+                        return;
+                    }
+                    if parsed.done {
+                        let _ = sender
+                            .send(Ok(CompletionEvent::Done(CompletionSummary {
+                                model: model.clone(),
+                                usage: TokenUsage::from_counts(
+                                    parsed.prompt_eval_count,
+                                    parsed.eval_count,
+                                ),
+                                tokens_per_second: None,
+                                elapsed_millis: super::elapsed_millis(started),
+                            })))
+                            .await;
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(
+            receiver,
+        )))
     }
 
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {
@@ -247,5 +360,50 @@ mod tests {
             .expect("the stub responds successfully");
 
         assert_eq!(completion.usage, None);
+    }
+
+    #[tokio::test]
+    async fn streaming_yields_each_ndjson_line_then_the_final_counts() {
+        use tokio_stream::StreamExt;
+
+        let body = concat!(
+            "{\"response\":\"Hel\",\"done\":false}\n",
+            "{\"response\":\"lo\",\"done\":false}\n",
+            "{\"response\":\"\",\"done\":true,\"prompt_eval_count\":18,\"eval_count\":42}\n"
+        );
+        let router = axum::Router::new().route(
+            "/api/generate",
+            axum::routing::post(move || async move { body }),
+        );
+        let endpoint = spawn_stub(router).await;
+        let engine = OllamaEngine::new(&config_for(&endpoint)).expect("build the engine");
+
+        assert_eq!(engine.stream_kind(), StreamKind::Native);
+
+        let mut stream = engine
+            .complete_stream(CompletionRequest {
+                prompt: "hi".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the stub responds successfully");
+
+        let mut deltas = Vec::new();
+        let mut summary = None;
+        while let Some(event) = stream.next().await {
+            match event.expect("the stub sends well-formed lines") {
+                CompletionEvent::Delta(text) => deltas.push(text),
+                CompletionEvent::Done(done) => summary = Some(done),
+            }
+        }
+
+        assert_eq!(deltas, vec!["Hel".to_owned(), "lo".to_owned()]);
+        assert_eq!(
+            summary.expect("the stream terminates with Done").usage,
+            Some(TokenUsage {
+                prompt_tokens: 18,
+                completion_tokens: 42
+            })
+        );
     }
 }

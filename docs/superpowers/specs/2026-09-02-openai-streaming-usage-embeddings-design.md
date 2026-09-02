@@ -1,12 +1,16 @@
-# Streaming, token usage, and embeddings for the compatibility surfaces
+# Inference engine boundary: streaming, token usage, and two in-process engines
 
 - Date: 2026-09-02
 - Status: approved design, not yet implemented
-- Scope: implement streaming (§2–§4) and token usage (§5); specify embeddings (§6)
+- Scope: extract the engine module (§9); implement streaming (§2–§4), token
+  usage (§5), the llama.cpp engine (§10), and the `uor-r4` engine (§11);
+  specify embeddings (§6) without building it
 - Revised 2026-09-02 after review: the native streaming path is deferred (D6)
 - Revised again 2026-09-02: D6 is reversed by D7. Ollama and llama.cpp become
   the primary engines, llama.cpp runs in-process (D8), and the trait moves
   into its own module (§9)
+- Revised again 2026-09-02: `uor-r4` joins as a fifth, first-party in-process
+  engine over `.holo` v4 `InferenceModel` layers (D9, §11)
 
 ## Context
 
@@ -21,6 +25,8 @@ engine, and the four engine paths do not share them:
 | Engine path | Streaming | Token counts |
 |---|---|---|
 | `echo` | none | none — no tokenizer |
+| `llamacpp` (D8) | native, in-process decode loop | exact — in-process tokenizer |
+| `uor-r4` (D9) | native, in-process decode loop | exact — in-process tokenizer |
 | `ollama` | native NDJSON on `/api/generate` | `eval_count` parsed today but discarded; `prompt_eval_count` unread |
 | `weightc` one-shot | none — `ask --json` emits one blob at process exit | none |
 | `weightc` resident JSONL | only if the external CLI emits deltas | none |
@@ -118,6 +124,9 @@ further change here — the receipt parsers are already tolerant (§5).
 
 ### D7 — Ollama and llama.cpp are the primary engines; D6 is reversed
 
+Extended by D9, which adds `uor-r4` as a fifth engine.
+
+
 D6 rested on the premise that the target deployment runs neither engine that
 can stream natively or report counts. That premise no longer holds: Ollama and
 llama.cpp are the two engines the project is betting on. `echo` remains the
@@ -165,6 +174,46 @@ Two properties argue for the choice. Owning the tokenizer makes token counts
 exactly measurable rather than parsed from a remote server's self-report, which
 strengthens D2. And native streaming needs no HTTP stub, since deltas arrive
 directly from the decode loop.
+
+### D9 — `uor-r4` is a first-party in-process engine over `.holo` v4 archives
+
+`uor-r4` is not a new identifier. It is already the engine tag written into
+`.holo` v4 `InferenceModel` layers — `Layer::inference_model(κ, "ai.default",
+"uor-r4")` — and surfaced as `engine` on the verified application directory and
+over gRPC. ADR 009 reserved exactly this work: "A future adapter may connect
+that facade to Live's chat and OpenAI/Ollama surfaces."
+
+The engine depends on the sibling `uor-r4` crates directly and executes the
+bundle in-process. It is pure Rust, so unlike D8 it adds no C++ toolchain and
+no change to the source-distribution story; a pinned-`rev` git dependency
+matches how `uor-hologram` is already consumed. D8's amendment of ADR 003 still
+covers it, as does D8's loss of crash isolation.
+
+It is compiled behind a `uor-r4` Cargo feature, off by default, on the same
+reasoning as D8: the default build stays ADR 003 compliant, and enabling it by
+default later is a reversible decision in a way that the reverse is not.
+
+Three properties distinguish it from the other four engines:
+
+- **Model identity is a κ, not a path or tag.** `default_model = "blake3:…"` is
+  already the convention `weightc` uses, but here the κ resolves to an imported
+  `.holo` v4 archive through the existing verify and cache machinery rather
+  than to a directory on disk.
+- **Model and service are separate axes.** The layer carries an `entry` service
+  name such as `ai.default`. It is derived from the archive when exactly one
+  `InferenceModel` layer is present and must be named explicitly otherwise,
+  failing close to the boundary rather than picking one.
+- **Engine compatibility is checked, not assumed.** ADR 009 requires the
+  provider to "enforce bundle and engine compatibility," so the engine verifies
+  the layer's `aux` equals `uor-r4` before executing and returns a typed error
+  when it does not.
+
+**Scope boundary.** This connects the provider to the *inference* boundary:
+chat and both compatibility surfaces. ADR 009 also makes `hologram run` and
+resident load return `LIVE_CAPABILITY_MISSING` for model archives; those
+application-runtime paths are **not** connected here and keep that behaviour.
+The ADR 009 update must say which surfaces are live, or the capability error
+becomes ambiguous about what is missing.
 
 ## §2 Engine boundary
 
@@ -324,12 +373,21 @@ usually not an embedding model.
 gates its native path and should land early; it is the largest piece of new
 scaffolding and the only reason dev-dependencies grow.
 
-llama.cpp coverage has a distinct problem: exercising an in-process engine
-needs a real GGUF file. Tests for it are gated on the `llamacpp` feature and on
-a small fixture model resolved from an env var, skipping when absent, so the
-default `cargo test` run stays weight-free and fast. CI runs the gated job
-separately. This means the default suite never covers the llama.cpp engine —
-an accepted consequence of D8 that should be stated in the ADR.
+Both in-process engines share a harder problem: exercising them needs real
+weights. llama.cpp needs a GGUF file; `uor-r4` needs a `.holo` v4 archive
+carrying an `InferenceModel` layer, which only `hologram-ai` can produce, so
+sourcing that fixture is a dependency on a sibling project and should be
+confirmed early rather than discovered late.
+
+Tests for both are gated on their Cargo feature and on a fixture path resolved
+from an env var, skipping when absent, so the default `cargo test` run stays
+weight-free. CI runs the gated jobs separately. The consequence — the default
+suite never covers either in-process engine — is an accepted cost of D8/D9 and
+belongs in the ADR.
+
+The parts of `uor-r4` that need no weights should be tested unconditionally:
+κ resolution, the `aux` engine-compatibility check, service-entry derivation,
+and the ambiguous-entry failure.
 
 Coverage to add:
 
@@ -340,7 +398,8 @@ Coverage to add:
 - usage present when both counts are known, key absent otherwise
 - `stream_options.include_usage` chunk shape, both known and unknown
 - mid-stream error shape on both surfaces
-- `engine = "llamacpp"` without the feature compiled is a typed config error
+- `engine = "llamacpp"` or `"uor-r4"` without the feature compiled is a typed
+  config error naming the missing feature
 - every existing non-streaming test stays green, with one deliberate
   exception: the two tests asserting that `stream: true` is rejected
   (`stream_true_is_rejected` in each module) invert to assert a stream is
@@ -354,15 +413,23 @@ does not add any.
 
 - New **ADR 022** recording D1–D5 and D7 (streaming and usage). 021 is the
   current highest.
-- New **ADR 023** recording D8, amending ADR 003's "never executes model
+- New **ADR 023** recording D8 and D9, amending ADR 003's "never executes model
   weights in-process" decision and scoping the amendment to opt-in builds.
-- `DEPENDENCIES.md` gains the `llamacpp` optional dependency and a note that
-  its "not as loaded native code" rule now has one feature-gated exception.
+- **ADR 009** update: it currently mandates `LIVE_CAPABILITY_MISSING` until a
+  provider is connected. It must record that the provider is now connected to
+  chat and the compatibility surfaces, and that `hologram run` and resident
+  load deliberately still return that error, so the remaining capability error
+  stays unambiguous.
+- `DEPENDENCIES.md` gains the `llamacpp` and `uor-r4` optional dependencies and
+  a note that its "not as loaded native code" rule now has feature-gated
+  exceptions.
 - `install.sh` / `install.ps1` and the README install section document the
   C++ toolchain requirement for `--features llamacpp`.
-- README engine list and `live.toml` sample gain `llamacpp` and its keys;
-  `config.rs` validation currently rejects anything but echo, weightc, or
-  ollama.
+- README engine list and `live.toml` sample gain `llamacpp` and `uor-r4` with
+  their keys; `config.rs` validation currently rejects anything but echo,
+  weightc, or ollama.
+- `README.md` lists "inference-model provider invocation" as future work; that
+  claim changes for the chat and compatibility surfaces only.
 - ADR 003's closing consequence calls streaming a "deliberate fast-follow" and
   needs updating.
 - `README.md` "Inference compatibility APIs" states streaming is rejected.
@@ -384,10 +451,14 @@ src/inference/
   echo.rs
   ollama.rs
   llamacpp.rs     #[cfg(feature = "llamacpp")]
+  uor_r4.rs       #[cfg(feature = "uor-r4")]
   weightc/
     mod.rs        WeightcEngine
     session.rs    WeightcSessionActor, SessionTable
 ```
+
+`engine_from_config` gains `llamacpp` and `uor-r4` arms; `config.rs` validation
+currently accepts only echo, weightc, and ollama and rejects everything else.
 
 `mod.rs` re-exports the shared types, so existing call sites importing
 `crate::inference::{CompletionRequest, InferenceEngine}` — both compat modules
@@ -434,3 +505,48 @@ unconfigured engine already fails.
 
 **Deferred.** Embeddings (§6), which llama.cpp can serve, lands with the
 follow-up rather than here.
+
+## §11 The `uor-r4` engine
+
+Compiled only under the `uor-r4` feature (D9).
+
+**Model resolution.** `default_model` is a `blake3:` κ naming an imported
+`.holo` v4 archive. The engine resolves it through the existing archive verify
+and cache path, locates the `InferenceModel` layer, checks `aux == "uor-r4"`,
+and loads the opaque bundle at `content`. A κ that resolves to an archive
+without an `InferenceModel` layer, or one tagged for a different engine, is a
+typed error naming both the service and the engine — the same shape ADR 009
+already mandates for the unconnected case.
+
+**Service entry.** Derived from the archive when it holds exactly one
+`InferenceModel` layer. With more than one, `inference.service_entry` must name
+it explicitly; absent that, the engine fails rather than choosing. This mirrors
+how the daemon already refuses to synthesize unknown state.
+
+**Model listing.** `list_models` enumerates imported model archives from the
+catalog, reporting the κ as id and the `entry` as name, so both compat surfaces
+list them without a third code path.
+
+**Sessions.** ADR 009 requires a provider to "preserve model-session lifecycle
+semantics." The engine reports `supports_sessions() = true` and reuses the
+kameo session actor and LRU extracted in §9, sharing `max_resident_sessions`
+with `weightc` and llama.cpp.
+
+**Runtime placement.** As with §10, decode is blocking work on a dedicated
+thread per context, reached over bounded channels, never on the runtime serving
+HTTP.
+
+**Streaming and usage.** `stream_kind() = Native`, with deltas forwarded from
+the decode loop. Token counts are exact, since the tokenizer is in-process.
+
+**Dependency.** A pinned-`rev` git dependency on the sibling `uor-r4`
+workspace, matching how `uor-hologram` is consumed today. `DEPENDENCIES.md`
+gains the entry and records that it is feature-gated.
+
+## §12 Sequencing note
+
+This landing now covers a module extraction, a boundary change, two wire
+formats across two surfaces, and two new in-process engines. That is more than
+one reviewable change. The implementation plan should stage it so each stage is
+independently green — module extraction first as a pure move, then the boundary
+and streaming, then the engines — rather than treating it as a single commit.

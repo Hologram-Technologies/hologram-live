@@ -76,7 +76,8 @@ pub struct ChatCompletion {
     pub created: u64,
     pub model: String,
     pub choices: Vec<ChatChoice>,
-    pub usage: Usage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -86,12 +87,23 @@ pub struct ChatChoice {
     pub finish_reason: String,
 }
 
-/// The engine does not report token counts yet, so every field is null.
+/// Present only when the engine measured both halves (D3). Absence reads as
+/// not-measured; `0` would assert a measurement no engine made.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Usage {
-    pub prompt_tokens: Option<u64>,
-    pub completion_tokens: Option<u64>,
-    pub total_tokens: Option<u64>,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+}
+
+impl From<crate::inference::TokenUsage> for Usage {
+    fn from(usage: crate::inference::TokenUsage) -> Self {
+        Self {
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -284,11 +296,7 @@ async fn complete_chat(
             },
             finish_reason: "stop".to_owned(),
         }],
-        usage: Usage {
-            prompt_tokens: None,
-            completion_tokens: None,
-            total_tokens: None,
-        },
+        usage: completion.usage.map(Usage::from),
     })
 }
 
@@ -464,9 +472,38 @@ mod tests {
         assert_eq!(completion.choices[0].finish_reason, "stop");
         assert_eq!(completion.choices[0].message.role, "assistant");
         assert_eq!(completion.choices[0].message.content, "hello world");
-        assert_eq!(completion.usage.prompt_tokens, None);
-        assert_eq!(completion.usage.completion_tokens, None);
-        assert_eq!(completion.usage.total_tokens, None);
+    }
+
+    #[tokio::test]
+    async fn usage_is_omitted_when_the_engine_reports_no_counts() {
+        let fixture = fixture();
+        let completion = complete_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            request("", &["Hello"]),
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        assert!(completion.usage.is_none(), "echo measures no tokens");
+        let encoded = serde_json::to_value(&completion).expect("serialize");
+        assert!(
+            encoded.get("usage").is_none(),
+            "an absent key reads as not-measured; null would violate the \
+             declared int type"
+        );
+    }
+
+    #[test]
+    fn usage_carries_the_total_when_the_engine_measured_both_halves() {
+        let usage = Usage::from(crate::inference::TokenUsage {
+            prompt_tokens: 18,
+            completion_tokens: 42,
+        });
+        assert_eq!(usage.prompt_tokens, 18);
+        assert_eq!(usage.completion_tokens, 42);
+        assert_eq!(usage.total_tokens, 60);
     }
 
     #[tokio::test]

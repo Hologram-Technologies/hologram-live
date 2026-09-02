@@ -4,6 +4,9 @@
 - Status: approved design, not yet implemented
 - Scope: implement streaming (§2–§4) and token usage (§5); specify embeddings (§6)
 - Revised 2026-09-02 after review: the native streaming path is deferred (D6)
+- Revised again 2026-09-02: D6 is reversed by D7. Ollama and llama.cpp become
+  the primary engines, llama.cpp runs in-process (D8), and the trait moves
+  into its own module (§9)
 
 ## Context
 
@@ -75,8 +78,8 @@ API's own default is `stream: true`, so `ollama_compat` is the more acute gap.
 
 Throughout this document, `ollama_compat` (the inbound HTTP surface letting
 Ollama clients talk to this daemon's engines) and `OllamaEngine` (the outbound
-proxy to a separate Ollama server) are distinct. D6 defers the latter only.
-The `ollama_compat` surface lands in full.
+proxy to a separate Ollama server) are distinct. Both land; the distinction
+matters because they are easy to conflate when reading the diff.
 
 ### D5 — Buffered engines emit a single delta
 
@@ -85,7 +88,10 @@ whitespace conveys no timing information and invents token boundaries no
 tokenizer produced. Progressive rendering should come from a real streaming
 engine, not synthetic chunking.
 
-### D6 — Defer the native streaming path
+### D6 — Defer the native streaming path (REVERSED by D7)
+
+Retained for the record; superseded before implementation began.
+
 
 `OllamaEngine` is the only engine that can stream natively or report token
 counts, and the target deployment does not run Ollama: `echo` is the default
@@ -109,6 +115,56 @@ a header-free buffered-only surface is the fallback.
 The higher-value follow-up is external: if `weightc enter --jsonl` emitted
 incremental delta lines and token counts, this design accepts both with no
 further change here — the receipt parsers are already tolerant (§5).
+
+### D7 — Ollama and llama.cpp are the primary engines; D6 is reversed
+
+D6 rested on the premise that the target deployment runs neither engine that
+can stream natively or report counts. That premise no longer holds: Ollama and
+llama.cpp are the two engines the project is betting on. `echo` remains the
+zero-dependency default and `weightc` remains the first-party `.wcpu` path, so
+the trait has four implementers.
+
+Everything D6 deferred is restored — the native `stream_kind` and
+`complete_stream` overrides, `prompt_eval_count` parsing, the `reqwest`
+`stream` feature, and the stub HTTP server for `OllamaEngine`. Unlike under D6,
+that scaffolding now underpins an engine in active use.
+
+`StreamKind::Native` gains real implementors, so the tension D6 recorded — a
+two-variant enum with one reachable variant — resolves on its own.
+
+§4 (mid-stream failure) and §5's Ollama bullet become reachable and in scope.
+§6 stays specified-but-unbuilt by choice, not by absence of a capable engine;
+both new engines can serve it, and it lands as a follow-up.
+
+### D8 — llama.cpp runs in-process, behind an off-by-default feature
+
+llama.cpp is integrated through Rust bindings executing weights in the daemon
+process, not through `llama-server` over HTTP.
+
+This amends ADR 003's central decision, "the daemon never executes model
+weights in-process," and sits against two further records: `DEPENDENCIES.md`
+excludes a dynamic native plugin loader and states third-party code runs "as
+separate subprocesses ... rather than as loaded native code," and `install.sh`
+is a cargo-only source distribution that would otherwise require a C++
+toolchain, plus CUDA or Metal for acceleration.
+
+It also forfeits crash isolation. `WeightcEngine` survives a dead child and
+respawns lazily, a behaviour under test as
+`child_death_fails_the_turn_and_the_next_request_respawns`. An in-process
+segfault instead terminates a daemon that is also hosting wasmtime archives,
+files, applications, and the registry. No equivalent recovery is available.
+
+Those costs are accepted deliberately, and contained by compiling the engine
+behind a `llamacpp` Cargo feature that is **off by default**, following the
+existing `bdd` feature pattern. The default build stays pure-Rust, cargo-only,
+and ADR 003 compliant; the amendment applies only to opt-in builds. Selecting
+`engine = "llamacpp"` in a build without the feature is a typed configuration
+error naming the required feature.
+
+Two properties argue for the choice. Owning the tokenizer makes token counts
+exactly measurable rather than parsed from a remote server's self-report, which
+strengthens D2. And native streaming needs no HTTP stub, since deltas arrive
+directly from the decode loop.
 
 ## §2 Engine boundary
 
@@ -154,8 +210,8 @@ boundary adds no new crate. `Completion` gains `usage: Option<TokenUsage>`.
 `complete()` itself is unchanged and remains the path for `stream: false`
 requests; `complete_stream` is strictly additive.
 
-`OllamaEngine` is where these members are overridden when the native path
-lands (D6); at this landing every engine uses the default. `EchoEngine` and both `weightc`
+`OllamaEngine` and the llama.cpp engine override these members; `echo` and
+both `weightc` paths use the default. `EchoEngine` and both `weightc`
 paths are untouched and inherit emulation, which is why the well-tested
 resident session actor — where a turn is a single kameo `ask` returning one
 `TurnOutcome` — needs no rework.
@@ -175,9 +231,6 @@ chunking across both modules).
 
 Both surfaces derive the `x-hologram-stream` header from `stream_kind()` rather
 than setting it per module.
-
-At this landing the header always reports `emulated`, since no engine
-implements the native path (D6).
 
 **OpenAI — `text/event-stream`**
 
@@ -206,16 +259,15 @@ omitted, per D3.
 
 ## §4 Mid-stream failure
 
-Applies to the native path only, so it is specified but unreachable until D6
-is revisited; buffered engines fail before the response starts. Once bytes are on the wire the status is already 200, so in-band
+Applies to the native path only; buffered engines fail before the response
+starts. Once bytes are on the wire the status is already 200, so in-band
 delivery is the only honest option: SSE emits one `data:` event carrying the
 surface's error envelope followed by `[DONE]`; NDJSON emits one
 `{"error": "…"}` line. The stream then terminates.
 
 ## §5 Token usage plumbing
 
-- **Ollama** — deferred with D6. When it lands: parse `prompt_eval_count`
-  alongside the already-parsed `eval_count` (today `eval_count` is read only to
+- **Ollama** — parse `prompt_eval_count` alongside the already-parsed `eval_count` (today `eval_count` is read only to
   derive a rate, then discarded), and extract usage for the streaming and
   non-streaming paths through one shared function, since `OllamaEngine` will
   hit the same endpoint with different `stream` flags. That shared parse is
@@ -226,13 +278,11 @@ surface's error envelope followed by `[DONE]`; NDJSON emits one
   are absent today and are picked up automatically if the CLI ever emits them.
 - **echo** — always `None`.
 
-Consequently, at this landing `usage` is always omitted: `echo` never reports
-counts and `weightc` does not emit the fields yet. The observable change from
-today is that the key is absent rather than three nulls. It is built now
-because it is cheap and because it starts working on its own, without a second
-change here, the moment an engine reports counts.
+`echo` never reports counts and `weightc` does not emit the fields yet, so on
+those two the key is simply absent where three nulls stand today.
 
-No dependency changes. The `reqwest` `stream` feature is deferred with D6.
+`reqwest` gains the `stream` feature so `OllamaEngine` can call
+`.bytes_stream()`.
 
 ## §6 Embeddings — specified, not implemented
 
@@ -259,9 +309,8 @@ little-endian `f32` values, which some OpenAI SDK versions request by default.
 
 Per engine: Ollama implements it via `POST /api/embed` (`{"model", "input"}` →
 `{"embeddings": [[…]]}`); `weightc` and `echo` return the capability error.
-Since Ollama is the only capable engine, implementing this endpoint before a
-capable engine exists would ship a permanent capability error; it stays
-specified and unbuilt, and lands with or after D6.
+Under D7 several engines can serve it, so this stays specified-but-unbuilt by
+choice of scope rather than for want of a capable engine.
 
 **No emulation here.** Unlike arrival scheduling, a synthesized vector is
 fabricated *data*, so D1 does not extend to embeddings and D2 governs instead.
@@ -271,22 +320,27 @@ usually not an embedding model.
 
 ## §7 Testing
 
-No new dev-dependencies. The stub HTTP server is deferred with D6, which
-removes the largest scaffolding item from this landing; `OllamaEngine` remains
-untested, as it is today.
+`OllamaEngine` has no tests today. D7 restores the stub HTTP server, which
+gates its native path and should land early; it is the largest piece of new
+scaffolding and the only reason dev-dependencies grow.
+
+llama.cpp coverage has a distinct problem: exercising an in-process engine
+needs a real GGUF file. Tests for it are gated on the `llamacpp` feature and on
+a small fixture model resolved from an env var, skipping when absent, so the
+default `cargo test` run stays weight-free and fast. CI runs the gated job
+separately. This means the default suite never covers the llama.cpp engine —
+an accepted consequence of D8 that should be stated in the ADR.
 
 Coverage to add:
 
 - buffered default yields exactly `Delta` then `Done`
+- native path parses a fixture NDJSON body into ordered events
 - chunk sequencing and `[DONE]` ordering, per surface
-- `x-hologram-stream` reflects `stream_kind()`; only `emulated` is reachable
-  until D6 is revisited
-- usage key absent when counts are unknown, which is every engine at this
-  landing; the both-counts-known branch is covered at the type level via a
-  `TokenUsage`-bearing summary rather than through an engine
-- `stream_options.include_usage` chunk shape
-- mid-stream error shape is deferred with D6, being unreachable without a
-  native path
+- `x-hologram-stream` reflects `stream_kind()` for both values
+- usage present when both counts are known, key absent otherwise
+- `stream_options.include_usage` chunk shape, both known and unknown
+- mid-stream error shape on both surfaces
+- `engine = "llamacpp"` without the feature compiled is a typed config error
 - every existing non-streaming test stays green, with one deliberate
   exception: the two tests asserting that `stream: true` is rejected
   (`stream_true_is_rejected` in each module) invert to assert a stream is
@@ -298,7 +352,17 @@ does not add any.
 
 ## §8 Documentation
 
-- New **ADR 022** recording D1–D6. 021 is the current highest.
+- New **ADR 022** recording D1–D5 and D7 (streaming and usage). 021 is the
+  current highest.
+- New **ADR 023** recording D8, amending ADR 003's "never executes model
+  weights in-process" decision and scoping the amendment to opt-in builds.
+- `DEPENDENCIES.md` gains the `llamacpp` optional dependency and a note that
+  its "not as loaded native code" rule now has one feature-gated exception.
+- `install.sh` / `install.ps1` and the README install section document the
+  C++ toolchain requirement for `--features llamacpp`.
+- README engine list and `live.toml` sample gain `llamacpp` and its keys;
+  `config.rs` validation currently rejects anything but echo, weightc, or
+  ollama.
 - ADR 003's closing consequence calls streaming a "deliberate fast-follow" and
   needs updating.
 - `README.md` "Inference compatibility APIs" states streaming is rejected.
@@ -308,3 +372,65 @@ does not add any.
   "non-streaming subset".
 - Regenerate `apps/docs/public/openapi.json` via `just docs`; it currently
   declares `usage` required.
+
+## §9 Module extraction
+
+`src/inference.rs` is 1,264 lines holding the trait, three engines, the resident
+session actor, and its tests. A fourth engine pushes it past 1,500. It splits:
+
+```
+src/inference/
+  mod.rs          trait, shared types, engine_from_config, re-exports
+  echo.rs
+  ollama.rs
+  llamacpp.rs     #[cfg(feature = "llamacpp")]
+  weightc/
+    mod.rs        WeightcEngine
+    session.rs    WeightcSessionActor, SessionTable
+```
+
+`mod.rs` re-exports the shared types, so existing call sites importing
+`crate::inference::{CompletionRequest, InferenceEngine}` — both compat modules
+and `chat` — are unchanged. This is a file move, not an interface change; each
+engine's tests move with it.
+
+The trait keeps its current shape: three defaulted capability predicates
+(`supports_sessions`, `stream_kind`, `supports_embeddings`) rather than a
+returned capabilities struct. Consolidating them was considered and declined as
+a wider blast radius than this work justifies.
+
+## §10 The llama.cpp engine
+
+Compiled only under the `llamacpp` feature (D8).
+
+**Runtime placement.** Decode is blocking CPU/GPU work and must never run on the
+runtime that serves every other HTTP route. Each context owns a dedicated
+thread; the async trait methods communicate with it over bounded channels, so
+backpressure is explicit rather than an unbounded queue of decode requests.
+
+**Sessions.** A llama.cpp context is stateful — it holds a KV cache — which is
+the same shape as `weightc`'s resident sessions. The engine reports
+`supports_sessions() = true` and reuses the existing kameo session-actor and
+LRU pattern, including `max_resident_sessions`. This is the main reuse win of
+extracting `weightc/session.rs`: the eviction and lifecycle logic is already
+written and tested.
+
+**Streaming.** `stream_kind() = Native`. The decode loop forwards each detokenized
+piece into an mpsc channel that `complete_stream` adapts into a
+`CompletionStream`. No HTTP stub is involved.
+
+**Usage.** Exact, not parsed: the tokenizer is in-process, so `prompt_tokens` is
+the encoded prompt length and `completion_tokens` is the decoded count. This is
+the only engine that can always satisfy D3's both-counts-known rule.
+
+**Models.** The catalog currently holds `.wcpu` directories and blake3 digests.
+GGUF is a single file with different metadata, so catalog support for it is a
+prerequisite, not a detail — sizing this is the first task in the plan.
+
+**Config.** `engine = "llamacpp"` plus a model path, `n_ctx`, and
+`n_gpu_layers`. Selecting it in a build without the feature is a typed
+configuration error naming the missing feature, consistent with how an
+unconfigured engine already fails.
+
+**Deferred.** Embeddings (§6), which llama.cpp can serve, lands with the
+follow-up rather than here.

@@ -17,8 +17,10 @@ pub use weightc::WeightcEngine;
 use crate::config::InferenceConfig;
 use crate::error::{LiveError, Result};
 use crate::models::{ModelCatalog, ModelInfo};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio_stream::Stream;
 
 #[derive(Debug, Clone, Default)]
 pub struct CompletionRequest {
@@ -66,6 +68,45 @@ impl TokenUsage {
     }
 }
 
+/// How an engine produces token deltas. Engines that cannot stream still
+/// accept `stream: true`; only the arrival schedule is reconstructed, which
+/// the `x-hologram-stream` header discloses (D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamKind {
+    /// Deltas arrive as the model produces them.
+    Native,
+    /// No incremental output; deltas are replayed from a completed response.
+    Buffered,
+}
+
+impl StreamKind {
+    /// Value reported in the `x-hologram-stream` response header.
+    pub const fn header_value(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Buffered => "emulated",
+        }
+    }
+}
+
+/// Terminal record of a streamed completion.
+#[derive(Debug, Clone, Default)]
+pub struct CompletionSummary {
+    pub model: String,
+    pub usage: Option<TokenUsage>,
+    pub tokens_per_second: Option<f64>,
+    pub elapsed_millis: u64,
+}
+
+/// One unit of a streamed completion.
+#[derive(Debug, Clone)]
+pub enum CompletionEvent {
+    Delta(String),
+    Done(CompletionSummary),
+}
+
+pub type CompletionStream = Pin<Box<dyn Stream<Item = Result<CompletionEvent>> + Send>>;
+
 #[tonic::async_trait]
 pub trait InferenceEngine: Send + Sync {
     fn name(&self) -> &'static str;
@@ -80,6 +121,31 @@ pub trait InferenceEngine: Send + Sync {
     /// Release engine-owned resources such as resident session children.
     /// Called during daemon shutdown alongside plugin teardown.
     async fn shutdown(&self) {}
+
+    /// Whether deltas are real or reconstructed. Drives the
+    /// `x-hologram-stream` header, so the honesty marker comes from the engine
+    /// rather than being set per module.
+    fn stream_kind(&self) -> StreamKind {
+        StreamKind::Buffered
+    }
+
+    /// Buffered default: awaits the whole completion, then replays it as a
+    /// single delta (D5). Because the completion is awaited before the stream
+    /// is returned, a failure surfaces as a normal typed error with the
+    /// correct status rather than a half-open stream.
+    async fn complete_stream(&self, request: CompletionRequest) -> Result<CompletionStream> {
+        let completion = self.complete(request).await?;
+        let summary = CompletionSummary {
+            model: completion.model,
+            usage: completion.usage,
+            tokens_per_second: completion.tokens_per_second,
+            elapsed_millis: completion.elapsed_millis,
+        };
+        Ok(Box::pin(tokio_stream::iter(vec![
+            Ok(CompletionEvent::Delta(completion.text)),
+            Ok(CompletionEvent::Done(summary)),
+        ])))
+    }
 }
 
 pub fn engine_from_config(
@@ -161,5 +227,45 @@ mod tests {
             completion_tokens: 1,
         };
         assert_eq!(usage.total(), u64::MAX);
+    }
+
+    #[tokio::test]
+    async fn the_buffered_default_yields_one_delta_then_done() {
+        use tokio_stream::StreamExt;
+
+        let engine = EchoEngine;
+        assert_eq!(engine.stream_kind(), StreamKind::Buffered);
+
+        // Built inline rather than via the `prompt` test helper: Task 1 moves
+        // the echo tests to echo.rs, so that helper's home is not fixed here.
+        let mut stream = engine
+            .complete_stream(CompletionRequest {
+                prompt: "Hello".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the echo engine always completes");
+
+        let mut deltas = Vec::new();
+        let mut summary = None;
+        while let Some(event) = stream.next().await {
+            match event.expect("the buffered default never errors mid-stream") {
+                CompletionEvent::Delta(text) => deltas.push(text),
+                CompletionEvent::Done(done) => summary = Some(done),
+            }
+        }
+
+        assert_eq!(
+            deltas,
+            vec!["Hello".to_owned()],
+            "D5: buffered engines emit a single delta, not whitespace chunks"
+        );
+        assert!(summary.is_some(), "the stream must terminate with Done");
+    }
+
+    #[test]
+    fn the_header_distinguishes_real_streaming_from_emulation() {
+        assert_eq!(StreamKind::Native.header_value(), "native");
+        assert_eq!(StreamKind::Buffered.header_value(), "emulated");
     }
 }

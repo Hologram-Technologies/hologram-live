@@ -14,11 +14,12 @@ use crate::models::{ModelCatalog, ModelInfo};
 use crate::module::{LiveModule, ModuleDescriptor};
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::sse::{Event, Sse};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use utoipa::ToSchema;
@@ -436,7 +437,15 @@ async fn stream_chat(
                         return;
                     }
                 }
-                Ok(CompletionEvent::Done(summary)) => usage = summary.usage,
+                Ok(CompletionEvent::Done(summary)) => {
+                    // The engine contract promises `Done` is terminal, but an
+                    // engine that stalls afterward instead of ending its
+                    // stream would otherwise hang the client with no
+                    // `[DONE]`. Breaking here enforces the guarantee rather
+                    // than trusting it.
+                    usage = summary.usage;
+                    break;
+                }
                 Err(error) => {
                     // Status is already 200, so in-band is the only honest
                     // way to report this (§4). Return rather than break: a
@@ -473,7 +482,9 @@ async fn stream_chat(
     });
 
     let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
-    let mut response = Sse::new(stream).into_response();
+    // Long-idle native streams can otherwise be dropped by intermediary
+    // proxies that time out on connections with no traffic.
+    let mut response = Sse::new(stream).keep_alive(KeepAlive::default()).into_response();
     response.headers_mut().insert(
         "x-hologram-stream",
         axum::http::HeaderValue::from_static(kind.header_value()),
@@ -556,9 +567,17 @@ fn unix_seconds() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
+/// Process-lifetime source of uniqueness for [`completion_id`]. Needed on
+/// the streaming path, where the seed text is the model name rather than
+/// response text (unknown upfront): two streaming requests for the same
+/// model within the same wall-clock second would otherwise hash identically.
+static NEXT_COMPLETION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 fn completion_id(created: u64, text: &str) -> String {
+    let sequence = NEXT_COMPLETION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let mut hasher = blake3::Hasher::new();
     hasher.update(&created.to_le_bytes());
+    hasher.update(&sequence.to_le_bytes());
     hasher.update(text.as_bytes());
     let hex = hasher.finalize().to_hex();
     format!("chatcmpl-{}", &hex[..24])
@@ -745,13 +764,38 @@ mod tests {
         );
 
         let body = collect_sse(response).await;
+        let frames = sse_frames(&body);
+
+        // `body.contains(...)` alone would pass even if the chunks were
+        // emitted out of order; positions on the split frames are what
+        // actually prove the sequence.
+        let role_pos = frames
+            .iter()
+            .position(|frame| frame.contains("\"role\":\"assistant\""))
+            .unwrap_or_else(|| panic!("the role chunk is present: {body}"));
+        let content_pos = frames
+            .iter()
+            .position(|frame| frame.contains("\"content\":\"Hello\""))
+            .unwrap_or_else(|| panic!("the content chunk is present: {body}"));
+        let stop_pos = frames
+            .iter()
+            .position(|frame| frame.contains("\"finish_reason\":\"stop\""))
+            .unwrap_or_else(|| panic!("the stop chunk is present: {body}"));
+        let done_pos = frames.len() - 1;
         assert!(
-            body.contains("\"role\":\"assistant\""),
-            "the first chunk announces the role: {body}"
+            frames[done_pos].contains("[DONE]"),
+            "the stream ends with [DONE]: {body}"
         );
-        assert!(body.contains("\"content\":\"Hello\""), "{body}");
-        assert!(body.contains("\"finish_reason\":\"stop\""), "{body}");
-        assert!(body.trim_end().ends_with("data: [DONE]"), "{body}");
+
+        assert!(
+            role_pos < content_pos,
+            "role announces before content: {body}"
+        );
+        assert!(
+            content_pos < stop_pos,
+            "content precedes the stop chunk: {body}"
+        );
+        assert!(stop_pos < done_pos, "stop precedes [DONE]: {body}");
     }
 
     /// Reads a streaming response body to a String for assertion.
@@ -760,6 +804,15 @@ mod tests {
             .await
             .expect("read the streamed body");
         String::from_utf8(bytes.to_vec()).expect("utf-8")
+    }
+
+    /// Splits a collected SSE body into its individual `data: ...` frames
+    /// (events are blank-line delimited) in arrival order, for tests that
+    /// need to assert ordering rather than mere presence.
+    fn sse_frames(body: &str) -> Vec<&str> {
+        body.split("\n\n")
+            .filter(|frame| !frame.trim().is_empty())
+            .collect()
     }
 
     #[tokio::test]
@@ -784,6 +837,83 @@ mod tests {
         assert!(
             !body.contains("\"usage\""),
             "echo measures nothing, so no usage chunk is emitted (D3): {body}"
+        );
+    }
+
+    /// Reports both token counts so the positive `include_usage` streaming
+    /// path (the `if let Some(usage) = usage` branch) has coverage; without
+    /// this, both streaming tests passed under an implementation that
+    /// dropped the usage chunk unconditionally.
+    struct MeteredEngine;
+
+    #[tonic::async_trait]
+    impl InferenceEngine for MeteredEngine {
+        fn name(&self) -> &'static str {
+            "metered"
+        }
+
+        async fn complete(&self, request: CompletionRequest) -> crate::error::Result<Completion> {
+            Ok(Completion {
+                text: request.prompt,
+                model: "metered".to_owned(),
+                tokens_per_second: None,
+                elapsed_millis: 0,
+                usage: Some(crate::inference::TokenUsage {
+                    prompt_tokens: 11,
+                    completion_tokens: 22,
+                }),
+            })
+        }
+
+        async fn list_models(&self) -> crate::error::Result<Vec<ModelInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn include_usage_adds_a_usage_chunk_before_done_when_the_engine_measured_counts() {
+        let fixture = fixture();
+        let mut request = request("", &["Hello"]);
+        request.stream = Some(true);
+        request.stream_options = Some(StreamOptions {
+            include_usage: true,
+        });
+
+        let response = stream_chat(
+            Arc::new(MeteredEngine),
+            fixture.catalog.clone(),
+            "",
+            request,
+        )
+        .await
+        .expect("the metered engine streams by emulation");
+
+        let body = collect_sse(response).await;
+        let frames = sse_frames(&body);
+
+        let usage_pos = frames
+            .iter()
+            .position(|frame| frame.contains("\"usage\""))
+            .unwrap_or_else(|| panic!("a usage chunk is emitted (D3): {body}"));
+        let done_pos = frames.len() - 1;
+        assert!(
+            frames[done_pos].contains("[DONE]"),
+            "the stream ends with [DONE]: {body}"
+        );
+        assert_eq!(
+            usage_pos,
+            done_pos - 1,
+            "the usage chunk sits immediately before [DONE]: {body}"
+        );
+
+        let usage_frame = frames[usage_pos];
+        assert!(
+            usage_frame.contains("\"choices\":[]"),
+            "the usage chunk carries empty choices: {usage_frame}"
+        );
+        assert!(
+            usage_frame.contains("\"total_tokens\":33"),
+            "11 prompt + 22 completion tokens: {usage_frame}"
         );
     }
 

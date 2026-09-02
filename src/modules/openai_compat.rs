@@ -634,6 +634,39 @@ mod tests {
         }
     }
 
+    /// Streams one delta, then fails. Only a native engine can fail this way;
+    /// buffered engines resolve `complete()` before the stream exists.
+    struct HalfwayFailingEngine;
+
+    #[tonic::async_trait]
+    impl InferenceEngine for HalfwayFailingEngine {
+        fn name(&self) -> &'static str {
+            "halfway-failing"
+        }
+
+        fn stream_kind(&self) -> crate::inference::StreamKind {
+            crate::inference::StreamKind::Native
+        }
+
+        async fn complete(&self, _request: CompletionRequest) -> crate::error::Result<Completion> {
+            Err(LiveError::Transport("this fixture only streams".to_owned()))
+        }
+
+        async fn complete_stream(
+            &self,
+            _request: CompletionRequest,
+        ) -> crate::error::Result<crate::inference::CompletionStream> {
+            Ok(Box::pin(tokio_stream::iter(vec![
+                Ok(CompletionEvent::Delta("Hel".to_owned())),
+                Err(LiveError::Transport("the engine vanished".to_owned())),
+            ])))
+        }
+
+        async fn list_models(&self) -> crate::error::Result<Vec<ModelInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
     fn request(model: &str, contents: &[&str]) -> ChatCompletionRequest {
         ChatCompletionRequest {
             model: model.to_owned(),
@@ -915,6 +948,75 @@ mod tests {
             usage_frame.contains("\"total_tokens\":33"),
             "11 prompt + 22 completion tokens: {usage_frame}"
         );
+    }
+
+    /// Proves both that a native engine's mid-stream failure is reported
+    /// in-band (§4: the status is already 200, so this is the only honest
+    /// way to report it) and that `x-hologram-stream` is genuinely derived
+    /// from `stream_kind()` rather than hardcoded — every other fixture in
+    /// this module is `Buffered`, so a hardcoded "emulated" would pass every
+    /// other assertion in this file.
+    #[tokio::test]
+    async fn a_mid_stream_failure_is_reported_in_band_and_marked_native() {
+        let fixture = fixture();
+        let mut request = request("", &["Hello"]);
+        request.stream = Some(true);
+
+        let response = stream_chat(
+            Arc::new(HalfwayFailingEngine),
+            fixture.catalog.clone(),
+            "",
+            request,
+        )
+        .await
+        .expect("the stream opens before the failure occurs");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "native"
+        );
+
+        let body = collect_sse(response).await;
+        let frames = sse_frames(&body);
+
+        // Positional, not just "somewhere in the body": the delta must
+        // arrive before the error envelope, and [DONE] must be last.
+        let delta_pos = frames
+            .iter()
+            .position(|frame| frame.contains(r#""content":"Hel""#))
+            .unwrap_or_else(|| panic!("the delta arrives: {body}"));
+        let error_pos = frames
+            .iter()
+            .position(|frame| frame.contains("LIVE_TRANSPORT_UNAVAILABLE"))
+            .unwrap_or_else(|| panic!("the failure is reported in-band: {body}"));
+        let done_pos = frames.len() - 1;
+        assert!(
+            frames[done_pos].contains("[DONE]"),
+            "the stream ends with [DONE]: {body}"
+        );
+        assert!(
+            delta_pos < error_pos,
+            "the delta precedes the in-band error: {body}"
+        );
+        assert!(
+            error_pos < done_pos,
+            "the in-band error precedes [DONE]: {body}"
+        );
+
+        // Proves absence, not just that some other frame is present: a
+        // failed stream must never claim a clean stop anywhere in the body,
+        // and this would also catch a swallowed error that let the normal
+        // stop/[DONE] tail run instead.
+        assert!(
+            !body.contains(r#""finish_reason":"stop""#),
+            "a failed stream must not claim a clean stop: {body}"
+        );
+        assert!(body.trim_end().ends_with("data: [DONE]"), "{body}");
     }
 
     #[tokio::test]

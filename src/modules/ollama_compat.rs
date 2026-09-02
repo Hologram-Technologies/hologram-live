@@ -726,6 +726,39 @@ mod tests {
         }
     }
 
+    /// Streams one delta, then fails. Only a native engine can fail this way;
+    /// buffered engines resolve `complete()` before the stream exists.
+    struct HalfwayFailingEngine;
+
+    #[tonic::async_trait]
+    impl InferenceEngine for HalfwayFailingEngine {
+        fn name(&self) -> &'static str {
+            "halfway-failing"
+        }
+
+        fn stream_kind(&self) -> StreamKind {
+            StreamKind::Native
+        }
+
+        async fn complete(&self, _request: CompletionRequest) -> crate::error::Result<Completion> {
+            Err(LiveError::Transport("this fixture only streams".to_owned()))
+        }
+
+        async fn complete_stream(
+            &self,
+            _request: CompletionRequest,
+        ) -> crate::error::Result<CompletionStream> {
+            Ok(Box::pin(tokio_stream::iter(vec![
+                Ok(CompletionEvent::Delta("Hel".to_owned())),
+                Err(LiveError::Transport("the engine vanished".to_owned())),
+            ])))
+        }
+
+        async fn list_models(&self) -> crate::error::Result<Vec<ModelInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
     fn generate_request(model: &str, prompt: &str) -> GenerateRequest {
         GenerateRequest {
             model: model.to_owned(),
@@ -903,6 +936,15 @@ mod tests {
                 .expect("ascii"),
             "emulated"
         );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
 
         let lines = ndjson_lines(response).await;
         assert_eq!(
@@ -924,6 +966,137 @@ mod tests {
         assert_eq!(terminal["done"], serde_json::json!(true));
         assert_eq!(terminal["done_reason"], serde_json::json!("stop"));
         assert!(terminal.get("message").is_none());
+    }
+
+    /// Proves both that a native engine's mid-stream failure is reported
+    /// in-band on `/api/generate` (§4: the status is already 200, so this is
+    /// the only honest way to report it) and that `x-hologram-stream` is
+    /// genuinely derived from `stream_kind()` rather than hardcoded — every
+    /// other fixture in this module is `Buffered`, so a hardcoded "emulated"
+    /// would pass every other assertion in this file.
+    #[tokio::test]
+    async fn generate_mid_stream_failure_is_reported_in_band_and_marked_native() {
+        let fixture = fixture();
+        let response = stream_generate(
+            Arc::new(HalfwayFailingEngine),
+            fixture.catalog.clone(),
+            "",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "Hello".to_owned(),
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the stream opens before the failure occurs");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "native"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let lines = ndjson_lines(response).await;
+        assert_eq!(
+            lines.len(),
+            2,
+            "one delta line, then one error line: {lines:?}"
+        );
+
+        assert_eq!(lines[0]["response"], serde_json::json!("Hel"));
+        assert_eq!(lines[0]["done"], serde_json::json!(false));
+
+        let last = lines.last().expect("a final line");
+        assert!(
+            last.get("error").is_some(),
+            "the failure is reported in-band as an error line: {last:?}"
+        );
+
+        // Proves absence, not just that some other line is present: a
+        // failed stream must never claim `done: true` anywhere in the body
+        // — that would let a swallowed error masquerade as a clean finish.
+        assert!(
+            lines.iter().all(|line| line["done"] != serde_json::json!(true)),
+            "no line may claim done: true after a mid-stream failure: {lines:?}"
+        );
+    }
+
+    /// Mirrors the generate test above, but for `/api/chat` — the NDJSON
+    /// streaming path distinct from the SSE `stream_chat` in
+    /// `openai_compat.rs`.
+    #[tokio::test]
+    async fn chat_mid_stream_failure_is_reported_in_band_and_marked_native() {
+        let fixture = fixture();
+        let response = stream_chat(
+            Arc::new(HalfwayFailingEngine),
+            fixture.catalog.clone(),
+            "",
+            ChatRequest {
+                model: String::new(),
+                messages: vec![OllamaMessage {
+                    role: "user".to_owned(),
+                    content: "Hello".to_owned(),
+                }],
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the stream opens before the failure occurs");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "native"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let lines = ndjson_lines(response).await;
+        assert_eq!(
+            lines.len(),
+            2,
+            "one delta line, then one error line: {lines:?}"
+        );
+
+        assert_eq!(lines[0]["message"]["content"], serde_json::json!("Hel"));
+        assert_eq!(lines[0]["done"], serde_json::json!(false));
+
+        let last = lines.last().expect("a final line");
+        assert!(
+            last.get("error").is_some(),
+            "the failure is reported in-band as an error line: {last:?}"
+        );
+
+        assert!(
+            lines.iter().all(|line| line["done"] != serde_json::json!(true)),
+            "no line may claim done: true after a mid-stream failure: {lines:?}"
+        );
     }
 
     /// `stream_chat` rejects empty messages before touching the engine at

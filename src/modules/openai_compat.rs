@@ -282,11 +282,35 @@ pub async fn chat_completions(
     let engine = state.chat().engine().clone();
     let catalog = state.models().clone();
     let default_model = state.config().inference.default_model.clone();
+    dispatch_chat_completions(engine, catalog, &default_model, request).await
+}
+
+/// Chooses the streaming or buffered path for `/v1/chat/completions`, kept
+/// free of `AppState` so unit tests can drive it with a bare engine and
+/// catalog. Deleting the `stream == Some(true)` branch here silently reverts
+/// the endpoint to buffered-only while every other test stays green, which is
+/// why this dispatch is exercised directly rather than only through
+/// `complete_chat`/`stream_chat`.
+async fn dispatch_chat_completions(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: ChatCompletionRequest,
+) -> Result<Response, OpenAiError> {
     if request.stream == Some(true) {
-        return stream_chat(engine, catalog, &default_model, request).await;
+        return stream_chat(engine, catalog, default_model, request).await;
     }
-    let completion = complete_chat(engine, catalog, &default_model, request).await?;
-    Ok(Json(completion).into_response())
+    // Captured before `complete_chat` consumes `engine`: the header must
+    // name the engine that served the request regardless of mode, matching
+    // the streaming path's `x-hologram-stream` marker (README.md).
+    let kind = engine.stream_kind();
+    let completion = complete_chat(engine, catalog, default_model, request).await?;
+    let mut response = Json(completion).into_response();
+    response.headers_mut().insert(
+        "x-hologram-stream",
+        axum::http::HeaderValue::from_static(kind.header_value()),
+    );
+    Ok(response)
 }
 
 #[utoipa::path(
@@ -1024,6 +1048,48 @@ mod tests {
         assert!(body.trim_end().ends_with("data: [DONE]"), "{body}");
     }
 
+    /// `stream_chat` rejects empty messages before touching the engine at
+    /// all, same as the non-streaming path. Mirrors
+    /// `ollama_compat::stream_chat_rejects_empty_messages`; before this test
+    /// the `OpenAI` surface's pre-stream guard (`:361`) had no coverage at all.
+    #[tokio::test]
+    async fn stream_chat_rejects_empty_messages() {
+        let fixture = fixture();
+        let mut request = request("", &[]);
+        request.stream = Some(true);
+
+        let error = stream_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            request,
+        )
+        .await
+        .expect_err("must fail");
+
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error.body.kind, "invalid_request_error");
+    }
+
+    /// An unknown model must fail *before* a response is returned: a typed
+    /// 404, not a stream that opens and then fails in-band. Mirrors
+    /// `ollama_compat::stream_generate_rejects_an_unknown_model_before_returning_a_body`;
+    /// before this test the `OpenAI` surface's pre-stream model resolution
+    /// (`:364`) had no coverage at all.
+    #[tokio::test]
+    async fn stream_chat_rejects_an_unknown_model_before_returning_a_body() {
+        let fixture = fixture();
+        let mut request = request("ghost", &["hi"]);
+        request.stream = Some(true);
+
+        let error = stream_chat(Arc::new(MirrorEngine), fixture.catalog.clone(), "", request)
+            .await
+            .expect_err("must fail");
+
+        assert_eq!(error.status, StatusCode::NOT_FOUND);
+        assert_eq!(error.body.kind, "not_found_error");
+    }
+
     #[tokio::test]
     async fn unknown_model_is_a_not_found_error() {
         let fixture = fixture();
@@ -1101,5 +1167,81 @@ mod tests {
         assert_eq!(json["error"]["message"], "missing");
         assert_eq!(json["error"]["type"], "not_found_error");
         assert_eq!(json["error"]["code"], serde_json::Value::Null);
+    }
+
+    /// README.md and the `utoipa` annotation both promise `x-hologram-stream`
+    /// "on both streaming and non-streaming responses"; before this test (and
+    /// the corresponding fix) the header was only ever set on the SSE path.
+    #[tokio::test]
+    async fn non_streaming_chat_completion_carries_the_stream_header() {
+        let fixture = fixture();
+        let response = dispatch_chat_completions(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            request("", &["hi"]),
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is present on non-streaming responses too")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+    }
+
+    /// Exercises the `stream == Some(true)` branch in `dispatch_chat_completions`
+    /// directly (the code the public `chat_completions` handler reduces to
+    /// after `AppState` extraction), since no test otherwise touches the
+    /// handler itself: deleting the branch would silently revert the
+    /// endpoint to buffered-only while every other test stayed green.
+    #[tokio::test]
+    async fn dispatch_chat_completions_streams_or_not_based_on_the_request() {
+        let fixture = fixture();
+
+        let mut streaming = request("", &["hi"]);
+        streaming.stream = Some(true);
+        let streaming_response = dispatch_chat_completions(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            streaming,
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+        assert_eq!(
+            streaming_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "text/event-stream"
+        );
+
+        let mut buffered = request("", &["hi"]);
+        buffered.stream = None;
+        let buffered_response = dispatch_chat_completions(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            buffered,
+        )
+        .await
+        .expect("the echo engine always completes");
+        assert_eq!(
+            buffered_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/json"
+        );
     }
 }

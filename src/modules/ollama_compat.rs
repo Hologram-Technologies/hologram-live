@@ -278,11 +278,35 @@ pub async fn generate(
     let engine = state.chat().engine().clone();
     let catalog = state.models().clone();
     let default_model = state.config().inference.default_model.clone();
+    dispatch_generate(engine, catalog, &default_model, request).await
+}
+
+/// Chooses the streaming or buffered path for `/api/generate`, kept free of
+/// `AppState` so unit tests can drive it with a bare engine and catalog.
+/// Deleting the `stream == Some(true)` branch here silently reverts the
+/// endpoint to buffered-only while every other test stays green, which is
+/// why this dispatch is exercised directly rather than only through
+/// `generate_core`/`stream_generate`.
+async fn dispatch_generate(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: GenerateRequest,
+) -> Result<Response, OllamaError> {
     if request.stream == Some(true) {
-        return stream_generate(engine, catalog, &default_model, request).await;
+        return stream_generate(engine, catalog, default_model, request).await;
     }
-    let response = generate_core(engine, catalog, &default_model, request).await?;
-    Ok(Json(response).into_response())
+    // Captured before `generate_core` consumes `engine`: the header must
+    // name the engine that served the request regardless of mode, matching
+    // the streaming path's `x-hologram-stream` marker (README.md).
+    let kind = engine.stream_kind();
+    let response = generate_core(engine, catalog, default_model, request).await?;
+    let mut response = Json(response).into_response();
+    response.headers_mut().insert(
+        "x-hologram-stream",
+        axum::http::HeaderValue::from_static(kind.header_value()),
+    );
+    Ok(response)
 }
 
 #[utoipa::path(
@@ -307,11 +331,35 @@ pub async fn chat(
     let engine = state.chat().engine().clone();
     let catalog = state.models().clone();
     let default_model = state.config().inference.default_model.clone();
+    dispatch_chat(engine, catalog, &default_model, request).await
+}
+
+/// Chooses the streaming or buffered path for `/api/chat`, kept free of
+/// `AppState` so unit tests can drive it with a bare engine and catalog.
+/// Deleting the `stream == Some(true)` branch here silently reverts the
+/// endpoint to buffered-only while every other test stays green, which is
+/// why this dispatch is exercised directly rather than only through
+/// `chat_core`/`stream_chat`.
+async fn dispatch_chat(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: ChatRequest,
+) -> Result<Response, OllamaError> {
     if request.stream == Some(true) {
-        return stream_chat(engine, catalog, &default_model, request).await;
+        return stream_chat(engine, catalog, default_model, request).await;
     }
-    let response = chat_core(engine, catalog, &default_model, request).await?;
-    Ok(Json(response).into_response())
+    // Captured before `chat_core` consumes `engine`: the header must name
+    // the engine that served the request regardless of mode, matching the
+    // streaming path's `x-hologram-stream` marker (README.md).
+    let kind = engine.stream_kind();
+    let response = chat_core(engine, catalog, default_model, request).await?;
+    let mut response = Json(response).into_response();
+    response.headers_mut().insert(
+        "x-hologram-stream",
+        axum::http::HeaderValue::from_static(kind.header_value()),
+    );
+    Ok(response)
 }
 
 /// Core request mappings, kept free of `AppState` so unit tests can drive
@@ -1363,5 +1411,179 @@ mod tests {
             "2023-11-14T22:13:20Z"
         );
         assert_eq!(rfc3339_from_millis(951_782_400_000), "2000-02-29T00:00:00Z");
+    }
+
+    /// README.md and the `utoipa` annotations both promise `x-hologram-stream`
+    /// "on both streaming and non-streaming responses"; before this test (and
+    /// the corresponding fix) the header was only ever set on the NDJSON
+    /// streaming path.
+    #[tokio::test]
+    async fn non_streaming_generate_carries_the_stream_header() {
+        let fixture = fixture();
+        let response = dispatch_generate(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            generate_request("", "hello"),
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is present on non-streaming responses too")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+    }
+
+    /// Mirrors `non_streaming_generate_carries_the_stream_header` for
+    /// `/api/chat`.
+    #[tokio::test]
+    async fn non_streaming_chat_carries_the_stream_header() {
+        let fixture = fixture();
+        let request = ChatRequest {
+            model: String::new(),
+            messages: vec![OllamaMessage {
+                role: "user".to_owned(),
+                content: "ping".to_owned(),
+            }],
+            stream: Some(false),
+            options: None,
+        };
+        let response = dispatch_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            request,
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is present on non-streaming responses too")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+    }
+
+    /// Exercises the `stream == Some(true)` branch in `dispatch_generate`
+    /// directly (the code the public `generate` handler reduces to after
+    /// `AppState` extraction), since no test otherwise touches the handler
+    /// itself: deleting the branch would silently revert the endpoint to
+    /// buffered-only while every other test stayed green.
+    #[tokio::test]
+    async fn dispatch_generate_streams_or_not_based_on_the_request() {
+        let fixture = fixture();
+
+        let streaming_response = dispatch_generate(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "hello".to_owned(),
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+        assert_eq!(
+            streaming_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let buffered_response = dispatch_generate(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "hello".to_owned(),
+                stream: None,
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine always completes");
+        assert_eq!(
+            buffered_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/json"
+        );
+    }
+
+    /// Mirrors `dispatch_generate_streams_or_not_based_on_the_request` for
+    /// `/api/chat`.
+    #[tokio::test]
+    async fn dispatch_chat_streams_or_not_based_on_the_request() {
+        let fixture = fixture();
+        let message = OllamaMessage {
+            role: "user".to_owned(),
+            content: "hello".to_owned(),
+        };
+
+        let streaming_response = dispatch_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            ChatRequest {
+                model: String::new(),
+                messages: vec![message.clone()],
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+        assert_eq!(
+            streaming_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let buffered_response = dispatch_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            ChatRequest {
+                model: String::new(),
+                messages: vec![message],
+                stream: None,
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine always completes");
+        assert_eq!(
+            buffered_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/json"
+        );
     }
 }

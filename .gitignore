@@ -13,5 +13,5 @@
 *.lock.tmp
 .env
 /examples/python-numpy-pandas/.venv/
-/examples/python-numpy-pandas/*.holo
+/examples/**/*.holo
 __pycache__/

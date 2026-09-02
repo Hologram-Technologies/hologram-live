@@ -265,7 +265,12 @@ struct OpenAiApiDoc;
     path = "/v1/chat/completions",
     request_body = ChatCompletionRequest,
     responses(
-        (status = 200, body = ChatCompletion),
+        (status = 200, description = "`stream` omitted or `false` returns one JSON `ChatCompletion`. `stream: true` returns `text/event-stream` of `ChatCompletionChunk` frames as `data: {...}` lines, terminated by `data: [DONE]`. A mid-stream engine failure is reported as one `data:` frame carrying `OpenAiErrorEnvelope`, still followed by `data: [DONE]`, since the status is already 200 by the time streaming starts.", content(
+            (ChatCompletion = "application/json"),
+            (ChatCompletionChunk = "text/event-stream")
+        ), headers(
+            ("x-hologram-stream" = String, description = "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses.")
+        )),
         (status = 400, body = OpenAiErrorEnvelope),
         (status = 404, body = OpenAiErrorEnvelope)
     )

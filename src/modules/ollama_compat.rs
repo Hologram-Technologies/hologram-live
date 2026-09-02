@@ -261,8 +261,13 @@ struct OllamaApiDoc;
     path = "/api/generate",
     request_body = GenerateRequest,
     responses(
-        (status = 200, body = GenerateResponse),
-        (status = 400, body = OllamaErrorBody),
+        (status = 200, description = "`stream` omitted or `false` returns one JSON `GenerateResponse`. `stream: true` returns `application/x-ndjson` — one `\\n`-terminated `StreamLine` object per line, the last carrying `done: true`. A mid-stream engine failure is reported as one `{\"error\": \"...\"}` NDJSON line, since the status is already 200 by the time streaming starts.", content(
+            (GenerateResponse = "application/json"),
+            (StreamLine = "application/x-ndjson")
+        ), headers(
+            ("x-hologram-stream" = String, description = "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses.")
+        )),
+        (status = 400, description = "Malformed request or an engine configuration error.", body = OllamaErrorBody),
         (status = 404, body = OllamaErrorBody)
     )
 )]
@@ -285,8 +290,13 @@ pub async fn generate(
     path = "/api/chat",
     request_body = ChatRequest,
     responses(
-        (status = 200, body = ChatResponse),
-        (status = 400, body = OllamaErrorBody),
+        (status = 200, description = "`stream` omitted or `false` returns one JSON `ChatResponse`. `stream: true` returns `application/x-ndjson` — one `\\n`-terminated `StreamLine` object per line, the last carrying `done: true`. A mid-stream engine failure is reported as one `{\"error\": \"...\"}` NDJSON line, since the status is already 200 by the time streaming starts.", content(
+            (ChatResponse = "application/json"),
+            (StreamLine = "application/x-ndjson")
+        ), headers(
+            ("x-hologram-stream" = String, description = "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses.")
+        )),
+        (status = 400, description = "Empty `messages`, malformed request, or an engine configuration error.", body = OllamaErrorBody),
         (status = 404, body = OllamaErrorBody)
     )
 )]

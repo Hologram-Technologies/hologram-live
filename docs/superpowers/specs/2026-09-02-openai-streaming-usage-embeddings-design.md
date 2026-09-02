@@ -370,8 +370,9 @@ usually not an embedding model.
 ## §7 Testing
 
 `OllamaEngine` has no tests today. D7 restores the stub HTTP server, which
-gates its native path and should land early; it is the largest piece of new
-scaffolding and the only reason dev-dependencies grow.
+gates its native path and should land early. It adds no dev-dependency:
+`axum` is already a primary dependency, so the stub binds a `TcpListener` on
+port 0 and serves a `Router` directly.
 
 Both in-process engines share a harder problem: exercising them needs real
 weights. llama.cpp needs a GGUF file; `uor-r4` needs a `.holo` v4 archive

@@ -101,10 +101,29 @@ pub struct CompletionSummary {
 /// One unit of a streamed completion.
 #[derive(Debug, Clone)]
 pub enum CompletionEvent {
+    /// A chunk of generated text. Concatenating every `Delta` in arrival
+    /// order reconstructs the full completion text.
     Delta(String),
+    /// The terminal event: the stream will not yield anything after this.
     Done(CompletionSummary),
 }
 
+/// A completion delivered incrementally.
+///
+/// `Send + 'static`: the stream outlives the `complete_stream` call that
+/// created it (it is returned, then polled independently), so implementors
+/// must move owned values into it rather than borrowing `&self` or the
+/// request.
+///
+/// Contract binding on every implementor of [`InferenceEngine::complete_stream`],
+/// not just the buffered default:
+/// - Anything knowable before the first delta (auth failure, a rejected
+///   request, an upstream connection error) must be returned as `Err` from
+///   `complete_stream` itself, never yielded as an item inside the stream.
+///   That is what lets a caller commit to a 200 response only once it knows
+///   the request is actually going to produce output.
+/// - A stream ends with exactly one [`CompletionEvent::Done`], or with an
+///   `Err` item and no `Done` — never both, and never neither.
 pub type CompletionStream = Pin<Box<dyn Stream<Item = Result<CompletionEvent>> + Send>>;
 
 #[tonic::async_trait]
@@ -129,10 +148,23 @@ pub trait InferenceEngine: Send + Sync {
         StreamKind::Buffered
     }
 
+    /// Streams a completion. Implementors — including any future native
+    /// override — must uphold this contract:
+    /// - Anything knowable before the first delta (a rejected request, an
+    ///   upstream connection or auth failure) is returned as `Err` from this
+    ///   method itself, never yielded into the stream. A caller that commits
+    ///   to a 200 response on `Ok` must be able to trust that the stream will
+    ///   actually produce output.
+    /// - The stream ends with exactly one [`CompletionEvent::Done`], or with
+    ///   an `Err` item and no `Done` — never both.
+    /// - The returned [`CompletionStream`] is `'static`, so implementors move
+    ///   owned values in rather than borrowing `&self`.
+    ///
     /// Buffered default: awaits the whole completion, then replays it as a
     /// single delta (D5). Because the completion is awaited before the stream
     /// is returned, a failure surfaces as a normal typed error with the
-    /// correct status rather than a half-open stream.
+    /// correct status rather than a half-open stream — this is what the
+    /// contract above requires, made unavoidable by construction.
     async fn complete_stream(&self, request: CompletionRequest) -> Result<CompletionStream> {
         let completion = self.complete(request).await?;
         let summary = CompletionSummary {
@@ -238,9 +270,12 @@ mod tests {
 
         // Built inline rather than via the `prompt` test helper: Task 1 moves
         // the echo tests to echo.rs, so that helper's home is not fixed here.
+        // Multi-word so a `split_whitespace()` implementation would yield more
+        // than one delta and fail this test — a single-word prompt would let
+        // "loses no text" masquerade as "does not chunk".
         let mut stream = engine
             .complete_stream(CompletionRequest {
-                prompt: "Hello".to_owned(),
+                prompt: "Hello there".to_owned(),
                 ..CompletionRequest::default()
             })
             .await
@@ -257,8 +292,8 @@ mod tests {
 
         assert_eq!(
             deltas,
-            vec!["Hello".to_owned()],
-            "D5: buffered engines emit a single delta, not whitespace chunks"
+            vec!["Hello there".to_owned()],
+            "D5: buffered engines emit a single delta carrying the whole text, not whitespace chunks"
         );
         assert!(summary.is_some(), "the stream must terminate with Done");
     }

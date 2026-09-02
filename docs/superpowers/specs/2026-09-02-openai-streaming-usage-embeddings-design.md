@@ -3,6 +3,7 @@
 - Date: 2026-09-02
 - Status: approved design, not yet implemented
 - Scope: implement streaming (§2–§4) and token usage (§5); specify embeddings (§6)
+- Revised 2026-09-02 after review: the native streaming path is deferred (D6)
 
 ## Context
 
@@ -72,12 +73,42 @@ TypeScript client reads them. ADR 016 permits the break pre-release.
 The engine work is shared and only the wire translation differs. The Ollama
 API's own default is `stream: true`, so `ollama_compat` is the more acute gap.
 
+Throughout this document, `ollama_compat` (the inbound HTTP surface letting
+Ollama clients talk to this daemon's engines) and `OllamaEngine` (the outbound
+proxy to a separate Ollama server) are distinct. D6 defers the latter only.
+The `ollama_compat` surface lands in full.
+
 ### D5 — Buffered engines emit a single delta
 
 Emulated deltas are written back-to-back with no delay, so splitting text on
 whitespace conveys no timing information and invents token boundaries no
 tokenizer produced. Progressive rendering should come from a real streaming
 engine, not synthetic chunking.
+
+### D6 — Defer the native streaming path
+
+`OllamaEngine` is the only engine that can stream natively or report token
+counts, and the target deployment does not run Ollama: `echo` is the default
+and `weightc` is the first-party engine. Building the native override now
+would add the largest item in the test plan — a stub HTTP server, the only
+reason dev-dependencies would grow — to serve a path nobody executes.
+
+Deferred: the `OllamaEngine` overrides of `stream_kind` and
+`complete_stream`, its `prompt_eval_count` parsing, the `reqwest` `stream`
+feature, and the stub server. Everything else lands.
+
+The trait seam is kept rather than emulating inside the modules, so adopting
+a native path later needs no boundary change. This has one honest cost:
+`StreamKind::Native` ships with no implementor and the header always reports
+`emulated`. A two-variant enum with one reachable variant is the kind of
+speculative branch ADR 016 removes elsewhere, and it is retained here only
+because it is roughly five lines and spares clients a second change when a
+native engine arrives. If that trade stops looking worthwhile, collapsing to
+a header-free buffered-only surface is the fallback.
+
+The higher-value follow-up is external: if `weightc enter --jsonl` emitted
+incremental delta lines and token counts, this design accepts both with no
+further change here — the receipt parsers are already tolerant (§5).
 
 ## §2 Engine boundary
 
@@ -123,7 +154,8 @@ boundary adds no new crate. `Completion` gains `usage: Option<TokenUsage>`.
 `complete()` itself is unchanged and remains the path for `stream: false`
 requests; `complete_stream` is strictly additive.
 
-Only `OllamaEngine` overrides these members. `EchoEngine` and both `weightc`
+`OllamaEngine` is where these members are overridden when the native path
+lands (D6); at this landing every engine uses the default. `EchoEngine` and both `weightc`
 paths are untouched and inherit emulation, which is why the well-tested
 resident session actor — where a turn is a single kameo `ask` returning one
 `TurnOutcome` — needs no rework.
@@ -143,6 +175,9 @@ chunking across both modules).
 
 Both surfaces derive the `x-hologram-stream` header from `stream_kind()` rather
 than setting it per module.
+
+At this landing the header always reports `emulated`, since no engine
+implements the native path (D6).
 
 **OpenAI — `text/event-stream`**
 
@@ -171,28 +206,33 @@ omitted, per D3.
 
 ## §4 Mid-stream failure
 
-Applies to the native path only; buffered engines fail before the response
-starts. Once bytes are on the wire the status is already 200, so in-band
+Applies to the native path only, so it is specified but unreachable until D6
+is revisited; buffered engines fail before the response starts. Once bytes are on the wire the status is already 200, so in-band
 delivery is the only honest option: SSE emits one `data:` event carrying the
 surface's error envelope followed by `[DONE]`; NDJSON emits one
 `{"error": "…"}` line. The stream then terminates.
 
 ## §5 Token usage plumbing
 
-- **Ollama** — parse `prompt_eval_count` alongside the already-parsed
-  `eval_count`. Today `eval_count` is read only to derive a rate and then
-  discarded. Both the streaming and non-streaming paths must extract usage
-  through one shared function, since `OllamaEngine` will implement `complete`
-  and `complete_stream` against the same endpoint with different `stream`
-  flags; that shared parse is what keeps the two from drifting.
+- **Ollama** — deferred with D6. When it lands: parse `prompt_eval_count`
+  alongside the already-parsed `eval_count` (today `eval_count` is read only to
+  derive a rate, then discarded), and extract usage for the streaming and
+  non-streaming paths through one shared function, since `OllamaEngine` will
+  hit the same endpoint with different `stream` flags. That shared parse is
+  what keeps the two from drifting.
 - **weightc** — add optional `prompt_tokens` / `completion_tokens` to
   `WeightcAskOutput` and `SessionLine`. Both parsers already ignore unknown
   fields, so this requires no coordination with the external CLI: the fields
   are absent today and are picked up automatically if the CLI ever emits them.
 - **echo** — always `None`.
 
-`reqwest` gains the `stream` feature so the Ollama engine can call
-`.bytes_stream()`. This is the only dependency change.
+Consequently, at this landing `usage` is always omitted: `echo` never reports
+counts and `weightc` does not emit the fields yet. The observable change from
+today is that the key is absent rather than three nulls. It is built now
+because it is cheap and because it starts working on its own, without a second
+change here, the moment an engine reports counts.
+
+No dependency changes. The `reqwest` `stream` feature is deferred with D6.
 
 ## §6 Embeddings — specified, not implemented
 
@@ -219,6 +259,9 @@ little-endian `f32` values, which some OpenAI SDK versions request by default.
 
 Per engine: Ollama implements it via `POST /api/embed` (`{"model", "input"}` →
 `{"embeddings": [[…]]}`); `weightc` and `echo` return the capability error.
+Since Ollama is the only capable engine, implementing this endpoint before a
+capable engine exists would ship a permanent capability error; it stays
+specified and unbuilt, and lands with or after D6.
 
 **No emulation here.** Unlike arrival scheduling, a synthesized vector is
 fabricated *data*, so D1 does not extend to embeddings and D2 governs instead.
@@ -228,19 +271,22 @@ usually not an embedding model.
 
 ## §7 Testing
 
-`OllamaEngine` has no tests today, so a stub HTTP server is the bulk of the new
-scaffolding — dev-dependencies are currently only `cucumber`. It gates the
-native streaming path and should land first.
+No new dev-dependencies. The stub HTTP server is deferred with D6, which
+removes the largest scaffolding item from this landing; `OllamaEngine` remains
+untested, as it is today.
 
 Coverage to add:
 
 - buffered default yields exactly `Delta` then `Done`
-- native path parses a fixture NDJSON body into ordered events
 - chunk sequencing and `[DONE]` ordering, per surface
-- `x-hologram-stream` reflects `stream_kind()` for both values
-- usage present when both counts known, key absent otherwise
-- `stream_options.include_usage` chunk shape, both known and unknown
-- mid-stream error shape on both surfaces
+- `x-hologram-stream` reflects `stream_kind()`; only `emulated` is reachable
+  until D6 is revisited
+- usage key absent when counts are unknown, which is every engine at this
+  landing; the both-counts-known branch is covered at the type level via a
+  `TokenUsage`-bearing summary rather than through an engine
+- `stream_options.include_usage` chunk shape
+- mid-stream error shape is deferred with D6, being unreachable without a
+  native path
 - every existing non-streaming test stays green, with one deliberate
   exception: the two tests asserting that `stream: true` is rejected
   (`stream_true_is_rejected` in each module) invert to assert a stream is
@@ -252,7 +298,7 @@ does not add any.
 
 ## §8 Documentation
 
-- New **ADR 022** recording D1–D5. 021 is the current highest.
+- New **ADR 022** recording D1–D6. 021 is the current highest.
 - ADR 003's closing consequence calls streaming a "deliberate fast-follow" and
   needs updating.
 - `README.md` "Inference compatibility APIs" states streaming is rejected.

@@ -6,6 +6,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 const CURRENT_SCHEMA_VERSION: u32 = 2;
+/// Oldest `schema_version` this build can read and upgrade in place.
+/// Anything older is refused rather than guessed at.
+const MINIMUM_SUPPORTED_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -332,7 +335,24 @@ impl AppConfig {
         Ok(path)
     }
 
+    /// Loads the configuration, upgrading an older `schema_version` in place.
     pub fn load(path: Option<&Path>) -> Result<(Self, PathBuf)> {
+        Self::load_inner(path, true)
+    }
+
+    /// Loads the configuration without upgrading it.
+    ///
+    /// Tracing is configured *from* the configuration, so the first read
+    /// happens before a subscriber exists. Upgrading there would rewrite the
+    /// file and drop the log line describing it. This read leaves the file
+    /// alone and lets the first post-subscriber `load` perform and report the
+    /// upgrade; an out-of-date file simply fails `validate` here, and the
+    /// caller falls back to defaults for tracing.
+    pub fn load_for_bootstrap(path: Option<&Path>) -> Result<(Self, PathBuf)> {
+        Self::load_inner(path, false)
+    }
+
+    fn load_inner(path: Option<&Path>, upgrade: bool) -> Result<(Self, PathBuf)> {
         let path = path.map_or_else(Self::default_path, expand_home);
         let exists = path.exists();
         let mut config = if exists {
@@ -342,10 +362,71 @@ impl AppConfig {
         } else {
             Self::default()
         };
+        if upgrade {
+            let from = config.schema_version;
+            // Persist before environment overrides and `~` expansion are
+            // applied, so only what the user actually wrote goes back to disk.
+            if config.migrate()? && exists {
+                config.persist_upgrade(&path, from);
+            }
+        }
         config.apply_environment()?;
         config.expand_paths();
         config.validate()?;
         Ok((config, path))
+    }
+
+    /// Brings a parsed configuration up to `CURRENT_SCHEMA_VERSION`, reporting
+    /// whether anything changed.
+    ///
+    /// Schema growth has been additive, and missing fields already fall back to
+    /// their defaults during deserialisation, so an upgrade is a version
+    /// restamp rather than a field-by-field transform. Should a future version
+    /// need to *move* or reinterpret a value, this is where that step belongs.
+    fn migrate(&mut self) -> Result<bool> {
+        if self.schema_version == CURRENT_SCHEMA_VERSION {
+            return Ok(false);
+        }
+        // A newer file may carry settings this build would drop on write, so
+        // refuse rather than silently downgrade it.
+        if self.schema_version > CURRENT_SCHEMA_VERSION {
+            return Err(LiveError::Config(format!(
+                "configuration schema {} is newer than this build supports ({CURRENT_SCHEMA_VERSION}); upgrade hologram to read it",
+                self.schema_version
+            )));
+        }
+        if self.schema_version < MINIMUM_SUPPORTED_SCHEMA_VERSION {
+            return Err(LiveError::Config(format!(
+                "configuration schema {} predates the oldest readable schema ({MINIMUM_SUPPORTED_SCHEMA_VERSION}); regenerate it with `hologram init --force`",
+                self.schema_version
+            )));
+        }
+        self.schema_version = CURRENT_SCHEMA_VERSION;
+        Ok(true)
+    }
+
+    /// Writes an upgraded configuration back so the next start reads a current
+    /// file.
+    fn persist_upgrade(&self, path: &Path, from: u32) {
+        let written = toml::to_string_pretty(self)
+            .map_err(LiveError::from)
+            .and_then(|encoded| atomic_write(path, encoded.as_bytes()));
+        match written {
+            Ok(()) => tracing::info!(
+                config.path = %path.display(),
+                config.schema_from = from,
+                config.schema_to = CURRENT_SCHEMA_VERSION,
+                "upgraded configuration schema"
+            ),
+            // An unwritable config directory must not stop the daemon: the
+            // configuration in hand is already current, only the file lags.
+            Err(error) => tracing::warn!(
+                config.path = %path.display(),
+                config.schema_from = from,
+                error = %error,
+                "configuration upgraded in memory but could not be written back"
+            ),
+        }
     }
 
     pub fn create_directories(&self) -> Result<()> {
@@ -626,6 +707,116 @@ mod tests {
         assert!(error
             .to_string()
             .contains("unsupported configuration schema 1"));
+    }
+
+    /// Each test gets its own directory so nothing races on a shared path.
+    fn scratch_config(name: &str, body: &str) -> (PathBuf, PathBuf) {
+        let dir = env::temp_dir().join(format!("hologram-config-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create scratch dir");
+        let path = dir.join("live.toml");
+        std::fs::write(&path, body).expect("write scratch config");
+        (dir, path)
+    }
+
+    #[test]
+    fn older_configuration_is_upgraded_and_rewritten() {
+        let (dir, path) = scratch_config("upgrade", "schema_version = 1\nrole = \"node\"\n");
+
+        let (config, loaded) = AppConfig::load(Some(&path)).expect("older config must load");
+        assert_eq!(config.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(loaded, path);
+
+        let rewritten = std::fs::read_to_string(&path).expect("read rewritten config");
+        assert!(
+            rewritten.contains(&format!("schema_version = {CURRENT_SCHEMA_VERSION}")),
+            "{rewritten}"
+        );
+        // The upgrade is written out in full, so the next start reads a file
+        // that no longer depends on defaulting to fill the gaps.
+        assert!(rewritten.contains("[inference]"), "{rewritten}");
+        assert!(rewritten.contains("[plugins]"), "{rewritten}");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The upgrade must round-trip what the user wrote, not what the process
+    /// resolved it to. `~` expansion happens after the rewrite, so an expanded
+    /// absolute path must never reach the file.
+    #[test]
+    fn upgrade_persists_only_what_the_user_wrote() {
+        let (dir, path) = scratch_config(
+            "no-leak",
+            "schema_version = 1\n\n[paths]\ndata_dir = \"~/hologram-data\"\n",
+        );
+
+        let (config, _) = AppConfig::load(Some(&path)).expect("older config must load");
+        assert!(
+            !config.paths.data_dir.starts_with("~"),
+            "in-memory path stays unexpanded: {}",
+            config.paths.data_dir.display()
+        );
+
+        let rewritten = std::fs::read_to_string(&path).expect("read rewritten config");
+        assert!(
+            rewritten.contains("~/hologram-data"),
+            "expansion leaked into the file: {rewritten}"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn newer_configuration_schema_is_refused() {
+        let (dir, path) = scratch_config("newer", "schema_version = 99\n");
+
+        let error = AppConfig::load(Some(&path)).expect_err("newer schema must fail");
+        assert!(
+            error.to_string().contains("newer than this build supports"),
+            "{error}"
+        );
+        let untouched = std::fs::read_to_string(&path).expect("read config");
+        assert!(untouched.contains("99"), "{untouched}");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn configuration_schema_below_the_supported_floor_is_refused() {
+        let (dir, path) = scratch_config("floor", "schema_version = 0\n");
+
+        let error = AppConfig::load(Some(&path)).expect_err("schema 0 must fail");
+        assert!(error.to_string().contains("predates"), "{error}");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn current_configuration_is_left_untouched() {
+        let body =
+            format!("schema_version = {CURRENT_SCHEMA_VERSION}\n# a comment worth keeping\n");
+        let (dir, path) = scratch_config("current", &body);
+
+        AppConfig::load(Some(&path)).expect("current config loads");
+
+        let after = std::fs::read_to_string(&path).expect("read config");
+        assert_eq!(after, body, "a current config must not be rewritten");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The bootstrap read happens before a tracing subscriber exists, so it
+    /// must not perform an upgrade whose log line would be dropped.
+    #[test]
+    fn bootstrap_load_never_rewrites_the_file() {
+        let body = "schema_version = 1\n";
+        let (dir, path) = scratch_config("bootstrap", body);
+
+        AppConfig::load_for_bootstrap(Some(&path)).expect_err("stale config fails validate");
+
+        let after = std::fs::read_to_string(&path).expect("read config");
+        assert_eq!(after, body, "bootstrap must leave the file alone");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

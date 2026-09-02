@@ -68,6 +68,8 @@ Call sites that must keep compiling unchanged: `src/app.rs:91`, `src/chat.rs:5`,
 
 Each file gets a `//!` header naming its responsibility. Items shared between `weightc/mod.rs` and `weightc/session.rs` become `pub(super)`; items shared with `mod.rs` become `pub(crate)`.
 
+The `fn prompt(text: &str) -> CompletionRequest` test helper (`src/inference.rs:885`) is used by the echo tests. Move it into `echo.rs` alongside them; `mod.rs`'s test module keeps `unknown_engine_is_a_config_error` and does not need it. Later tasks build `CompletionRequest` literals inline rather than depending on where this helper landed.
+
 - [ ] **Step 4: Delete the original**
 
 ```bash
@@ -485,7 +487,7 @@ In the `mod tests` of `src/modules/ollama_compat.rs`:
     #[tokio::test]
     async fn generate_omits_counts_when_the_engine_measures_none() {
         let fixture = fixture();
-        let response = generate_response(
+        let response = generate_core(
             Arc::new(crate::inference::EchoEngine),
             fixture.catalog.clone(),
             "echo",
@@ -505,7 +507,7 @@ In the `mod tests` of `src/modules/ollama_compat.rs`:
     }
 ```
 
-Name the handler helper to match whatever the module already calls it; the existing tests show the convention.
+The non-streaming helpers are `generate_core` (`src/modules/ollama_compat.rs:270`) and `chat_core` (`:301`); the public handlers are `generate` (`:234`) and `chat` (`:256`).
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -567,8 +569,13 @@ In the `mod tests` of `src/inference/mod.rs`:
         let engine = EchoEngine;
         assert_eq!(engine.stream_kind(), StreamKind::Buffered);
 
+        // Built inline rather than via the `prompt` test helper: Task 1 moves
+        // the echo tests to echo.rs, so that helper's home is not fixed here.
         let mut stream = engine
-            .complete_stream(prompt("Hello"))
+            .complete_stream(CompletionRequest {
+                prompt: "Hello".to_owned(),
+                ..CompletionRequest::default()
+            })
             .await
             .expect("the echo engine always completes");
 
@@ -1069,12 +1076,20 @@ async fn stream_chat(
             choices,
             usage,
         };
-        let send = |sender: &tokio::sync::mpsc::Sender<_>, value: &ChatCompletionChunk| {
-            let encoded = serde_json::to_string(value).unwrap_or_default();
-            sender.try_send(Ok::<_, std::convert::Infallible>(
-                axum::response::sse::Event::default().data(encoded),
-            ))
-        };
+        // `send` must be a macro, not a closure: async closures are unstable,
+        // and `try_send` would silently truncate the stream whenever a slow
+        // client let the 16-slot channel fill. `.send().await` applies
+        // backpressure instead.
+        macro_rules! send {
+            ($value:expr) => {{
+                let encoded = serde_json::to_string(&$value).unwrap_or_default();
+                sender
+                    .send(Ok::<_, std::convert::Infallible>(
+                        axum::response::sse::Event::default().data(encoded),
+                    ))
+                    .await
+            }};
+        }
 
         let role = chunk(
             vec![ChunkChoice {
@@ -1087,7 +1102,7 @@ async fn stream_chat(
             }],
             None,
         );
-        if send(&sender, &role).is_err() {
+        if send!(role).is_err() {
             return;
         }
 
@@ -1107,7 +1122,7 @@ async fn stream_chat(
                         }],
                         None,
                     );
-                    if send(&sender, &delta).is_err() {
+                    if send!(delta).is_err() {
                         return;
                     }
                 }
@@ -1120,12 +1135,10 @@ async fn stream_chat(
                     let envelope = OpenAiErrorEnvelope {
                         error: OpenAiError::from(error).body,
                     };
-                    let encoded = serde_json::to_string(&envelope).unwrap_or_default();
-                    let _ = sender.try_send(Ok(
-                        axum::response::sse::Event::default().data(encoded)
-                    ));
+                    let _ = send!(envelope);
                     let _ = sender
-                        .try_send(Ok(axum::response::sse::Event::default().data("[DONE]")));
+                        .send(Ok(axum::response::sse::Event::default().data("[DONE]")))
+                        .await;
                     return;
                 }
             }
@@ -1139,16 +1152,18 @@ async fn stream_chat(
             }],
             None,
         );
-        let _ = send(&sender, &stop);
+        let _ = send!(stop);
 
         if include_usage {
             if let Some(usage) = usage {
                 let final_chunk = chunk(Vec::new(), Some(Usage::from(usage)));
-                let _ = send(&sender, &final_chunk);
+                let _ = send!(final_chunk);
             }
         }
 
-        let _ = sender.try_send(Ok(axum::response::sse::Event::default().data("[DONE]")));
+        let _ = sender
+            .send(Ok(axum::response::sse::Event::default().data("[DONE]")))
+            .await;
     });
 
     let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
@@ -1310,7 +1325,7 @@ pub async fn generate(
     if request.stream == Some(true) {
         return stream_generate(engine, catalog, &default_model, request).await;
     }
-    let response = generate_response(engine, catalog, &default_model, request).await?;
+    let response = generate_core(engine, catalog, &default_model, request).await?;
     Ok(Json(response).into_response())
 }
 
@@ -1413,7 +1428,7 @@ fn ndjson_response(
 }
 ```
 
-`chat` branches identically, calling `ndjson_response(..., LineShape::Message)`. Reuse whatever helper the module already has for building a `CompletionRequest` from `options`; if there is none, extract one from `generate_response` so both paths share it. `rfc3339_now()` is the module's existing timestamp helper — if the non-streaming responses build `created_at` inline, extract that into a function first.
+`chat` branches identically, calling `ndjson_response(..., LineShape::Message)`. `rfc3339_now()` already exists in this module (used at `:295` and `:329`), so use it directly. For building a `CompletionRequest` from `options`, reuse whatever `generate_core` already does; if that logic is inline, extract it into a `completion_request` helper so the streaming and non-streaming paths cannot drift.
 
 - [ ] **Step 4: Run tests to verify they pass**
 

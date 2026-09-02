@@ -9,6 +9,12 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   <pre><code>schema_version = 2
 role = "node"
 
+[paths]
+config_dir = "~/.config/hologram"
+data_dir = "~/.local/share/hologram"
+state_dir = "~/.local/state/hologram"
+cache_dir = "~/.cache/hologram"
+
 [server]
 listen = "127.0.0.1:11435"
 max_rpc_bytes = 33554432
@@ -37,10 +43,41 @@ enabled = true
 service_name = "hologram-live"
 export_timeout_secs = 5
 
+[modules]
+enabled = [
+    "dev.hologram.live.system",
+    "dev.hologram.live.kappa-registry",
+    "dev.hologram.live.files",
+    "dev.hologram.live.holo",
+    "dev.hologram.live.history",
+    "dev.hologram.live.chat",
+    "dev.hologram.live.inference",
+    "dev.hologram.live.openai-compat",
+    "dev.hologram.live.ollama-compat",
+    "dev.hologram.live.control-plane",
+]
+
+[update]
+channel = "stable"
+
+[inference]
+engine = "echo"
+default_model = ""
+weightc_path = "weightc"
+ollama_endpoint = "http://127.0.0.1:11434"
+request_timeout_secs = 300
+resident_sessions = false
+max_resident_sessions = 4
+
 [holo]
 # Development only; relative paths resolve from paths.config_dir.
-# development_grant = "development-grant.json"</code></pre>
-  <p>Configuration schema version 2 is required. Startup rejects missing fields and every other schema version instead of applying implicit defaults or rewriting the file.</p>
+# development_grant = "development-grant.json"
+
+[plugins]
+enabled = false
+modules = []</code></pre>
+  <p>Schema version 2 is current, and a file written by an earlier build still starts. Missing sections and fields fall back to the defaults shown above, and an older <code>schema_version</code> is upgraded and written back so the next start reads a current file. The rewrite records only what the file itself declares: values injected by an environment override are applied to the running process but never persisted.</p>
+  <p>Two cases are still refused rather than guessed at. Unknown fields are rejected instead of ignored, so a misspelled key is a startup error rather than a setting that silently does nothing. A <code>schema_version</code> newer than the running build supports is refused instead of being downgraded, since a newer file may carry settings this build would drop on write.</p>
   <div class="note"><strong>Telemetry remains local by default</strong>Leave <code>telemetry.endpoint</code> unset to prevent any telemetry network connection.</div>
 
   <h2><code>.holo</code> development grants</h2>

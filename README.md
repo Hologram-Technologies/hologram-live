@@ -129,9 +129,13 @@ hologram --json history unarchive <conversation-id>
 
 In the desktop app, hovering a thread reveals an archive button, and archived threads collapse into an `ARCHIVED` group at the bottom of the thread list.
 
-Configuration files use schema version 2. Hologram validates the complete current
-schema at startup and rejects missing fields or any other schema version instead
-of guessing defaults or rewriting the file.
+Configuration files use schema version 2, and a file written by an earlier build
+still starts. Missing sections and fields fall back to their documented defaults,
+and an older `schema_version` is upgraded and written back so the next start reads
+a current file; the rewrite records only what the file declares, never a value
+injected by an environment override. Unknown fields are still rejected rather than
+ignored, and a `schema_version` newer than the running build supports is refused
+rather than silently downgraded.
 
 ### Files
 

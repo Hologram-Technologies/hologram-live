@@ -93,6 +93,11 @@ pub struct GenerateResponse {
     pub created_at: String,
     pub response: String,
     pub done: bool,
+    /// Omitted unless the engine measured both halves (D3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_eval_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_count: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -101,6 +106,11 @@ pub struct ChatResponse {
     pub created_at: String,
     pub message: OllamaMessage,
     pub done: bool,
+    /// Omitted unless the engine measured both halves (D3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_eval_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_count: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -295,6 +305,8 @@ async fn generate_core(
         created_at: rfc3339_now(),
         response: completion.text,
         done: true,
+        prompt_eval_count: completion.usage.map(|usage| usage.prompt_tokens),
+        eval_count: completion.usage.map(|usage| usage.completion_tokens),
     })
 }
 
@@ -332,6 +344,8 @@ async fn chat_core(
             content: completion.text,
         },
         done: true,
+        prompt_eval_count: completion.usage.map(|usage| usage.prompt_tokens),
+        eval_count: completion.usage.map(|usage| usage.completion_tokens),
     })
 }
 
@@ -707,6 +721,97 @@ mod tests {
         })
         .expect("serialize");
         assert_eq!(json, serde_json::json!({"error": "missing"}));
+    }
+
+    #[tokio::test]
+    async fn generate_omits_counts_when_the_engine_measures_none() {
+        let fixture = fixture();
+        let response = generate_core(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "Hello".to_owned(),
+                stream: Some(false),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        let encoded = serde_json::to_value(&response).expect("serialize");
+        assert!(encoded.get("eval_count").is_none());
+        assert!(encoded.get("prompt_eval_count").is_none());
+    }
+
+    /// Reports fixed, distinct usage so a prompt/completion transposition
+    /// bug (D3) would fail this test even though both fields would still
+    /// serialize.
+    struct MeteredEngine;
+
+    #[tonic::async_trait]
+    impl InferenceEngine for MeteredEngine {
+        fn name(&self) -> &'static str {
+            "metered"
+        }
+
+        async fn complete(&self, request: CompletionRequest) -> crate::error::Result<Completion> {
+            Ok(Completion {
+                text: request.prompt,
+                model: "metered".to_owned(),
+                tokens_per_second: None,
+                elapsed_millis: 0,
+                usage: Some(crate::inference::TokenUsage {
+                    prompt_tokens: 11,
+                    completion_tokens: 22,
+                }),
+            })
+        }
+
+        async fn list_models(&self) -> crate::error::Result<Vec<ModelInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_reports_measured_counts_with_the_ollama_field_names() {
+        let fixture = fixture();
+        let response = generate_core(
+            Arc::new(MeteredEngine),
+            fixture.catalog.clone(),
+            "",
+            generate_request("", "hello"),
+        )
+        .await
+        .expect("generate");
+
+        assert_eq!(response.prompt_eval_count, Some(11));
+        assert_eq!(response.eval_count, Some(22));
+    }
+
+    #[tokio::test]
+    async fn chat_reports_measured_counts_with_the_ollama_field_names() {
+        let fixture = fixture();
+        let request = ChatRequest {
+            model: String::new(),
+            messages: vec![OllamaMessage {
+                role: "user".to_owned(),
+                content: "ping".to_owned(),
+            }],
+            stream: Some(false),
+            options: None,
+        };
+        let response = chat_core(Arc::new(MeteredEngine), fixture.catalog.clone(), "", request)
+            .await
+            .expect("chat");
+
+        assert_eq!(response.prompt_eval_count, Some(11));
+        assert_eq!(response.eval_count, Some(22));
+
+        let encoded = serde_json::to_value(&response).expect("serialize");
+        assert_eq!(encoded["prompt_eval_count"], serde_json::json!(11));
+        assert_eq!(encoded["eval_count"], serde_json::json!(22));
     }
 
     #[test]

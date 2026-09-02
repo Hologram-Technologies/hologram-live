@@ -37,6 +37,33 @@ pub struct Completion {
     pub model: String,
     pub tokens_per_second: Option<f64>,
     pub elapsed_millis: u64,
+    pub usage: Option<TokenUsage>,
+}
+
+/// Token counts an engine measured. Both fields are required: the `OpenAI`
+/// schema needs a total, so a half-known pair is not reportable (D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenUsage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+}
+
+impl TokenUsage {
+    /// Reports usage only when the engine measured both halves. Never
+    /// estimates and never substitutes zero (D2).
+    pub const fn from_counts(prompt: Option<u64>, completion: Option<u64>) -> Option<Self> {
+        match (prompt, completion) {
+            (Some(prompt_tokens), Some(completion_tokens)) => Some(Self {
+                prompt_tokens,
+                completion_tokens,
+            }),
+            _ => None,
+        }
+    }
+
+    pub const fn total(&self) -> u64 {
+        self.prompt_tokens.saturating_add(self.completion_tokens)
+    }
 }
 
 #[tonic::async_trait]
@@ -110,5 +137,29 @@ mod tests {
             .err()
             .expect("must fail");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
+    }
+
+    #[test]
+    fn usage_needs_both_counts_to_be_reportable() {
+        assert_eq!(
+            TokenUsage::from_counts(Some(18), Some(42)),
+            Some(TokenUsage {
+                prompt_tokens: 18,
+                completion_tokens: 42
+            })
+        );
+        // A partial pair cannot satisfy the OpenAI schema, which requires a total.
+        assert_eq!(TokenUsage::from_counts(None, Some(42)), None);
+        assert_eq!(TokenUsage::from_counts(Some(18), None), None);
+        assert_eq!(TokenUsage::from_counts(None, None), None);
+    }
+
+    #[test]
+    fn usage_total_saturates_rather_than_overflowing() {
+        let usage = TokenUsage {
+            prompt_tokens: u64::MAX,
+            completion_tokens: 1,
+        };
+        assert_eq!(usage.total(), u64::MAX);
     }
 }

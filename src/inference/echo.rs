@@ -20,6 +20,7 @@ impl InferenceEngine for EchoEngine {
             model: "echo".to_owned(),
             tokens_per_second: None,
             elapsed_millis: super::elapsed_millis(started),
+            usage: None,
         })
     }
 

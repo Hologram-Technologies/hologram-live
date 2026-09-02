@@ -15,7 +15,7 @@
 use super::SessionSpec;
 use crate::actor::RootSupervisor;
 use crate::error::{LiveError, Result};
-use crate::inference::{elapsed_millis, Completion};
+use crate::inference::{elapsed_millis, Completion, TokenUsage};
 use kameo::actor::{ActorRef, Spawn};
 use kameo::mailbox;
 use kameo::message::{Context, Message};
@@ -304,6 +304,7 @@ impl WeightcSessionActor {
             model: self.spec.model.clone(),
             tokens_per_second: parsed.tokens_per_second,
             elapsed_millis: parsed.elapsed_ms.unwrap_or_else(|| elapsed_millis(started)),
+            usage: TokenUsage::from_counts(parsed.prompt_tokens, parsed.completion_tokens),
         })
     }
 }
@@ -365,6 +366,8 @@ struct SessionLine {
     output: Option<String>,
     tokens_per_second: Option<f64>,
     elapsed_ms: Option<u64>,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
     error: Option<SessionErrorLine>,
 }
 

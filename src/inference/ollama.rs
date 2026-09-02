@@ -1,6 +1,6 @@
 //! Ollama-compatible HTTP engine (`POST {endpoint}/api/generate`).
 
-use super::{Completion, CompletionRequest, InferenceEngine};
+use super::{Completion, CompletionRequest, InferenceEngine, TokenUsage};
 use crate::config::InferenceConfig;
 use crate::error::{LiveError, Result};
 use crate::models::ModelInfo;
@@ -49,6 +49,7 @@ struct OllamaOptions {
 #[derive(Debug, Deserialize)]
 struct OllamaGenerateResponse {
     response: String,
+    prompt_eval_count: Option<u64>,
     eval_count: Option<u64>,
     eval_duration: Option<u64>,
 }
@@ -129,6 +130,7 @@ impl InferenceEngine for OllamaEngine {
             model: self.model.clone(),
             tokens_per_second,
             elapsed_millis: super::elapsed_millis(started),
+            usage: TokenUsage::from_counts(parsed.prompt_eval_count, parsed.eval_count),
         })
     }
 

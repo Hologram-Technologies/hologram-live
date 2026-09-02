@@ -417,6 +417,7 @@ mod tests {
                 model: "mirror".to_owned(),
                 tokens_per_second: None,
                 elapsed_millis: 0,
+                usage: None,
             })
         }
 

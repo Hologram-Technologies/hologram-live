@@ -13,7 +13,7 @@ mod session;
 use self::session::{
     SessionTable, SessionTurn, StopSession, WeightcSessionActor, SHUTDOWN_TIMEOUT,
 };
-use super::{Completion, CompletionRequest, InferenceEngine};
+use super::{Completion, CompletionRequest, InferenceEngine, TokenUsage};
 use crate::actor::ActorSystem;
 use crate::config::InferenceConfig;
 use crate::error::{LiveError, Result};
@@ -133,6 +133,8 @@ struct WeightcAskOutput {
     text: Option<String>,
     output: Option<String>,
     tokens_per_second: Option<f64>,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
 }
 
 #[tonic::async_trait]
@@ -218,6 +220,7 @@ impl WeightcEngine {
             model: self.default_model.clone(),
             tokens_per_second: parsed.tokens_per_second,
             elapsed_millis: super::elapsed_millis(started),
+            usage: TokenUsage::from_counts(parsed.prompt_tokens, parsed.completion_tokens),
         })
     }
 }

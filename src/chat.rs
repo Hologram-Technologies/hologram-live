@@ -152,6 +152,7 @@ mod tests {
                 model: "stub".to_owned(),
                 tokens_per_second: None,
                 elapsed_millis: 0,
+                usage: None,
             })
         }
 
@@ -200,6 +201,7 @@ mod tests {
                 model: "session-stub".to_owned(),
                 tokens_per_second: None,
                 elapsed_millis: 0,
+                usage: None,
             })
         }
 

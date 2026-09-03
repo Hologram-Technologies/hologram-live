@@ -865,7 +865,7 @@ the ported-source inventory, and the fidelity notes.
 
 ### Inference compatibility APIs
 
-The daemon exposes non-streaming OpenAI- and Ollama-compatible HTTP surfaces over the configured inference engine:
+The daemon exposes OpenAI- and Ollama-compatible HTTP surfaces over the configured inference engine, including streaming:
 
 ```bash
 curl http://127.0.0.1:11435/v1/models
@@ -878,7 +878,26 @@ curl -X POST http://127.0.0.1:11435/api/generate \
 curl http://127.0.0.1:11435/api/tags
 ```
 
-Requests with `stream: true` are rejected with a typed error; token streaming requires engine support and is future work. Both surfaces sit behind the same bearer-token seam as every other module route.
+`stream: true` is accepted by every engine. Streaming request:
+
+```bash
+curl -N -X POST http://127.0.0.1:11435/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"model":"echo","messages":[{"role":"user","content":"Hello"}],"stream":true}'
+```
+
+Every response — streaming or not — carries an `x-hologram-stream` header of
+`native` or `emulated`. `native` means the engine produced deltas as it
+generated them (currently `ollama`); `emulated` means the engine has no
+incremental output, so the daemon ran the completion to finish and replayed
+the result as a single delta (currently `echo` and `weightc`). The tokens are
+identical either way — emulation reconstructs only the arrival schedule, never
+the content — so on an emulated engine, time-to-first-token equals
+time-to-full-completion. See `specs/adrs/022-streaming-and-token-usage.md` for
+the full reasoning, including how token usage is reported (omitted, not
+zeroed, when an engine did not measure it).
+
+Both surfaces sit behind the same bearer-token seam as every other module route.
 
 ### Third-party plugin modules
 
@@ -916,8 +935,8 @@ Trusted modules are statically linked and registered in the `builtin_modules!` c
 | `dev.hologram.live.history` | Durable conversations and messages |
 | `dev.hologram.live.chat` | Conversation-backed chat over the configured inference engine |
 | `dev.hologram.live.inference` | Model import, listing, and removal for the engine boundary |
-| `dev.hologram.live.openai-compat` | Non-streaming OpenAI-compatible `/v1` inference API |
-| `dev.hologram.live.ollama-compat` | Non-streaming Ollama-compatible `/api` inference API |
+| `dev.hologram.live.openai-compat` | OpenAI-compatible `/v1` inference API, including streaming |
+| `dev.hologram.live.ollama-compat` | Ollama-compatible `/api` inference API, including streaming |
 | `dev.hologram.live.control-plane` | Minimal node inventory and heartbeats |
 
 Each module declares its stable ID, dependencies, operation IDs, HTTP routes, and OpenAPI contribution. Operators can enable a subset with `modules.enabled` in `live.toml`. Executable module behavior remains compiled Rust rather than configuration-defined code.
@@ -1030,7 +1049,7 @@ The default build does not yet provide:
 - enterprise identity, organizations, or RBAC storage; or
 - fleet scheduling.
 
-Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives—including Python Components with locked pure-Python wheels and the capability-gated exact-object and typed-graph read profiles—execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Token streaming, tensor execution, inference-model provider invocation, resident rootfs execution, native Component dependencies, remaining Hologram host profiles, capability-gated WASI, transitive graph writes, deterministic Python Component output, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
+Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives—including Python Components with locked pure-Python wheels and the capability-gated exact-object and typed-graph read profiles—execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Tensor execution, inference-model provider invocation, resident rootfs execution, native Component dependencies, remaining Hologram host profiles, capability-gated WASI, transitive graph writes, deterministic Python Component output, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 
 ## Further documentation
 

@@ -10,10 +10,29 @@ use crate::models::ModelInfo;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
+/// Cap on a single buffered NDJSON line while streaming. A legitimate Ollama
+/// stream line is a few hundred bytes; 1 MiB is generous headroom while
+/// still bounding a broken or hostile upstream that never sends a newline
+/// from inflating the buffer without limit (bounded only in wall-clock by
+/// the client timeout otherwise, not in bytes).
+const MAX_STREAM_LINE_BYTES: usize = 1024 * 1024;
+
 pub struct OllamaEngine {
     endpoint: String,
     model: String,
+    /// Used by the non-streaming path. `.timeout()` is a deadline on the
+    /// *entire* request including reading the whole response body, which is
+    /// exactly right for a single buffered `complete()` call: either the
+    /// full answer lands within `request_timeout_secs` or it didn't.
     client: reqwest::Client,
+    /// Used only by `complete_stream`. A native stream can legitimately run
+    /// far longer than `request_timeout_secs` as long as tokens keep
+    /// arriving, so this client carries no `.timeout()` at all — instead
+    /// `.read_timeout()` bounds each individual read, failing only after
+    /// `request_timeout_secs` of silence. Do not collapse this back into
+    /// `client`: doing so would cut healthy long-running streams dead at
+    /// the whole-request deadline.
+    stream_client: reqwest::Client,
 }
 
 impl OllamaEngine {
@@ -22,10 +41,17 @@ impl OllamaEngine {
             .timeout(Duration::from_secs(config.request_timeout_secs))
             .build()
             .map_err(|error| LiveError::Transport(format!("build ollama client: {error}")))?;
+        let stream_client = reqwest::Client::builder()
+            .read_timeout(Duration::from_secs(config.request_timeout_secs))
+            .build()
+            .map_err(|error| {
+                LiveError::Transport(format!("build ollama streaming client: {error}"))
+            })?;
         Ok(Self {
             endpoint: config.ollama_endpoint.trim_end_matches('/').to_owned(),
             model: config.default_model.clone(),
             client,
+            stream_client,
         })
     }
 
@@ -62,8 +88,12 @@ impl OllamaEngine {
             stream,
             options,
         };
-        let response = self
-            .client
+        let client = if stream {
+            &self.stream_client
+        } else {
+            &self.client
+        };
+        let response = client
             .post(format!("{}/api/generate", self.endpoint))
             .json(&body)
             .send()
@@ -196,6 +226,20 @@ impl InferenceEngine for OllamaEngine {
                     }
                 };
                 buffered.extend_from_slice(&chunk);
+                // A chunk can legitimately carry several complete lines that
+                // together exceed the cap — the drain loop below consumes
+                // them and the buffer shrinks back down. What must never
+                // happen is a single line with no newline growing past the
+                // cap: that is the unbounded-buffer case, so check for it
+                // here before draining.
+                if buffered.len() > MAX_STREAM_LINE_BYTES && !buffered.contains(&b'\n') {
+                    let _ = sender
+                        .send(Err(LiveError::Protocol(format!(
+                            "ollama stream line exceeded {MAX_STREAM_LINE_BYTES} bytes without a newline"
+                        ))))
+                        .await;
+                    return;
+                }
                 // NDJSON: a line is only complete once its newline arrives, so
                 // a partial tail (split across chunk boundaries) stays
                 // buffered for the next chunk rather than being parsed early.
@@ -521,6 +565,133 @@ mod tests {
                 prompt_tokens: 1,
                 completion_tokens: 2
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_errs_on_a_line_that_never_terminates_within_the_byte_cap() {
+        use tokio_stream::StreamExt;
+
+        // A hostile or broken upstream that never sends a newline must not be
+        // allowed to inflate the line buffer without limit. Serve 2 MiB of
+        // `x` with no `\n` anywhere, split across several chunks so the
+        // cap must be enforced incrementally rather than on one giant read.
+        let router = axum::Router::new().route(
+            "/api/generate",
+            axum::routing::post(|| async {
+                let chunk = axum::body::Bytes::from(vec![b'x'; 256 * 1024]);
+                let frames: Vec<Result<axum::body::Bytes, std::io::Error>> =
+                    std::iter::repeat_with(|| Ok(chunk.clone()))
+                        .take(8)
+                        .collect();
+                axum::body::Body::from_stream(tokio_stream::iter(frames))
+            }),
+        );
+        let endpoint = spawn_stub(router).await;
+        let engine = OllamaEngine::new(&config_for(&endpoint)).expect("build the engine");
+
+        let mut stream = engine
+            .complete_stream(CompletionRequest {
+                prompt: "hi".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the stub responds successfully");
+
+        let event = stream
+            .next()
+            .await
+            .expect("the stream yields the terminal Err rather than ending silently");
+        let error = match event {
+            Ok(CompletionEvent::Delta(_)) => {
+                panic!("a newline-free body carries no complete NDJSON line")
+            }
+            Ok(CompletionEvent::Done(_)) => {
+                panic!("a newline-free body must never reach a done line")
+            }
+            Err(received) => received,
+        };
+
+        let message = error.to_string();
+        assert!(
+            message.contains("1048576"),
+            "the error should name the byte limit that was exceeded, got: {message}"
+        );
+        assert!(
+            stream.next().await.is_none(),
+            "nothing follows the terminal Err"
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_survives_past_the_whole_request_timeout_as_long_as_tokens_keep_arriving() {
+        use tokio_stream::StreamExt;
+
+        // Each gap between sends is well under the configured timeout, but
+        // the *total* wall time across the whole response exceeds it. A
+        // client built with `.timeout(request_timeout_secs)` (a deadline on
+        // the entire request) would be cut dead partway through; a client
+        // built with `.read_timeout(request_timeout_secs)` bounds only the
+        // silence between reads and lets a still-healthy stream keep going.
+        let router = axum::Router::new().route(
+            "/api/generate",
+            axum::routing::post(|| async {
+                let (tx, rx) = tokio::sync::mpsc::channel::<std::io::Result<axum::body::Bytes>>(4);
+                tokio::spawn(async move {
+                    let lines = [
+                        "{\"response\":\"H\",\"done\":false}\n",
+                        "{\"response\":\"e\",\"done\":false}\n",
+                        "{\"response\":\"l\",\"done\":false}\n",
+                        "{\"response\":\"l\",\"done\":false}\n",
+                        "{\"response\":\"o\",\"done\":false}\n",
+                        "{\"response\":\"!\",\"done\":false}\n",
+                        "{\"response\":\"\",\"done\":true,\"prompt_eval_count\":1,\"eval_count\":2}\n",
+                    ];
+                    for line in lines {
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        if tx
+                            .send(Ok(axum::body::Bytes::from_static(line.as_bytes())))
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                });
+                axum::body::Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx))
+            }),
+        );
+        let endpoint = spawn_stub(router).await;
+        let mut config = config_for(&endpoint);
+        // Total wall time (7 * 250ms = 1.75s) comfortably exceeds this,
+        // while every individual gap (250ms) stays a 4x margin under it —
+        // wide enough to survive scheduling jitter under full-suite load.
+        config.request_timeout_secs = 1;
+        let engine = OllamaEngine::new(&config).expect("build the engine");
+
+        let mut stream = engine
+            .complete_stream(CompletionRequest {
+                prompt: "hi".to_owned(),
+                ..CompletionRequest::default()
+            })
+            .await
+            .expect("the stub responds successfully");
+
+        let mut deltas = Vec::new();
+        let mut summary = None;
+        while let Some(event) = stream.next().await {
+            match event.expect(
+                "a stream with steady token arrivals must not be cut by the whole-request timeout",
+            ) {
+                CompletionEvent::Delta(text) => deltas.push(text),
+                CompletionEvent::Done(done) => summary = Some(done),
+            }
+        }
+
+        assert_eq!(deltas.concat(), "Hello!");
+        assert!(
+            summary.is_some(),
+            "the stream must reach Done despite exceeding request_timeout_secs in total"
         );
     }
 }

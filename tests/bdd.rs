@@ -57,6 +57,18 @@ fn wasm_manifest(world: &mut BddWorld) {
     world.temporary = Some(tempfile::tempdir().expect("create scenario directory"));
 }
 
+#[given("the example wasm library manifest")]
+fn wasm_library_manifest(world: &mut BddWorld) {
+    world.manifest = Some(
+        workspace_root()
+            .join("features")
+            .join("fixtures")
+            .join("wasm-library")
+            .join("hologram.json"),
+    );
+    world.temporary = Some(tempfile::tempdir().expect("create scenario directory"));
+}
+
 #[given("a Wasm application with a custom manifest entrypoint")]
 fn wasm_manifest_with_custom_entry(world: &mut BddWorld) {
     let temporary = tempfile::tempdir().expect("create scenario directory");
@@ -476,6 +488,19 @@ fn direct_plan_reports_unavailable_view_surface(world: &mut BddWorld) {
             && blocker["error_code"] == "LIVE_CAPABILITY_MISSING"));
 }
 
+#[then("the direct plan reports the archive is a library")]
+fn direct_plan_reports_library_archive(world: &mut BddWorld) {
+    let plan = world.plan_result.as_ref().expect("plan result");
+    assert_eq!(plan["execution_target"], "direct");
+    assert_eq!(plan["runnable"], false);
+    assert!(plan["primary_layer"].is_null());
+    assert_eq!(plan["layers"][0]["provider"]["status"], "available");
+    let blockers = plan["blockers"].as_array().expect("blockers");
+    assert_eq!(blockers.len(), 1);
+    assert_eq!(blockers[0]["kind"], "library_archive");
+    assert_eq!(blockers[0]["error_code"], "LIVE_CAPABILITY_MISSING");
+}
+
 #[then("the component contract selects the bounded component provider")]
 fn component_plan_selects_bounded_provider(world: &mut BddWorld) {
     let plan = world.plan_result.as_ref().expect("plan result");
@@ -630,6 +655,35 @@ fn run_fails_authorization(world: &mut BddWorld) {
     let error: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("parse JSON error");
     assert_eq!(error["code"], "LIVE_AUTHORIZATION_DENIED");
+}
+
+#[when("I run the compiled library archive directly")]
+fn run_local_library_archive(world: &mut BddWorld) {
+    world.command_output = Some(
+        Command::new(env!("CARGO_BIN_EXE_hologram"))
+            .arg("--json")
+            .arg("run")
+            .arg(world.output_path.as_ref().expect("compiled archive"))
+            .env("HOME", home_path(world))
+            .output()
+            .expect("run local library archive"),
+    );
+}
+
+#[then("the run fails with a library-archive error")]
+fn run_fails_library_archive(world: &mut BddWorld) {
+    let output = world.command_output.as_ref().expect("run output");
+    assert!(!output.status.success(), "a library archive must not run");
+    let error: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("parse JSON error");
+    assert_eq!(error["code"], "LIVE_CAPABILITY_MISSING");
+    assert!(
+        error["message"]
+            .as_str()
+            .expect("error message")
+            .contains("library archive"),
+        "{error}"
+    );
 }
 
 #[when(expr = "I run the compiled archive with its development grant and input {string}")]

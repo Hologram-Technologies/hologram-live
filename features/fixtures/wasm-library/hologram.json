@@ -1,0 +1,12 @@
+{
+  "schema_version": 4,
+  "library": true,
+  "layers": [
+    {
+      "kind": "wasm",
+      "path": "transform.wat",
+      "entry": "holo_run",
+      "contract": "hologram:guest/core-wasm@1"
+    }
+  ]
+}

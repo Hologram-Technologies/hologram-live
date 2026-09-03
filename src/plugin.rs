@@ -767,20 +767,40 @@ mod tests {
 
     /// Unit tests drive the dev-only example binary; build it on demand so a
     /// bare `cargo test` run works without a prior `cargo build --examples`.
+    ///
+    /// The build is gated behind a `OnceLock` rather than just a plain
+    /// `!binary.exists()` check. Rust runs tests in this file on multiple
+    /// threads within one process, and several tests call this helper. On a
+    /// cold `target/` directory, a bare existence check lets every caller
+    /// observe "missing" at the same instant and each spawn its own `cargo
+    /// build` subprocess; those processes then serialize on cargo's
+    /// target-directory lock, so slower ones can block for an unbounded time
+    /// before their test even starts, which is enough to blow through
+    /// downstream bounded waits (e.g. sockets that only get ~5s to appear).
+    /// `OnceLock` ensures exactly one thread performs the build — every other
+    /// caller blocks on `get_or_init` and reuses its result — so there is
+    /// only ever one `cargo build` invocation per test process. Do not
+    /// replace this with a simple existence check; that reintroduces the
+    /// race.
     fn example_plugin_path() -> PathBuf {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let target =
-            std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from);
-        let binary = target.join("debug/examples/echo-plugin");
-        if !binary.exists() {
-            let status = std::process::Command::new(env!("CARGO"))
-                .args(["build", "--locked", "--example", "echo-plugin"])
-                .current_dir(root)
-                .status()
-                .expect("build the echo-plugin example");
-            assert!(status.success(), "building the echo-plugin example failed");
-        }
-        binary
+        static BINARY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        BINARY
+            .get_or_init(|| {
+                let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+                let target = std::env::var_os("CARGO_TARGET_DIR")
+                    .map_or_else(|| root.join("target"), PathBuf::from);
+                let binary = target.join("debug/examples/echo-plugin");
+                if !binary.exists() {
+                    let status = std::process::Command::new(env!("CARGO"))
+                        .args(["build", "--locked", "--example", "echo-plugin"])
+                        .current_dir(root)
+                        .status()
+                        .expect("build the echo-plugin example");
+                    assert!(status.success(), "building the echo-plugin example failed");
+                }
+                binary
+            })
+            .clone()
     }
 
     /// UDS paths are length-limited (104 bytes on macOS), so keep test state

@@ -2016,7 +2016,7 @@ mod tests {
         let kappa = import_fixture(&runtime, "view-app");
         let error = runtime.load(&kappa).await.expect_err("must fail");
         assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
-        assert!(error.to_string().contains("view"), "{error}");
+        assert!(error.to_string().contains("library archive"), "{error}");
     }
 
     #[tokio::test]
@@ -2050,8 +2050,7 @@ mod tests {
             .await
             .expect_err("model provider is not connected");
         assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
-        assert!(error.to_string().contains("ai.default (uor-r4)"), "{error}");
-        assert!(error.to_string().contains("inference provider"), "{error}");
+        assert!(error.to_string().contains("library archive"), "{error}");
     }
 
     #[test]

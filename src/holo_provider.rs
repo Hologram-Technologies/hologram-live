@@ -503,8 +503,8 @@ pub(crate) async fn prepare_and_start_with_admitted_grants(
     admitted_grants: &HashMap<usize, EffectiveGrant>,
 ) -> Result<RunningApplication> {
     let primary_layer = plan.primary_layer.ok_or_else(|| {
-        LiveError::Capability(format!(
-            "application {} has no primary exit-bearing layer",
+        LiveError::Conflict(format!(
+            "runtime received application {} with no primary layer; the planner must reject library archives before preparation",
             plan.identity.application_kappa
         ))
     })?;

@@ -1,12 +1,17 @@
-//! Ollama-compatible HTTP API (non-streaming subset).
+//! Ollama-compatible HTTP API.
 //!
 //! A thin translation layer over the Phase-1 inference core, mirroring
-//! `openai_compat`. Token streaming is not supported; `stream: true` is
-//! rejected with a 400 in Ollama's plain `{"error": "..."}` envelope.
+//! `openai_compat`. Ollama's own API *defaults* to `stream: true`, so
+//! `/api/generate` and `/api/chat` stream NDJSON lines (one JSON object per
+//! `\n`-terminated line) rather than rejecting it; the `x-hologram-stream`
+//! response header discloses whether deltas were real or emulated.
 
 use crate::app::AppState;
 use crate::error::LiveError;
-use crate::inference::{CompletionRequest, InferenceEngine};
+use crate::inference::{
+    CompletionEvent, CompletionRequest, CompletionStream, CompletionSummary, InferenceEngine,
+    StreamKind,
+};
 use crate::models::{ModelCatalog, ModelInfo};
 use crate::module::{LiveModule, ModuleDescriptor};
 use axum::extract::State;
@@ -93,6 +98,11 @@ pub struct GenerateResponse {
     pub created_at: String,
     pub response: String,
     pub done: bool,
+    /// Omitted unless the engine measured both halves (D3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_eval_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_count: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -101,6 +111,30 @@ pub struct ChatResponse {
     pub created_at: String,
     pub message: OllamaMessage,
     pub done: bool,
+    /// Omitted unless the engine measured both halves (D3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_eval_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_count: Option<u64>,
+}
+
+/// One NDJSON line. `/api/generate` carries `response`; `/api/chat` carries
+/// `message`. Exactly one is present per line.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StreamLine {
+    pub model: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<OllamaMessage>,
+    pub done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub done_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_eval_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_count: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -210,6 +244,7 @@ impl IntoResponse for OllamaError {
         OllamaMessage,
         GenerateResponse,
         ChatResponse,
+        StreamLine,
         TagsResponse,
         TagModel,
         ShowRequest,
@@ -217,7 +252,7 @@ impl IntoResponse for OllamaError {
         ModelDetails,
         OllamaErrorBody
     )),
-    tags((name = "ollama-compat", description = "Ollama-compatible API (non-streaming)"))
+    tags((name = "ollama-compat", description = "Ollama-compatible API"))
 )]
 struct OllamaApiDoc;
 
@@ -226,21 +261,52 @@ struct OllamaApiDoc;
     path = "/api/generate",
     request_body = GenerateRequest,
     responses(
-        (status = 200, body = GenerateResponse),
-        (status = 400, body = OllamaErrorBody),
+        (status = 200, description = "`stream` omitted or `false` returns one JSON `GenerateResponse`. `stream: true` returns `application/x-ndjson` — one `\\n`-terminated `StreamLine` object per line, the last carrying `done: true`. A mid-stream engine failure is reported as one `{\"error\": \"...\"}` NDJSON line, since the status is already 200 by the time streaming starts.", content(
+            (GenerateResponse = "application/json"),
+            (StreamLine = "application/x-ndjson")
+        ), headers(
+            ("x-hologram-stream" = String, description = "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses.")
+        )),
+        (status = 400, description = "Malformed request or an engine configuration error.", body = OllamaErrorBody),
         (status = 404, body = OllamaErrorBody)
     )
 )]
 pub async fn generate(
     State(state): State<AppState>,
     Json(request): Json<GenerateRequest>,
-) -> Result<Json<GenerateResponse>, OllamaError> {
+) -> Result<Response, OllamaError> {
     let engine = state.chat().engine().clone();
     let catalog = state.models().clone();
     let default_model = state.config().inference.default_model.clone();
-    Ok(Json(
-        generate_core(engine, catalog, &default_model, request).await?,
-    ))
+    dispatch_generate(engine, catalog, &default_model, request).await
+}
+
+/// Chooses the streaming or buffered path for `/api/generate`, kept free of
+/// `AppState` so unit tests can drive it with a bare engine and catalog.
+/// Deleting the `stream == Some(true)` branch here silently reverts the
+/// endpoint to buffered-only while every other test stays green, which is
+/// why this dispatch is exercised directly rather than only through
+/// `generate_core`/`stream_generate`.
+async fn dispatch_generate(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: GenerateRequest,
+) -> Result<Response, OllamaError> {
+    if request.stream == Some(true) {
+        return stream_generate(engine, catalog, default_model, request).await;
+    }
+    // Captured before `generate_core` consumes `engine`: the header must
+    // name the engine that served the request regardless of mode, matching
+    // the streaming path's `x-hologram-stream` marker (README.md).
+    let kind = engine.stream_kind();
+    let response = generate_core(engine, catalog, default_model, request).await?;
+    let mut response = Json(response).into_response();
+    response.headers_mut().insert(
+        "x-hologram-stream",
+        axum::http::HeaderValue::from_static(kind.header_value()),
+    );
+    Ok(response)
 }
 
 #[utoipa::path(
@@ -248,21 +314,52 @@ pub async fn generate(
     path = "/api/chat",
     request_body = ChatRequest,
     responses(
-        (status = 200, body = ChatResponse),
-        (status = 400, body = OllamaErrorBody),
+        (status = 200, description = "`stream` omitted or `false` returns one JSON `ChatResponse`. `stream: true` returns `application/x-ndjson` — one `\\n`-terminated `StreamLine` object per line, the last carrying `done: true`. A mid-stream engine failure is reported as one `{\"error\": \"...\"}` NDJSON line, since the status is already 200 by the time streaming starts.", content(
+            (ChatResponse = "application/json"),
+            (StreamLine = "application/x-ndjson")
+        ), headers(
+            ("x-hologram-stream" = String, description = "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses.")
+        )),
+        (status = 400, description = "Empty `messages`, malformed request, or an engine configuration error.", body = OllamaErrorBody),
         (status = 404, body = OllamaErrorBody)
     )
 )]
 pub async fn chat(
     State(state): State<AppState>,
     Json(request): Json<ChatRequest>,
-) -> Result<Json<ChatResponse>, OllamaError> {
+) -> Result<Response, OllamaError> {
     let engine = state.chat().engine().clone();
     let catalog = state.models().clone();
     let default_model = state.config().inference.default_model.clone();
-    Ok(Json(
-        chat_core(engine, catalog, &default_model, request).await?,
-    ))
+    dispatch_chat(engine, catalog, &default_model, request).await
+}
+
+/// Chooses the streaming or buffered path for `/api/chat`, kept free of
+/// `AppState` so unit tests can drive it with a bare engine and catalog.
+/// Deleting the `stream == Some(true)` branch here silently reverts the
+/// endpoint to buffered-only while every other test stays green, which is
+/// why this dispatch is exercised directly rather than only through
+/// `chat_core`/`stream_chat`.
+async fn dispatch_chat(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: ChatRequest,
+) -> Result<Response, OllamaError> {
+    if request.stream == Some(true) {
+        return stream_chat(engine, catalog, default_model, request).await;
+    }
+    // Captured before `chat_core` consumes `engine`: the header must name
+    // the engine that served the request regardless of mode, matching the
+    // streaming path's `x-hologram-stream` marker (README.md).
+    let kind = engine.stream_kind();
+    let response = chat_core(engine, catalog, default_model, request).await?;
+    let mut response = Json(response).into_response();
+    response.headers_mut().insert(
+        "x-hologram-stream",
+        axum::http::HeaderValue::from_static(kind.header_value()),
+    );
+    Ok(response)
 }
 
 /// Core request mappings, kept free of `AppState` so unit tests can drive
@@ -279,15 +376,8 @@ async fn generate_core(
         ));
     }
     let model = resolve_model(&engine, &catalog, default_model, &request.model).await?;
-    let options = request.options.unwrap_or_default();
     let completion = engine
-        .complete(CompletionRequest {
-            prompt: request.prompt,
-            max_tokens: options.num_predict,
-            temperature: options.temperature,
-            seed: options.seed,
-            session_key: None,
-        })
+        .complete(completion_request(request.prompt, request.options))
         .await
         .map_err(OllamaError::from)?;
     Ok(GenerateResponse {
@@ -295,6 +385,8 @@ async fn generate_core(
         created_at: rfc3339_now(),
         response: completion.text,
         done: true,
+        prompt_eval_count: completion.usage.map(|usage| usage.prompt_tokens),
+        eval_count: completion.usage.map(|usage| usage.completion_tokens),
     })
 }
 
@@ -313,15 +405,11 @@ async fn chat_core(
         return Err(OllamaError::bad_request("messages must not be empty"));
     }
     let model = resolve_model(&engine, &catalog, default_model, &request.model).await?;
-    let options = request.options.unwrap_or_default();
     let completion = engine
-        .complete(CompletionRequest {
-            prompt: render_prompt(&request.messages),
-            max_tokens: options.num_predict,
-            temperature: options.temperature,
-            seed: options.seed,
-            session_key: None,
-        })
+        .complete(completion_request(
+            render_prompt(&request.messages),
+            request.options,
+        ))
         .await
         .map_err(OllamaError::from)?;
     Ok(ChatResponse {
@@ -332,7 +420,165 @@ async fn chat_core(
             content: completion.text,
         },
         done: true,
+        prompt_eval_count: completion.usage.map(|usage| usage.prompt_tokens),
+        eval_count: completion.usage.map(|usage| usage.completion_tokens),
     })
+}
+
+/// Builds a `CompletionRequest` from Ollama's `options` object. Shared by the
+/// buffered and streaming paths of both `generate` and `chat` so they cannot
+/// drift on how `num_predict`/`temperature`/`seed` map onto the engine call.
+fn completion_request(prompt: String, options: Option<OllamaOptions>) -> CompletionRequest {
+    let options = options.unwrap_or_default();
+    CompletionRequest {
+        prompt,
+        max_tokens: options.num_predict,
+        temperature: options.temperature,
+        seed: options.seed,
+        session_key: None,
+    }
+}
+
+/// Streaming half of `generate`, kept free of `AppState` so tests can drive
+/// it with a bare engine and catalog. Validates the model and starts the
+/// engine's stream *before* returning a response: once a body is returned,
+/// the 200 is already committed, so an unknown model must fail here rather
+/// than mid-stream.
+async fn stream_generate(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: GenerateRequest,
+) -> Result<Response, OllamaError> {
+    let model = resolve_model(&engine, &catalog, default_model, &request.model).await?;
+    let kind = engine.stream_kind();
+    let events = engine
+        .complete_stream(completion_request(request.prompt, request.options))
+        .await
+        .map_err(OllamaError::from)?;
+    Ok(ndjson_response(kind, model, events, LineShape::Response))
+}
+
+/// Streaming half of `chat`, mirroring `stream_generate`.
+async fn stream_chat(
+    engine: Arc<dyn InferenceEngine>,
+    catalog: Arc<ModelCatalog>,
+    default_model: &str,
+    request: ChatRequest,
+) -> Result<Response, OllamaError> {
+    if request.messages.is_empty() {
+        return Err(OllamaError::bad_request("messages must not be empty"));
+    }
+    let model = resolve_model(&engine, &catalog, default_model, &request.model).await?;
+    let kind = engine.stream_kind();
+    let events = engine
+        .complete_stream(completion_request(
+            render_prompt(&request.messages),
+            request.options,
+        ))
+        .await
+        .map_err(OllamaError::from)?;
+    Ok(ndjson_response(kind, model, events, LineShape::Message))
+}
+
+/// Which field carries the text: `/api/generate` uses `response`,
+/// `/api/chat` uses `message`.
+#[derive(Debug, Clone, Copy)]
+enum LineShape {
+    Response,
+    Message,
+}
+
+/// Drives `events` to completion on a background task, emitting one
+/// `\n`-terminated NDJSON line per item on `sender`, and wraps the receiving
+/// half as the streamed response body.
+fn ndjson_response(
+    kind: StreamKind,
+    model: String,
+    events: CompletionStream,
+    shape: LineShape,
+) -> Response {
+    let (sender, receiver) =
+        tokio::sync::mpsc::channel::<Result<String, std::convert::Infallible>>(16);
+
+    tokio::spawn(async move {
+        use tokio_stream::StreamExt;
+
+        let line = |text: Option<String>, done: bool, summary: Option<CompletionSummary>| {
+            let (response, message) = match (shape, text) {
+                (_, None) => (None, None),
+                (LineShape::Response, Some(text)) => (Some(text), None),
+                (LineShape::Message, Some(text)) => (
+                    None,
+                    Some(OllamaMessage {
+                        role: "assistant".to_owned(),
+                        content: text,
+                    }),
+                ),
+            };
+            let usage = summary.as_ref().and_then(|summary| summary.usage);
+            let value = StreamLine {
+                model: model.clone(),
+                created_at: rfc3339_now(),
+                response,
+                message,
+                done,
+                done_reason: done.then(|| "stop".to_owned()),
+                prompt_eval_count: usage.map(|usage| usage.prompt_tokens),
+                eval_count: usage.map(|usage| usage.completion_tokens),
+            };
+            format!("{}\n", serde_json::to_string(&value).unwrap_or_default())
+        };
+
+        // `.send().await` applies backpressure; `try_send` would error (and
+        // read as a disconnect) the moment a slow client let the 16-slot
+        // channel fill, silently truncating the stream.
+        let mut events = events;
+        let mut summary = None;
+        while let Some(event) = events.next().await {
+            match event {
+                Ok(CompletionEvent::Delta(text)) => {
+                    if sender.send(Ok(line(Some(text), false, None))).await.is_err() {
+                        return;
+                    }
+                }
+                Ok(CompletionEvent::Done(done)) => {
+                    // The engine contract promises `Done` is terminal, but an
+                    // engine that kept yielding afterward would otherwise
+                    // hang the client with no second terminal line. Breaking
+                    // here enforces "exactly one `Done`, then the stream
+                    // ends" rather than trusting it.
+                    summary = Some(done);
+                    break;
+                }
+                Err(error) => {
+                    // Status is already 200, so in-band is the only honest
+                    // way to report this (§4). Return rather than fall
+                    // through to the terminal `done: true` line below: doing
+                    // so would claim a clean completion that did not happen.
+                    let envelope = OllamaErrorBody {
+                        error: error.to_string(),
+                    };
+                    let encoded = serde_json::to_string(&envelope).unwrap_or_default();
+                    let _ = sender.send(Ok(format!("{encoded}\n"))).await;
+                    return;
+                }
+            }
+        }
+        let _ = sender.send(Ok(line(None, true, summary))).await;
+    });
+
+    let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
+    let mut response = axum::body::Body::from_stream(stream).into_response();
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/x-ndjson"),
+    );
+    response.headers_mut().insert(
+        "x-hologram-stream",
+        axum::http::HeaderValue::from_static(kind.header_value()),
+    );
+    response
 }
 
 #[utoipa::path(
@@ -529,7 +775,41 @@ mod tests {
                 model: "mirror".to_owned(),
                 tokens_per_second: None,
                 elapsed_millis: 0,
+                usage: None,
             })
+        }
+
+        async fn list_models(&self) -> crate::error::Result<Vec<ModelInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Streams one delta, then fails. Only a native engine can fail this way;
+    /// buffered engines resolve `complete()` before the stream exists.
+    struct HalfwayFailingEngine;
+
+    #[tonic::async_trait]
+    impl InferenceEngine for HalfwayFailingEngine {
+        fn name(&self) -> &'static str {
+            "halfway-failing"
+        }
+
+        fn stream_kind(&self) -> StreamKind {
+            StreamKind::Native
+        }
+
+        async fn complete(&self, _request: CompletionRequest) -> crate::error::Result<Completion> {
+            Err(LiveError::Transport("this fixture only streams".to_owned()))
+        }
+
+        async fn complete_stream(
+            &self,
+            _request: CompletionRequest,
+        ) -> crate::error::Result<CompletionStream> {
+            Ok(Box::pin(tokio_stream::iter(vec![
+                Ok(CompletionEvent::Delta("Hel".to_owned())),
+                Err(LiveError::Transport("the engine vanished".to_owned())),
+            ])))
         }
 
         async fn list_models(&self) -> crate::error::Result<Vec<ModelInfo>> {
@@ -596,41 +876,365 @@ mod tests {
         assert!(response.done);
     }
 
+    /// Reads a streamed NDJSON response body and parses each
+    /// `\n`-terminated line as JSON, in arrival order. Parsed JSON (rather
+    /// than substring search) is what lets a test prove a field's *absence*
+    /// and inspect a line's position within the stream.
+    async fn ndjson_lines(response: Response) -> Vec<serde_json::Value> {
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("read the streamed body");
+        let body = String::from_utf8(bytes.to_vec()).expect("utf-8");
+        body.lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                serde_json::from_str(line)
+                    .unwrap_or_else(|error| panic!("line is valid JSON ({error}): {line}"))
+            })
+            .collect()
+    }
+
+    /// Was `stream_true_is_rejected`. Ollama's own API defaults to
+    /// stream: true, so rejecting it broke that ecosystem's default path.
     #[tokio::test]
-    async fn stream_true_is_rejected() {
-        let state_fixture = fixture();
-        let mut request = generate_request("", "hello");
-        request.stream = Some(true);
-        let error = generate_core(
+    async fn generate_streams_ndjson_lines_and_marks_emulation() {
+        let fixture = fixture();
+        let response = stream_generate(
             Arc::new(crate::inference::EchoEngine),
-            state_fixture.catalog.clone(),
+            fixture.catalog.clone(),
+            "echo",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "Hello".to_owned(),
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let lines = ndjson_lines(response).await;
+        assert_eq!(
+            lines.len(),
+            2,
+            "one delta line, then one terminal line: {lines:?}"
+        );
+
+        // Positional, not "somewhere in the body": index 0 must be the
+        // delta, and the last index must be the terminal line.
+        assert_eq!(lines[0]["response"], serde_json::json!("Hello"));
+        assert_eq!(lines[0]["done"], serde_json::json!(false));
+        assert!(
+            lines[0].get("message").is_none(),
+            "generate lines never carry a chat message: {:?}",
+            lines[0]
+        );
+
+        let terminal = lines.last().expect("a terminal line");
+        assert_eq!(terminal["done"], serde_json::json!(true));
+        assert_eq!(terminal["done_reason"], serde_json::json!("stop"));
+        assert!(
+            terminal.get("response").is_none(),
+            "the terminal line carries no further text: {terminal:?}"
+        );
+        assert!(
+            terminal.get("prompt_eval_count").is_none(),
+            "echo measures nothing, so counts are absent rather than zero: {terminal:?}"
+        );
+        assert!(terminal.get("eval_count").is_none());
+    }
+
+    /// Mirrors the generate test above, but for `/api/chat`: the text lands
+    /// in `message: {role, content}` rather than `response`.
+    #[tokio::test]
+    async fn chat_streams_ndjson_lines_and_marks_emulation() {
+        let fixture = fixture();
+        let response = stream_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            ChatRequest {
+                model: String::new(),
+                messages: vec![OllamaMessage {
+                    role: "user".to_owned(),
+                    content: "Hello".to_owned(),
+                }],
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let lines = ndjson_lines(response).await;
+        assert_eq!(
+            lines.len(),
+            2,
+            "one delta line, then one terminal line: {lines:?}"
+        );
+
+        assert_eq!(lines[0]["message"]["role"], serde_json::json!("assistant"));
+        assert_eq!(lines[0]["message"]["content"], serde_json::json!("Hello"));
+        assert_eq!(lines[0]["done"], serde_json::json!(false));
+        assert!(
+            lines[0].get("response").is_none(),
+            "chat lines never carry the generate-shaped response field: {:?}",
+            lines[0]
+        );
+
+        let terminal = lines.last().expect("a terminal line");
+        assert_eq!(terminal["done"], serde_json::json!(true));
+        assert_eq!(terminal["done_reason"], serde_json::json!("stop"));
+        assert!(terminal.get("message").is_none());
+    }
+
+    /// Proves both that a native engine's mid-stream failure is reported
+    /// in-band on `/api/generate` (§4: the status is already 200, so this is
+    /// the only honest way to report it) and that `x-hologram-stream` is
+    /// genuinely derived from `stream_kind()` rather than hardcoded — every
+    /// other fixture in this module is `Buffered`, so a hardcoded "emulated"
+    /// would pass every other assertion in this file.
+    #[tokio::test]
+    async fn generate_mid_stream_failure_is_reported_in_band_and_marked_native() {
+        let fixture = fixture();
+        let response = stream_generate(
+            Arc::new(HalfwayFailingEngine),
+            fixture.catalog.clone(),
             "",
-            request,
+            GenerateRequest {
+                model: String::new(),
+                prompt: "Hello".to_owned(),
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the stream opens before the failure occurs");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "native"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let lines = ndjson_lines(response).await;
+        assert_eq!(
+            lines.len(),
+            2,
+            "one delta line, then one error line: {lines:?}"
+        );
+
+        assert_eq!(lines[0]["response"], serde_json::json!("Hel"));
+        assert_eq!(lines[0]["done"], serde_json::json!(false));
+
+        let last = lines.last().expect("a final line");
+        assert!(
+            last.get("error").is_some(),
+            "the failure is reported in-band as an error line: {last:?}"
+        );
+
+        // Proves absence, not just that some other line is present: a
+        // failed stream must never claim `done: true` anywhere in the body
+        // — that would let a swallowed error masquerade as a clean finish.
+        assert!(
+            lines.iter().all(|line| line["done"] != serde_json::json!(true)),
+            "no line may claim done: true after a mid-stream failure: {lines:?}"
+        );
+    }
+
+    /// Mirrors the generate test above, but for `/api/chat` — the NDJSON
+    /// streaming path distinct from the SSE `stream_chat` in
+    /// `openai_compat.rs`.
+    #[tokio::test]
+    async fn chat_mid_stream_failure_is_reported_in_band_and_marked_native() {
+        let fixture = fixture();
+        let response = stream_chat(
+            Arc::new(HalfwayFailingEngine),
+            fixture.catalog.clone(),
+            "",
+            ChatRequest {
+                model: String::new(),
+                messages: vec![OllamaMessage {
+                    role: "user".to_owned(),
+                    content: "Hello".to_owned(),
+                }],
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the stream opens before the failure occurs");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is always present")
+                .to_str()
+                .expect("ascii"),
+            "native"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let lines = ndjson_lines(response).await;
+        assert_eq!(
+            lines.len(),
+            2,
+            "one delta line, then one error line: {lines:?}"
+        );
+
+        assert_eq!(lines[0]["message"]["content"], serde_json::json!("Hel"));
+        assert_eq!(lines[0]["done"], serde_json::json!(false));
+
+        let last = lines.last().expect("a final line");
+        assert!(
+            last.get("error").is_some(),
+            "the failure is reported in-band as an error line: {last:?}"
+        );
+
+        assert!(
+            lines.iter().all(|line| line["done"] != serde_json::json!(true)),
+            "no line may claim done: true after a mid-stream failure: {lines:?}"
+        );
+    }
+
+    /// `stream_chat` rejects empty messages before touching the engine at
+    /// all, same as the non-streaming path.
+    #[tokio::test]
+    async fn stream_chat_rejects_empty_messages() {
+        let fixture = fixture();
+        let error = stream_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            ChatRequest {
+                model: String::new(),
+                messages: Vec::new(),
+                stream: Some(true),
+                options: None,
+            },
         )
         .await
         .expect_err("must fail");
 
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
-        assert!(error.message.contains("streaming"));
+    }
 
-        let chat_request = ChatRequest {
-            model: String::new(),
-            messages: vec![OllamaMessage {
-                role: "user".to_owned(),
-                content: "hi".to_owned(),
-            }],
-            stream: Some(true),
-            options: None,
-        };
-        let error = chat_core(
-            Arc::new(crate::inference::EchoEngine),
-            state_fixture.catalog.clone(),
+    /// An unknown model must fail *before* a response is returned: a typed
+    /// 404, not a stream that opens and then fails in-band.
+    #[tokio::test]
+    async fn stream_generate_rejects_an_unknown_model_before_returning_a_body() {
+        let fixture = fixture();
+        let error = stream_generate(
+            Arc::new(MirrorEngine),
+            fixture.catalog.clone(),
             "",
-            chat_request,
+            GenerateRequest {
+                model: "ghost".to_owned(),
+                prompt: "hi".to_owned(),
+                stream: Some(true),
+                options: None,
+            },
         )
         .await
         .expect_err("must fail");
-        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+
+        assert_eq!(error.status, StatusCode::NOT_FOUND);
+    }
+
+    /// Reports fixed, distinct prompt/completion counts so a transposition
+    /// bug would fail this test even though both fields would still
+    /// serialize, and checks that they land specifically on the terminal
+    /// line rather than merely somewhere in the body.
+    #[tokio::test]
+    async fn streaming_reports_measured_counts_on_the_terminal_line() {
+        let fixture = fixture();
+        let response = stream_generate(
+            Arc::new(MeteredEngine),
+            fixture.catalog.clone(),
+            "",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "hello".to_owned(),
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the metered engine streams by emulation");
+
+        let lines = ndjson_lines(response).await;
+        let terminal = lines.last().expect("a terminal line");
+        assert_eq!(terminal["done"], serde_json::json!(true));
+        assert_eq!(terminal["prompt_eval_count"], serde_json::json!(11));
+        assert_eq!(terminal["eval_count"], serde_json::json!(22));
+
+        // Confirms the counts are absent from every non-terminal line.
+        for (index, line) in lines[..lines.len() - 1].iter().enumerate() {
+            assert!(
+                line.get("prompt_eval_count").is_none() && line.get("eval_count").is_none(),
+                "line {index} is not terminal and must carry no counts: {line:?}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -708,6 +1312,97 @@ mod tests {
         assert_eq!(json, serde_json::json!({"error": "missing"}));
     }
 
+    #[tokio::test]
+    async fn generate_omits_counts_when_the_engine_measures_none() {
+        let fixture = fixture();
+        let response = generate_core(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "Hello".to_owned(),
+                stream: Some(false),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        let encoded = serde_json::to_value(&response).expect("serialize");
+        assert!(encoded.get("eval_count").is_none());
+        assert!(encoded.get("prompt_eval_count").is_none());
+    }
+
+    /// Reports fixed, distinct usage so a prompt/completion transposition
+    /// bug (D3) would fail this test even though both fields would still
+    /// serialize.
+    struct MeteredEngine;
+
+    #[tonic::async_trait]
+    impl InferenceEngine for MeteredEngine {
+        fn name(&self) -> &'static str {
+            "metered"
+        }
+
+        async fn complete(&self, request: CompletionRequest) -> crate::error::Result<Completion> {
+            Ok(Completion {
+                text: request.prompt,
+                model: "metered".to_owned(),
+                tokens_per_second: None,
+                elapsed_millis: 0,
+                usage: Some(crate::inference::TokenUsage {
+                    prompt_tokens: 11,
+                    completion_tokens: 22,
+                }),
+            })
+        }
+
+        async fn list_models(&self) -> crate::error::Result<Vec<ModelInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_reports_measured_counts_with_the_ollama_field_names() {
+        let fixture = fixture();
+        let response = generate_core(
+            Arc::new(MeteredEngine),
+            fixture.catalog.clone(),
+            "",
+            generate_request("", "hello"),
+        )
+        .await
+        .expect("generate");
+
+        assert_eq!(response.prompt_eval_count, Some(11));
+        assert_eq!(response.eval_count, Some(22));
+    }
+
+    #[tokio::test]
+    async fn chat_reports_measured_counts_with_the_ollama_field_names() {
+        let fixture = fixture();
+        let request = ChatRequest {
+            model: String::new(),
+            messages: vec![OllamaMessage {
+                role: "user".to_owned(),
+                content: "ping".to_owned(),
+            }],
+            stream: Some(false),
+            options: None,
+        };
+        let response = chat_core(Arc::new(MeteredEngine), fixture.catalog.clone(), "", request)
+            .await
+            .expect("chat");
+
+        assert_eq!(response.prompt_eval_count, Some(11));
+        assert_eq!(response.eval_count, Some(22));
+
+        let encoded = serde_json::to_value(&response).expect("serialize");
+        assert_eq!(encoded["prompt_eval_count"], serde_json::json!(11));
+        assert_eq!(encoded["eval_count"], serde_json::json!(22));
+    }
+
     #[test]
     fn rfc3339_formats_known_timestamps() {
         assert_eq!(rfc3339_from_millis(0), "1970-01-01T00:00:00Z");
@@ -716,5 +1411,179 @@ mod tests {
             "2023-11-14T22:13:20Z"
         );
         assert_eq!(rfc3339_from_millis(951_782_400_000), "2000-02-29T00:00:00Z");
+    }
+
+    /// README.md and the `utoipa` annotations both promise `x-hologram-stream`
+    /// "on both streaming and non-streaming responses"; before this test (and
+    /// the corresponding fix) the header was only ever set on the NDJSON
+    /// streaming path.
+    #[tokio::test]
+    async fn non_streaming_generate_carries_the_stream_header() {
+        let fixture = fixture();
+        let response = dispatch_generate(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            generate_request("", "hello"),
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is present on non-streaming responses too")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+    }
+
+    /// Mirrors `non_streaming_generate_carries_the_stream_header` for
+    /// `/api/chat`.
+    #[tokio::test]
+    async fn non_streaming_chat_carries_the_stream_header() {
+        let fixture = fixture();
+        let request = ChatRequest {
+            model: String::new(),
+            messages: vec![OllamaMessage {
+                role: "user".to_owned(),
+                content: "ping".to_owned(),
+            }],
+            stream: Some(false),
+            options: None,
+        };
+        let response = dispatch_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            request,
+        )
+        .await
+        .expect("the echo engine always completes");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-hologram-stream")
+                .expect("the marker is present on non-streaming responses too")
+                .to_str()
+                .expect("ascii"),
+            "emulated"
+        );
+    }
+
+    /// Exercises the `stream == Some(true)` branch in `dispatch_generate`
+    /// directly (the code the public `generate` handler reduces to after
+    /// `AppState` extraction), since no test otherwise touches the handler
+    /// itself: deleting the branch would silently revert the endpoint to
+    /// buffered-only while every other test stayed green.
+    #[tokio::test]
+    async fn dispatch_generate_streams_or_not_based_on_the_request() {
+        let fixture = fixture();
+
+        let streaming_response = dispatch_generate(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "hello".to_owned(),
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+        assert_eq!(
+            streaming_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let buffered_response = dispatch_generate(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            GenerateRequest {
+                model: String::new(),
+                prompt: "hello".to_owned(),
+                stream: None,
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine always completes");
+        assert_eq!(
+            buffered_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/json"
+        );
+    }
+
+    /// Mirrors `dispatch_generate_streams_or_not_based_on_the_request` for
+    /// `/api/chat`.
+    #[tokio::test]
+    async fn dispatch_chat_streams_or_not_based_on_the_request() {
+        let fixture = fixture();
+        let message = OllamaMessage {
+            role: "user".to_owned(),
+            content: "hello".to_owned(),
+        };
+
+        let streaming_response = dispatch_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            ChatRequest {
+                model: String::new(),
+                messages: vec![message.clone()],
+                stream: Some(true),
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine streams by emulation");
+        assert_eq!(
+            streaming_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/x-ndjson"
+        );
+
+        let buffered_response = dispatch_chat(
+            Arc::new(crate::inference::EchoEngine),
+            fixture.catalog.clone(),
+            "echo",
+            ChatRequest {
+                model: String::new(),
+                messages: vec![message],
+                stream: None,
+                options: None,
+            },
+        )
+        .await
+        .expect("the echo engine always completes");
+        assert_eq!(
+            buffered_response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .expect("content type is set")
+                .to_str()
+                .expect("ascii"),
+            "application/json"
+        );
     }
 }

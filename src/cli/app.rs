@@ -221,6 +221,7 @@ fn initialize<R: BufRead, W: Write>(
 
     let specification = CompileManifest {
         schema_version: 4,
+        library: primary.is_none(),
         primary,
         requires,
         layers: std::mem::take(&mut layers),

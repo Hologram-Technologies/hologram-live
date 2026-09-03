@@ -710,8 +710,8 @@ fn application_requested_capabilities(
 fn application_primary_layer(plan: &ApplicationPlan, application_index: usize) -> Result<u32> {
     if application_index == 0 {
         return plan.primary_layer.ok_or_else(|| {
-            LiveError::Capability(format!(
-                "application {} has no primary exit-bearing layer",
+            LiveError::Conflict(format!(
+                "runtime received application {} with no primary layer; the planner must reject library archives before preparation",
                 plan.identity.application_kappa
             ))
         });

@@ -43,6 +43,7 @@ pub struct CompileManifest {
     pub schema_version: u16,
     #[serde(default)]
     pub primary: Option<u32>,
+    /// Must equal `primary.is_none()`; enforced by `validate_compile_manifest`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub library: bool,
     #[serde(default)]
@@ -1297,7 +1298,7 @@ mod tests {
 
         let error = compile_manifest(&manifest_path).expect_err("must reject");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
-        assert!(error.to_string().contains("library"), "{error}");
+        assert!(error.to_string().contains("remove"), "{error}");
     }
 
     #[test]
@@ -1321,7 +1322,7 @@ mod tests {
 
         let error = compile_manifest(&manifest_path).expect_err("must reject");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
-        assert!(error.to_string().contains("library"), "{error}");
+        assert!(error.to_string().contains("must declare"), "{error}");
     }
 
     #[test]

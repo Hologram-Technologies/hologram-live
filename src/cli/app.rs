@@ -872,6 +872,7 @@ mod tests {
         ));
         assert_eq!(manifest.layers[0].entry.as_deref(), Some("ai.default"));
         assert_eq!(manifest.layers[0].engine.as_deref(), Some("uor-r4"));
+        assert!(manifest.library);
     }
 
     #[test]

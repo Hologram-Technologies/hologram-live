@@ -124,9 +124,14 @@ pattern ARCHITECTURE.md already describes: "successful non-runnable reports with
 typed blockers".
 
 Because `explain_application` runs before `registry.evaluate(&mut report)` in both
-production callers, `library_archive` occupies `blockers[0]`. Since
-`into_application_plan()` converts the *first* blocker into the returned error,
-the specific reason wins over an incidental provider-availability one.
+production callers, `library_archive` always precedes any provider-availability
+blocker: it is pushed first, and blockers are appended, never inserted. For a
+well-formed library archive it therefore lands at `blockers[0]`; if resolution
+fails first (a malformed archive), that resolution blocker precedes it instead,
+which is correct — a malformed archive must be fixed regardless of the library
+question. Since `into_application_plan()` converts the *first* blocker into the
+returned error, the specific reason wins over an incidental provider-availability
+one whenever both are present.
 
 ### 4. Enforcement
 
@@ -162,7 +167,7 @@ indicates a bug, not user error, and the error type should say so.
 |---|---|
 | `library: true` with `primary` present | `LIVE_CONFIG_INVALID` at compile, before layers build |
 | `primary` absent without `library: true` | `LIVE_CONFIG_INVALID` at compile, before layers build |
-| `holo plan` on a library | HTTP 200, `runnable: false`, `primary_layer: null`, blocker kind `library_archive` at index 0 |
+| `holo plan` on a library | HTTP 200, `runnable: false`, `primary_layer: null`, blocker kind `library_archive` precedes any provider-availability blocker (index 0 for a well-formed archive) |
 | `hologram run` / `holo load` / `start_session` on a library | `LIVE_CAPABILITY_MISSING`, message naming the archive as a library |
 | Library composed as a `children` entry | Prepares, starts, never invoked — unchanged |
 | `compile` / `import` / `inspect` on a library | Unchanged |

@@ -36,6 +36,8 @@ Build an installable desktop bundle with:
 just desktop-build
 ```
 
+The desktop UI's colours, type, and marks derive from the [Hologram brand kit](https://github.com/Hologram-Technologies/hologram-brand-kit) at a pinned revision; `apps/desktop/BRANDING.md` explains how to update the brand everywhere in three steps.
+
 ### Standalone server
 
 ```bash

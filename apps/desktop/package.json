@@ -9,7 +9,8 @@
     "web:dev": "vite --port 1420",
     "web:build": "vite build",
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
-    "prepare:sidecar:release": "node scripts/prepare-sidecar.mjs --release"
+    "prepare:sidecar:release": "node scripts/prepare-sidecar.mjs --release",
+    "sync:brand": "node scripts/sync-brand.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import "./brand/fonts.css";
+import "./brand/theme.css";
 import "./styles.css";
+import logomarkBlack from "./brand/logomark-black.svg";
+import logomarkWhite from "./brand/logomark-white.svg";
+import wordmarkBlack from "./brand/wordmark-black.svg";
+import wordmarkWhite from "./brand/wordmark-white.svg";
 
 type Action = "service_start" | "service_stop" | "service_restart";
 type ServiceState = "ready" | "stopped" | "unknown";
@@ -179,13 +185,20 @@ function storedTheme(): Theme | null {
 function applyTheme(theme: Theme, remember = false) {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
+  // Brand-kit marks track the theme: white on the dark ground, black on paper.
+  const mark = theme === "light" ? logomarkBlack : logomarkWhite;
+  const wordmark = theme === "light" ? wordmarkBlack : wordmarkWhite;
+  document.querySelectorAll<HTMLImageElement>(".brand-mark").forEach((img) => { img.src = mark; });
+  document.querySelectorAll<HTMLImageElement>(".brand-wordmark").forEach((img) => { img.src = wordmark; });
   const nextTheme = theme === "light" ? "dark" : "light";
   const nextLabel = nextTheme === "dark" ? "Dark mode" : "Light mode";
   themeIcon.textContent = theme === "light" ? "☾" : "☀";
   themeLabel.textContent = nextLabel;
   themeToggle.setAttribute("aria-label", `Use ${nextLabel.toLowerCase()}`);
   themeToggle.title = `Use ${nextLabel.toLowerCase()}`;
-  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content = theme === "light" ? "#f6f7f9" : "#0b0d0f";
+  // The OS chrome colour follows the kit's canvas token rather than a literal.
+  const canvas = getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim();
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content = canvas || (theme === "light" ? "#f3f3ee" : "#151312");
   if (remember) {
     themePreference = theme;
     try {

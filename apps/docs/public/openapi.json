@@ -26,17 +26,30 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "`stream` omitted or `false` returns one JSON `ChatResponse`. `stream: true` returns `application/x-ndjson` — one `\\n`-terminated `StreamLine` object per line, the last carrying `done: true`. A mid-stream engine failure is reported as one `{\"error\": \"...\"}` NDJSON line, since the status is already 200 by the time streaming starts.",
+            "headers": {
+              "x-hologram-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses."
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChatResponse"
                 }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamLine"
+                }
               }
             }
           },
           "400": {
-            "description": "",
+            "description": "Empty `messages`, malformed request, or an engine configuration error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74,17 +87,30 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "`stream` omitted or `false` returns one JSON `GenerateResponse`. `stream: true` returns `application/x-ndjson` — one `\\n`-terminated `StreamLine` object per line, the last carrying `done: true`. A mid-stream engine failure is reported as one `{\"error\": \"...\"}` NDJSON line, since the status is already 200 by the time streaming starts.",
+            "headers": {
+              "x-hologram-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses."
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GenerateResponse"
                 }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamLine"
+                }
               }
             }
           },
           "400": {
-            "description": "",
+            "description": "Malformed request or an engine configuration error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -989,11 +1015,24 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "`stream` omitted or `false` returns one JSON `ChatCompletion`. `stream: true` returns `text/event-stream` of `ChatCompletionChunk` frames as `data: {...}` lines, terminated by `data: [DONE]`. A mid-stream engine failure is reported as one `data:` frame carrying `OpenAiErrorEnvelope`, still followed by `data: [DONE]`, since the status is already 200 by the time streaming starts.",
+            "headers": {
+              "x-hologram-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`native` when the engine produced deltas as it generated them, or `emulated` when the daemon completed the request first and replayed the result as deltas. Present on both streaming and non-streaming responses."
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChatCompletion"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCompletionChunk"
                 }
               }
             }
@@ -1193,8 +1232,7 @@
           "object",
           "created",
           "model",
-          "choices",
-          "usage"
+          "choices"
         ],
         "properties": {
           "choices": {
@@ -1218,7 +1256,56 @@
             "type": "string"
           },
           "usage": {
-            "$ref": "#/components/schemas/Usage"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Usage"
+              }
+            ]
+          }
+        }
+      },
+      "ChatCompletionChunk": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "created",
+          "model",
+          "choices"
+        ],
+        "properties": {
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChunkChoice"
+            }
+          },
+          "created": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "usage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Usage"
+              }
+            ]
           }
         }
       },
@@ -1258,6 +1345,16 @@
             "type": [
               "boolean",
               "null"
+            ]
+          },
+          "stream_options": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StreamOptions"
+              }
             ]
           },
           "temperature": {
@@ -1310,11 +1407,68 @@
           "done": {
             "type": "boolean"
           },
+          "eval_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
           "message": {
             "$ref": "#/components/schemas/OllamaMessage"
           },
           "model": {
             "type": "string"
+          },
+          "prompt_eval_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Omitted unless the engine measured both halves (D3).",
+            "minimum": 0
+          }
+        }
+      },
+      "ChunkChoice": {
+        "type": "object",
+        "required": [
+          "index",
+          "delta"
+        ],
+        "properties": {
+          "delta": {
+            "$ref": "#/components/schemas/ChunkDelta"
+          },
+          "finish_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ChunkDelta": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -1434,8 +1588,25 @@
           "done": {
             "type": "boolean"
           },
+          "eval_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
           "model": {
             "type": "string"
+          },
+          "prompt_eval_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Omitted unless the engine measured both halves (D3).",
+            "minimum": 0
           },
           "response": {
             "type": "string"
@@ -2485,6 +2656,73 @@
           }
         }
       },
+      "StreamLine": {
+        "type": "object",
+        "description": "One NDJSON line. `/api/generate` carries `response`; `/api/chat` carries\n`message`. Exactly one is present per line.",
+        "required": [
+          "model",
+          "created_at",
+          "done"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "done_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eval_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "message": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OllamaMessage"
+              }
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "prompt_eval_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "response": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "StreamOptions": {
+        "type": "object",
+        "properties": {
+          "include_usage": {
+            "type": "boolean",
+            "description": "Adds a usage-bearing chunk with empty `choices` before `[DONE]`. The\nonly standard way a streaming client can obtain counts."
+          }
+        }
+      },
       "TagModel": {
         "type": "object",
         "required": [
@@ -2530,29 +2768,25 @@
       },
       "Usage": {
         "type": "object",
-        "description": "The engine does not report token counts yet, so every field is null.",
+        "description": "Present only when the engine measured both halves (D3). Absence reads as\nnot-measured; `0` would assert a measurement no engine made.",
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens"
+        ],
         "properties": {
           "completion_tokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "format": "int64",
             "minimum": 0
           },
           "prompt_tokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "format": "int64",
             "minimum": 0
           },
           "total_tokens": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "format": "int64",
             "minimum": 0
           }
@@ -2599,11 +2833,11 @@
     },
     {
       "name": "ollama-compat",
-      "description": "Ollama-compatible API (non-streaming)"
+      "description": "Ollama-compatible API"
     },
     {
       "name": "openai-compat",
-      "description": "OpenAI-compatible API (non-streaming)"
+      "description": "OpenAI-compatible API"
     }
   ]
 }

@@ -16,3 +16,6 @@
 /examples/**/*.holo
 __pycache__/
 .claude/
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

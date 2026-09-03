@@ -39,7 +39,7 @@ This document is deliberately strict about what the current stable build does an
 - Conversation-backed chat over a configurable inference engine (`echo` by default; `weightc` one-shot CLI or an Ollama-compatible HTTP endpoint via `live.toml`), with independent, switchable threads in the desktop app.
 - Optional resident per-conversation weightc sessions (`resident_sessions = true`): a supervised `weightc enter --jsonl` process per conversation with KV continuity, LRU-capped and lazily respawned on failure.
 - Import, listing, and removal of `weightc` `.wcpu` model artifact directories.
-- Non-streaming OpenAI-compatible (`/v1/chat/completions`, `/v1/models`) and Ollama-compatible (`/api/generate`, `/api/chat`, `/api/tags`, `/api/show`) HTTP inference APIs.
+- OpenAI-compatible (`/v1/chat/completions`, `/v1/models`) and Ollama-compatible (`/api/generate`, `/api/chat`, `/api/tags`, `/api/show`) HTTP inference APIs, both streaming (SSE and NDJSON respectively) and non-streaming, with an `x-hologram-stream: native | emulated` response header and token usage reported when the engine measures it.
 - Minimal control-plane node inventory and heartbeat records.
 - Dynamic third-party modules as sha256-pinned, supervised subprocess plugins speaking gRPC over a Unix socket (`plugins list` / `plugins call`); plugins receive no host resource access in v1.
 - Digest-verified update/rollback foundation.
@@ -112,7 +112,6 @@ This document is deliberately strict about what the current stable build does an
   concurrency budgets across providers; Component v1 currently enforces its
   memory/time subset plus host-owned ceilings.
 - `.holo` execution for `tensor`, inference-model, and non-Python/resident `rootfs` layers.
-- Token streaming on the compatibility APIs.
 - Full enterprise users, OIDC/SAML, organizations, and RBAC policy storage.
 - Fleet scheduling.
 - Plugin host-resource capabilities, plugin HTTP routes, and microVM-isolated plugin execution.

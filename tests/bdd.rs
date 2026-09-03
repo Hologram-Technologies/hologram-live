@@ -635,17 +635,19 @@ fn run_local_archive(world: &mut BddWorld, input: String) {
     world.run_result = Some(serde_json::from_slice(&output.stdout).expect("parse run output"));
 }
 
+fn run_archive_directly(world: &BddWorld, context: &'static str) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .arg("--json")
+        .arg("run")
+        .arg(world.output_path.as_ref().expect("compiled archive"))
+        .env("HOME", home_path(world))
+        .output()
+        .expect(context)
+}
+
 #[when("I run the compiled archive without a development grant")]
 fn run_local_archive_without_grant(world: &mut BddWorld) {
-    world.command_output = Some(
-        Command::new(env!("CARGO_BIN_EXE_hologram"))
-            .arg("--json")
-            .arg("run")
-            .arg(world.output_path.as_ref().expect("compiled archive"))
-            .env("HOME", home_path(world))
-            .output()
-            .expect("run local archive"),
-    );
+    world.command_output = Some(run_archive_directly(world, "run local archive"));
 }
 
 #[then("the run fails with an authorization-denied error")]
@@ -659,15 +661,7 @@ fn run_fails_authorization(world: &mut BddWorld) {
 
 #[when("I run the compiled library archive directly")]
 fn run_local_library_archive(world: &mut BddWorld) {
-    world.command_output = Some(
-        Command::new(env!("CARGO_BIN_EXE_hologram"))
-            .arg("--json")
-            .arg("run")
-            .arg(world.output_path.as_ref().expect("compiled archive"))
-            .env("HOME", home_path(world))
-            .output()
-            .expect("run local library archive"),
-    );
+    world.command_output = Some(run_archive_directly(world, "run local library archive"));
 }
 
 #[then("the run fails with a library-archive error")]

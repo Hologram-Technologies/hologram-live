@@ -114,3 +114,13 @@ Feature: Resident .holo wasm execution
     When I run the archive with input "declared boot"
     Then the run output is "DECLARED BOOT"
     And I stop the local service
+
+  Scenario: a library archive plans but refuses to run
+    Given the example wasm library manifest
+    And a fresh Hologram home
+    When I compile the application
+    Then the compile command succeeds
+    When I plan the compiled archive directly
+    Then the direct plan reports the archive is a library
+    When I run the compiled library archive directly
+    Then the run fails with a library-archive error

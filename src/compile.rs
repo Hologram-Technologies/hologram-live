@@ -21,6 +21,17 @@ use std::path::{Path, PathBuf};
 
 const CURRENT_MANIFEST_SCHEMA_VERSION: u16 = 4;
 
+/// `skip_serializing_if` predicate: keep generated manifests free of
+/// `"library": false`, which is the default for every executable application.
+///
+/// Serde's `skip_serializing_if` calling convention always passes the field
+/// by reference, so the by-value signature clippy prefers is not available
+/// here.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// Source manifest accepted by `hologram compile`.
 ///
 /// Paths are resolved relative to the manifest file. The resulting archive is
@@ -32,6 +43,9 @@ pub struct CompileManifest {
     pub schema_version: u16,
     #[serde(default)]
     pub primary: Option<u32>,
+    /// Must equal `primary.is_none()`; enforced by `validate_compile_manifest`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub library: bool,
     #[serde(default)]
     pub requires: Option<PathBuf>,
     pub layers: Vec<CompileLayer>,
@@ -89,6 +103,7 @@ pub enum CompileSource {
     Python(PythonRootfsSource),
 }
 
+#[derive(Debug)]
 pub struct CompiledHolo {
     pub bytes: Vec<u8>,
     pub layer_count: usize,
@@ -318,6 +333,16 @@ pub fn validate_compile_manifest(specification: &CompileManifest) -> Result<()> 
             "unsupported compile manifest schema {}; expected {CURRENT_MANIFEST_SCHEMA_VERSION}",
             specification.schema_version
         )));
+    }
+    if specification.library != specification.primary.is_none() {
+        return Err(LiveError::Config(
+            if specification.library {
+                "a library manifest declares no primary layer; remove \"primary\" or remove \"library\""
+            } else {
+                "a manifest without a primary layer must declare \"library\": true"
+            }
+            .to_owned(),
+        ));
     }
     let mut layers = Vec::with_capacity(specification.layers.len());
     for source_layer in &specification.layers {
@@ -789,6 +814,7 @@ mod tests {
             directory.path().join("hologram.json"),
             r#"{
                 "schema_version": 4,
+                "library": true,
                 "layers": [{"kind":"view","path":"ui","surface":"portable"}]
             }"#,
         )
@@ -849,6 +875,7 @@ mod tests {
             &manifest_path,
             r#"{
                 "schema_version": 4,
+                "library": true,
                 "layers": [{"kind":"view","path":"index.html","surface":"portable"}]
             }"#,
         )
@@ -862,6 +889,7 @@ mod tests {
             &manifest_path,
             r#"{
                 "schema_version": 4,
+                "library": true,
                 "layers": [{"kind":"view","path":"ui","surface":"desktop"}]
             }"#,
         )
@@ -883,6 +911,7 @@ mod tests {
             &manifest_path,
             r#"{
                 "schema_version": 4,
+                "library": true,
                 "layers": [{"kind":"view","path":"ui","surface":"portable"}]
             }"#,
         )
@@ -1165,6 +1194,7 @@ mod tests {
             &manifest_path,
             r#"{
                 "schema_version": 4,
+                "library": true,
                 "layers": [{
                     "kind": "inference-model",
                     "path": "model.bundle",
@@ -1216,6 +1246,83 @@ mod tests {
         let error = validate_compile_manifest(&empty).expect_err("empty entry");
         assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
         assert!(error.to_string().contains("invalid entry"), "{error}");
+    }
+
+    #[test]
+    fn a_library_manifest_compiles_without_a_primary() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "library": true,
+                "layers": [{
+                    "kind": "wasm",
+                    "path": "app.wasm",
+                    "entry": "holo_run",
+                    "contract": "hologram:guest/core-wasm@1"
+                }]
+            }"#,
+        )
+        .expect("manifest");
+
+        let compiled = compile_manifest(&manifest_path).expect("compile library archive");
+        let inspection =
+            inspect_bytes("library", "library.holo", &compiled.bytes).expect("inspect");
+        let directory = inspection.directory.expect("application directory");
+        assert_eq!(directory.primary_layer, None);
+    }
+
+    #[test]
+    fn a_library_manifest_rejects_a_declared_primary() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "library": true,
+                "primary": 0,
+                "layers": [{
+                    "kind": "wasm",
+                    "path": "app.wasm",
+                    "entry": "holo_run",
+                    "contract": "hologram:guest/core-wasm@1"
+                }]
+            }"#,
+        )
+        .expect("manifest");
+
+        let error = compile_manifest(&manifest_path).expect_err("must reject");
+        assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
+        assert!(error.to_string().contains("remove"), "{error}");
+    }
+
+    #[test]
+    fn an_absent_primary_requires_the_library_marker() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("app.wasm"), b"wasm bytes").expect("wasm");
+        let manifest_path = directory.path().join("hologram.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+                "schema_version": 4,
+                "layers": [{
+                    "kind": "wasm",
+                    "path": "app.wasm",
+                    "entry": "holo_run",
+                    "contract": "hologram:guest/core-wasm@1"
+                }]
+            }"#,
+        )
+        .expect("manifest");
+
+        let error = compile_manifest(&manifest_path).expect_err("must reject");
+        assert_eq!(error.code(), "LIVE_CONFIG_INVALID");
+        assert!(error.to_string().contains("must declare"), "{error}");
     }
 
     #[test]
@@ -1463,6 +1570,7 @@ mod tests {
         let missing_engine: CompileManifest = serde_json::from_str(
             r#"{
                 "schema_version": 4,
+                "library": true,
                 "layers": [{
                     "kind": "inference-model",
                     "path": "model.bundle",
@@ -1477,6 +1585,7 @@ mod tests {
         let missing_entry: CompileManifest = serde_json::from_str(
             r#"{
                 "schema_version": 4,
+                "library": true,
                 "layers": [{
                     "kind": "inference-model",
                     "path": "model.bundle",

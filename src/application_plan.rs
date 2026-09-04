@@ -201,6 +201,9 @@ pub enum PlanBlocker {
     ExecutionShapeUnsupported {
         reason: String,
     },
+    /// The root manifest declares no primary layer: the archive is a library,
+    /// not an executable application.
+    LibraryArchive,
 }
 
 impl PlanBlocker {
@@ -214,6 +217,7 @@ impl PlanBlocker {
             Self::ChildCycle { .. } => "child_cycle",
             Self::LimitExceeded { .. } => "limit_exceeded",
             Self::ExecutionShapeUnsupported { .. } => "execution_shape_unsupported",
+            Self::LibraryArchive => "library_archive",
         }
     }
 
@@ -225,9 +229,9 @@ impl PlanBlocker {
             | Self::InvalidChildManifest { .. }
             | Self::ChildCycle { .. }
             | Self::LimitExceeded { .. } => "LIVE_HOLO_INVALID",
-            Self::ProviderUnavailable { .. } | Self::ExecutionShapeUnsupported { .. } => {
-                "LIVE_CAPABILITY_MISSING"
-            }
+            Self::ProviderUnavailable { .. }
+            | Self::ExecutionShapeUnsupported { .. }
+            | Self::LibraryArchive => "LIVE_CAPABILITY_MISSING",
         }
     }
 
@@ -278,6 +282,9 @@ impl PlanBlocker {
             ),
             Self::ExecutionShapeUnsupported { reason } => format!(
                 "application {application_kappa} cannot execute with the current lifecycle: {reason}"
+            ),
+            Self::LibraryArchive => format!(
+                "application {application_kappa} is a library archive: it declares no primary layer and cannot be executed"
             ),
         }
     }
@@ -367,21 +374,6 @@ impl ApplicationPlanReport {
                 &mut self.blockers,
                 &mut evaluate,
             );
-        }
-    }
-
-    pub fn require_single_primary(&mut self) {
-        if self.primary_layer.is_none() {
-            self.blockers.push(PlanBlocker::ExecutionShapeUnsupported {
-                reason: "the manifest has no primary exit-bearing layer".to_owned(),
-            });
-        } else if self.layers.len() != 1 {
-            self.blockers.push(PlanBlocker::ExecutionShapeUnsupported {
-                reason: format!(
-                    "multi-layer lifecycle is not connected yet; the manifest declares {} layers",
-                    self.layers.len()
-                ),
-            });
         }
     }
 
@@ -547,11 +539,6 @@ impl std::fmt::Debug for ApplicationPlan {
 }
 
 impl ApplicationPlan {
-    pub fn primary(&self) -> Option<&ResolvedLayer> {
-        self.primary_layer
-            .and_then(|position| self.layers.get(position as usize))
-    }
-
     pub fn verified_manifest(&self) -> &AppManifest {
         &self.manifest
     }
@@ -1073,6 +1060,10 @@ where
                 .map(|object| object.source.clone());
         }
     }
+    let mut blockers = std::mem::take(&mut closure.blockers);
+    if manifest.primary.is_none() {
+        blockers.push(PlanBlocker::LibraryArchive);
+    }
     Ok(ApplicationPlanReport {
         identity,
         primary_layer: manifest.primary,
@@ -1080,7 +1071,7 @@ where
         layers,
         children,
         objects: closure.objects,
-        blockers: closure.blockers,
+        blockers,
         resolved_bytes: closure.resolved_bytes,
         referenced_object_count: closure.referenced.len(),
         embedded_object_count: closure.embedded_object_count,
@@ -1438,13 +1429,142 @@ mod tests {
             report.layers[0].provider,
             ProviderAvailability::Unavailable { .. }
         ));
+        assert!(report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.kind() == "provider_unavailable"));
 
+        // The manifest has no primary layer (an inference-model layer can never be
+        // exit-bearing), so this archive is a library: that blocker precedes the
+        // provider blocker, and is the error into_application_plan() returns.
         let error = report
             .into_application_plan()
             .expect_err("strict plan fails");
         assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
-        assert!(error.to_string().contains("ai.default"));
-        assert!(error.to_string().contains("uor-r4"));
+        assert!(error.to_string().contains("library"), "{error}");
+    }
+
+    #[test]
+    fn a_library_root_is_not_runnable() {
+        let capabilities = test_capabilities();
+        let capabilities_kappa = address_bytes(capabilities);
+        let wasm = b"library wasm";
+        let wasm_kappa = address_bytes(wasm);
+        let manifest = AppManifest {
+            primary: None,
+            requires: capabilities_kappa,
+            layers: vec![wasm_layer(wasm_kappa, "holo_run")],
+            children: Vec::new(),
+        };
+        let bytes = write_archive(
+            &manifest,
+            &[(&capabilities_kappa, capabilities), (&wasm_kappa, wasm)],
+        );
+
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan");
+        report.evaluate_providers(available);
+
+        assert!(!report.runnable());
+        assert_eq!(report.blockers.len(), 1);
+        assert_eq!(report.blockers[0].kind(), "library_archive");
+        assert_eq!(report.blockers[0].error_code(), "LIVE_CAPABILITY_MISSING");
+
+        let error = report
+            .into_application_plan()
+            .expect_err("a library archive cannot become an execution plan");
+        assert_eq!(error.code(), "LIVE_CAPABILITY_MISSING");
+        assert!(error.to_string().contains("library"), "{error}");
+    }
+
+    #[test]
+    fn a_library_child_does_not_block_its_parent() {
+        let capabilities = test_capabilities();
+        let capabilities_kappa = address_bytes(capabilities);
+        let root_layer = b"root wasm";
+        let root_layer_kappa = address_bytes(root_layer);
+        let child_layer = b"child library wasm";
+        let child_layer_kappa = address_bytes(child_layer);
+
+        let child_manifest = AppManifest {
+            primary: None,
+            requires: capabilities_kappa,
+            layers: vec![wasm_layer(child_layer_kappa, "child")],
+            children: Vec::new(),
+        };
+        let child_manifest_bytes = child_manifest.canonicalize();
+        let child_kappa = address_bytes(&child_manifest_bytes);
+
+        let manifest = AppManifest {
+            primary: Some(0),
+            requires: capabilities_kappa,
+            layers: vec![wasm_layer(root_layer_kappa, "root")],
+            children: vec![(child_kappa, capabilities_kappa)],
+        };
+        let bytes = write_archive(
+            &manifest,
+            &[
+                (&capabilities_kappa, capabilities),
+                (&root_layer_kappa, root_layer),
+                (&child_layer_kappa, child_layer),
+                (&child_kappa, child_manifest_bytes.as_slice()),
+            ],
+        );
+
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan");
+        report.evaluate_providers(available);
+
+        assert!(
+            !report
+                .blockers
+                .iter()
+                .any(|blocker| blocker.kind() == "library_archive"),
+            "a child with no primary must not block its parent: {:?}",
+            report
+                .blockers
+                .iter()
+                .map(PlanBlocker::kind)
+                .collect::<Vec<_>>()
+        );
+        assert!(report.runnable());
+        report
+            .into_application_plan()
+            .expect("a parent composing a library child still plans");
+    }
+
+    #[test]
+    fn multi_layer_applications_remain_runnable() {
+        let capabilities = test_capabilities();
+        let capabilities_kappa = address_bytes(capabilities);
+        let first = b"first layer";
+        let first_kappa = address_bytes(first);
+        let second = b"second layer";
+        let second_kappa = address_bytes(second);
+        let manifest = AppManifest {
+            primary: Some(1),
+            requires: capabilities_kappa,
+            layers: vec![
+                wasm_layer(first_kappa, "first"),
+                wasm_layer(second_kappa, "second"),
+            ],
+            children: Vec::new(),
+        };
+        let bytes = write_archive(
+            &manifest,
+            &[
+                (&capabilities_kappa, capabilities),
+                (&first_kappa, first),
+                (&second_kappa, second),
+            ],
+        );
+
+        let mut report =
+            explain_application(&bytes, PlanLimits::default(), |_| Ok(None)).expect("plan");
+        report.evaluate_providers(available);
+
+        assert!(report.blockers.is_empty());
+        assert!(report.runnable());
     }
 
     #[test]

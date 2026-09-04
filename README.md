@@ -553,13 +553,14 @@ hologram --json ai inspect model.holo
 hologram holo import model.holo
 ```
 
-The inspection lists each callable service entry, its engine identifier, content κ, and whether the bundle is embedded. Model-source acquisition and R4G1 compilation remain owned by `hologram-ai`; this binary does not yet expose `hologram ai compile` or connect a model session to `hologram ai infer`. Attempting to execute a model-only archive returns `LIVE_CAPABILITY_MISSING` and names the unconnected service rather than simulating inference.
+The inspection lists each callable service entry, its engine identifier, content κ, and whether the bundle is embedded. Model-source acquisition and R4G1 compilation remain owned by `hologram-ai`; this binary does not yet expose `hologram ai compile` or connect a model session to `hologram ai infer`. Attempting to execute a model-only archive returns `LIVE_CAPABILITY_MISSING` and identifies the archive as a library archive, because installing the inference provider would not make it runnable; provider availability remains visible in the plan report.
 
 For low-level archive assembly, a source manifest can package an already-built provider bundle:
 
 ```json
 {
   "schema_version": 4,
+  "library": true,
   "layers": [{
     "kind": "inference-model",
     "path": "model.bundle",
@@ -568,6 +569,8 @@ For low-level archive assembly, a source manifest can package an already-built p
   }]
 }
 ```
+
+A manifest without a `primary` layer, like this one, must declare `"library": true`; the compiler rejects `library: true` alongside a declared `primary`, and rejects an absent `primary` without the marker, both with `LIVE_CONFIG_INVALID` before any layer content is built. `library` is an optional boolean and defaults to `false`. Library archives fully support compile, import, inspect, and plan, and can be composed as a `children` entry in another application; only direct or resident execution of the root is refused, with `LIVE_CAPABILITY_MISSING`. Composing a View-only library as a `children` entry does not currently work, because a View layer can never be a primary and every application whose layer set contains a View layer is required to declare one; Wasm library children work today and are covered by a test.
 
 `weightc` remains a chat execution provider over imported `.wcpu` directories. Those directories are not placed into `.holo` files until a deterministic single-blob bundle and validation contract is defined. See the [AI model application guide](https://hologram-technologies.github.io/hologram-live/docs/model-apps) and [ADR 009](specs/adrs/009-inference-model-holo-v4.md).
 

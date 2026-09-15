@@ -20,6 +20,8 @@ struct BddWorld {
     model_id: Option<String>,
     development_grant: Option<PathBuf>,
     object_kappa: Option<String>,
+    search_page: Option<serde_json::Value>,
+    previous_page_ids: Vec<String>,
 }
 
 impl Drop for BddWorld {
@@ -1451,6 +1453,132 @@ fn build_echo_example() -> PathBuf {
     std::env::var_os("CARGO_TARGET_DIR")
         .map_or_else(|| root.join("target"), PathBuf::from)
         .join("debug/examples/echo-plugin")
+}
+
+#[when(regex = r#"^I store a file object named "([^"]+)"$"#)]
+fn store_file_object(world: &mut BddWorld, name: String) {
+    let directory = world
+        .temporary
+        .get_or_insert_with(|| tempfile::tempdir().expect("scenario directory"));
+    let path = directory.path().join(&name);
+    // Distinct content per name keeps object ids distinct, which matters for a
+    // content-addressed store: identical bytes would collapse into one object
+    // and the pagination scenario would silently lose a row.
+    std::fs::write(&path, format!("payload for {name}")).expect("write object");
+    let output = run_cli(
+        world,
+        &["--json", "files", "put", path.to_str().expect("utf-8 path")],
+    );
+    assert!(
+        output.status.success(),
+        "files put failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[when(regex = r#"^I search objects with kind "([^"]+)"$"#)]
+fn search_objects_by_kind(world: &mut BddWorld, kind: String) {
+    let output = run_cli(world, &["--json", "registry", "search", "--kind", &kind]);
+    world.search_page = Some(parse_search_page(&output));
+}
+
+#[when(regex = r"^I search objects with limit (\d+)$")]
+fn search_objects_with_limit(world: &mut BddWorld, limit: String) {
+    let output = run_cli(world, &["--json", "registry", "search", "--limit", &limit]);
+    let page = parse_search_page(&output);
+    world.previous_page_ids = page_ids(&page);
+    world.search_page = Some(page);
+}
+
+#[when(regex = r"^I search the next page with limit (\d+)$")]
+fn search_next_page(world: &mut BddWorld, limit: String) {
+    let cursor = world
+        .search_page
+        .as_ref()
+        .and_then(|page| page.get("next_cursor"))
+        .and_then(serde_json::Value::as_str)
+        .expect("a cursor from the previous page")
+        .to_owned();
+    let output = run_cli(
+        world,
+        &[
+            "--json", "registry", "search", "--limit", &limit, "--cursor", &cursor,
+        ],
+    );
+    world.search_page = Some(parse_search_page(&output));
+}
+
+#[then(regex = r"^the search result contains (\d+) objects?$")]
+fn search_result_count(world: &mut BddWorld, expected: String) {
+    let expected: usize = expected.parse().expect("count");
+    let page = world.search_page.as_ref().expect("a search result");
+    assert_eq!(
+        page_ids(page).len(),
+        expected,
+        "unexpected object count in {page}"
+    );
+}
+
+#[then(regex = r#"^every returned object has kind "([^"]+)"$"#)]
+fn every_object_has_kind(world: &mut BddWorld, kind: String) {
+    let page = world.search_page.as_ref().expect("a search result");
+    let objects = page
+        .get("objects")
+        .and_then(serde_json::Value::as_array)
+        .expect("objects array");
+    for object in objects {
+        assert_eq!(
+            object.get("kind").and_then(serde_json::Value::as_str),
+            Some(kind.as_str()),
+            "a filtered search returned a foreign kind: {object}"
+        );
+    }
+}
+
+#[then("the search result carries a cursor")]
+fn search_result_has_cursor(world: &mut BddWorld) {
+    let page = world.search_page.as_ref().expect("a search result");
+    assert!(
+        page.get("next_cursor")
+            .and_then(serde_json::Value::as_str)
+            .is_some(),
+        "further matches remain, so a cursor is required: {page}"
+    );
+}
+
+#[then("no object appears on both pages")]
+fn pages_do_not_overlap(world: &mut BddWorld) {
+    let page = world.search_page.as_ref().expect("a search result");
+    for id in page_ids(page) {
+        assert!(
+            !world.previous_page_ids.contains(&id),
+            "object {id} appeared on both pages"
+        );
+    }
+}
+
+fn parse_search_page(output: &Output) -> serde_json::Value {
+    assert!(
+        output.status.success(),
+        "search failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("search emits one JSON document on stdout")
+}
+
+fn page_ids(page: &serde_json::Value) -> Vec<String> {
+    page.get("objects")
+        .and_then(serde_json::Value::as_array)
+        .expect("objects array")
+        .iter()
+        .map(|object| {
+            object
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .expect("object id")
+                .to_owned()
+        })
+        .collect()
 }
 
 fn run_cli(world: &BddWorld, args: &[&str]) -> Output {

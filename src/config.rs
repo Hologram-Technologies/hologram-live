@@ -671,6 +671,14 @@ impl AppConfig {
                             .to_owned(),
                     ));
                 }
+                // The adapter has not shipped. Refusing here is deliberate:
+                // accepting the name while continuing to serve from the local
+                // store would be a silent fallback, and an operator who asked
+                // for a remote registry would never learn their objects stayed
+                // on this machine.
+                return Err(LiveError::Config(
+                    "registry.provider \"kappa\" is not available in this build".to_owned(),
+                ));
             }
             other => {
                 return Err(LiveError::Config(format!(
@@ -855,10 +863,33 @@ listen = "127.0.0.1:4455"
         let error = config
             .validate()
             .expect_err("an unreachable provider must fail early");
-        assert!(
-            matches!(error, LiveError::Config(_)),
-            "expected a config error, got {error:?}"
-        );
+        match error {
+            LiveError::Config(message) => assert!(
+                message.contains("registry.endpoint"),
+                "the missing endpoint must be named, got {message:?}"
+            ),
+            other => panic!("expected a config error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_kappa_provider_is_refused_rather_than_silently_served_locally() {
+        // Accepting the name while continuing to serve from the local store
+        // would be a silent fallback: an operator who asked for a remote
+        // registry would never learn their objects stayed on this machine.
+        let mut config = AppConfig::default();
+        config.registry.provider = "kappa".to_owned();
+
+        let error = config
+            .validate()
+            .expect_err("an unimplemented provider must not validate");
+        match error {
+            LiveError::Config(message) => assert!(
+                message.contains("not available"),
+                "the refusal must say the adapter is unavailable, got {message:?}"
+            ),
+            other => panic!("expected a config error, got {other:?}"),
+        }
     }
 
     #[test]

@@ -37,6 +37,7 @@ pub struct OllamaEngine {
 
 impl OllamaEngine {
     pub fn new(config: &InferenceConfig) -> Result<Self> {
+        crate::util::install_crypto_provider();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.request_timeout_secs))
             .build()

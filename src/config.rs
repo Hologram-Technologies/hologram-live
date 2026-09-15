@@ -671,14 +671,6 @@ impl AppConfig {
                             .to_owned(),
                     ));
                 }
-                // The adapter has not shipped. Refusing here is deliberate:
-                // accepting the name while continuing to serve from the local
-                // store would be a silent fallback, and an operator who asked
-                // for a remote registry would never learn their objects stayed
-                // on this machine.
-                return Err(LiveError::Config(
-                    "registry.provider \"kappa\" is not available in this build".to_owned(),
-                ));
             }
             other => {
                 return Err(LiveError::Config(format!(
@@ -873,20 +865,32 @@ listen = "127.0.0.1:4455"
     }
 
     #[test]
-    fn the_kappa_provider_is_refused_rather_than_silently_served_locally() {
-        // Accepting the name while continuing to serve from the local store
-        // would be a silent fallback: an operator who asked for a remote
-        // registry would never learn their objects stayed on this machine.
+    fn a_fully_configured_kappa_provider_validates() {
+        // The adapter now exists, so a complete configuration must be accepted.
+        // Plan 1 refused this outright to avoid silently serving from the local
+        // store; that refusal is replaced by a real provider, not relaxed into
+        // a fallback.
         let mut config = AppConfig::default();
         config.registry.provider = "kappa".to_owned();
 
+        config
+            .validate()
+            .expect("a kappa provider with an endpoint and namespace is valid");
+    }
+
+    #[test]
+    fn selecting_the_kappa_provider_without_a_namespace_is_a_config_error() {
+        let mut config = AppConfig::default();
+        config.registry.provider = "kappa".to_owned();
+        config.registry.namespace = String::new();
+
         let error = config
             .validate()
-            .expect_err("an unimplemented provider must not validate");
+            .expect_err("a namespace-less remote provider must fail early");
         match error {
             LiveError::Config(message) => assert!(
-                message.contains("not available"),
-                "the refusal must say the adapter is unavailable, got {message:?}"
+                message.contains("registry.namespace"),
+                "the missing namespace must be named, got {message:?}"
             ),
             other => panic!("expected a config error, got {other:?}"),
         }

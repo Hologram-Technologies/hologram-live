@@ -7,9 +7,11 @@
 
 /// Public so the artifact-distribution pull path can reach the client
 /// directly. Keeping it private would force a duplicate HTTP client there.
+mod kappa;
 pub mod kappa_client;
 mod local;
 
+pub use kappa::KappaRegistryProvider;
 pub use local::LocalRegistryProvider;
 
 use crate::error::Result;
@@ -37,4 +39,21 @@ pub trait RegistryProvider: Send + Sync {
     /// `list_objects` keeps its newest-first contract and bare-array response
     /// for existing callers; only this surface is id-ordered.
     fn search(&self, query: &ObjectQuery) -> Result<ObjectPage>;
+}
+
+/// Build the provider named by configuration.
+///
+/// Local is the default so a stock install needs no external service;
+/// `AppConfig::validate` has already rejected an unknown name or a kappa
+/// provider with no endpoint, so this cannot fail on a validated config.
+pub fn provider_from_config(
+    config: &crate::config::AppConfig,
+    store: std::sync::Arc<crate::store::ObjectStore>,
+) -> Result<std::sync::Arc<dyn RegistryProvider>> {
+    match config.registry.provider.as_str() {
+        "kappa" => Ok(std::sync::Arc::new(KappaRegistryProvider::new(
+            &config.registry,
+        )?)),
+        _ => Ok(std::sync::Arc::new(LocalRegistryProvider::new(store))),
+    }
 }

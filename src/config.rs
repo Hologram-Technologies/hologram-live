@@ -108,6 +108,42 @@ pub struct AppConfig {
     pub holo: HoloConfig,
     #[serde(default)]
     pub plugins: PluginsConfig,
+    #[serde(default)]
+    pub registry: RegistryConfig,
+}
+
+/// Selects which `RegistryProvider` backs object storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RegistryConfig {
+    /// `"local"` or `"kappa"`. Local is the default so a stock install needs
+    /// no external service.
+    pub provider: String,
+    /// Base URL of the kappa-registry instance. Required when
+    /// `provider = "kappa"`.
+    pub endpoint: String,
+    /// Namespace that objects are written under.
+    pub namespace: String,
+    /// Bearer token. An external registry may allow anonymous access, so an
+    /// empty token is valid.
+    pub token: String,
+    pub request_timeout_secs: u64,
+    /// Upper bound on remote pages walked to satisfy one selective query.
+    /// Reaching it sets `ObjectPage::truncated` rather than silently capping.
+    pub max_scan_pages: u32,
+}
+
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        Self {
+            provider: "local".to_owned(),
+            endpoint: "http://127.0.0.1:5000".to_owned(),
+            namespace: "hologram".to_owned(),
+            token: String::new(),
+            request_timeout_secs: 30,
+            max_scan_pages: 20,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,6 +293,7 @@ impl Default for AppConfig {
             inference: InferenceConfig::default(),
             holo: HoloConfig::default(),
             plugins: PluginsConfig::default(),
+            registry: RegistryConfig::default(),
         }
     }
 }
@@ -612,6 +649,35 @@ impl AppConfig {
         }
         self.validate_holo_resident()?;
         self.validate_plugins()?;
+        self.validate_registry()?;
+        Ok(())
+    }
+
+    fn validate_registry(&self) -> Result<()> {
+        match self.registry.provider.as_str() {
+            "local" => {}
+            "kappa" => {
+                // Fail at startup rather than on the first request, so a
+                // misconfigured daemon never reports itself ready.
+                if self.registry.endpoint.trim().is_empty() {
+                    return Err(LiveError::Config(
+                        "registry.endpoint is required when registry.provider is \"kappa\""
+                            .to_owned(),
+                    ));
+                }
+                if self.registry.namespace.trim().is_empty() {
+                    return Err(LiveError::Config(
+                        "registry.namespace is required when registry.provider is \"kappa\""
+                            .to_owned(),
+                    ));
+                }
+            }
+            other => {
+                return Err(LiveError::Config(format!(
+                    "unsupported registry.provider {other:?}; expected local or kappa"
+                )))
+            }
+        }
         Ok(())
     }
 
@@ -756,6 +822,53 @@ fn validate_endpoint(endpoint: &str, local: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn registry_defaults_to_the_local_provider() {
+        let config = AppConfig::default();
+        assert_eq!(
+            config.registry.provider, "local",
+            "hologram must stay a single binary needing no external service"
+        );
+    }
+
+    #[test]
+    fn a_config_written_before_the_registry_section_still_loads() {
+        // Adding a defaulted section must not require a schema bump, because
+        // the version machinery exists for retired keys, not for additions.
+        let document = r#"
+schema_version = 2
+[server]
+listen = "127.0.0.1:4455"
+"#;
+        let config: AppConfig = toml::from_str(document).expect("older config must load");
+        assert_eq!(config.registry.provider, "local");
+        assert_eq!(config.registry.max_scan_pages, 20);
+    }
+
+    #[test]
+    fn selecting_the_kappa_provider_without_an_endpoint_is_a_config_error() {
+        let mut config = AppConfig::default();
+        config.registry.provider = "kappa".to_owned();
+        config.registry.endpoint = String::new();
+
+        let error = config
+            .validate()
+            .expect_err("an unreachable provider must fail early");
+        assert!(
+            matches!(error, LiveError::Config(_)),
+            "expected a config error, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_registry_provider_is_rejected() {
+        let mut config = AppConfig::default();
+        config.registry.provider = "postgres".to_owned();
+
+        let error = config.validate().expect_err("unknown providers must fail");
+        assert!(matches!(error, LiveError::Config(_)));
+    }
     use super::*;
 
     #[test]

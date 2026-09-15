@@ -956,7 +956,7 @@ Trusted modules are statically linked and registered in the `builtin_modules!` c
 | Module | Current responsibility |
 | --- | --- |
 | `dev.hologram.live.system` | Health, capabilities, and module discovery |
-| `dev.hologram.live.kappa-registry` | Local content-addressed registry provider, with bounded metadata search |
+| `dev.hologram.live.kappa-registry` | Content-addressed registry provider (local or external Kappa Registry), with bounded metadata search |
 | `dev.hologram.live.files` | File upload, listing, search, renaming, and download |
 | `dev.hologram.live.holo` | `.holo` import, inspection, verification, cataloguing, and resident Wasm execution |
 | `dev.hologram.live.history` | Durable conversations and messages |
@@ -997,12 +997,24 @@ request_timeout_secs = 30
 max_scan_pages = 20
 ```
 
-Only `local` is implemented. Selecting `kappa` fails validation at startup with
-a typed configuration error rather than silently serving from the local store —
-an operator who asks for a remote registry is told it is unavailable instead of
-discovering later that their objects never left the machine. The `endpoint`,
-`namespace`, `token`, and `max_scan_pages` keys are accepted now so the section
-does not change shape when that adapter ships.
+`local` keeps every object on this machine. `kappa` serves them from an external
+[Kappa Registry](https://github.com/uoR-Foundation/kappa-registry) instance over
+its OCI blob and manifest surface. Both systems address objects as
+`blake3:<64 hex>` — already a valid kappa-label upstream — so identity crosses
+the boundary unchanged.
+
+An unknown provider name, or `kappa` without an endpoint or namespace, fails
+validation at startup rather than falling back to local storage: an operator who
+asks for a remote registry is told it cannot be built, instead of discovering
+later that their objects never left the machine.
+
+`max_scan_pages` bounds how many upstream tag pages one selective query walks,
+since the remote registry cannot filter on kind or filename. Reaching that bound
+sets `truncated` on the result rather than silently returning a short page.
+
+Both providers are held to one behavioural contract by a conformance suite. Run
+it against a real registry with `just kappa-registry`, which builds a pinned
+kappa-registry, starts it on an ephemeral port, and executes the suite.
 
 Adding this section does not require a configuration rewrite: every section is
 defaulted, so a file written before `[registry]` existed keeps loading unchanged.
@@ -1098,8 +1110,7 @@ The default build does not yet provide:
 
 - enterprise identity, organizations, or RBAC storage;
 - fleet scheduling;
-- a remote object-storage provider — `registry.provider` accepts only `local`,
-  and selecting `kappa` is refused at startup; or
+- a client SDK or named-artifact distribution (`hologram pull`); or
 - full-text, content, or semantic object search. Search matches stored metadata
   only, and never reads object bytes.
 

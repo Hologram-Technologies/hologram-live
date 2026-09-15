@@ -5,6 +5,9 @@
 //! and `src/modules/files.rs`), and an async trait would force boxed futures
 //! at every call site because `async fn` in traits is not `dyn`-safe.
 
+/// Public so the artifact-distribution pull path can reach the client
+/// directly. Keeping it private would force a duplicate HTTP client there.
+pub mod kappa_client;
 mod local;
 
 pub use local::LocalRegistryProvider;

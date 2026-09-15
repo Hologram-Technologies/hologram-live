@@ -25,6 +25,23 @@ enum RegistryCommand {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    /// Search stored objects with filters and pagination.
+    Search {
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        media_type: Option<String>,
+        #[arg(long)]
+        filename_contains: Option<String>,
+        #[arg(long)]
+        min_size: Option<u64>,
+        #[arg(long)]
+        max_size: Option<u64>,
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
 }
 
 pub async fn run(cli: Cli, args: RegistryArgs) -> Result<()> {
@@ -56,6 +73,31 @@ pub async fn run(cli: Cli, args: RegistryArgs) -> Result<()> {
             .await?
             {
                 RpcResponse::Object(value) => helpers::print(&cli, &value),
+                other => helpers::unexpected(other),
+            }
+        }
+        RegistryCommand::Search {
+            kind,
+            media_type,
+            filename_contains,
+            min_size,
+            max_size,
+            limit,
+            cursor,
+        } => {
+            let query = hologram_live::protocol::ObjectQuery {
+                kind,
+                media_type,
+                filename_contains,
+                min_size,
+                max_size,
+                created_after_millis: None,
+                created_before_millis: None,
+                limit,
+                cursor,
+            };
+            match helpers::call(&cli, RpcRequest::RegistrySearch { query }).await? {
+                RpcResponse::ObjectPage(value) => helpers::print(&cli, &value),
                 other => helpers::unexpected(other),
             }
         }

@@ -27,6 +27,21 @@ enum FilesCommand {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    /// Search stored files with filters and pagination.
+    Search {
+        #[arg(long)]
+        media_type: Option<String>,
+        #[arg(long)]
+        filename_contains: Option<String>,
+        #[arg(long)]
+        min_size: Option<u64>,
+        #[arg(long)]
+        max_size: Option<u64>,
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
     /// Rename a stored file without changing its content-addressed ID.
     Rename {
         id: String,
@@ -40,6 +55,32 @@ pub async fn run(cli: Cli, args: FilesArgs) -> Result<()> {
         FilesCommand::List => list(&cli).await,
         FilesCommand::Put { path, media_type } => put(&cli, path, media_type).await,
         FilesCommand::Get { id, output } => get(&cli, id, output).await,
+        FilesCommand::Search {
+            media_type,
+            filename_contains,
+            min_size,
+            max_size,
+            limit,
+            cursor,
+        } => {
+            let query = hologram_live::protocol::ObjectQuery {
+                // The daemon fixes the kind for this surface; sending None
+                // keeps the CLI from implying it can be overridden.
+                kind: None,
+                media_type,
+                filename_contains,
+                min_size,
+                max_size,
+                created_after_millis: None,
+                created_before_millis: None,
+                limit,
+                cursor,
+            };
+            match helpers::call(&cli, RpcRequest::FilesSearch { query }).await? {
+                RpcResponse::ObjectPage(value) => helpers::print(&cli, &value),
+                other => helpers::unexpected(other),
+            }
+        }
         FilesCommand::Rename { id, filename } => rename(&cli, id, filename).await,
     }
 }

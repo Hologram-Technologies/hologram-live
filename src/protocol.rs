@@ -20,10 +20,12 @@ pub mod operation {
     pub const REGISTRY_LIST: &str = "registry.list";
     pub const REGISTRY_PUT: &str = "registry.put";
     pub const REGISTRY_GET: &str = "registry.get";
+    pub const REGISTRY_SEARCH: &str = "registry.search";
     pub const FILES_LIST: &str = "files.list";
     pub const FILES_PUT: &str = "files.put";
     pub const FILES_GET: &str = "files.get";
     pub const FILES_RENAME: &str = "files.rename";
+    pub const FILES_SEARCH: &str = "files.search";
     pub const HOLO_IMPORT: &str = "holo.import";
     pub const HOLO_LIST: &str = "holo.list";
     pub const HOLO_INSPECT: &str = "holo.inspect";
@@ -592,6 +594,9 @@ pub enum RpcRequest {
     RegistryGet {
         id: String,
     },
+    RegistrySearch {
+        query: ObjectQuery,
+    },
     FilesList,
     FilesPut {
         media_type: String,
@@ -604,6 +609,9 @@ pub enum RpcRequest {
     FilesRename {
         id: String,
         filename: String,
+    },
+    FilesSearch {
+        query: ObjectQuery,
     },
     HoloImport {
         name: String,
@@ -691,10 +699,12 @@ impl RpcRequest {
             Self::RegistryList => operation::REGISTRY_LIST,
             Self::RegistryPut { .. } => operation::REGISTRY_PUT,
             Self::RegistryGet { .. } => operation::REGISTRY_GET,
+            Self::RegistrySearch { .. } => operation::REGISTRY_SEARCH,
             Self::FilesList => operation::FILES_LIST,
             Self::FilesPut { .. } => operation::FILES_PUT,
             Self::FilesGet { .. } => operation::FILES_GET,
             Self::FilesRename { .. } => operation::FILES_RENAME,
+            Self::FilesSearch { .. } => operation::FILES_SEARCH,
             Self::HoloImport { .. } => operation::HOLO_IMPORT,
             Self::HoloList => operation::HOLO_LIST,
             Self::HoloInspect { .. } => operation::HOLO_INSPECT,
@@ -730,6 +740,8 @@ impl RpcRequest {
             | Self::TracingGet
             | Self::RegistryList
             | Self::RegistryGet { .. }
+            | Self::RegistrySearch { .. }
+            | Self::FilesSearch { .. }
             | Self::FilesList
             | Self::FilesGet { .. }
             | Self::HoloList
@@ -754,6 +766,7 @@ pub enum RpcResponse {
     Health(HealthResponse),
     Modules(Vec<ModuleInfo>),
     Objects(Vec<ObjectMetadata>),
+    ObjectPage(ObjectPage),
     Object(ObjectMetadata),
     ObjectContent(ObjectContent),
     HoloInspection(HoloInspection),

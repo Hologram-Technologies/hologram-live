@@ -104,10 +104,20 @@ mod tests {
     fn search_filters_on_kind_and_orders_by_id() {
         let (registry, root) = provider("filter");
         registry
-            .put_object("file".into(), "text/plain".into(), Some("a.txt".into()), b"a")
+            .put_object(
+                "file".into(),
+                "text/plain".into(),
+                Some("a.txt".into()),
+                b"a",
+            )
             .expect("put a");
         registry
-            .put_object("file".into(), "text/plain".into(), Some("b.txt".into()), b"b")
+            .put_object(
+                "file".into(),
+                "text/plain".into(),
+                Some("b.txt".into()),
+                b"b",
+            )
             .expect("put b");
         registry
             .put_object("holo".into(), "application/octet-stream".into(), None, b"c")

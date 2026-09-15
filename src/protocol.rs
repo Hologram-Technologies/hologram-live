@@ -104,6 +104,105 @@ pub struct ObjectMetadata {
     pub created_at_millis: u64,
 }
 
+/// A search over stored objects.
+///
+/// Every field is an independent conjunctive filter; `None` means "do not
+/// constrain". Ordering is ascending by object id, identically for every
+/// provider: a remote tag listing arrives in lexical order, and imposing a
+/// time ordering on it would mean enumerating everything before returning the
+/// first page.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct ObjectQuery {
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub media_type: Option<String>,
+    #[serde(default)]
+    pub filename_contains: Option<String>,
+    #[serde(default)]
+    pub min_size: Option<u64>,
+    #[serde(default)]
+    pub max_size: Option<u64>,
+    #[serde(default)]
+    pub created_after_millis: Option<u64>,
+    #[serde(default)]
+    pub created_before_millis: Option<u64>,
+    #[serde(default)]
+    pub limit: u32,
+    /// Opaque, and valid only for the provider that issued it. A structured
+    /// cursor would leak provider internals into a public API and stop either
+    /// side changing independently.
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+impl ObjectQuery {
+    pub const DEFAULT_LIMIT: u32 = 100;
+    pub const MAX_LIMIT: u32 = 1000;
+
+    /// Page size after defaulting and clamping. A zero `limit` means the
+    /// caller did not choose, not "return nothing".
+    pub fn effective_limit(&self) -> usize {
+        let requested = if self.limit == 0 {
+            Self::DEFAULT_LIMIT
+        } else {
+            self.limit
+        };
+        requested.min(Self::MAX_LIMIT) as usize
+    }
+
+    /// Whether one record satisfies every constraint. Shared by every provider
+    /// so filtering cannot drift between implementations.
+    pub fn matches(&self, metadata: &ObjectMetadata) -> bool {
+        if self.kind.as_ref().is_some_and(|k| *k != metadata.kind) {
+            return false;
+        }
+        if self
+            .media_type
+            .as_ref()
+            .is_some_and(|m| *m != metadata.media_type)
+        {
+            return false;
+        }
+        if let Some(needle) = self.filename_contains.as_ref() {
+            match metadata.filename.as_deref() {
+                Some(name) if name.contains(needle.as_str()) => {}
+                _ => return false,
+            }
+        }
+        if self.min_size.is_some_and(|min| metadata.size < min) {
+            return false;
+        }
+        if self.max_size.is_some_and(|max| metadata.size > max) {
+            return false;
+        }
+        if self
+            .created_after_millis
+            .is_some_and(|after| metadata.created_at_millis <= after)
+        {
+            return false;
+        }
+        if self
+            .created_before_millis
+            .is_some_and(|before| metadata.created_at_millis >= before)
+        {
+            return false;
+        }
+        true
+    }
+}
+
+/// One page of search results.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ObjectPage {
+    pub objects: Vec<ObjectMetadata>,
+    /// Absent when the walk reached the end of the result set.
+    pub next_cursor: Option<String>,
+    /// True when a provider-side scan bound stopped the walk before `limit`
+    /// was satisfied. A capped result is never presented as a complete one.
+    pub truncated: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectContent {
     pub metadata: ObjectMetadata,

@@ -10,7 +10,7 @@ mod local;
 pub use local::LocalRegistryProvider;
 
 use crate::error::Result;
-use crate::protocol::{ObjectContent, ObjectMetadata};
+use crate::protocol::{ObjectContent, ObjectMetadata, ObjectPage, ObjectQuery};
 
 /// Storage-facing seam for the Kappa Registry module.
 ///
@@ -28,4 +28,10 @@ pub trait RegistryProvider: Send + Sync {
     ) -> Result<ObjectMetadata>;
     fn get_object(&self, id: &str) -> Result<ObjectContent>;
     fn rename_file(&self, id: &str, filename: String) -> Result<ObjectMetadata>;
+
+    /// Page through objects matching `query`, ascending by id.
+    ///
+    /// `list_objects` keeps its newest-first contract and bare-array response
+    /// for existing callers; only this surface is id-ordered.
+    fn search(&self, query: &ObjectQuery) -> Result<ObjectPage>;
 }

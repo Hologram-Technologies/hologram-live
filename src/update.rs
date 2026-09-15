@@ -30,6 +30,7 @@ pub async fn check(config: &AppConfig) -> Result<UpdateManifest> {
         .as_deref()
         .ok_or_else(|| LiveError::Config("update.manifest_url is not configured".to_owned()))?;
     require_secure_url(url)?;
+    crate::util::install_crypto_provider();
     let manifest = reqwest::Client::new()
         .get(url)
         .send()
@@ -71,6 +72,7 @@ pub async fn install(config: &AppConfig) -> Result<String> {
         ))
     })?;
     require_secure_url(&artifact.url)?;
+    crate::util::install_crypto_provider();
     let bytes = reqwest::Client::new()
         .get(&artifact.url)
         .send()

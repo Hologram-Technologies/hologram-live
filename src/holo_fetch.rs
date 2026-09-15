@@ -153,6 +153,7 @@ fn https_get(target: &str) -> Result<FetchResponse, &'static str> {
     // A fresh client per operation pins every connection attempt to this
     // checked resolution set. It cannot consult environment proxies, retain
     // cookies, reuse credentials, or automatically follow a redirect.
+    crate::util::install_crypto_provider();
     let client = reqwest::blocking::Client::builder()
         .https_only(true)
         .no_proxy()

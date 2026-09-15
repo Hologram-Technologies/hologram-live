@@ -55,6 +55,28 @@ pub fn hex(bytes: &[u8]) -> String {
     output
 }
 
+/// Install the process-wide rustls crypto provider before any HTTPS client is
+/// built.
+///
+/// reqwest 0.13 made a provider mandatory: its `rustls` feature bakes in
+/// aws-lc-rs, and the `rustls-no-provider` feature this crate uses instead
+/// *panics* when a client is constructed with no provider installed. This tree
+/// standardizes on ring — see the `tls-ring` features on `tonic` and
+/// `opentelemetry-otlp` — so the default build stays pure Rust with no C
+/// toolchain, which rules aws-lc-rs out.
+///
+/// Every reqwest client construction site calls this first. Doing it here
+/// rather than only in `main` keeps unit tests, which build clients directly,
+/// working without each one repeating the setup.
+pub fn install_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // Errors only when a provider is already installed, which is exactly
+        // the state this function exists to guarantee.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 pub fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
         return false;

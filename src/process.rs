@@ -130,13 +130,26 @@ pub fn read_pid(config: &AppConfig) -> Result<u32> {
         .map_err(|error| LiveError::Protocol(format!("parse daemon pid: {error}")))
 }
 
+/// How long a client waits for a freshly spawned daemon to answer.
+///
+/// This must exceed `plugin::CONNECT_BUDGET`. Plugin sockets are connected
+/// inside `AppState::build`, before the listener binds, so a slow plugin makes
+/// the daemon legitimately unreachable for that whole window. When the two
+/// budgets were both five seconds they raced, and the plugin scenario — the
+/// only one that spawns a subprocess at startup — failed intermittently under
+/// load. The margin exists so a slow plugin produces a slow start rather than
+/// a spurious transport error.
+pub(crate) const READY_BUDGET: Duration = Duration::from_secs(30);
+const READY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
 async fn wait_ready(
     config: &AppConfig,
     child: &mut Child,
     log_path: &Path,
     log_start: u64,
 ) -> Result<()> {
-    for _ in 0..100 {
+    let deadline = tokio::time::Instant::now() + READY_BUDGET;
+    while tokio::time::Instant::now() < deadline {
         if is_ready(config).await {
             return Ok(());
         }
@@ -146,13 +159,14 @@ async fn wait_ready(
         {
             return Err(startup_error(config, status, log_path, log_start));
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(READY_POLL_INTERVAL).await;
     }
     let _ = child.kill();
     let _ = child.wait();
     Err(LiveError::Transport(format!(
-        "daemon did not become ready at {} within 5 seconds; {}",
+        "daemon did not become ready at {} within {} seconds; {}",
         config.server.listen,
+        READY_BUDGET.as_secs(),
         log_diagnostics(log_path, log_start)
     )))
 }
@@ -266,5 +280,33 @@ mod tests {
             .expect("observe stopped daemon");
         remover.await.expect("join remover");
         std::fs::remove_dir_all(root).expect("remove test state directory");
+    }
+
+    /// The client's readiness budget must strictly exceed the time a plugin
+    /// can hold daemon startup, because plugin sockets are connected before
+    /// the listener binds.
+    ///
+    /// These were both five seconds once. The daemon would spend its entire
+    /// startup waiting on a slow plugin while the client's identical budget
+    /// expired, so `hologram plugins list` failed with a transport error
+    /// against a daemon that was about to come up. It only bit under load,
+    /// which made it look like a flaky test rather than a budget collision.
+    #[test]
+    fn the_readiness_budget_outlasts_plugin_startup() {
+        assert!(
+            READY_BUDGET > crate::plugin::CONNECT_BUDGET,
+            "readiness budget {READY_BUDGET:?} must exceed the plugin connect budget {:?}",
+            crate::plugin::CONNECT_BUDGET
+        );
+
+        // A bare inequality would still pass if the two sat a millisecond
+        // apart, which would race again on any loaded machine. Require real
+        // headroom, not a technicality.
+        assert!(
+            READY_BUDGET >= crate::plugin::CONNECT_BUDGET * 2,
+            "readiness budget {READY_BUDGET:?} needs margin over the plugin connect budget {:?}, \
+             not a hairline lead",
+            crate::plugin::CONNECT_BUDGET
+        );
     }
 }

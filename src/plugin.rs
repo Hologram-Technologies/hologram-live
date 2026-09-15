@@ -58,8 +58,17 @@ pub const SOCKET_ENV: &str = "HOLOGRAM_PLUGIN_SOCKET";
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const INVOKE_TIMEOUT: Duration = Duration::from_mins(2);
-const CONNECT_ATTEMPTS: u32 = 50;
-const CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
+pub(crate) const CONNECT_ATTEMPTS: u32 = 50;
+pub(crate) const CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
+
+/// Longest a single plugin can delay daemon startup before the registry gives
+/// up and falls back to lazy retry.
+///
+/// Plugins are connected during `AppState::build`, which runs before the
+/// listener binds, so this is time the daemon spends unreachable. Anything
+/// waiting for readiness must budget more than this; see
+/// `process::READY_BUDGET`.
+pub(crate) const CONNECT_BUDGET: Duration = CONNECT_RETRY_DELAY.saturating_mul(CONNECT_ATTEMPTS);
 const MAX_RESTARTS: u32 = 3;
 
 type PluginClient = pb::plugin_host_client::PluginHostClient<Channel>;
@@ -512,9 +521,10 @@ async fn connect(socket_path: &Path) -> Result<Channel> {
         }
     }
     Err(LiveError::Transport(format!(
-        "plugin did not listen on {} within {} attempts: {last_error}",
+        "plugin did not listen on {} within {} attempts over {:?}: {last_error}",
         socket_path.display(),
-        CONNECT_ATTEMPTS
+        CONNECT_ATTEMPTS,
+        CONNECT_BUDGET
     )))
 }
 

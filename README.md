@@ -185,6 +185,7 @@ daemon fixes the kind, so `--kind` is not offered there.
 
 ```bash
 hologram push ./app.holo demo:v1
+hologram serve demo:v1
 hologram pull qwen3.5:4b
 hologram pull host:5000/models/qwen3.5:4b
 hologram run qwen3.5:4b --input-text "hello"
@@ -208,8 +209,18 @@ Tags are mutable, so a pull always re-resolves rather than caching by name, and
 records the resolved manifest digest — that digest, not the tag, is what makes a
 pull reproducible.
 
-`run` resolves its argument in a fixed order, so no existing invocation changes
-meaning:
+`serve` takes an optional reference. `hologram serve` alone is unchanged;
+`hologram serve demo:v1` acquires the artifact, imports it, and makes it
+resident **before the listener binds**, so the daemon never reports ready with
+the named application not yet invocable. The argument joins whatever
+`holo.resident` already declares rather than replacing it.
+
+That residency lasts for the life of that process. `serve <ref>` does not write
+to your configuration, so a daemon started any other way will not have it — put
+it in `holo.resident` if you want it every time.
+
+`run` and `serve` resolve their argument in the same fixed order, so no existing
+invocation changes meaning:
 
 1. a `blake3:` id → the local catalog
 2. an existing filesystem path → a local archive

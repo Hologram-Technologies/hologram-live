@@ -21,7 +21,10 @@ This document is deliberately strict about what the current stable build does an
   payload a thin archive references without embedding, refusing before any write
   if a referenced payload is absent locally, if the file is not a valid archive,
   or if the tag already resolves and `--force` was not given. Artifact signing, a
-  curated index, and `serve`/`chat` by reference are not implemented.
+  curated index, and `chat` by reference are not implemented. `hologram serve
+  [<ref>]` accepts an optional artifact reference, acquiring and importing it and
+  loading it resident before the listener binds; residency lasts for that process
+  and does not modify configuration.
 - Bounded, paginated object search over stored metadata — kind, media type,
   filename substring, size range, and creation-time range — ordered ascending by
   object ID, with opaque provider-scoped cursors and explicit truncation

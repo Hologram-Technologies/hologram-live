@@ -7,8 +7,106 @@ use hologram_live::{process, server};
 
 #[derive(Debug, Clone, Args)]
 pub struct ServeArgs {
+    /// Artifact reference to make resident before the listener binds, for
+    /// example `demo:v1`. A local path or `blake3:` kappa also works.
+    reference: Option<String>,
     #[arg(long)]
     listen: Option<String>,
+}
+
+/// Resolve a serve argument to a catalog kappa, acquiring it if needed.
+///
+/// Precedence matches `run`: a kappa is already catalogued, a path is a local
+/// archive, and anything else is a registry reference. Importing is what makes
+/// a pulled archive loadable -- `load_declared` resolves kappas through the
+/// catalog, so a blob cached by the pull alone is not enough.
+async fn resolve_resident(
+    cli: &Cli,
+    config: &hologram_live::config::AppConfig,
+    reference: &str,
+) -> Result<String> {
+    use hologram_live::artifact_ref::{resolve, Resolution};
+    use hologram_live::holo::HoloCatalog;
+    use hologram_live::store::ObjectStore;
+    use std::sync::Arc;
+
+    let (bytes, name) = match resolve(reference, &config.registry)? {
+        // Already catalogued: nothing to acquire or import.
+        Resolution::Kappa(kappa) => return Ok(kappa),
+        Resolution::File(path) => {
+            let bytes = tokio::fs::read(&path)
+                .await
+                .map_err(|error| hologram_live::error::LiveError::io(&path, error))?;
+            let name = path.file_name().map_or_else(
+                || "archive".to_owned(),
+                |v| v.to_string_lossy().into_owned(),
+            );
+            (bytes, name)
+        }
+        Resolution::Reference(reference) => {
+            let name = format!("{}:{}", reference.name, reference.tag);
+            (pull_archive_bytes(cli, config, &reference).await?, name)
+        }
+    };
+
+    let store = Arc::new(ObjectStore::open(config.paths.data_dir.join("registry"))?);
+    let catalog = HoloCatalog::new(store);
+    let inspection = tokio::task::spawn_blocking(move || catalog.import(name, bytes))
+        .await
+        .map_err(|error| {
+            hologram_live::error::LiveError::Conflict(format!("join archive import: {error}"))
+        })??;
+    Ok(inspection.kappa)
+}
+
+/// Fetch a named artifact and return its archive bytes.
+async fn pull_archive_bytes(
+    cli: &Cli,
+    config: &hologram_live::config::AppConfig,
+    reference: &hologram_live::artifact_ref::ArtifactRef,
+) -> Result<Vec<u8>> {
+    use hologram_live::artifact_pull::{pull, LayerSource, PullProgress};
+    use hologram_live::error::LiveError;
+    use hologram_live::registry::kappa_client::KappaClient;
+    use hologram_live::store::ObjectStore;
+
+    let registry = config.registry.clone();
+    let store_root = config.paths.data_dir.join("registry");
+    let reference = reference.clone();
+    let json = cli.json;
+    let mut emit = move |progress: PullProgress| {
+        if json {
+            if let Ok(line) = serde_json::to_string(&progress) {
+                eprintln!("{line}");
+            }
+        } else if progress.source == LayerSource::Fetched {
+            eprintln!(
+                "fetched [{}/{}] {}",
+                progress.index + 1,
+                progress.total,
+                progress.kappa
+            );
+        }
+    };
+
+    tokio::task::spawn_blocking(move || {
+        // Built inside the blocking task: `reqwest::blocking::Client` owns an
+        // internal runtime, and constructing one from an async context panics
+        // when that runtime is dropped.
+        let client = KappaClient::new(&registry)?;
+        let store = ObjectStore::open(store_root)?;
+        let report = pull(&client, &store, &reference, &mut emit)?;
+        store.get_cached(&report.archive_kappa)?.ok_or_else(|| {
+            LiveError::NotFound(format!(
+                "pulled archive {} is absent from the local store",
+                report.archive_kappa
+            ))
+        })
+    })
+    .await
+    .map_err(|error| {
+        hologram_live::error::LiveError::Conflict(format!("join artifact pull: {error}"))
+    })?
 }
 
 pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()> {
@@ -18,12 +116,17 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
     }
     config.validate()?;
     let listen = config.server.listen.clone();
-    let declared: Vec<String> = config
+    let mut declared: Vec<String> = config
         .holo
         .resident
         .iter()
         .map(|entry| entry.kappa.clone())
         .collect();
+    // An argument joins the operator's declarations rather than replacing
+    // them: `serve <ref>` is "also serve this", not "serve only this".
+    if let Some(reference) = args.reference.as_deref() {
+        declared.push(resolve_resident(&cli, &config, reference).await?);
+    }
     let _guard = process::DaemonGuard::acquire(&config)?;
     let state = AppState::build(config, tracing.clone()).await?;
     // Load operator-declared resident applications before binding the

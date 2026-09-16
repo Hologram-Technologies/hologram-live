@@ -153,9 +153,33 @@ hologram files put ./notes.txt --media-type text/plain
 hologram files list
 hologram files rename blake3:... meeting-notes.txt
 hologram files get blake3:... --output ./meeting-notes.txt
+hologram files search --filename-contains notes --limit 20
 ```
 
 File bytes are addressed by their BLAKE3 content ID. Renaming changes only persisted filename metadata; the ID and bytes remain unchanged.
+
+### Object search
+
+```bash
+hologram registry search --kind file --limit 50
+hologram registry search --media-type text/plain --min-size 1024
+hologram --json registry search --limit 2 | jq -r '.next_cursor'
+hologram registry search --limit 2 --cursor blake3:...
+```
+
+Search filters on stored metadata: `--kind`, `--media-type`, `--filename-contains`,
+`--min-size`, `--max-size`. It is not full-text and does not read object content.
+
+Results are ordered ascending by object ID and paginated. `--limit` defaults to
+100 and is clamped to 1000. A page carries `next_cursor` only while further
+matches remain; the cursor is opaque and valid only for the provider that issued
+it. `truncated` reports a page cut short by a provider-side scan bound, so a
+capped result is never presented as a complete one.
+
+The same surface is available as `GET /api/v1/objects/search` and
+`GET /api/v1/files/search`, and as the `registry.search` and `files.search`
+native operations. `hologram files search` is the file-kind projection: the
+daemon fixes the kind, so `--kind` is not offered there.
 
 ### `.holo` archives
 
@@ -932,8 +956,8 @@ Trusted modules are statically linked and registered in the `builtin_modules!` c
 | Module | Current responsibility |
 | --- | --- |
 | `dev.hologram.live.system` | Health, capabilities, and module discovery |
-| `dev.hologram.live.kappa-registry` | Local content-addressed registry provider |
-| `dev.hologram.live.files` | File upload, listing, renaming, and download |
+| `dev.hologram.live.kappa-registry` | Local content-addressed registry provider, with bounded metadata search |
+| `dev.hologram.live.files` | File upload, listing, search, renaming, and download |
 | `dev.hologram.live.holo` | `.holo` import, inspection, verification, cataloguing, and resident Wasm execution |
 | `dev.hologram.live.history` | Durable conversations and messages |
 | `dev.hologram.live.chat` | Conversation-backed chat over the configured inference engine |
@@ -959,6 +983,29 @@ export_timeout_secs = 5
 ```
 
 `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME` override those values. No telemetry network connection is made when the endpoint is unset.
+
+Object storage selects a provider. The default keeps a stock install
+self-contained, needing no external service:
+
+```toml
+[registry]
+provider = "local"
+endpoint = "http://127.0.0.1:5000"
+namespace = "hologram"
+token = ""
+request_timeout_secs = 30
+max_scan_pages = 20
+```
+
+Only `local` is implemented. Selecting `kappa` fails validation at startup with
+a typed configuration error rather than silently serving from the local store —
+an operator who asks for a remote registry is told it is unavailable instead of
+discovering later that their objects never left the machine. The `endpoint`,
+`namespace`, `token`, and `max_scan_pages` keys are accepted now so the section
+does not change shape when that adapter ships.
+
+Adding this section does not require a configuration rewrite: every section is
+defaulted, so a file written before `[registry]` existed keeps loading unchanged.
 
 The client can route to local or remote authorities after a capability handshake. Non-loopback remote endpoints require HTTPS, and authentication, authorization, TLS, and integrity errors never trigger fallback to another authority.
 
@@ -1049,8 +1096,12 @@ cargo install cargo-watch --locked
 
 The default build does not yet provide:
 
-- enterprise identity, organizations, or RBAC storage; or
-- fleet scheduling.
+- enterprise identity, organizations, or RBAC storage;
+- fleet scheduling;
+- a remote object-storage provider — `registry.provider` accepts only `local`,
+  and selecting `kappa` is refused at startup; or
+- full-text, content, or semantic object search. Search matches stored metadata
+  only, and never reads object bytes.
 
 Chat runs against the configured inference engine (`echo` remains the default), Wasm-layer `.holo` archives—including Python Components with locked pure-Python wheels and the capability-gated exact-object and typed-graph read profiles—execute resident, direct Python OCI rootfs archives execute through the experimental local container provider, and the weightc engine can keep resident per-conversation sessions. Tensor execution, inference-model provider invocation, resident rootfs execution, native Component dependencies, remaining Hologram host profiles, capability-gated WASI, transitive graph writes, deterministic Python Component output, and the production microVM provider remain future work. Missing runtime capabilities return a typed `LIVE_CAPABILITY_MISSING` error rather than simulating success.
 

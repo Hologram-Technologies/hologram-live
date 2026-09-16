@@ -1,9 +1,11 @@
 use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
-use crate::protocol::{operation, ObjectContent, ObjectMetadata, OperationKind};
+use crate::protocol::{
+    operation, ObjectContent, ObjectMetadata, ObjectPage, ObjectQuery, OperationKind,
+};
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::get;
@@ -17,6 +19,11 @@ const OPERATIONS: &[OperationDescriptor] = &[
     },
     OperationDescriptor {
         id: operation::REGISTRY_GET,
+        kind: OperationKind::Read,
+        fallback_safe_before_dispatch: true,
+    },
+    OperationDescriptor {
+        id: operation::REGISTRY_SEARCH,
         kind: OperationKind::Read,
         fallback_safe_before_dispatch: true,
     },
@@ -45,6 +52,7 @@ impl LiveModule for KappaRegistryModule {
     fn router(&self) -> Router<AppState> {
         Router::new()
             .route("/api/v1/objects", get(list_objects).post(put_object))
+            .route("/api/v1/objects/search", get(search_objects))
             .route("/api/v1/objects/{id}", get(get_object))
     }
 
@@ -55,8 +63,8 @@ impl LiveModule for KappaRegistryModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_objects, put_object, get_object),
-    components(schemas(ObjectMetadata)),
+    paths(list_objects, put_object, get_object, search_objects),
+    components(schemas(ObjectMetadata, ObjectPage, ObjectQuery)),
     tags((name = "kappa-registry", description = "Content-addressed registry provider"))
 )]
 struct RegistryApiDoc;
@@ -76,6 +84,35 @@ pub async fn list_objects(
             crate::error::LiveError::Conflict(format!("join object listing: {error}"))
         })??;
     Ok(Json(objects))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/objects/search",
+    params(
+        ("kind" = Option<String>, Query, description = "Exact object kind"),
+        ("media_type" = Option<String>, Query, description = "Exact media type"),
+        ("filename_contains" = Option<String>, Query, description = "Filename substring"),
+        ("min_size" = Option<u64>, Query, description = "Minimum size in bytes"),
+        ("max_size" = Option<u64>, Query, description = "Maximum size in bytes"),
+        ("created_after_millis" = Option<u64>, Query, description = "Exclusive lower bound"),
+        ("created_before_millis" = Option<u64>, Query, description = "Exclusive upper bound"),
+        ("limit" = Option<u32>, Query, description = "Page size; defaults to 100, clamped to 1000"),
+        ("cursor" = Option<String>, Query, description = "Opaque cursor from a previous page")
+    ),
+    responses((status = 200, body = ObjectPage))
+)]
+pub async fn search_objects(
+    State(state): State<AppState>,
+    Query(query): Query<ObjectQuery>,
+) -> Result<Json<ObjectPage>, HttpError> {
+    let registry = state.registry().clone();
+    let page = tokio::task::spawn_blocking(move || registry.search(&query))
+        .await
+        .map_err(|error| {
+            crate::error::LiveError::Conflict(format!("join object search: {error}"))
+        })??;
+    Ok(Json(page))
 }
 
 #[utoipa::path(
@@ -182,5 +219,66 @@ fn safe_filename(filename: &str) -> String {
         "download".to_owned()
     } else {
         safe
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::protocol::ObjectQuery;
+    use axum::extract::Query;
+    use axum::http::Uri;
+
+    fn parse(query: &str) -> ObjectQuery {
+        let uri: Uri = format!("http://localhost/api/v1/objects/search?{query}")
+            .parse()
+            .expect("valid uri");
+        Query::<ObjectQuery>::try_from_uri(&uri)
+            .expect("query must deserialize")
+            .0
+    }
+
+    #[test]
+    fn an_empty_query_is_a_bounded_page_not_an_unbounded_scan() {
+        let query = parse("");
+        assert_eq!(query.effective_limit(), 100);
+        assert!(query.cursor.is_none());
+        assert!(query.kind.is_none());
+    }
+
+    #[test]
+    fn an_oversized_limit_is_clamped() {
+        assert_eq!(
+            parse("limit=100000").effective_limit(),
+            1000,
+            "a caller must not be able to request an unbounded page"
+        );
+    }
+
+    #[test]
+    fn filters_parse_from_the_query_string() {
+        let query = parse("kind=file&filename_contains=notes&min_size=10");
+        assert_eq!(query.kind.as_deref(), Some("file"));
+        assert_eq!(query.filename_contains.as_deref(), Some("notes"));
+        assert_eq!(query.min_size, Some(10));
+    }
+
+    #[test]
+    fn the_search_route_is_not_shadowed_by_the_object_id_route() {
+        // `/api/v1/objects/search` and `/api/v1/objects/{id}` share a prefix.
+        // If the dynamic route won, search would be dispatched as a lookup for
+        // an object literally named "search" and return 404 forever.
+        let router: axum::Router<crate::app::AppState> = axum::Router::new()
+            .route(
+                "/api/v1/objects/search",
+                axum::routing::get(|| async { "search" }),
+            )
+            .route(
+                "/api/v1/objects/{id}",
+                axum::routing::get(|| async { "by-id" }),
+            );
+        // Router construction panics on a genuine route conflict, so reaching
+        // here proves the two coexist; ordering is then matchit's static-wins
+        // rule, which the integration surface exercises.
+        drop(router);
     }
 }

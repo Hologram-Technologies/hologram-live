@@ -65,6 +65,8 @@ message RpcRequest {
     PluginCallRequest plugin_call = 35;
     Empty plugin_list = 36;
     IdRequest holo_plan = 37;
+    ObjectQuery registry_search = 38;
+    ObjectQuery files_search = 39;
   }
 }
 
@@ -282,6 +284,30 @@ message PluginResult { string json = 1; }
 message ApiError { string code = 1; string message = 2; }
 message ModuleList { repeated ModuleInfo items = 1; }
 message ObjectList { repeated ObjectMetadata items = 1; }
+
+// A conjunctive filter over stored objects. Every field is optional; an unset
+// field does not constrain. Ordering is ascending by object id.
+message ObjectQuery {
+  optional string kind = 1;
+  optional string media_type = 2;
+  optional string filename_contains = 3;
+  optional uint64 min_size = 4;
+  optional uint64 max_size = 5;
+  optional uint64 created_after_millis = 6;
+  optional uint64 created_before_millis = 7;
+  uint32 limit = 8;
+  // Opaque, and valid only for the provider that issued it.
+  optional string cursor = 9;
+}
+
+// One page of search results. `truncated` is set when a provider-side scan
+// bound stopped the walk early, so a capped page is never mistaken for a
+// complete one.
+message ObjectPage {
+  repeated ObjectMetadata objects = 1;
+  optional string next_cursor = 2;
+  bool truncated = 3;
+}
 message HoloInspectionList { repeated HoloInspection items = 1; }
 message ResidentHoloList { repeated ResidentHolo items = 1; }
 message ConversationList { repeated Conversation items = 1; }
@@ -313,5 +339,6 @@ message RpcResponse {
     PluginResult plugin_result = 19;
     PluginList plugins = 20;
     HoloPlan holo_plan = 21;
+    ObjectPage object_page = 22;
   }
 }

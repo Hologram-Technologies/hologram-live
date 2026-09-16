@@ -1,9 +1,9 @@
 use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::{registry, HttpError};
-use crate::protocol::{operation, ObjectMetadata, OperationKind};
+use crate::protocol::{operation, ObjectMetadata, ObjectPage, ObjectQuery, OperationKind};
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::get;
@@ -24,6 +24,11 @@ const OPERATIONS: &[OperationDescriptor] = &[
         id: operation::FILES_PUT,
         kind: OperationKind::Mutation,
         fallback_safe_before_dispatch: false,
+    },
+    OperationDescriptor {
+        id: operation::FILES_SEARCH,
+        kind: OperationKind::Read,
+        fallback_safe_before_dispatch: true,
     },
     OperationDescriptor {
         id: operation::FILES_RENAME,
@@ -50,6 +55,7 @@ impl LiveModule for FilesModule {
     fn router(&self) -> Router<AppState> {
         Router::new()
             .route("/api/v1/files", get(list_files).post(put_file))
+            .route("/api/v1/files/search", get(search_files))
             .route("/api/v1/files/{id}", get(get_file).patch(rename_file))
     }
 
@@ -60,8 +66,8 @@ impl LiveModule for FilesModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_files, put_file, get_file, rename_file),
-    components(schemas(ObjectMetadata, RenameFileRequest)),
+    paths(list_files, put_file, get_file, rename_file, search_files),
+    components(schemas(ObjectMetadata, RenameFileRequest, ObjectPage, ObjectQuery)),
     tags((name = "files", description = "Artifact file discovery"))
 )]
 struct FilesApiDoc;
@@ -86,6 +92,37 @@ pub async fn list_files(
             crate::error::LiveError::Conflict(format!("join file listing: {error}"))
         })??;
     Ok(Json(files))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/search",
+    params(
+        ("media_type" = Option<String>, Query, description = "Exact media type"),
+        ("filename_contains" = Option<String>, Query, description = "Filename substring"),
+        ("min_size" = Option<u64>, Query, description = "Minimum size in bytes"),
+        ("max_size" = Option<u64>, Query, description = "Maximum size in bytes"),
+        ("created_after_millis" = Option<u64>, Query, description = "Exclusive lower bound"),
+        ("created_before_millis" = Option<u64>, Query, description = "Exclusive upper bound"),
+        ("limit" = Option<u32>, Query, description = "Page size; defaults to 100, clamped to 1000"),
+        ("cursor" = Option<String>, Query, description = "Opaque cursor from a previous page")
+    ),
+    responses((status = 200, body = ObjectPage))
+)]
+pub async fn search_files(
+    State(state): State<AppState>,
+    Query(mut query): Query<ObjectQuery>,
+) -> Result<Json<ObjectPage>, HttpError> {
+    // The files surface is the file-kind projection of the object surface, so
+    // the kind is fixed here rather than trusted from the caller.
+    query.kind = Some("file".to_owned());
+    let registry = state.registry().clone();
+    let page = tokio::task::spawn_blocking(move || registry.search(&query))
+        .await
+        .map_err(|error| {
+            crate::error::LiveError::Conflict(format!("join file search: {error}"))
+        })??;
+    Ok(Json(page))
 }
 
 #[utoipa::path(

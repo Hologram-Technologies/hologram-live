@@ -59,6 +59,12 @@ later be tempting.
 - Provenance is never authority. The admission tests exist to keep it that way:
   they assert the reference type and the pull report carry no capability
   vocabulary at all, so a grant-shaped field cannot be added quietly.
+- `push` publishes the inverse of a pull, enumerating a thin archive's
+  referenced-but-not-embedded payloads from the local store so the published
+  manifest is complete. It writes the manifest last, so an interrupted push
+  leaves unreferenced blobs rather than a tag pointing at missing content, and
+  refuses to move an existing tag without `--force` because upstream tags are
+  silently mutable. Signing and ownership remain out of scope.
 - `serve <ref>` and `chat <ref>` are deliberately not part of this change. Both
   overload commands that already mean something else, and `chat` needs an
   optional positional beside an existing subcommand. They deserve their own

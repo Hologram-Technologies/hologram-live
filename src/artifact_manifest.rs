@@ -9,6 +9,7 @@
 
 use crate::error::{LiveError, Result};
 
+const ARTIFACT_TYPE: &str = "application/vnd.hologram.artifact.v1+json";
 const ANNOTATION_ROLE: &str = "dev.hologram.role";
 const ANNOTATION_KIND: &str = "dev.hologram.kind";
 const ANNOTATION_NAME: &str = "dev.hologram.name";
@@ -104,6 +105,58 @@ impl ArtifactManifest {
         })
     }
 
+    /// Encode this manifest for publication.
+    ///
+    /// The inverse of [`decode`](Self::decode). Roles become explicit
+    /// annotations on every layer, including payloads: `decode` tolerates an
+    /// unannotated layer for compatibility, but anything this code publishes
+    /// says what it is.
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        let archive = self.archive()?;
+
+        let layers: Vec<serde_json::Value> = self
+            .layers
+            .iter()
+            .map(|layer| {
+                let role = match layer.role {
+                    LayerRole::Archive => "archive",
+                    LayerRole::Layer => "layer",
+                };
+                serde_json::json!({
+                    "mediaType": layer.media_type,
+                    "digest": layer.kappa,
+                    "size": layer.size,
+                    "annotations": { ANNOTATION_ROLE: role },
+                })
+            })
+            .collect();
+
+        let mut annotations = serde_json::Map::new();
+        for (key, value) in [
+            (ANNOTATION_KIND, self.kind.as_ref()),
+            (ANNOTATION_NAME, self.name.as_ref()),
+            (ANNOTATION_TAG, self.tag.as_ref()),
+        ] {
+            if let Some(value) = value {
+                annotations.insert(key.to_owned(), serde_json::Value::String(value.clone()));
+            }
+        }
+
+        let document = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "artifactType": ARTIFACT_TYPE,
+            "config": {
+                "mediaType": "application/vnd.oci.empty.v1+json",
+                "digest": archive.kappa,
+                "size": archive.size,
+            },
+            "layers": layers,
+            "annotations": serde_json::Value::Object(annotations),
+        });
+        serde_json::to_vec(&document).map_err(Into::into)
+    }
+
     /// The single archive layer, or a typed error naming what was wrong.
     pub fn archive(&self) -> Result<&ArtifactLayer> {
         let mut found = self
@@ -157,6 +210,67 @@ mod tests {
                     "annotations":{{"dev.hologram.role":"layer"}}}}],
                 "annotations":{{"dev.hologram.kind":"inference-model","dev.hologram.name":"qwen3.5","dev.hologram.tag":"4b"}}}}"#
         )
+    }
+
+    #[test]
+    fn a_manifest_round_trips_through_encode_and_decode() {
+        let original = ArtifactManifest::decode(document().as_bytes()).expect("decode");
+        let reencoded = original.encode().expect("encode");
+        let decoded = ArtifactManifest::decode(&reencoded).expect("decode again");
+
+        assert_eq!(decoded.layers.len(), original.layers.len());
+        assert_eq!(decoded.archive().expect("archive").kappa, ARCHIVE);
+        assert_eq!(decoded.payloads().count(), 1);
+        assert_eq!(decoded.kind, original.kind);
+        assert_eq!(decoded.name, original.name);
+        assert_eq!(decoded.tag, original.tag);
+        for (before, after) in original.layers.iter().zip(decoded.layers.iter()) {
+            assert_eq!(before.kappa, after.kappa);
+            assert_eq!(before.media_type, after.media_type);
+            assert_eq!(before.size, after.size);
+            assert_eq!(before.role, after.role, "roles must survive the round trip");
+        }
+    }
+
+    #[test]
+    fn encoding_marks_every_layer_role_explicitly() {
+        // decode tolerates an unannotated payload for compatibility with
+        // manifests published elsewhere. Anything we publish should still say
+        // what each layer is, so a reader never has to rely on that default.
+        let manifest = ArtifactManifest::decode(document().as_bytes()).expect("decode");
+        let encoded = manifest.encode().expect("encode");
+        let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
+
+        let layers = value["layers"].as_array().expect("layers");
+        assert_eq!(layers.len(), 2);
+        for layer in layers {
+            assert!(
+                layer["annotations"][ANNOTATION_ROLE].is_string(),
+                "every published layer declares its role: {layer}"
+            );
+        }
+        assert_eq!(
+            value["artifactType"].as_str(),
+            Some("application/vnd.hologram.artifact.v1+json")
+        );
+    }
+
+    #[test]
+    fn a_manifest_with_no_archive_layer_cannot_be_encoded() {
+        // Publishing an artifact with no archive would create exactly the
+        // dangling manifest the pull path exists to reject.
+        let manifest = ArtifactManifest {
+            layers: vec![ArtifactLayer {
+                kappa: WEIGHTS.to_owned(),
+                media_type: "application/octet-stream".to_owned(),
+                size: 30,
+                role: LayerRole::Layer,
+            }],
+            kind: None,
+            name: None,
+            tag: None,
+        };
+        assert!(manifest.encode().is_err());
     }
 
     #[test]

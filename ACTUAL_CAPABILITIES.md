@@ -10,15 +10,29 @@ This document is deliberately strict about what the current stable build does an
 - Statically registered, dependency-ordered modules.
 - Kappa Registry represented as the first ordinary module.
 - File listing, durable renaming, and retrieval over the content-addressed object store.
+- Named artifact acquisition: `hologram pull <ref>` resolves a docker-style
+  reference, transfers only the layers absent locally, verifies each against its
+  kappa on write, and confirms every referenced layer is present before
+  reporting success. `hologram run` accepts a reference under a fixed
+  precedence — kappa, then existing path, then reference — so no prior
+  invocation changes meaning. Pulling grants no capabilities: a pulled archive
+  takes the same ADR 020 baseline as a local file and executes by the same path.
+  `hologram push`, a curated index, and `serve`/`chat` by reference are not
+  implemented.
 - Bounded, paginated object search over stored metadata — kind, media type,
   filename substring, size range, and creation-time range — ordered ascending by
   object ID, with opaque provider-scoped cursors and explicit truncation
   reporting. Exposed over CLI, JSON/HTTP, OpenAPI, and native gRPC. It filters
   metadata only: there is no full-text, content, or semantic search.
-- A `[registry]` configuration section selecting the storage provider. Only the
-  local content-addressed provider is implemented. Selecting `kappa` fails
-  validation at startup with a typed configuration error rather than silently
-  serving from the local store.
+- A `[registry]` configuration section selecting the storage provider. Two
+  providers are implemented: the local content-addressed store (the default,
+  needing no external service) and an adapter for an external Kappa Registry
+  instance over its OCI blob and manifest surface. A conformance suite runs one
+  behavioural contract against both — put, get, idempotent re-put, rename,
+  missing-object reporting, kind filtering, search ordering, and pagination —
+  and is exercised against a live registry by `just kappa-registry`. An unknown
+  provider name, or a `kappa` provider with no endpoint or namespace, fails
+  validation at startup rather than falling back to local storage.
 - Versioned Protobuf/gRPC native API and client.
 - JSON REST endpoints and Utoipa-generated OpenAPI.
 - A global `--json` CLI contract covering every command result, action acknowledgement, download report, decoded run mode, and typed runtime error so stdout can be consumed consistently with `jq`.

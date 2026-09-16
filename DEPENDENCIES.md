@@ -29,4 +29,4 @@ The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plug
 
 Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the server's Cargo dependency graph. The small `hologram-application-watch` workspace crate is Tauri-independent and injected into the desktop adapter; the standalone `hologram-live` server package does not depend on it.
 
-Kappa Registry remains an external service/project. Hologram Live integrates it through the registry provider boundary rather than adding its workspace crates to this dependency graph.
+Kappa Registry remains an external service/project. Hologram Live now ships an adapter for it behind the registry provider boundary, speaking its OCI blob and manifest surface over HTTP with the `reqwest` client already in this graph. None of its workspace crates enter this dependency graph, and selecting the adapter is opt-in configuration: the default install stays self-contained.

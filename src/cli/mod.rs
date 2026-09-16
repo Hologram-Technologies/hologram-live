@@ -20,6 +20,7 @@ mod modules;
 mod nodes;
 mod openapi;
 mod plugins;
+mod pull;
 mod registry;
 mod restart;
 mod route;
@@ -86,6 +87,8 @@ enum Command {
     Files(files::FilesArgs),
     /// Import, verify, load, and run .holo archives.
     Holo(holo::HoloArgs),
+    /// Fetch a named .holo artifact from the configured registry.
+    Pull(pull::PullArgs),
     /// Run a .holo reference.
     Run(run::RunArgs),
     /// Manage durable conversation history.
@@ -139,6 +142,7 @@ impl Cli {
             Command::Registry(args) => registry::run(self, args).await,
             Command::Files(args) => files::run(self, args).await,
             Command::Holo(args) => holo::run(self, args).await,
+            Command::Pull(args) => pull::run(self, args).await,
             Command::Run(args) => run::run(self, args).await,
             Command::History(args) => history::run(self, args).await,
             Command::Chat(args) => chat::run(self, args).await,

@@ -181,6 +181,48 @@ The same surface is available as `GET /api/v1/objects/search` and
 native operations. `hologram files search` is the file-kind projection: the
 daemon fixes the kind, so `--kind` is not offered there.
 
+### Named artifacts
+
+```bash
+hologram pull qwen3.5:4b
+hologram pull host:5000/models/qwen3.5:4b
+hologram run qwen3.5:4b --input-text "hello"
+hologram --json pull qwen3.5:4b | jq '{archive_kappa, layers_fetched, bytes_transferred}'
+```
+
+A reference is `[host[:port]/]namespace/name[:tag]`. A bare `name:tag` expands
+against `[registry].endpoint` and `[registry].namespace`; an omitted tag means
+`latest`. Following OCI, the colon separates repository from tag, so
+`qwen3.5:4b` is repository `qwen3.5`, tag `4b`.
+
+An artifact is one OCI manifest whose layers are a thin `.holo` archive plus the
+kappa-addressed payload blobs it references, so two artifacts sharing weights
+transfer them once. Pull consults the local store first, fetches only what is
+missing, verifies every layer against its kappa on write, and confirms the whole
+set is present before reporting success — the registry itself does not check
+that a manifest's layers exist. Every step is content-addressed, so a pull is
+idempotent and an interrupted one resumes for free.
+
+Tags are mutable, so a pull always re-resolves rather than caching by name, and
+records the resolved manifest digest — that digest, not the tag, is what makes a
+pull reproducible.
+
+`run` resolves its argument in a fixed order, so no existing invocation changes
+meaning:
+
+1. a `blake3:` id → the local catalog
+2. an existing filesystem path → a local archive
+3. anything else → a registry reference, pulled and then executed
+
+**Pulling grants no capabilities.** A pulled archive receives the same ADR 020
+baseline as a local file — no storage roots, no channels, no network scopes —
+and is executed by exactly the same path. Having come from a configured registry
+is not evidence about what an archive contains.
+
+Progress is written to stderr and the result document to stdout, so `--json`
+stays usable in a pipeline; under `--json` the progress is JSONL events rather
+than a rendered bar.
+
 ### `.holo` archives
 
 Generate a validated source manifest interactively:
@@ -956,7 +998,7 @@ Trusted modules are statically linked and registered in the `builtin_modules!` c
 | Module | Current responsibility |
 | --- | --- |
 | `dev.hologram.live.system` | Health, capabilities, and module discovery |
-| `dev.hologram.live.kappa-registry` | Local content-addressed registry provider, with bounded metadata search |
+| `dev.hologram.live.kappa-registry` | Content-addressed registry provider (local or external Kappa Registry), with bounded metadata search |
 | `dev.hologram.live.files` | File upload, listing, search, renaming, and download |
 | `dev.hologram.live.holo` | `.holo` import, inspection, verification, cataloguing, and resident Wasm execution |
 | `dev.hologram.live.history` | Durable conversations and messages |
@@ -997,12 +1039,24 @@ request_timeout_secs = 30
 max_scan_pages = 20
 ```
 
-Only `local` is implemented. Selecting `kappa` fails validation at startup with
-a typed configuration error rather than silently serving from the local store —
-an operator who asks for a remote registry is told it is unavailable instead of
-discovering later that their objects never left the machine. The `endpoint`,
-`namespace`, `token`, and `max_scan_pages` keys are accepted now so the section
-does not change shape when that adapter ships.
+`local` keeps every object on this machine. `kappa` serves them from an external
+[Kappa Registry](https://github.com/uoR-Foundation/kappa-registry) instance over
+its OCI blob and manifest surface. Both systems address objects as
+`blake3:<64 hex>` — already a valid kappa-label upstream — so identity crosses
+the boundary unchanged.
+
+An unknown provider name, or `kappa` without an endpoint or namespace, fails
+validation at startup rather than falling back to local storage: an operator who
+asks for a remote registry is told it cannot be built, instead of discovering
+later that their objects never left the machine.
+
+`max_scan_pages` bounds how many upstream tag pages one selective query walks,
+since the remote registry cannot filter on kind or filename. Reaching that bound
+sets `truncated` on the result rather than silently returning a short page.
+
+Both providers are held to one behavioural contract by a conformance suite. Run
+it against a real registry with `just kappa-registry`, which builds a pinned
+kappa-registry, starts it on an ephemeral port, and executes the suite.
 
 Adding this section does not require a configuration rewrite: every section is
 defaulted, so a file written before `[registry]` existed keeps loading unchanged.
@@ -1098,8 +1152,8 @@ The default build does not yet provide:
 
 - enterprise identity, organizations, or RBAC storage;
 - fleet scheduling;
-- a remote object-storage provider — `registry.provider` accepts only `local`,
-  and selecting `kappa` is refused at startup; or
+- a client SDK, `hologram push`, a curated artifact index, or `serve`/`chat` by
+  reference; or
 - full-text, content, or semantic object search. Search matches stored metadata
   only, and never reads object bytes.
 

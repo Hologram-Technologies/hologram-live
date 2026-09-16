@@ -129,8 +129,8 @@ async fn pull_archive_bytes(
     use hologram_live::registry::kappa_client::KappaClient;
     use hologram_live::store::ObjectStore;
 
-    let client = KappaClient::new(&config.registry)?;
-    let store = ObjectStore::open(config.paths.data_dir.join("registry"))?;
+    let registry = config.registry.clone();
+    let store_root = config.paths.data_dir.join("registry");
     let reference = reference.clone();
     let json = cli.json;
     let mut emit = move |progress: PullProgress| {
@@ -149,6 +149,11 @@ async fn pull_archive_bytes(
     };
 
     tokio::task::spawn_blocking(move || {
+        // Built inside the blocking task: `reqwest::blocking::Client` owns an
+        // internal runtime, and constructing one from an async context panics
+        // when that runtime is dropped.
+        let client = KappaClient::new(&registry)?;
+        let store = ObjectStore::open(store_root)?;
         let report = pull(&client, &store, &reference, &mut emit)?;
         store.get_cached(&report.archive_kappa)?.ok_or_else(|| {
             LiveError::NotFound(format!(

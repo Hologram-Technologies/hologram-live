@@ -53,7 +53,13 @@ pub struct PullReport {
 pub trait LayerFetch {
     /// The manifest body and its digest, or `None` when the tag is unknown.
     fn manifest(&self, repository: &str, tag: &str) -> Result<Option<(Vec<u8>, Option<String>)>>;
-    fn blob(&self, kappa: &str) -> Result<Vec<u8>>;
+    /// Layer bytes from the *same* repository the manifest came from.
+    ///
+    /// The repository is a parameter rather than client state because a
+    /// reference names its own namespace: resolving a manifest from
+    /// `models/demo` and then fetching its layers from the client's configured
+    /// namespace would look up blobs that are not there.
+    fn blob(&self, repository: &str, kappa: &str) -> Result<Vec<u8>>;
 }
 
 pub fn pull(
@@ -90,17 +96,20 @@ pub fn pull(
             continue;
         }
 
-        let bytes = fetch.blob(&layer.kappa).map_err(|error| match error {
-            // Name the layer: the registry does not validate layer presence,
-            // so a dangling manifest is the likely cause and the operator
-            // needs to know which blob is missing.
-            LiveError::NotFound(_) => LiveError::NotFound(format!(
-                "artifact {} references layer {} which the registry does not hold",
-                reference.display(),
-                layer.kappa
-            )),
-            other => other,
-        })?;
+        let bytes =
+            fetch
+                .blob(&reference.repository(), &layer.kappa)
+                .map_err(|error| match error {
+                    // Name the layer: the registry does not validate layer presence,
+                    // so a dangling manifest is the likely cause and the operator
+                    // needs to know which blob is missing.
+                    LiveError::NotFound(_) => LiveError::NotFound(format!(
+                        "artifact {} references layer {} which the registry does not hold",
+                        reference.display(),
+                        layer.kappa
+                    )),
+                    other => other,
+                })?;
 
         // cache_addressed re-hashes the bytes and refuses to store them under
         // an address they do not produce, so a corrupt or substituted layer
@@ -200,7 +209,7 @@ mod tests {
                 .map(|body| (body, Some("sha256:deadbeef".to_owned()))))
         }
 
-        fn blob(&self, kappa: &str) -> Result<Vec<u8>> {
+        fn blob(&self, _repository: &str, kappa: &str) -> Result<Vec<u8>> {
             self.requested.borrow_mut().push(kappa.to_owned());
             self.blobs
                 .get(kappa)

@@ -16,8 +16,6 @@ pub struct PullArgs {
 pub async fn run(cli: Cli, args: PullArgs) -> Result<()> {
     let (config, _) = helpers::load(&cli)?;
     let reference = ArtifactRef::parse(&args.reference, &config.registry)?;
-    let client = KappaClient::new(&config.registry)?;
-    let store = ObjectStore::open(config.paths.data_dir.join("registry"))?;
 
     // Progress is inherently streaming and the result is a single document, so
     // they go to different streams. Under --json the progress is JSONL, so a
@@ -43,10 +41,18 @@ pub async fn run(cli: Cli, args: PullArgs) -> Result<()> {
         }
     };
 
-    let report =
-        tokio::task::spawn_blocking(move || run_pull(&client, &store, &reference, &mut emit))
-            .await
-            .map_err(|error| LiveError::Conflict(format!("join artifact pull: {error}")))??;
+    // The client and store are built inside the blocking task, not before it.
+    // `reqwest::blocking::Client` owns an internal runtime, and constructing
+    // one from an async context panics when that runtime is dropped.
+    let registry = config.registry.clone();
+    let store_root = config.paths.data_dir.join("registry");
+    let report = tokio::task::spawn_blocking(move || {
+        let client = KappaClient::new(&registry)?;
+        let store = ObjectStore::open(store_root)?;
+        run_pull(&client, &store, &reference, &mut emit)
+    })
+    .await
+    .map_err(|error| LiveError::Conflict(format!("join artifact pull: {error}")))??;
 
     helpers::print(&cli, &report)
 }

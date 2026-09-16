@@ -146,7 +146,7 @@ fn system_info() -> SystemInfo {
 
     SystemInfo {
         host: sysinfo::System::host_name().unwrap_or_else(|| "this device".to_owned()),
-        cores: system.physical_core_count().unwrap_or(0),
+        cores: sysinfo::System::physical_core_count().unwrap_or(0),
         memory_used_bytes: system.used_memory(),
         memory_total_bytes: system.total_memory(),
         disk_used_bytes: disk_total_bytes.saturating_sub(disk_available_bytes),

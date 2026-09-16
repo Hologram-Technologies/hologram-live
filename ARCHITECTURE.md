@@ -79,7 +79,7 @@ The Tauri application in `apps/desktop` bundles and controls the `hologram` exec
 
 ## Storage
 
-The current content store is a simple content-addressed file store suitable for the starter. The provider boundary allows Kappa Registry or another store implementation to replace it without changing `.holo`, history, or client APIs.
+The default content store is a simple content-addressed file store suitable for the starter. The provider boundary that allows another store implementation to replace it without changing `.holo`, history, or client APIs is now exercised by a second implementation: `[registry].provider = "kappa"` serves objects from an external Kappa Registry instance instead. Both systems address objects as `blake3:<64 hex>`, which is already a valid kappa-label upstream, so identity crosses the boundary unchanged and nothing is translated. An object becomes one blob plus one sidecar OCI manifest carrying the kind, filename, and creation time a blob store has nowhere to put, tagged with the object's kappa so a point lookup is one request. Search is bounded and paginated over the upstream tag listing rather than an index, and reports truncation instead of silently shortening a page. One conformance suite runs a single behavioural contract against both providers, since the boundary's guarantee holds only if the implementations are observably identical. Selecting a provider that cannot be built fails at startup rather than falling back to local storage.
 
 ## `.holo`
 

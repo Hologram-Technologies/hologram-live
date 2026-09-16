@@ -15,7 +15,7 @@ use crate::plugin::PluginRegistry;
 use crate::protocol::{
     CapabilityManifest, HealthResponse, ModuleInfo, RpcRequest, RpcResponse, PROTOCOL_VERSION,
 };
-use crate::registry::{LocalRegistryProvider, RegistryProvider};
+use crate::registry::RegistryProvider;
 use crate::store::ObjectStore;
 use axum::Router;
 use std::path::PathBuf;
@@ -53,7 +53,7 @@ impl AppState {
         let modules = ModuleRegistry::build(&config.modules.enabled)?;
         let store = Arc::new(ObjectStore::open(config.paths.data_dir.join("registry"))?);
         let registry: Arc<dyn RegistryProvider> =
-            Arc::new(LocalRegistryProvider::new(store.clone()));
+            crate::registry::provider_from_config(&config, store.clone())?;
         let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
         let actor_system = ActorSystem::start();
         let audit = AuditLog::open(

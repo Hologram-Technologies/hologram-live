@@ -40,7 +40,7 @@ prost = "0.14"
 # `tls-ring` features on tonic and opentelemetry-otlp), so rustls resolves ring
 # from crate features and the default build stays pure Rust. Roots now come from
 # rustls-platform-verifier, which 0.13 uses in place of the removed roots features.
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "blocking", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "query", "blocking", "stream"] }
 scalar_api_reference = { version = "0.2.2", default-features = false }
 # Direct only to choose a crypto provider. reqwest 0.13 requires one to be
 # installed explicitly under `rustls-no-provider`; default features here would

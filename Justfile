@@ -54,6 +54,10 @@ python-rootfs-repro builds="2":
 python-private-registry:
     ./scripts/check-python-private-registry.sh
 
+# Build a pinned kappa-registry and run provider conformance against it.
+kappa-registry:
+    ./scripts/check-kappa-registry.sh
+
 # Keep production source files small enough to review and refactor.
 file-size:
     ./scripts/check-file-size.sh

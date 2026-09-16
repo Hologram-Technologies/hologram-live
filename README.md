@@ -247,6 +247,39 @@ Progress is written to stderr and the result document to stdout, so `--json`
 stays usable in a pipeline; under `--json` the progress is JSONL events rather
 than a rendered bar.
 
+### Client library
+
+Applications can talk to a daemon without depending on it. `hologram-client` is
+a standalone crate in this workspace:
+
+```rust
+use hologram_client::{HologramClient, ObjectQuery};
+
+let client = HologramClient::new("http://127.0.0.1:11435")?;
+let stored = client
+    .put_file(b"hello".to_vec(), Some("notes.txt"), "text/plain")
+    .await?;
+let bytes = client.get_file(&stored.id).await?;
+
+let page = client
+    .search_files(&ObjectQuery {
+        filename_contains: Some("notes".to_owned()),
+        limit: 50,
+        ..ObjectQuery::default()
+    })
+    .await?;
+```
+
+It depends on `reqwest`, `rustls`, `serde`, and `serde_json` only — taking
+`hologram-live` would pull `wasmtime`, `axum`, and `tonic` into every consumer's
+build. The cost of mirroring the wire shapes instead of importing them is drift,
+so a contract test in the daemon's suite serializes the server types and
+deserializes them with the client's; a renamed field fails a build rather than
+surfacing at runtime.
+
+`search_objects_all` follows cursors to the end, stopping at a truncated page
+rather than looping, since truncation means the daemon stopped early.
+
 ### `.holo` archives
 
 Generate a validated source manifest interactively:
@@ -1176,8 +1209,7 @@ The default build does not yet provide:
 
 - enterprise identity, organizations, or RBAC storage;
 - fleet scheduling;
-- a client SDK, a curated artifact index, artifact signing, or `serve`/`chat` by
-  reference; or
+- a curated artifact index, artifact signing, or `chat` by reference; or
 - full-text, content, or semantic object search. Search matches stored metadata
   only, and never reads object bytes.
 

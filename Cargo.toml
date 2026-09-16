@@ -12,6 +12,7 @@ publish = false
 [workspace]
 members = [
     "crates/hologram-application-watch",
+    "crates/hologram-client",
     "crates/hologram-view-surface",
 ]
 resolver = "2"
@@ -74,6 +75,11 @@ hologram-view-surface = { path = "crates/hologram-view-surface" }
 
 [dev-dependencies]
 cucumber = "0.23"
+# Dev-only: the client SDK mirrors the wire shapes rather than importing them,
+# so a contract test asserts the two still agree. A dev-dependency keeps it out
+# of the server's normal dependency graph, which the product-boundary gate
+# checks with --edges normal.
+hologram-client = { path = "crates/hologram-client" }
 
 [features]
 bdd = []

@@ -1,0 +1,33 @@
+[package]
+name = "hologram-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Typed HTTP client for the Hologram Live object and file API"
+repository = "https://github.com/Hologram-Technologies/hologram-live"
+publish = false
+
+# Deliberately minimal. This crate exists so an application can talk to a
+# Hologram daemon without depending on the daemon: taking `hologram-live` would
+# pull wasmtime, axum, and tonic into every consumer's build for the sake of a
+# handful of JSON shapes.
+[dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "query"] }
+# Direct only to choose a crypto provider: reqwest 0.13 requires one installed
+# explicitly under `rustls-no-provider`, and default features here would pull
+# aws-lc-rs, so ring is selected deliberately to match the daemon.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"

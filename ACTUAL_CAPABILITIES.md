@@ -40,6 +40,10 @@ This document is deliberately strict about what the current stable build does an
   provider name, or a `kappa` provider with no endpoint or namespace, fails
   validation at startup rather than falling back to local storage.
 - Versioned Protobuf/gRPC native API and client.
+- A standalone `hologram-client` workspace crate: a typed async HTTP client for
+  put, get, list, and paginated search over objects and files, depending only on
+  reqwest, rustls, and serde rather than on the daemon. A contract test in the
+  daemon's suite proves the mirrored wire types still agree.
 - JSON REST endpoints and Utoipa-generated OpenAPI.
 - A global `--json` CLI contract covering every command result, action acknowledgement, download report, decoded run mode, and typed runtime error so stdout can be consumed consistently with `jq`.
 - Self-hosted Scalar interactive API reference.

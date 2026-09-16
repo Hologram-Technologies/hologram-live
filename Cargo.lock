@@ -1191,6 +1191,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hologram-client"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hologram-compute"
 version = "0.12.1"
 source = "git+https://github.com/Hologram-Technologies/hologram?rev=2bda6a9a9476872dade705bd61ece4209607f6da#2bda6a9a9476872dade705bd61ece4209607f6da"
@@ -1227,6 +1237,7 @@ dependencies = [
  "clap",
  "cucumber",
  "fs4",
+ "hologram-client",
  "hologram-view-surface",
  "hyper-util",
  "kameo",

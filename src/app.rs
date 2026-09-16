@@ -306,6 +306,24 @@ impl AppState {
                     RpcResponse::Objects,
                 )
             }
+            RpcRequest::RegistrySearch { query } => {
+                let registry = self.inner.registry.clone();
+                RpcResponse::from_result(
+                    blocking(move || registry.search(&query)).await,
+                    RpcResponse::ObjectPage,
+                )
+            }
+            RpcRequest::FilesSearch { mut query } => {
+                let registry = self.inner.registry.clone();
+                // The files surface is the file-kind projection of the object
+                // surface, so the kind is fixed here rather than trusted from
+                // the caller.
+                query.kind = Some("file".to_owned());
+                RpcResponse::from_result(
+                    blocking(move || registry.search(&query)).await,
+                    RpcResponse::ObjectPage,
+                )
+            }
             RpcRequest::RegistryPut {
                 kind,
                 media_type,

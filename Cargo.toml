@@ -35,8 +35,18 @@ opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["grpc-tonic", "metrics", "trace", "tls-ring", "tls-roots"] }
 opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }
 prost = "0.14"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking", "stream"] }
+# `rustls-no-provider` rather than `rustls`: the latter forces the aws-lc-rs
+# crypto provider, which is C code. This tree standardizes on ring (see the
+# `tls-ring` features on tonic and opentelemetry-otlp), so rustls resolves ring
+# from crate features and the default build stays pure Rust. Roots now come from
+# rustls-platform-verifier, which 0.13 uses in place of the removed roots features.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "blocking", "stream"] }
 scalar_api_reference = { version = "0.2.2", default-features = false }
+# Direct only to choose a crypto provider. reqwest 0.13 requires one to be
+# installed explicitly under `rustls-no-provider`; default features here would
+# pull aws-lc-rs back in, so ring is selected deliberately. See
+# `util::install_crypto_provider`.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

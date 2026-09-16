@@ -6,8 +6,8 @@ use crate::protocol::{
     ApplicationCompletion, CapabilityManifest, Conversation, ConversationMessage, HealthResponse,
     HoloBlob, HoloChild, HoloDirectory, HoloInspection, HoloLayer, HoloPlan, HoloPlanBlocker,
     HoloPlanLayer, HoloPlanLimits, HoloPlanObject, HoloPlanProvider, HoloRunResult, HoloSection,
-    ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata, OperationInfo, OperationKind,
-    PluginStatus, ResidentHolo, RpcRequest, RpcResponse,
+    ModuleInfo, NodeRecord, ObjectContent, ObjectMetadata, ObjectPage, ObjectQuery, OperationInfo,
+    OperationKind, PluginStatus, ResidentHolo, RpcRequest, RpcResponse,
 };
 use crate::util::constant_time_eq;
 use opentelemetry::metrics::{Counter, Histogram};
@@ -135,6 +135,8 @@ impl From<RpcRequest> for pb::RpcRequest {
             RpcRequest::TracingGet => Wire::TracingGet(empty()),
             RpcRequest::TracingSet { filter } => Wire::TracingSet(pb::TracingSetRequest { filter }),
             RpcRequest::RegistryList => Wire::RegistryList(empty()),
+            RpcRequest::RegistrySearch { query } => Wire::RegistrySearch(query.into()),
+            RpcRequest::FilesSearch { query } => Wire::FilesSearch(query.into()),
             RpcRequest::RegistryPut {
                 kind,
                 media_type,
@@ -234,6 +236,12 @@ impl TryFrom<pb::RpcRequest> for RpcRequest {
                 filter: value.filter,
             }),
             Wire::RegistryList(_) => Ok(Self::RegistryList),
+            Wire::RegistrySearch(query) => Ok(Self::RegistrySearch {
+                query: query.into(),
+            }),
+            Wire::FilesSearch(query) => Ok(Self::FilesSearch {
+                query: query.into(),
+            }),
             Wire::RegistryPut(value) => Ok(Self::RegistryPut {
                 kind: value.kind,
                 media_type: value.media_type,
@@ -314,6 +322,7 @@ impl From<RpcResponse> for pb::RpcResponse {
             RpcResponse::Objects(items) => Wire::Objects(pb::ObjectList {
                 items: items.into_iter().map(Into::into).collect(),
             }),
+            RpcResponse::ObjectPage(page) => Wire::ObjectPage(page.into()),
             RpcResponse::Object(value) => Wire::Object(value.into()),
             RpcResponse::ObjectContent(value) => Wire::ObjectContent(value.into()),
             RpcResponse::HoloInspection(value) => Wire::HoloInspection(value.into()),
@@ -367,6 +376,7 @@ impl TryFrom<pb::RpcResponse> for RpcResponse {
             Wire::Objects(value) => Ok(Self::Objects(
                 value.items.into_iter().map(Into::into).collect(),
             )),
+            Wire::ObjectPage(value) => Ok(Self::ObjectPage(value.into())),
             Wire::Object(value) => Ok(Self::Object(value.into())),
             Wire::ObjectContent(value) => Ok(Self::ObjectContent(value.try_into()?)),
             Wire::HoloInspection(value) => Ok(Self::HoloInspection(value.try_into()?)),
@@ -564,6 +574,58 @@ impl From<pb::ObjectMetadata> for ObjectMetadata {
             filename: value.filename,
             size: value.size,
             created_at_millis: value.created_at_millis,
+        }
+    }
+}
+
+impl From<ObjectQuery> for pb::ObjectQuery {
+    fn from(value: ObjectQuery) -> Self {
+        Self {
+            kind: value.kind,
+            media_type: value.media_type,
+            filename_contains: value.filename_contains,
+            min_size: value.min_size,
+            max_size: value.max_size,
+            created_after_millis: value.created_after_millis,
+            created_before_millis: value.created_before_millis,
+            limit: value.limit,
+            cursor: value.cursor,
+        }
+    }
+}
+
+impl From<pb::ObjectQuery> for ObjectQuery {
+    fn from(value: pb::ObjectQuery) -> Self {
+        Self {
+            kind: value.kind,
+            media_type: value.media_type,
+            filename_contains: value.filename_contains,
+            min_size: value.min_size,
+            max_size: value.max_size,
+            created_after_millis: value.created_after_millis,
+            created_before_millis: value.created_before_millis,
+            limit: value.limit,
+            cursor: value.cursor,
+        }
+    }
+}
+
+impl From<ObjectPage> for pb::ObjectPage {
+    fn from(value: ObjectPage) -> Self {
+        Self {
+            objects: value.objects.into_iter().map(Into::into).collect(),
+            next_cursor: value.next_cursor,
+            truncated: value.truncated,
+        }
+    }
+}
+
+impl From<pb::ObjectPage> for ObjectPage {
+    fn from(value: pb::ObjectPage) -> Self {
+        Self {
+            objects: value.objects.into_iter().map(Into::into).collect(),
+            next_cursor: value.next_cursor,
+            truncated: value.truncated,
         }
     }
 }

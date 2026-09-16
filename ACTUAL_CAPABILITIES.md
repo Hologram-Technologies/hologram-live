@@ -10,6 +10,15 @@ This document is deliberately strict about what the current stable build does an
 - Statically registered, dependency-ordered modules.
 - Kappa Registry represented as the first ordinary module.
 - File listing, durable renaming, and retrieval over the content-addressed object store.
+- Bounded, paginated object search over stored metadata — kind, media type,
+  filename substring, size range, and creation-time range — ordered ascending by
+  object ID, with opaque provider-scoped cursors and explicit truncation
+  reporting. Exposed over CLI, JSON/HTTP, OpenAPI, and native gRPC. It filters
+  metadata only: there is no full-text, content, or semantic search.
+- A `[registry]` configuration section selecting the storage provider. Only the
+  local content-addressed provider is implemented. Selecting `kappa` fails
+  validation at startup with a typed configuration error rather than silently
+  serving from the local store.
 - Versioned Protobuf/gRPC native API and client.
 - JSON REST endpoints and Utoipa-generated OpenAPI.
 - A global `--json` CLI contract covering every command result, action acknowledgement, download report, decoded run mode, and typed runtime error so stdout can be consumed consistently with `jq`.

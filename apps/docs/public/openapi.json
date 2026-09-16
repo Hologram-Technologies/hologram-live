@@ -333,6 +333,108 @@
         }
       }
     },
+    "/api/v1/files/search": {
+      "get": {
+        "tags": [],
+        "operationId": "search_files",
+        "parameters": [
+          {
+            "name": "media_type",
+            "in": "query",
+            "description": "Exact media type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename_contains",
+            "in": "query",
+            "description": "Filename substring",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "min_size",
+            "in": "query",
+            "description": "Minimum size in bytes",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "max_size",
+            "in": "query",
+            "description": "Maximum size in bytes",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "created_after_millis",
+            "in": "query",
+            "description": "Exclusive lower bound",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "created_before_millis",
+            "in": "query",
+            "description": "Exclusive upper bound",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size; defaults to 100, clamped to 1000",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from a previous page",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/files/{id}": {
       "get": {
         "tags": [],
@@ -946,6 +1048,117 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ObjectMetadata"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/objects/search": {
+      "get": {
+        "tags": [],
+        "operationId": "search_objects",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Exact object kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "media_type",
+            "in": "query",
+            "description": "Exact media type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename_contains",
+            "in": "query",
+            "description": "Filename substring",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "min_size",
+            "in": "query",
+            "description": "Minimum size in bytes",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "max_size",
+            "in": "query",
+            "description": "Maximum size in bytes",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "created_after_millis",
+            "in": "query",
+            "description": "Exclusive lower bound",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "created_before_millis",
+            "in": "query",
+            "description": "Exclusive upper bound",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size; defaults to 100, clamped to 1000",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from a previous page",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectPage"
                 }
               }
             }
@@ -2439,6 +2652,101 @@
           },
           "size": {
             "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "ObjectPage": {
+        "type": "object",
+        "description": "One page of search results.",
+        "required": [
+          "objects",
+          "truncated"
+        ],
+        "properties": {
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absent when the walk reached the end of the result set."
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectMetadata"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when a provider-side scan bound stopped the walk before `limit`\nwas satisfied. A capped result is never presented as a complete one."
+          }
+        }
+      },
+      "ObjectQuery": {
+        "type": "object",
+        "description": "A search over stored objects.\n\nEvery field is an independent conjunctive filter; `None` means \"do not\nconstrain\". Ordering is ascending by object id, identically for every\nprovider: a remote tag listing arrives in lexical order, and imposing a\ntime ordering on it would mean enumerating everything before returning the\nfirst page.",
+        "properties": {
+          "created_after_millis": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_before_millis": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque, and valid only for the provider that issued it. A structured\ncursor would leak provider internals into a public API and stop either\nside changing independently."
+          },
+          "filename_contains": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "media_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "min_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 0
           }

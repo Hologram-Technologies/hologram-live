@@ -40,13 +40,22 @@ impl ObjectStore {
         if !blob.exists() {
             atomic_write(&blob, bytes)?;
         }
+        // Content addressing makes an object immutable, so its creation time is
+        // a property of the content's first appearance. Re-putting the same
+        // bytes must not move it: duplicate metadata records are resolved by
+        // greatest creation time, so a drifting timestamp would silently change
+        // which record wins.
+        let created_at_millis = match self.read_metadata(&digest_hex) {
+            Some(existing) => existing.created_at_millis,
+            None => now_millis(),
+        };
         let metadata = ObjectMetadata {
             id,
             kind: kind.into(),
             media_type: media_type.into(),
             filename,
             size: bytes.len().try_into().unwrap_or(u64::MAX),
-            created_at_millis: now_millis(),
+            created_at_millis,
         };
         let encoded = serde_json::to_vec_pretty(&metadata)?;
         atomic_write(&self.metadata_path(&digest_hex), &encoded)?;
@@ -205,6 +214,14 @@ impl ObjectStore {
     fn metadata_path(&self, digest: &str) -> PathBuf {
         self.root.join("metadata").join(format!("{digest}.json"))
     }
+
+    /// Best-effort read of an existing record. A missing or unreadable file is
+    /// treated as absent: this only chooses a creation timestamp, and failing
+    /// the whole write because a stale record will not parse would be worse.
+    fn read_metadata(&self, digest: &str) -> Option<ObjectMetadata> {
+        let bytes = std::fs::read(self.metadata_path(digest)).ok()?;
+        serde_json::from_slice(&bytes).ok()
+    }
 }
 
 fn validate_id(id: &str) -> Result<&str> {
@@ -298,6 +315,38 @@ mod tests {
             Some("notes.txt")
         );
         assert!(store.rename_file(&original.id, "  ".to_owned()).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn reputting_identical_content_preserves_the_original_creation_time() {
+        let root = std::env::temp_dir().join(format!("hologram-store-created-{}", now_millis()));
+        let store = ObjectStore::open(&root).expect("open");
+        let first = store
+            .put("file", "text/plain", Some("a.txt".to_owned()), b"stable")
+            .expect("first put");
+
+        // now_millis() has millisecond resolution, so without a deliberate gap
+        // a regression could pass by coincidence.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        let second = store
+            .put("file", "text/plain", Some("a.txt".to_owned()), b"stable")
+            .expect("second put");
+
+        assert_eq!(first.id, second.id, "content addressing must be stable");
+        assert_eq!(
+            first.created_at_millis, second.created_at_millis,
+            "creation time of immutable content must not move on re-put"
+        );
+        assert_eq!(
+            store
+                .metadata(&first.id)
+                .expect("metadata")
+                .created_at_millis,
+            first.created_at_millis,
+            "the persisted record must agree with the returned one"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -7,7 +7,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `tokio`                                      | async runtime, sockets, signals, and process control              |
 | `axum`                                       | browser-facing JSON/HTTP routes and shared HTTP serving           |
 | `tonic`, `prost`                             | native Protobuf/gRPC API and client                               |
-| `reqwest`                                    | verified update downloads using Rustls                            |
+| `reqwest`                                    | outbound HTTP over Rustls: verified update downloads, the Ollama inference engine, and mediated Component fetch |
 | `serde`, `serde_json`, `toml`                | typed configuration and public JSON                               |
 | `clap`                                       | CLI parsing                                                       |
 | `fs4`                                        | cross-platform daemon ownership lock                              |
@@ -16,6 +16,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `opentelemetry*`, `tracing-opentelemetry`    | OTLP/gRPC trace and metric export                                 |
 | `utoipa`                                     | OpenAPI generation for the JSON API                               |
 | `scalar_api_reference`                       | self-hosted interactive OpenAPI reference                         |
+| `rustls`                                     | explicit ring crypto provider for reqwest, keeping the build pure Rust |
 | `blake3`                                     | content addressing and update integrity                           |
 | `uor-hologram` (`archive`, `space`)          | canonical v2–v4 `.holo` archives and application manifests        |
 | `wasmtime`                                   | in-process Wasm execution for resident `.holo` archives           |

@@ -22,10 +22,13 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `wasmtime`                                   | in-process Wasm execution for resident `.holo` archives           |
 | `sha2`                                       | sha256 pinning of third-party plugin executables                  |
 | `notify` (`hologram-application-watch`)      | portable source-project filesystem observation and debounce       |
+| `hologram-client` (workspace crate)          | standalone typed HTTP client for the object and file API          |
 | Tauri (`apps/desktop`)                       | desktop shell and managed `hologram` sidecar                      |
 | Cucumber (development only)                  | executable Gherkin public-boundary scenarios                      |
 
 The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary. Third-party plugin modules run as separate subprocesses speaking gRPC over a Unix socket rather than as loaded native code.
+
+`hologram-client` is deliberately standalone: it mirrors the wire shapes rather than importing them from `hologram-live`, because depending on the daemon would pull `wasmtime`, `axum`, and `tonic` into every consumer's build for the sake of a handful of JSON structures. Its only dependencies are `reqwest`, `rustls`, `serde`, and `serde_json`. The daemon takes it as a dev-dependency so a contract test can prove the mirrored types still agree; that keeps it out of the server's normal dependency graph, which the product-boundary gate checks.
 
 Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the server's Cargo dependency graph. The small `hologram-application-watch` workspace crate is Tauri-independent and injected into the desktop adapter; the standalone `hologram-live` server package does not depend on it.
 

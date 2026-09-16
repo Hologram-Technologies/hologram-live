@@ -264,6 +264,42 @@ fn status_to_result(
     })
 }
 
+impl crate::artifact_pull::LayerFetch for KappaClient {
+    fn manifest(&self, repository: &str, tag: &str) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        // The repository is namespace-qualified by the caller, so address it
+        // directly rather than through the configured namespace.
+        let request = self
+            .http
+            .get(format!("{}/v2/{repository}/manifests/{tag}", self.endpoint))
+            .header(
+                reqwest::header::ACCEPT,
+                "application/vnd.oci.image.manifest.v1+json",
+            );
+        let response = self.authorize(request).send().map_err(|error| {
+            LiveError::Transport(format!("resolve {repository}:{tag}: {error}"))
+        })?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let response = status_to_result(response, &format!("resolve {repository}:{tag}"))?;
+        // Recording the digest is what lets a later pull report that a mutable
+        // tag has moved.
+        let digest = response
+            .headers()
+            .get("docker-content-digest")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let body = response
+            .bytes()
+            .map_err(|error| LiveError::Transport(format!("read manifest: {error}")))?;
+        Ok(Some((body.to_vec(), digest)))
+    }
+
+    fn blob(&self, kappa: &str) -> Result<Vec<u8>> {
+        self.get_blob(kappa)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

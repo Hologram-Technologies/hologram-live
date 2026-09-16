@@ -88,6 +88,18 @@ pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
                 .to_owned(),
         ));
     }
+    // Precedence rule 3. Rules 1 and 2 -- a catalog kappa and an existing path
+    // -- are handled above and are deliberately untouched, so no invocation
+    // that worked before means something different now. The configuration is
+    // loaded here rather than at the top for the same reason: the earlier
+    // paths must not acquire a new failure mode.
+    let (run_config, _) = helpers::load(&cli)?;
+    if let hologram_live::artifact_ref::Resolution::Reference(reference) =
+        hologram_live::artifact_ref::resolve(&args.reference, &run_config.registry)?
+    {
+        let bytes = pull_archive_bytes(&cli, &run_config, &reference).await?;
+        return execute_local(&cli, bytes, inputs, None, args.output_format).await;
+    }
     match helpers::call(
         &cli,
         RpcRequest::HoloRun {
@@ -100,6 +112,58 @@ pub async fn run(cli: Cli, args: RunArgs) -> Result<()> {
         RpcResponse::HoloRun(value) => print_result(&cli, &value, args.output_format),
         other => helpers::unexpected(other),
     }
+}
+
+/// Fetch a named artifact and return its archive bytes.
+///
+/// The archive is executed directly from bytes rather than imported, which
+/// keeps this on the same path as a local `.holo` file: pulling grants no
+/// authority, so a pulled archive must reach execution exactly the way a local
+/// one does.
+async fn pull_archive_bytes(
+    cli: &Cli,
+    config: &hologram_live::config::AppConfig,
+    reference: &hologram_live::artifact_ref::ArtifactRef,
+) -> Result<Vec<u8>> {
+    use hologram_live::artifact_pull::{pull, LayerSource, PullProgress};
+    use hologram_live::registry::kappa_client::KappaClient;
+    use hologram_live::store::ObjectStore;
+
+    let registry = config.registry.clone();
+    let store_root = config.paths.data_dir.join("registry");
+    let reference = reference.clone();
+    let json = cli.json;
+    let mut emit = move |progress: PullProgress| {
+        if json {
+            if let Ok(line) = serde_json::to_string(&progress) {
+                eprintln!("{line}");
+            }
+        } else if progress.source == LayerSource::Fetched {
+            eprintln!(
+                "fetched [{}/{}] {}",
+                progress.index + 1,
+                progress.total,
+                progress.kappa
+            );
+        }
+    };
+
+    tokio::task::spawn_blocking(move || {
+        // Built inside the blocking task: `reqwest::blocking::Client` owns an
+        // internal runtime, and constructing one from an async context panics
+        // when that runtime is dropped.
+        let client = KappaClient::new(&registry)?;
+        let store = ObjectStore::open(store_root)?;
+        let report = pull(&client, &store, &reference, &mut emit)?;
+        store.get_cached(&report.archive_kappa)?.ok_or_else(|| {
+            LiveError::NotFound(format!(
+                "pulled archive {} is absent from the local store",
+                report.archive_kappa
+            ))
+        })
+    })
+    .await
+    .map_err(|error| LiveError::Conflict(format!("join artifact pull: {error}")))?
 }
 
 fn project_manifest(reference: &Path) -> Option<PathBuf> {
@@ -216,6 +280,50 @@ fn decode_json_outputs(outputs: &[Vec<u8>]) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Adding reference support must not change what an existing invocation
+    /// means. Rules 1 and 2 are checked before any registry work, so a path
+    /// that exists keeps winning even when it looks exactly like a reference.
+    #[test]
+    fn an_existing_file_still_wins_over_a_registry_reference() {
+        use hologram_live::artifact_ref::{resolve, Resolution};
+
+        let config = hologram_live::config::RegistryConfig::default();
+        let directory = std::env::temp_dir().join(format!(
+            "hologram-run-precedence-{}-{}",
+            std::process::id(),
+            hologram_live::util::now_millis()
+        ));
+        std::fs::create_dir_all(&directory).expect("create");
+        // A filename that is also a valid artifact reference: the ambiguity
+        // this rule exists to settle.
+        let archive = directory.join("qwen3.5:4b");
+        std::fs::write(&archive, b"archive").expect("write");
+
+        let resolved = resolve(&archive.to_string_lossy(), &config).expect("resolve");
+        assert!(
+            matches!(resolved, Resolution::File(_)),
+            "a path that exists must resolve to a file, got {resolved:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    /// A catalog kappa must never be treated as a name to fetch.
+    #[test]
+    fn a_kappa_still_resolves_to_the_catalog() {
+        use hologram_live::artifact_ref::{resolve, Resolution};
+
+        let config = hologram_live::config::RegistryConfig::default();
+        let kappa = "blake3:cb9ef1526f722fcaaf5a6e19610d045349627e4ce70ad4420ccc00b6bfc5e959";
+        assert!(
+            matches!(
+                resolve(kappa, &config).expect("resolve"),
+                Resolution::Kappa(_)
+            ),
+            "a kappa must not be sent to the registry as a name"
+        );
+    }
     use super::*;
 
     #[test]

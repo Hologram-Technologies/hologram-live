@@ -10,6 +10,15 @@ This document is deliberately strict about what the current stable build does an
 - Statically registered, dependency-ordered modules.
 - Kappa Registry represented as the first ordinary module.
 - File listing, durable renaming, and retrieval over the content-addressed object store.
+- Named artifact acquisition: `hologram pull <ref>` resolves a docker-style
+  reference, transfers only the layers absent locally, verifies each against its
+  kappa on write, and confirms every referenced layer is present before
+  reporting success. `hologram run` accepts a reference under a fixed
+  precedence — kappa, then existing path, then reference — so no prior
+  invocation changes meaning. Pulling grants no capabilities: a pulled archive
+  takes the same ADR 020 baseline as a local file and executes by the same path.
+  `hologram push`, a curated index, and `serve`/`chat` by reference are not
+  implemented.
 - Bounded, paginated object search over stored metadata — kind, media type,
   filename substring, size range, and creation-time range — ordered ascending by
   object ID, with opaque provider-scoped cursors and explicit truncation

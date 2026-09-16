@@ -181,6 +181,48 @@ The same surface is available as `GET /api/v1/objects/search` and
 native operations. `hologram files search` is the file-kind projection: the
 daemon fixes the kind, so `--kind` is not offered there.
 
+### Named artifacts
+
+```bash
+hologram pull qwen3.5:4b
+hologram pull host:5000/models/qwen3.5:4b
+hologram run qwen3.5:4b --input-text "hello"
+hologram --json pull qwen3.5:4b | jq '{archive_kappa, layers_fetched, bytes_transferred}'
+```
+
+A reference is `[host[:port]/]namespace/name[:tag]`. A bare `name:tag` expands
+against `[registry].endpoint` and `[registry].namespace`; an omitted tag means
+`latest`. Following OCI, the colon separates repository from tag, so
+`qwen3.5:4b` is repository `qwen3.5`, tag `4b`.
+
+An artifact is one OCI manifest whose layers are a thin `.holo` archive plus the
+kappa-addressed payload blobs it references, so two artifacts sharing weights
+transfer them once. Pull consults the local store first, fetches only what is
+missing, verifies every layer against its kappa on write, and confirms the whole
+set is present before reporting success — the registry itself does not check
+that a manifest's layers exist. Every step is content-addressed, so a pull is
+idempotent and an interrupted one resumes for free.
+
+Tags are mutable, so a pull always re-resolves rather than caching by name, and
+records the resolved manifest digest — that digest, not the tag, is what makes a
+pull reproducible.
+
+`run` resolves its argument in a fixed order, so no existing invocation changes
+meaning:
+
+1. a `blake3:` id → the local catalog
+2. an existing filesystem path → a local archive
+3. anything else → a registry reference, pulled and then executed
+
+**Pulling grants no capabilities.** A pulled archive receives the same ADR 020
+baseline as a local file — no storage roots, no channels, no network scopes —
+and is executed by exactly the same path. Having come from a configured registry
+is not evidence about what an archive contains.
+
+Progress is written to stderr and the result document to stdout, so `--json`
+stays usable in a pipeline; under `--json` the progress is JSONL events rather
+than a rendered bar.
+
 ### `.holo` archives
 
 Generate a validated source manifest interactively:
@@ -1110,7 +1152,8 @@ The default build does not yet provide:
 
 - enterprise identity, organizations, or RBAC storage;
 - fleet scheduling;
-- a client SDK or named-artifact distribution (`hologram pull`); or
+- a client SDK, `hologram push`, a curated artifact index, or `serve`/`chat` by
+  reference; or
 - full-text, content, or semantic object search. Search matches stored metadata
   only, and never reads object bytes.
 

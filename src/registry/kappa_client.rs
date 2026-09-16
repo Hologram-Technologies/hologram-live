@@ -264,9 +264,104 @@ fn status_to_result(
     })
 }
 
+impl crate::artifact_pull::LayerFetch for KappaClient {
+    fn manifest(&self, repository: &str, tag: &str) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        // The repository is namespace-qualified by the caller, so address it
+        // directly rather than through the configured namespace.
+        let request = self
+            .http
+            .get(format!("{}/v2/{repository}/manifests/{tag}", self.endpoint))
+            .header(
+                reqwest::header::ACCEPT,
+                "application/vnd.oci.image.manifest.v1+json",
+            );
+        let response = self.authorize(request).send().map_err(|error| {
+            LiveError::Transport(format!("resolve {repository}:{tag}: {error}"))
+        })?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let response = status_to_result(response, &format!("resolve {repository}:{tag}"))?;
+        // Recording the digest is what lets a later pull report that a mutable
+        // tag has moved.
+        let digest = response
+            .headers()
+            .get("docker-content-digest")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let body = response
+            .bytes()
+            .map_err(|error| LiveError::Transport(format!("read manifest: {error}")))?;
+        Ok(Some((body.to_vec(), digest)))
+    }
+
+    fn blob(&self, repository: &str, kappa: &str) -> Result<Vec<u8>> {
+        // Addressed through the reference's repository, not the configured
+        // namespace: a reference names where its layers live.
+        let request = self
+            .http
+            .get(format!("{}/v2/{repository}/blobs/{kappa}", self.endpoint));
+        let response = self
+            .authorize(request)
+            .send()
+            .map_err(|error| LiveError::Transport(format!("get layer {kappa}: {error}")))?;
+        let response = status_to_result(response, &format!("get layer {kappa}"))?;
+        response
+            .bytes()
+            .map(|body| body.to_vec())
+            .map_err(|error| LiveError::Transport(format!("read layer {kappa}: {error}")))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `reqwest::blocking::Client` owns an internal runtime, and building one
+    /// from an async context panics when that runtime is dropped. Every caller
+    /// therefore constructs the client *inside* `spawn_blocking`, not before
+    /// it. Running the real CLI is what caught this; no unit test did.
+    #[tokio::test]
+    async fn the_client_builds_inside_a_blocking_task() {
+        let config = RegistryConfig {
+            endpoint: "http://127.0.0.1:1".to_owned(),
+            ..RegistryConfig::default()
+        };
+        tokio::task::spawn_blocking(move || {
+            KappaClient::new(&config).expect("client builds on a blocking thread");
+        })
+        .await
+        .expect("blocking task must not panic");
+    }
+
+    /// A reference names its own namespace, so layers must be addressed
+    /// through the manifest's repository rather than the client's configured
+    /// namespace. Resolving `models/demo` and then fetching layers from
+    /// `models` looks up blobs that are not there -- which is exactly what an
+    /// end-to-end pull did before this was fixed.
+    #[test]
+    fn layer_urls_are_scoped_to_the_given_repository() {
+        let config = RegistryConfig {
+            endpoint: "http://registry.example:5000".to_owned(),
+            namespace: "models".to_owned(),
+            ..RegistryConfig::default()
+        };
+        let client = KappaClient::new(&config).expect("client");
+
+        // The configured-namespace helper and the repository-scoped layer URL
+        // must differ once a reference carries a deeper namespace.
+        let configured = client.url("blobs/blake3:abc");
+        let scoped = format!("{}/v2/{}/blobs/blake3:abc", client.endpoint, "models/demo");
+
+        assert_eq!(
+            configured,
+            "http://registry.example:5000/v2/models/blobs/blake3:abc"
+        );
+        assert_ne!(
+            configured, scoped,
+            "a deeper repository must not collapse onto the configured namespace"
+        );
+    }
 
     #[test]
     fn a_kappa_converts_to_a_valid_oci_tag_and_back() {

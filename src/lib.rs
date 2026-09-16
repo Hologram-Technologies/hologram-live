@@ -5,6 +5,7 @@ pub mod app;
 pub mod application_plan;
 pub mod artifact_manifest;
 pub mod artifact_pull;
+pub mod artifact_push;
 pub mod artifact_ref;
 pub mod audit;
 pub mod auth;

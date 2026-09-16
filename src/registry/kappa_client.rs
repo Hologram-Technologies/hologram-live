@@ -313,6 +313,63 @@ impl crate::artifact_pull::LayerFetch for KappaClient {
     }
 }
 
+impl crate::artifact_push::LayerPublish for KappaClient {
+    fn put_blob(
+        &self,
+        repository: &str,
+        kappa: &str,
+        media_type: &str,
+        bytes: &[u8],
+    ) -> Result<()> {
+        // Repository-scoped, like the pull side: a reference names where its
+        // layers live, which is not necessarily the configured namespace.
+        let request = self
+            .http
+            .put(format!("{}/v2/{repository}/blobs/{kappa}", self.endpoint))
+            .header(reqwest::header::CONTENT_TYPE, media_type)
+            .body(bytes.to_vec());
+        let response = self
+            .authorize(request)
+            .send()
+            .map_err(|error| LiveError::Transport(format!("publish blob {kappa}: {error}")))?;
+        status_to_result(response, &format!("publish blob {kappa}")).map(|_| ())
+    }
+
+    fn put_manifest(&self, repository: &str, tag: &str, body: &[u8]) -> Result<()> {
+        let request = self
+            .http
+            .put(format!("{}/v2/{repository}/manifests/{tag}", self.endpoint))
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/vnd.oci.image.manifest.v1+json",
+            )
+            .body(body.to_vec());
+        let response = self
+            .authorize(request)
+            .send()
+            .map_err(|error| LiveError::Transport(format!("publish manifest {tag}: {error}")))?;
+        status_to_result(response, &format!("publish manifest {tag}")).map(|_| ())
+    }
+
+    fn tag_exists(&self, repository: &str, tag: &str) -> Result<bool> {
+        let request = self
+            .http
+            .get(format!("{}/v2/{repository}/manifests/{tag}", self.endpoint))
+            .header(
+                reqwest::header::ACCEPT,
+                "application/vnd.oci.image.manifest.v1+json",
+            );
+        let response = self
+            .authorize(request)
+            .send()
+            .map_err(|error| LiveError::Transport(format!("check tag {tag}: {error}")))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+        status_to_result(response, &format!("check tag {tag}")).map(|_| true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -184,6 +184,7 @@ daemon fixes the kind, so `--kind` is not offered there.
 ### Named artifacts
 
 ```bash
+hologram push ./app.holo demo:v1
 hologram pull qwen3.5:4b
 hologram pull host:5000/models/qwen3.5:4b
 hologram run qwen3.5:4b --input-text "hello"
@@ -218,6 +219,18 @@ meaning:
 baseline as a local file — no storage roots, no channels, no network scopes —
 and is executed by exactly the same path. Having come from a configured registry
 is not evidence about what an archive contains.
+
+`push` is the inverse. The archive becomes the manifest's `archive` layer, and
+any payload a thin archive references without embedding is published alongside
+it — which is what lets a later pull deduplicate against blobs the registry
+already holds. A referenced payload that is not in the local store refuses the
+push before anything is written, rather than publishing a manifest whose content
+is missing. The archive is inspected first, so a file that is not a valid
+archive is rejected before the registry is touched.
+
+Tags are mutable upstream, so `push` refuses to move a tag that already resolves
+unless given `--force`, and the result records whether a tag was moved. Silently
+repointing a name someone else is pulling is not a default worth having.
 
 Progress is written to stderr and the result document to stdout, so `--json`
 stays usable in a pipeline; under `--json` the progress is JSONL events rather
@@ -1152,7 +1165,7 @@ The default build does not yet provide:
 
 - enterprise identity, organizations, or RBAC storage;
 - fleet scheduling;
-- a client SDK, `hologram push`, a curated artifact index, or `serve`/`chat` by
+- a client SDK, a curated artifact index, artifact signing, or `serve`/`chat` by
   reference; or
 - full-text, content, or semantic object search. Search matches stored metadata
   only, and never reads object bytes.

@@ -17,8 +17,11 @@ This document is deliberately strict about what the current stable build does an
   precedence — kappa, then existing path, then reference — so no prior
   invocation changes meaning. Pulling grants no capabilities: a pulled archive
   takes the same ADR 020 baseline as a local file and executes by the same path.
-  `hologram push`, a curated index, and `serve`/`chat` by reference are not
-  implemented.
+  `hologram push <archive> <ref>` publishes the inverse: the archive plus any
+  payload a thin archive references without embedding, refusing before any write
+  if a referenced payload is absent locally, if the file is not a valid archive,
+  or if the tag already resolves and `--force` was not given. Artifact signing, a
+  curated index, and `serve`/`chat` by reference are not implemented.
 - Bounded, paginated object search over stored metadata — kind, media type,
   filename substring, size range, and creation-time range — ordered ascending by
   object ID, with opaque provider-scoped cursors and explicit truncation

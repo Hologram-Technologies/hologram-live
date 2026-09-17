@@ -42,6 +42,7 @@ pub mod plugin;
 pub mod process;
 pub mod protocol;
 pub mod registry;
+pub mod repo_manifest;
 pub mod server;
 pub mod store;
 pub mod update;

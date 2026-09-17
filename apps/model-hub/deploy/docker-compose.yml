@@ -14,7 +14,7 @@ services:
       KAPPA_AUTH_REQUIRED: "false"
       # Refuse writes before the shared disk gets tight.
       KAPPA_DISK_PRESSURE_THRESHOLD_MB: "8192"
-      KAPPA_MAX_BLOB_SIZE: "268435456"
+      KAPPA_MAX_BLOB_SIZE: "1181116006" # 1.1 GiB: the largest curated model file is 988 MB
     volumes:
       - ./bin/kappa-server:/usr/local/bin/kappa-server:ro
       - ./store:/data

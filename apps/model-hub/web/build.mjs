@@ -117,7 +117,7 @@ const browse = page({
 });
 
 // ---- model pages
-const SOURCE_COLUMNS = [["huggingface.co", "Hugging Face"], ["modelscope.cn", "ModelScope"], ["ipfs", "IPFS"], ["bittorrent", "P2P"]];
+const SOURCE_COLUMNS = [["hologram", "Hologram"], ["huggingface.co", "Hugging Face"], ["modelscope.cn", "ModelScope"], ["ipfs", "IPFS"], ["bittorrent", "P2P"]];
 // The manifest address drawn as braille: 32 bytes, 32 cells, two rows of 16. Lossless: the dots are the bits.
 function signature(manifest) {
   const bytes = B.hexToBytes(manifest.split(":")[1]);
@@ -131,7 +131,7 @@ function signature(manifest) {
 function sourceList(sources) {
   return `<div class="sources">
     <span class="label">${sources.length > 1 ? "Identical bytes on" : "Available from"}</span>
-    <ul>${sources.map((s) => `<li data-source="${R.esc(s.kind)}"${s.p2p ? ' title="Peer to peer via BitTorrent. Your torrent client checks every piece; Hugging Face seeds it, so it completes with zero peers."' : ""}><span class="state">${s.p2p ? R.icon.nodes : R.icon.seal}${B.loader("orbit")}${R.icon.check}${R.icon.close}</span><a href="${R.esc(s.page)}"${s.p2p ? " download" : ' target="_blank" rel="noopener"'}>${R.esc(s.name)}${s.p2p ? R.icon.down : R.icon.external}</a></li>`).join("")}</ul>
+    <ul>${sources.map((s) => `<li data-source="${R.esc(s.kind)}"${s.p2p ? ' title="Peer to peer via BitTorrent. Your torrent client checks every piece; Hugging Face seeds it, so it completes with zero peers."' : s.pull ? ` title="Stored on Hologram. hologram pull ${R.esc(s.pull)} verifies every chunk as it arrives."` : ""}><span class="state">${s.p2p ? R.icon.nodes : R.icon.seal}${B.loader("orbit")}${R.icon.check}${R.icon.close}</span><a href="${R.esc(s.page)}"${s.p2p ? " download" : ' target="_blank" rel="noopener"'}>${R.esc(s.name)}${s.p2p ? R.icon.down : R.icon.external}</a></li>`).join("")}</ul>
   </div>`;
 }
 
@@ -167,6 +167,10 @@ function modelPage(m, files, ov, readme) {
     // Red: not available there.
     const cell = ([kind, name], path, size, address, hfUrl) => {
       const s = byKind[kind];
+      if (s?.pull) {
+        const command = `hologram pull ${s.pull}`;
+        return `<td class="dl"><button type="button" class="dl-yes" data-copy="${R.esc(command)}" title="Stored on Hologram. Copy the pull command: every chunk is verified as it arrives" aria-label="Copy hologram pull command for ${R.esc(path)}">${R.icon.down}</button></td>`;
+      }
       if (!s || s.missing.includes(path)) {
         return `<td class="dl"><span class="dl-no" role="img" aria-label="Not available on ${name}" title="Not available on ${name}">${R.icon.close}</span></td>`;
       }
@@ -178,7 +182,8 @@ function modelPage(m, files, ov, readme) {
     };
     const total = files.files.reduce((sum, f) => sum + (f[1] || 0), 0);
     const rows = files.files.map(([path, size, address, , hfUrl]) => `<tr data-path="${R.esc(path)}" data-size="${size ?? 0}" data-address="${R.esc(address)}"><td class="path" title="${R.esc(path)}">${R.esc(path)}</td><td class="size">${R.bytes(size)}</td><td class="addr">${copy(address, R.shortAddress(address))}</td>${SOURCE_COLUMNS.map((c) => cell(c, path, size, address, hfUrl)).join("")}</tr>`).join("\n");
-    const http = SOURCE_COLUMNS.filter(([kind]) => byKind[kind] && !byKind[kind].p2p);
+    const http = SOURCE_COLUMNS.filter(([kind]) => byKind[kind] && !byKind[kind].p2p && !byKind[kind].pull);
+    const hub = byKind.hologram;
     const torrent = byKind.bittorrent;
     filesPanel = `<div class="section-head">
       <div class="download-all" data-name="${R.esc(m.name)}" data-repo="${R.esc(m.id)}" data-revision="${R.esc(files.revision)}">
@@ -186,6 +191,7 @@ function modelPage(m, files, ov, readme) {
         <div class="menu" id="dl-menu" role="menu" aria-label="Download all" hidden>
           <p class="menu-note">${files.files.length} files, ${R.bytes(total)}. Every file is checked against its address.</p>
           ${http.map(([kind, name]) => `<button type="button" role="menuitem" data-save="${name}" data-save-kind="${kind}">${R.icon.file}<span class="label">Save to a folder from ${name}</span></button>`).join("")}
+          ${hub ? `<button type="button" role="menuitem" data-copy="hologram pull ${R.esc(hub.pull)}">${R.icon.copy}<span class="label">Copy hologram pull (every file, verified)</span></button>` : ""}
           ${torrent ? `<a role="menuitem" href="${R.esc(torrent.page)}">${R.icon.nodes}<span class="label">Peer to peer, every file (.torrent)</span></a>` : ""}
           <button type="button" role="menuitem" data-script>${R.icon.copy}<span class="label">Download script for a terminal</span></button>
         </div>
@@ -222,7 +228,7 @@ function modelPage(m, files, ov, readme) {
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
   </div>
-  ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p }) => ({ kind, name, resolve, p2p })))}</script>` : ""}
+  ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull }) => ({ kind, name, resolve, p2p, pull })))}</script>` : ""}
   <p class="verdict" id="verdict" role="status" hidden></p>
 </section>
 <main class="detail">

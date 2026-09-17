@@ -15,6 +15,8 @@ const DATA = join(SITE, "data");
 const AVATARS = join(SITE, "public", "avatars");
 const HF = "https://huggingface.co";
 const API = process.env.HOLOGRAM_API || "https://humuhumu33.github.io/hologram-api";
+// Models whose bytes are stored on a Hologram registry, published as models/<owner>/<name>:<revision>.
+const HUB = process.env.MODEL_HUB_REGISTRY || "hub.uor.foundation";
 const LIMIT = Number(process.argv[process.argv.indexOf("--limit") + 1]) || 500;
 const HEADERS = process.env.HF_TOKEN ? { authorization: `Bearer ${process.env.HF_TOKEN}` } : {};
 
@@ -147,6 +149,13 @@ async function main() {
       const sources = detail && detail.revision === hit.revision
         ? detail.sources.filter(complete).map((s) => ({ kind: s.kind, name: s.kind === "bittorrent" ? "P2P" : s.name, page: s.page, resolve: s.resolve || s.gateway || null, missing: s.missing || [], p2p: !!s.p2p }))
         : [{ kind: "huggingface.co", name: "Hugging Face", page: `https://huggingface.co/${m.id}`, resolve: null, missing: [] }];
+      // Listed only when this exact revision is published there; every file is present by construction.
+      const repository = `models/${m.id.toLowerCase()}`;
+      const tags = await get(`https://${HUB}/v2/${repository}/tags/list`);
+      if (tags?.tags?.includes(hit.revision)) {
+        const reference = `${HUB}/${repository}:${hit.revision}`;
+        sources.unshift({ kind: "hologram", name: "Hologram", page: `https://${HUB}/v2/${repository}/tags/list`, resolve: null, missing: [], pull: reference });
+      }
       row.sources = sources.map((s) => s.name);
       if (doc) {
         const file = join(DATA, "files", org, `${name}.json`);

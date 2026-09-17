@@ -205,7 +205,7 @@ function model() {
       // The expected address comes from the index; each source only supplies bytes.
       const file = doc.files.find((f) => f.path === button.dataset.probe);
       // Peer to peer sources are checked piece by piece by the torrent client; the browser verifies HTTP sources.
-      const results = await Promise.all(sources.filter((s) => !s.p2p).map(async (s) => {
+      const results = await Promise.all(sources.filter((s) => !s.p2p && !s.pull).map(async (s) => {
         mark(s.kind, "busy");
         if (!file) { mark(s.kind, "ok"); return { s, ok: true }; }
         const url = s.resolve ? s.resolve + file.path.split("/").map(encodeURIComponent).join("/") : file.url;

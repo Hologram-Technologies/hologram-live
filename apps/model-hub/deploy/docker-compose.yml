@@ -1,0 +1,43 @@
+# hub.uor.foundation: Model Hub site + Kappa Registry, fronted by the existing twenty Caddy.
+# Lives at /root/hub on the VPS. Joins twenty_default so Caddy reaches both services by name.
+name: hub
+
+services:
+  kappa:
+    image: debian:bookworm-slim
+    restart: unless-stopped
+    command: ["/usr/local/bin/kappa-server"]
+    environment:
+      KAPPA_LISTEN_ADDR: 0.0.0.0:5000
+      KAPPA_STORE_ROOT: /data
+      # Writes are gated at Caddy (bearer token); the registry itself stays permissive so public reads need no token.
+      KAPPA_AUTH_REQUIRED: "false"
+      # Refuse writes before the shared disk gets tight.
+      KAPPA_DISK_PRESSURE_THRESHOLD_MB: "8192"
+      KAPPA_MAX_BLOB_SIZE: "268435456"
+    volumes:
+      - ./bin/kappa-server:/usr/local/bin/kappa-server:ro
+      - ./store:/data
+      # The registry builds an outbound HTTPS client at startup and needs the system CA bundle.
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    mem_limit: 1g
+    cpus: 1.5
+    networks:
+      default:
+        aliases: [hub-kappa]
+
+  site:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    command: ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
+    volumes:
+      - ./site:/srv:ro
+    mem_limit: 128m
+    networks:
+      default:
+        aliases: [hub-site]
+
+networks:
+  default:
+    name: twenty_default
+    external: true

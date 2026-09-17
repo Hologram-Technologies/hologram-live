@@ -1,0 +1,16 @@
+# Model Hub: static site + Kappa Registry (/root/hub). Reads are public; writes need the registry token.
+hub.uor.foundation {
+	encode zstd gzip
+	@registry path /v2 /v2/* /_*
+	handle @registry {
+		@write {
+			not method GET HEAD OPTIONS
+			not header Authorization "Bearer {$HUB_REGISTRY_TOKEN}"
+		}
+		respond @write "write requires a registry token" 401
+		reverse_proxy hub-kappa:5000
+	}
+	handle {
+		reverse_proxy hub-site:8080
+	}
+}

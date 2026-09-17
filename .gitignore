@@ -14,6 +14,9 @@
 .env
 /examples/python-numpy-pandas/.venv/
 /examples/**/*.holo
+/apps/model-hub/target/
+/apps/model-hub/ui/
+/apps/model-hub/*.holo
 /apps/model-hub/web/node_modules/
 /apps/model-hub/web/data/
 /apps/model-hub/web/dist/

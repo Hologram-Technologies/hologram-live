@@ -8,12 +8,16 @@ themeSwitch();
 B.play();
 if ($("#browse")) browse();
 if ($("[data-verify]")) model();
+if ($("[data-node]")) node();
+if ($("#files")) { panelTabs(); sortableFiles(); }
 copyButtons();
+if (R.holo) sandboxed();
 
 async function browse() {
   const data = await fetch(`${base}data/models.json`).then((r) => r.json());
   const models = R.prepare(data.models, data.snapshot);
-  let state = R.parseState(location.search);
+  const here = () => (R.holo ? location.hash : location.search);
+  let state = R.parseState(here());
   const filters = $("#filters-body"), grid = $("#grid"), pager = $("#pager"), total = $("#total"), q = $("#q");
   const facetSearch = {}, openMore = new Set(), order = {};
   q.value = state.q;
@@ -147,8 +151,159 @@ async function browse() {
     if (e.key === "Escape") document.body.classList.remove("sheet");
   });
 
-  window.addEventListener("popstate", () => { state = R.parseState(location.search); q.value = state.q; render(); });
+  window.addEventListener("popstate", () => { state = R.parseState(here()); q.value = state.q; render(); });
   render("replace");
+}
+
+// The manifest address as braille. While work runs the cells search; when it ends each byte locks left to right,
+// green where it equals the pinned address and red where it does not.
+function glyphLock(pinned) {
+  const glyph = [...document.querySelectorAll("#glyph .cell")];
+  const pinnedBytes = B.hexToBytes(pinned.split(":")[1]);
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const wait = (ms) => new Promise((r) => setTimeout(r, calm ? 0 : ms));
+  let searching = false;
+  function search() {
+    if (!searching || calm) return;
+    for (const svg of glyph) if (!svg.classList.contains("ok") && !svg.classList.contains("bad")) B.setCell(svg, (Math.random() * 256) | 0);
+    setTimeout(search, 70);
+  }
+  return {
+    pinnedBytes,
+    start() { for (const svg of glyph) svg.setAttribute("class", "cell"); searching = true; search(); },
+    async lock(received) {
+      for (let i = 0; i < glyph.length; i++) {
+        const byte = received ? received[i] : pinnedBytes[i];
+        B.setCell(glyph[i], byte, received && byte === pinnedBytes[i] ? "ok lock" : "bad");
+        const svg = glyph[i];
+        setTimeout(() => svg.classList.remove("lock"), 260);
+        await wait(34);
+      }
+      searching = false;
+    },
+  };
+}
+
+// holo: pull and verify on this node through the primary and the host (ADR 023). Nothing here judges bytes;
+// the page reports what the host measured.
+function node() {
+  const pull = $('[data-node="pull"]'), verify = $('[data-node="verify"]'), remove = $('[data-node="remove"]');
+  const out = $("#verdict"), status = $("#node-status");
+  const reference = pull.dataset.reference, glyph = glyphLock(verify.dataset.manifest);
+  const summary = status?.textContent.split(". ")[0];
+  const MESSAGES = {
+    denied: "Model Hub is not allowed to do this. Review its permissions in Hologram Desktop.",
+    not_found: "This model is not in the registry yet.",
+    busy: "Too many jobs are running on this node. Try again when one finishes.",
+    conflict: "A job for this model is still running.",
+    invalid_reference: "This model's reference is not valid for the registry.",
+    unavailable: "Model Hub cannot reach its host. Reopen the application.",
+  };
+  const message = (code) => MESSAGES[code] || "Something went wrong. Try again.";
+  const say = (text, tone = "") => { out.hidden = !text; out.className = `verdict ${tone}`; out.textContent = text; };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  let archive = null;
+
+  async function invoke(request) {
+    if (window.modelHubInvoke) return window.modelHubInvoke(request);
+    try {
+      const response = await fetch("/_hologram/intent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ version: 1, name: "application.invoke", payload: JSON.stringify(request) }),
+      });
+      if (!response.ok) return { ok: false, error: "unavailable" };
+      return JSON.parse((await response.json()).outputs[0]);
+    } catch {
+      return { ok: false, error: "unavailable" };
+    }
+  }
+
+  // Find this model's record among the artifacts pulled onto the node.
+  async function refresh() {
+    archive = null;
+    let cursor = null;
+    do {
+      const page = await invoke({ op: "library", cursor, limit: 256 });
+      if (!page.ok) { say(message(page.error), "bad"); break; }
+      const hit = page.data.artifacts.find((a) => a.reference === reference || a.reference.endsWith(`/${reference}`));
+      if (hit) { archive = hit.archive_kappa; break; }
+      cursor = page.data.next_cursor;
+    } while (cursor);
+    pull.hidden = !!archive;
+    verify.hidden = remove.hidden = !archive;
+    if (status) status.textContent = archive ? `${summary}. On this node.` : `${summary}. Pull stores every file on this node, each checked against its address.`;
+  }
+
+  // Poll a host job until it ends; show layer progress while it runs.
+  async function follow(job, label) {
+    for (;;) {
+      const answer = await invoke({ op: "status", job });
+      if (!answer.ok) return { state: "failed", error: answer.error };
+      const s = answer.data;
+      if (s.state !== "running") return s;
+      say(`${label} ${s.layers_done} of ${s.layers_total || "…"} layers, ${R.bytes(s.bytes_done)}.`);
+      await wait(1000);
+    }
+  }
+
+  async function run(button, request, label, before, done) {
+    button.disabled = true;
+    button.classList.add("busy");
+    B.play(button);
+    say(`${label}…`);
+    before?.();
+    try {
+      const started = await invoke(request);
+      if (!started.ok) return say(message(started.error), "bad");
+      await done(await follow(started.data.job, label));
+    } finally {
+      button.disabled = false;
+      button.classList.remove("busy");
+    }
+  }
+
+  pull.addEventListener("click", () => run(pull, { op: "pull", reference }, "Pulling", null, async (s) => {
+    if (s.state === "succeeded") { say(`Pulled ${s.layers_total} layers, each checked against its address.`, "ok"); await refresh(); }
+    else if (s.state === "cancelled") say("Pull cancelled.");
+    else say(s.error === "not_found" ? message("not_found") : "Pull failed. No incomplete model was recorded.", "bad");
+  }));
+
+  verify.addEventListener("click", () => run(verify, { op: "verify", archive }, "Verifying", () => glyph.start(), async (s) => {
+    if (s.state === "succeeded") { await glyph.lock(glyph.pinnedBytes); say("Verified on this node: every layer matches its address.", "ok"); }
+    else if (s.mismatch) { await glyph.lock(null); say(`Layer ${R.shortAddress(s.mismatch)} does not match its address. Do not use this copy.`, "bad"); }
+    else { await glyph.lock(null); say(s.error === "missing_layer" ? "A layer is missing from this node. Pull again." : message(s.error), "bad"); }
+  }));
+
+  remove.addEventListener("click", async () => {
+    const answer = await invoke({ op: "remove", archive });
+    if (!answer.ok) return say(message(answer.error), "bad");
+    say("Removed from this node. Layers shared with other models stay.", "ok");
+    await refresh();
+  });
+
+  refresh();
+}
+
+// holo: links cannot leave the View. Clicking one copies its address instead.
+function sandboxed() {
+  document.addEventListener("click", async (e) => {
+    const a = e.target.closest("a[data-link], a[href^='http']");
+    if (!a) return;
+    e.preventDefault();
+    const url = a.dataset.link || a.href;
+    try { await navigator.clipboard.writeText(url); } catch { return; }
+    const was = a.title;
+    a.title = "Link copied";
+    a.classList.add("copied");
+    setTimeout(() => { a.title = was; a.classList.remove("copied"); }, 1300);
+  });
+  const top = $(".top-search");
+  top?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = new FormData(top).get("q");
+    location.href = `${document.documentElement.dataset.base}index.html${q ? `#q=${encodeURIComponent(q)}` : ""}`;
+  });
 }
 
 function model() {
@@ -238,10 +393,11 @@ function model() {
   });
 
   downloads();
-  panelTabs();
+}
 
+function sortableFiles() {
   const table = $("#files");
-  if (table) {
+  {
     const body = table.tBodies[0];
     table.addEventListener("click", (e) => {
       const th = e.target.closest("[data-col]");

@@ -95,6 +95,20 @@ dev:
     cargo watch --clear --watch src --watch proto --watch build.rs --watch Cargo.toml --watch Cargo.lock --exec 'run --locked --package hologram-live --bin hologram -- serve'
 
 # Build the docs
+# Model Hub application (apps/model-hub): test the primary, build the Component, generate the View with the
+# catalog snapshot. `hologram compile apps/model-hub/hologram.json` succeeds once ADR 023's contract and schema 3 exist.
+model-hub:
+    cargo test --manifest-path apps/model-hub/Cargo.toml
+    cargo build --release --target wasm32-wasip2 --manifest-path apps/model-hub/Cargo.toml
+    npm ci --prefix apps/model-hub/web
+    test -f apps/model-hub/web/data/models.json || node apps/model-hub/web/scripts/data.mjs --limit 500
+    node apps/model-hub/web/scripts/lint-tokens.mjs
+    TARGET=holo node apps/model-hub/web/build.mjs
+
+# Preview the application View against a simulated host: http://127.0.0.1:8141/index.html
+model-hub-preview:
+    node apps/model-hub/preview/serve.mjs
+
 # Model Hub site (apps/model-hub/web): catalog snapshot, brand token lint, static build → apps/model-hub/web/dist.
 # Set BASE=/path/ when served under a path; GitHub Pages publishes it at /<repository>/model-hub/.
 model-hub-site:

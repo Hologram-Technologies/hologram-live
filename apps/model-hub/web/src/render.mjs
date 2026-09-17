@@ -173,8 +173,13 @@ export function meta(m) {
   return spans.join("");
 }
 
+// The site uses clean URLs and ?query state. A .holo View serves exact file paths and rejects queries,
+// so its links name index.html and its state lives in the hash.
+export const holo = typeof document !== "undefined" ? document.documentElement.dataset.target === "holo" : process.env.TARGET === "holo";
+export const modelHref = (base, id) => `${base}models/${id}/${holo ? "index.html" : ""}`;
+
 export function card(m, { base }) {
-  return `<a class="card" href="${base}models/${esc(m.id)}/" title="${esc(m.id)}">
+  return `<a class="card" href="${modelHref(base, esc(m.id))}" title="${esc(m.id)}">
   ${art(m.manifest || m.id, m.state === "addressed")}
   <span class="tags">${tags(m)}</span>
   <span class="title">${esc(m.name)}</span>
@@ -197,7 +202,7 @@ export function prepare(models, snapshot) {
 }
 
 export function parseState(search) {
-  const p = new URLSearchParams(search);
+  const p = new URLSearchParams(search.replace(/^#/, "?"));
   const state = { q: p.get("q") || "", sort: p.get("sort") || "trending", page: Math.max(1, Number(p.get("page")) || 1), tab: p.get("tab") || "main", f: {} };
   if (!SORTS.some(([k]) => k === state.sort)) state.sort = "trending";
   if (!TABS.some(([k]) => k === state.tab)) state.tab = "main";
@@ -216,7 +221,7 @@ export function stateToSearch(state) {
   if (state.tab !== "main") p.set("tab", state.tab);
   if (state.page > 1) p.set("page", state.page);
   const s = p.toString().replace(/%2C/g, ",").replace(/\+/g, "%20");
-  return s ? `?${s}` : "";
+  return s ? `${holo ? "#" : "?"}${s}` : "";
 }
 
 const valuesOf = (m, key) => { const v = m[key]; return Array.isArray(v) ? v : v == null ? [] : [String(v)]; };
@@ -296,7 +301,7 @@ export function grid(r, { base }) {
 
 export function pager(r, state) {
   if (r.pages < 2) return "";
-  const link = (p, label, extra = "") => `<a href="${stateToSearch({ ...state, page: p }) || "?"}" data-page="${p}"${extra}>${label}</a>`;
+  const link = (p, label, extra = "") => `<a href="${stateToSearch({ ...state, page: p }) || (holo ? "#" : "?")}" data-page="${p}"${extra}>${label}</a>`;
   const nums = [];
   for (let p = 1; p <= r.pages; p++) {
     if (p === 1 || p === r.pages || Math.abs(p - r.page) <= 1) nums.push(p);

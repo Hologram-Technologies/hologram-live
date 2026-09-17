@@ -1,0 +1,11 @@
+/* hologram-brand-kit PR #1 @ d98a45d88e47deba3aff17b4a4449b40700fca98 (unmerged). Remove when it lands on develop. */
+:root {
+  --success: #1f7a4d;
+  --success-foreground: #ffffff;
+  --muted-foreground-subtle: #8a857e;
+}
+.dark {
+  --success: #5fd18b;
+  --success-foreground: #171717;
+  --muted-foreground-subtle: #767472;
+}

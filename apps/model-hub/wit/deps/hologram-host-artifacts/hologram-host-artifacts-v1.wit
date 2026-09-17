@@ -1,0 +1,42 @@
+package hologram:host@1.0.0;
+
+/// PROPOSED by ADR 023 (specs/adrs/023-mediated-artifact-authority.md, PR #75).
+/// Move to specs/wit/artifacts once the ADR is accepted; this copy must then be deleted.
+///
+/// Mediated access to named artifacts in the local content store.
+interface artifacts {
+  record artifact {
+    reference: string,
+    manifest-digest: option<string>,
+    archive-kappa: string,
+    layers: u32,
+    bytes: u64,
+    recorded-at-millis: u64,
+  }
+
+  record page {
+    artifacts: list<artifact>,
+    next-cursor: option<string>,
+  }
+
+  enum job-kind { pull, verify }
+  enum job-state { running, succeeded, failed, cancelled }
+
+  record job {
+    id: string,
+    kind: job-kind,
+    state: job-state,
+    layers-done: u32,
+    layers-total: u32,
+    bytes-done: u64,
+    mismatch: option<string>,
+    error: option<string>,
+  }
+
+  %list: func(cursor: option<string>, limit: u16) -> result<page, string>;
+  pull: func(reference: string) -> result<string, string>;
+  verify: func(archive-kappa: string) -> result<string, string>;
+  status: func(job-id: string) -> result<job, string>;
+  cancel: func(job-id: string) -> result<_, string>;
+  remove: func(archive-kappa: string) -> result<_, string>;
+}

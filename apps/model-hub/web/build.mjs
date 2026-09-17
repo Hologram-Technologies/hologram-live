@@ -1,7 +1,11 @@
-// Static build: web/data + web/src + vendored brand kit → web/dist.
+// Static build: web/data + web/src + vendored brand kit. One generator, two targets.
 //
-//   node build.mjs                 base / (set BASE=/path/ when served under a path;
+//   node build.mjs                 site: static pages for any host → web/dist (BASE=/path/ when served under a path;
 //                                  Git Bash: prefix MSYS_NO_PATHCONV=1)
+//   TARGET=holo node build.mjs     portable View for the Model Hub .holo → apps/model-hub/ui
+//
+// The holo target differs only where the View sandbox requires it (ADR 018): exact file paths, no query strings,
+// no network. External links become copyable addresses; Verify and downloads become host actions (ADR 023).
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -12,9 +16,10 @@ import * as B from "./src/braille.mjs";
 import { overview, metaDescription } from "./src/overview.mjs";
 
 const SITE = dirname(fileURLToPath(import.meta.url));
-const DIST = join(SITE, "dist");
+const HOLO = R.holo;
+const DIST = HOLO ? join(SITE, "..", "ui") : join(SITE, "dist");
 const KIT = join(SITE, "vendor", "hologram-brand-kit");
-const base = process.env.BASE || "/";
+const base = HOLO ? "/" : process.env.BASE || "/";
 const REPO = "https://github.com/Hologram-Technologies/hologram-live/tree/main/apps/model-hub";
 const INDEX = "https://github.com/humuhumu33/hologram-api";
 
@@ -26,7 +31,8 @@ const archive = existsSync(archivePath) ? JSON.parse(await readFile(archivePath,
 // The header pill. With an archive it opens every captured day; the Wayback idea, one control.
 function indexPill() {
   const latest = `Index ${R.day(data.snapshot)}`;
-  if (!archive) return `<a class="status" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
+  // holo: the Archive reads past days from IPFS, and a View has no network.
+  if (!archive || HOLO) return `<a class="status" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
   const days = [...archive.days].sort((a, b) => b.date.localeCompare(a.date));
   const months = new Map();
   for (const d of days) {
@@ -77,8 +83,10 @@ const themeSwitch = `<div class="appearance">
 
 const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "styles.css"];
 
-const page = ({ title, description, body, search = false, model = "" }) => `<!doctype html>
-<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${model ? ` data-model="${R.esc(model)}"` : ""}>
+const home = HOLO ? `${base}index.html` : base;
+
+const page = ({ title, description, body, search = false, model = "" }) => sandbox(`<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}" data-target="${HOLO ? "holo" : "site"}"${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -99,9 +107,9 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
 <div class="veil" aria-hidden="true"></div>
 <div class="shell">
 <header class="top">
-  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"><span class="hub">Models Hub</span></a>
+  <a class="brand" href="${home}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"><span class="hub">Models Hub</span></a>
   <div class="top-end">
-    ${search ? `<form class="field compact top-search" action="${base}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
+    ${search ? `<form class="field compact top-search" action="${home}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
     ${indexPill()}
     <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
     ${themeSwitch}
@@ -112,7 +120,21 @@ ${body}
 </div>
 </body>
 </html>
-`;
+`);
+
+// holo: the View may not navigate out or load remote bytes. Links keep their text and become copy actions;
+// remote images show their alt text. The site target is unchanged.
+function sandbox(html) {
+  if (!HOLO) return html;
+  return html
+    .replace(/<a\b([^>]*?)\shref="(https?:[^"]*)"([^>]*)>/g, (_, before, url, after) =>
+      `<a${before} href="#" data-link="${url}" title="Copy link"${after.replace(/\s(target|rel)="[^"]*"/g, "")}>`)
+    .replace(/\sdownload(?=[\s>])/g, "")
+    .replace(/<img\b[^>]*\ssrc="https?:[^"]*"[^>]*>/g, (tag) => {
+      const alt = tag.match(/\salt="([^"]*)"/)?.[1];
+      return alt ? `<span class="img-alt">${alt}</span>` : "";
+    });
+}
 
 // ---- browse
 const initial = R.parseState("");
@@ -176,6 +198,10 @@ function probe(files) {
     .sort((a, b) => a[1] - b[1]).pop()?.[0];
 }
 
+// holo: the registry reference a catalog model is published under. Lowercase segments (ADR 022 grammar); the
+// revision is the tag, so the reference never moves.
+const nodeReference = (m, revision) => `huggingface/${m.id.toLowerCase()}:${revision}`;
+
 function modelPage(m, files, ov, readme) {
   const fact = (label, value) => (value ? `<div><dt>${label}</dt><dd>${value}</dd></div>` : "");
   const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
@@ -213,7 +239,8 @@ function modelPage(m, files, ov, readme) {
       return `<td class="dl"><a class="dl-yes" href="${R.esc(href)}" data-download data-source="${name}" title="Download ${R.esc(path)} from ${name}, checked against its address" aria-label="Download ${R.esc(path)} from ${name}">${R.icon.down}</a></td>`;
     };
     const total = files.files.reduce((sum, f) => sum + (f[1] || 0), 0);
-    const rows = files.files.map(([path, size, address, , hfUrl]) => `<tr data-path="${R.esc(path)}" data-size="${size ?? 0}" data-address="${R.esc(address)}"><td class="path" title="${R.esc(path)}">${R.esc(path)}</td><td class="size">${R.bytes(size)}</td><td class="addr">${copy(address, R.shortAddress(address))}</td>${SOURCE_COLUMNS.map((c) => cell(c, path, size, address, hfUrl)).join("")}</tr>`).join("\n");
+    const columns = HOLO ? [] : SOURCE_COLUMNS;
+    const rows = files.files.map(([path, size, address, , hfUrl]) => `<tr data-path="${R.esc(path)}" data-size="${size ?? 0}" data-address="${R.esc(address)}"><td class="path" title="${R.esc(path)}">${R.esc(path)}</td><td class="size">${R.bytes(size)}</td><td class="addr">${copy(address, R.shortAddress(address))}</td>${columns.map((c) => cell(c, path, size, address, hfUrl)).join("")}</tr>`).join("\n");
     // One button above each source column: every file this source has, as one zip, each file checked against its
     // address as it streams. P2P is the torrent; Hologram copies the pull command.
     const head = ([kind, name]) => {
@@ -255,6 +282,15 @@ function modelPage(m, files, ov, readme) {
       <thead><tr><th><button type="button" data-col="path" aria-sort="ascending">Path${R.icon.chevron}</button></th><th class="size"><button type="button" data-col="size">Size${R.icon.chevron}</button></th><th>Address</th>${SOURCE_COLUMNS.map(head).join("")}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
+    if (HOLO) {
+      // holo: the node is the only source. Pull stores every file; there is nothing to download from the web.
+      downloadMenu = "";
+      filesPanel = `<p class="progress" id="node-status" role="status">${files.files.length} files, ${R.bytes(total)}. Pull stores every file on this node, each checked against its address.</p>
+      <div class="scroll"><table id="files">
+        <thead><tr><th><button type="button" data-col="path" aria-sort="ascending">Path${R.icon.chevron}</button></th><th class="size"><button type="button" data-col="size">Size${R.icon.chevron}</button></th><th>Address</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+    }
   } else {
     const note = m.state === "skipped"
       ? "This model is gated on Hugging Face. Addresses are recorded for public models only."
@@ -267,7 +303,7 @@ function modelPage(m, files, ov, readme) {
     title: `${m.name} · Hologram Models Hub`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
     search: true,
-    body: `<a class="back" href="${base}">${R.icon.left}Models</a>
+    body: `<a class="back" href="${home}">${R.icon.left}Models</a>
 <section class="panel">
   <div class="hero">
     ${R.avatar(m, base)}
@@ -277,7 +313,11 @@ function modelPage(m, files, ov, readme) {
       <div class="tags">${R.tags(m, { full: true })}</div>
     </div>
     <div class="actions">
-      ${m.manifest && files
+      ${m.manifest && files && HOLO
+        ? `<button type="button" class="button" data-node="remove" hidden>${R.icon.close}<span>Remove</span></button>
+      <button type="button" class="button" data-node="pull" data-reference="${R.esc(nodeReference(m, files.revision))}">${R.icon.down}${B.loader("orbit")}<span>Pull to this node</span></button>
+      <button type="button" class="button primary" data-node="verify" data-manifest="${R.esc(m.manifest)}" hidden>${R.icon.check}${B.loader("orbit")}<span>Verify on this node</span></button>`
+        : m.manifest && files
         ? `<button type="button" class="button primary" data-verify="${R.esc(m.id)}" data-manifest="${R.esc(m.manifest)}" data-probe="${R.esc(probe(files) || "")}">${R.icon.check}${B.loader("orbit")}<span>Verify</span></button>${downloadMenu}`
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
@@ -307,7 +347,7 @@ await writeFile(join(DIST, "404.html"), page({
   title: "Not found · Hologram Models Hub",
   description: "Page not found.",
   search: true,
-  body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${base}">All models</a></div></section>`,
+  body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${home}">All models</a></div></section>`,
 }));
 
 for (const m of models) {

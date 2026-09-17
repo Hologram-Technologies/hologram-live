@@ -95,6 +95,18 @@ dev:
     cargo watch --clear --watch src --watch proto --watch build.rs --watch Cargo.toml --watch Cargo.lock --exec 'run --locked --package hologram-live --bin hologram -- serve'
 
 # Build the docs
+# Model Hub site (apps/model-hub/web): catalog snapshot, brand token lint, static build → apps/model-hub/web/dist.
+# Set BASE=/path/ when served under a path; GitHub Pages publishes it at /<repository>/model-hub/.
+model-hub-site:
+    npm ci --prefix apps/model-hub/web
+    test -f apps/model-hub/web/data/models.json || node apps/model-hub/web/scripts/data.mjs --limit 500
+    node apps/model-hub/web/scripts/lint-tokens.mjs
+    node apps/model-hub/web/build.mjs
+
+# Refresh the catalog snapshot (trending Hugging Face models joined with the Hologram address index).
+model-hub-data:
+    node apps/model-hub/web/scripts/data.mjs --limit 500
+
 docs:
     HOLOGRAM_CONFIG="{{justfile_directory()}}/target/docs-config/live.toml" cargo run --locked --package hologram-live --bin hologram -- --json openapi --output apps/docs/public/openapi.json
     cd apps/docs && npm ci && npm run build

@@ -1,0 +1,14 @@
+{
+  "name": "hologram-models-hub-site",
+  "private": true,
+  "type": "module",
+  "description": "Static build for Hologram Models Hub. markdown-it renders model cards at build time only; nothing ships to the browser.",
+  "scripts": {
+    "data": "node scripts/data.mjs",
+    "build": "node build.mjs",
+    "lint": "node scripts/lint-tokens.mjs"
+  },
+  "devDependencies": {
+    "markdown-it": "14.1.0"
+  }
+}

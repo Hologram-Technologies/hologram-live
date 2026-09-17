@@ -14,6 +14,10 @@
 .env
 /examples/python-numpy-pandas/.venv/
 /examples/**/*.holo
+/apps/model-hub/web/node_modules/
+/apps/model-hub/web/data/
+/apps/model-hub/web/dist/
+/apps/model-hub/web/public/avatars/
 __pycache__/
 .claude/
 

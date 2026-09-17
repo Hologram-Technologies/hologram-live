@@ -1,9 +1,25 @@
 name: release-docs
 
+# One GitHub Pages site, replaced whole on every deploy:
+#   /            documentation, always built from a docs-v* release tag
+#   /model-hub/  Model Hub static site (apps/model-hub/web), built from main with a fresh catalog snapshot
+#
+# A docs-v* tag publishes that documentation release. Pushes to main under apps/model-hub, the daily schedule and
+# manual runs refresh Model Hub and rebuild the documentation from the latest docs-v* tag, so they never publish
+# unreleased documentation.
+
 on:
   push:
     tags:
       - "docs-v*"
+    branches:
+      - main
+    paths:
+      - "apps/model-hub/**"
+      - ".github/workflows/release-docs.yml"
+  schedule:
+    - cron: "17 9 * * *" # after the daily model address index
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,23 +35,60 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - run: ./scripts/check-release-tag.sh docs "$GITHUB_REF_NAME"
+
+      - name: Select the documentation release
+        id: docs
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            ./scripts/check-release-tag.sh docs "$GITHUB_REF_NAME"
+            echo "ref=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            tag=$(git ls-remote --tags --refs origin 'docs-v*' | sed 's#.*refs/tags/##' | sort -V | tail -n 1)
+            test -n "$tag"
+            echo "ref=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.docs.outputs.ref }}
+          path: docs-release
+
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: npm
-          cache-dependency-path: apps/docs/package-lock.json
+          cache-dependency-path: |
+            docs-release/apps/docs/package-lock.json
+            apps/model-hub/web/package-lock.json
       - uses: actions/configure-pages@v5
-      - run: npm ci
-        working-directory: apps/docs
-      - name: Build documentation site
-        run: npm run build
-        working-directory: apps/docs
+
+      - name: Build documentation site (${{ steps.docs.outputs.ref }})
+        working-directory: docs-release/apps/docs
         env:
           GITHUB_PAGES: "true"
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Model Hub site
+        working-directory: apps/model-hub/web
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          export BASE="/${GITHUB_REPOSITORY#*/}/model-hub/"
+          npm ci
+          node scripts/data.mjs --limit 500
+          node scripts/lint-tokens.mjs
+          node build.mjs
+
+      - name: Assemble one site
+        run: |
+          test ! -e docs-release/apps/docs/dist/model-hub
+          cp -R apps/model-hub/web/dist docs-release/apps/docs/dist/model-hub
+
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: apps/docs/dist
+          path: docs-release/apps/docs/dist
 
   deploy:
     needs: build

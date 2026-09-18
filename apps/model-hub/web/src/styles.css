@@ -101,6 +101,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 .button.primary { background: var(--hh-primary); border-color: var(--hh-primary); color: var(--hh-primary-text); }
 .button.primary .i { color: var(--hh-accent); stroke-width: 2.25; }
 .button.primary:hover { opacity: .85; }
+/* The brand kit's success pair: --success behind --success-foreground. Used for Download. */
+.button.success { background: var(--success); border-color: var(--success); color: var(--success-foreground); }
+.button.success .i { color: var(--success-foreground); stroke-width: 2.25; }
+.button.success:hover { border-color: var(--success); opacity: .85; }
 .button:disabled { opacity: .5; }
 
 .pill { display: inline-flex; align-items: center; height: var(--hh-control); padding: 0 var(--space-3); border-radius: var(--hh-control); background: var(--hh-fill); font-family: var(--font-mono); font-size: var(--text-sm); }
@@ -532,7 +536,7 @@ th.dl { font-size: var(--text-sm); }
 .menu [role="menuitem"] .label { flex: 1; min-width: 0; }
 .menu [role="menuitem"] .sub { display: block; color: var(--hh-text-dim); }
 .menu-note { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.43; }
-#dl-all.busy { color: var(--hh-text-dim); cursor: progress; }
+#dl-all.busy { cursor: progress; }
 @media (max-width: 720px) {
   .hero { position: relative; }
   .actions .download-all { position: static; }

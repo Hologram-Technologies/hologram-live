@@ -1,0 +1,87 @@
+hub.uor.foundation {
+	encode zstd gzip
+
+	@registry path /v2 /v2/* /_*
+	handle @registry {
+		@write {
+			not method GET HEAD OPTIONS
+			not header Authorization "Bearer {$HUB_REGISTRY_TOKEN}"
+		}
+		respond @write "write requires a registry token" 401
+		reverse_proxy hub-kappa:5000
+	}
+
+	@preflight {
+		method OPTIONS
+		path /api/v1/*
+	}
+	handle @preflight {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS"
+		header Access-Control-Allow-Headers "Authorization, Content-Type, X-Hologram-Kind, X-Hologram-Filename"
+		header Access-Control-Max-Age "86400"
+		respond 204
+	}
+
+	# An object is named by the hash of its bytes, so a response for one id can be cached forever.
+	@object {
+		method GET HEAD
+		path_regexp ^/api/v1/objects/blake3:[0-9a-f]{64}$
+	}
+	handle @object {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Expose-Headers "ETag, Content-Disposition"
+		header Cache-Control "public, max-age=31536000, immutable"
+		reverse_proxy hub-server:11435 {
+			header_up Authorization "Bearer {$HUB_SERVER_TOKEN}"
+		}
+	}
+
+	@read {
+		method GET HEAD
+		path /healthz /openapi.json /docs /docs/scalar.js /api/v1/capabilities /api/v1/modules
+	}
+	handle @read {
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=60"
+		reverse_proxy hub-server:11435 {
+			header_up Authorization "Bearer {$HUB_SERVER_TOKEN}"
+		}
+	}
+
+	@publish {
+		method GET HEAD POST
+		path /api/v1/objects /api/v1/objects/search
+	}
+	handle @publish {
+		@denied not header Authorization "Bearer {$HUB_PUBLISH_TOKEN}"
+		respond @denied "publish requires a publisher token" 401
+		request_body {
+			max_size 8MB
+		}
+		header Access-Control-Allow-Origin "*"
+		reverse_proxy hub-server:11435 {
+			header_up Authorization "Bearer {$HUB_SERVER_TOKEN}"
+		}
+	}
+
+	@server_other path /api/* /v1/* /hologram.live.v1.HologramLive/*
+	handle @server_other {
+		respond "not found" 404
+	}
+
+	handle {
+		# One URL, two readers: an agent asking for JSON at the root gets the hub descriptor.
+		@agent {
+			path /
+			header Accept *application/json*
+		}
+		rewrite @agent /.well-known/model-hub.json
+		header /.well-known/* Access-Control-Allow-Origin "*"
+		header /llms.txt Access-Control-Allow-Origin "*"
+		# Archived days are read by the browser from any origin and verified there.
+		header /archive/* Access-Control-Allow-Origin "*"
+		header /archive.json Access-Control-Allow-Origin "*"
+		reverse_proxy hub-site:8080
+	}
+}

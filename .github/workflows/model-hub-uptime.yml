@@ -1,0 +1,57 @@
+name: model-hub-uptime
+
+# Probes hub.uor.foundation from outside its host. One open issue per outage: opened on the first failure,
+# commented on while it lasts, closed on recovery.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: model-hub-uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Probe site and registry
+        id: probe
+        run: |
+          set -u
+          fail=""
+          check() {
+            code=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 20 --retry 2 --retry-delay 10 "$2" || echo 000)
+            echo "$1 $code"
+            [ "$code" = 200 ] || fail="$fail $1=$code"
+          }
+          check site https://hub.uor.foundation/
+          check model-page https://hub.uor.foundation/models/hexgrad/Kokoro-82M/
+          check registry https://hub.uor.foundation/v2/
+          check index-tags https://hub.uor.foundation/v2/model-hub/index/tags/list
+          grep -q '"tags":\[' /tmp/body || fail="$fail index-tags=empty"
+          echo "failures=${fail# }" >> "$GITHUB_OUTPUT"
+
+      - name: Open, update or close the outage issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILURES: ${{ steps.probe.outputs.failures }}
+        run: |
+          title="Model Hub outage: hub.uor.foundation"
+          open=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [ -n "$FAILURES" ]; then
+            if [ -z "$open" ]; then
+              gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "Probe failed: \`$FAILURES\` ($run_url). Host runbook: apps/model-hub/deploy/README.md."
+            else
+              gh issue comment "$open" -R "$GITHUB_REPOSITORY" --body "Still failing: \`$FAILURES\` ($run_url)"
+            fi
+            exit 1
+          elif [ -n "$open" ]; then
+            gh issue close "$open" -R "$GITHUB_REPOSITORY" --comment "Recovered ($run_url)."
+          fi

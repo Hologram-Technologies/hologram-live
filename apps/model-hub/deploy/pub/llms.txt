@@ -1,0 +1,43 @@
+# Hologram Model Hub
+
+Open models. Every object is named by the BLAKE3 hash of its bytes; every model file by its SHA-256. Fetch from anywhere, check it yourself, trust no host.
+
+## The short way (use the tools you already have)
+
+- Any Hugging Face tool: `export HF_ENDPOINT=https://hub.uor.foundation`, then `hf download <owner>/<name>` (or `snapshot_download`, `from_pretrained`, `llama-server -hf`). Same commands, same cache. Each file comes from a source that is up right now (Hugging Face, ModelScope, IPFS); `main` is the indexed revision.
+- Check a download with no tool of ours: `curl -s https://hub.uor.foundation/<owner>/<name>/resolve/main/SHA256SUMS | sha256sum -c` inside the model directory.
+- Ollama: `ollama pull hub.uor.foundation/<owner>/<name>:<quant>` for any GGUF repository in the index. Ollama verifies the SHA-256 itself.
+- Search in a few hundred bytes: `GET /api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&sort=downloads&limit=5` (Hugging Face's list shape, plus a `hologram` block per row). `GET /api/models/<owner>/<name>` for one model, `/tree/main` for its files.
+- MCP: `https://hub.uor.foundation/mcp` (Streamable HTTP, no key). Tools: `search_models`, `get_model`, `resolve_file` (a URL, the SHA-256 it must have, and the commands that hand the file to an engine).
+- Which sources are up: `GET /api/hub/health`. Pin one: put `/via/ipfs`, `/via/modelscope` or `/via/huggingface` in front of the path.
+
+The rest of this page is the raw, content-addressed form of the same hub: slower to read, but every object proves itself.
+
+## Find a model (two requests, no key)
+
+1. GET / with `Accept: application/json` returns the hub descriptor. Its `catalog` field is today's catalog address.
+2. GET /api/v1/objects/{catalog} returns the catalog. `objects["<owner>/<name>"]` gives `model` (address of the newest revision) and `sources` (addresses of source records). `models` holds browse facts: task, params, license, downloads.
+
+## Download a model
+
+3. GET /api/v1/objects/{model} returns `files: [{path, size, sha256}]`, `revision`, `license`, and `prev` (address of the revision before, or null).
+4. GET /api/v1/objects/{source} for each source. `resolve + path` is a URL for that file (kind ipfs or http). Kind hologram lists chunk addresses per file; fetch each from `resolve + address` and join them. The origin is always also valid: https://huggingface.co/{id}/resolve/{revision}/{path}.
+5. Hash what arrives. Keep a file only if its SHA-256 equals the value in the model object. On a mismatch, drop it and try the next source. Expected hashes come from the model object only, never from a source.
+
+## Rules that make this safe
+
+- Check every object you fetch: BLAKE3 of the bytes must equal the address you asked for. The server does not check on read.
+- Addresses never change meaning. Responses under /api/v1/objects/{id} can be cached forever.
+- A version is an address. To pin a model, keep the model address. To list history, follow `prev`.
+- The catalog has `prev` too: yesterday's hub is one address away.
+
+## Publish, host, mirror
+
+- Publish: POST /api/v1/objects with a publisher token, headers `x-hologram-kind` and `x-hologram-filename`, body = the bytes. The response `id` is the address.
+- Host: run any Hologram Server, POST the files there as chunks of 16 MiB, publish a source record of kind hologram on the hub.
+- Mirror: start at the catalog, follow every address, POST each object to your own server. Same bytes, same addresses.
+
+## Machine-readable
+
+- /openapi.json: the full server API. /api/v1/capabilities: operations and limits (32 MiB per message).
+- /v2/: the OCI registry under it all. Each object is also an OCI artifact in repository `model-hub`, tag `blake3_<hex>`.

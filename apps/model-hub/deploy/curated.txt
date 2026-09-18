@@ -1,0 +1,10 @@
+sentence-transformers/all-MiniLM-L6-v2
+BAAI/bge-small-en-v1.5
+openai/whisper-tiny
+openai/whisper-base
+Qwen/Qwen2.5-0.5B-Instruct
+HuggingFaceTB/SmolLM2-135M-Instruct
+distilbert/distilbert-base-uncased
+BAAI/bge-base-en-v1.5
+nomic-ai/nomic-embed-text-v1.5
+Qwen/Qwen3-0.6B

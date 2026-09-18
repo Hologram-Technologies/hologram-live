@@ -13,6 +13,7 @@
 //   GET  …/api/models/<org>/<name>/xet-read-token/<rev>                    307 to huggingface.co (its token, not ours)
 //   GET  /api/models/<org>/<name>/refs                                     branches: main at the indexed revision (llama.cpp -hf)
 //   GET|HEAD /v2/<org>/<name>/manifests/<quant> and /blobs/<digest>        Ollama's registry dialect (see below)
+//   POST /mcp                                                              MCP for agents: search_models, get_model, resolve_file
 // Older clients read those three headers from our 302 and GET the Location; huggingface_hub 1.32 follows the redirect
 // on HEAD too, so while Hugging Face is the source it meets Hugging Face's own Xet headers and downloads through Xet
 // (hence the token route). We never send an X-Xet-* header ourselves: from ModelScope and IPFS the client uses plain
@@ -259,12 +260,104 @@ async function ollama(req, res, id, kind, ref) {
   return res.end(req.method === "HEAD" ? undefined : part);
 }
 
+// ---- MCP: the same hub for agents, at /mcp (Streamable HTTP, stateless, anonymous, read-only)
+// Three tools, because an agent needs three answers: which model, which file, and where to get it with what hash.
+// Weights never travel through a tool result: resolve_file returns URLs, the expected SHA-256 (from the index, never
+// from a source) and the exact commands that hand the file to an engine.
+const MCP_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"];
+const HUB = "https://hub.uor.foundation";
+const TOOLS = [
+  { name: "search_models", title: "Search models",
+    description: "Find open models in the hub's index. Every result has all of its files addressed by SHA-256. Returns id, task, library, licence, parameters, weight size, downloads and where the bytes live.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {
+      query: { type: "string", description: "Part of the model id, e.g. 'qwen' or 'whisper'." },
+      task: { type: "string", description: "Hugging Face pipeline tag, e.g. text-generation, text-to-speech, feature-extraction." },
+      license: { type: "string", description: "SPDX-style licence id, e.g. apache-2.0, mit." },
+      format: { type: "string", description: "gguf, safetensors, mlx, onnx …" },
+      max_weights_gb: { type: "number", description: "Upper bound on the total size of the weights." },
+      sort: { type: "string", enum: ["trending", "downloads", "likes", "newest"], default: "trending" },
+      limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } } } },
+  { name: "get_model", title: "Get a model",
+    description: "The pinned revision of one model, its files with size and SHA-256, its GGUF quantisations if any, and its sources with their current health.",
+    inputSchema: { type: "object", additionalProperties: false, required: ["id"], properties: { id: { type: "string", description: "org/name, as on Hugging Face." } } } },
+  { name: "resolve_file", title: "Resolve a file",
+    description: "Where to download one file of a model right now, the SHA-256 it must have, how to check it, and the commands that hand it to an engine (hf, Ollama, llama.cpp). Give either a path or, for GGUF models, a quantisation such as Q4_K_M.",
+    inputSchema: { type: "object", additionalProperties: false, required: ["id"], properties: { id: { type: "string" }, path: { type: "string" }, quant: { type: "string" } } } },
+];
+const toolError = (text) => ({ content: [{ type: "text", text }], isError: true });
+const toolResult = (data) => ({ content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data });
+const sourcesOf = (doc) => doc.sources.filter((s) => !s.p2p && !s.pull && ORDER.includes(s.kind)).map((s) => ({ kind: s.kind, healthy: health[s.kind].ok, missing_files: (s.missing || []).length }));
+async function callTool(name, a = {}) {
+  if (name === "search_models") {
+    let out = await rows();
+    const has = (v, n) => String(v || "").toLowerCase().includes(String(n).toLowerCase());
+    if (a.query) out = out.filter((m) => has(m.id, a.query));
+    if (a.task) out = out.filter((m) => m.pipeline_tag === a.task);
+    if (a.license) out = out.filter((m) => m.tags.includes(`license:${String(a.license).toLowerCase()}`));
+    if (a.format) out = out.filter((m) => m.tags.includes(String(a.format).toLowerCase()));
+    if (a.max_weights_gb) out = out.filter((m) => (m.hologram.weight_bytes || 0) <= a.max_weights_gb * 1e9);
+    const key = { trending: "trendingScore", downloads: "downloads", likes: "likes", newest: "createdAt" }[a.sort || "trending"] || "trendingScore";
+    out = [...out].sort((x, y) => (x[key] < y[key] ? 1 : x[key] > y[key] ? -1 : 0));
+    const limit = Math.min(50, Math.max(1, a.limit || 10));
+    return toolResult({ total: out.length, models: out.slice(0, limit).map((m) => ({ id: m.id, task: m.pipeline_tag || null, library: m.library_name || null, license: (m.tags.find((t) => t.startsWith("license:")) || "").slice(8) || null, parameters: m.hologram.parameters || null, weights_gb: Math.round((m.hologram.weight_bytes || 0) / 1e7) / 100, downloads: m.downloads, sources: m.hologram.sources, page: `${HUB}/models/${m.id}/` })) });
+  }
+  const doc = a.id ? await model(String(a.id)) : null;
+  if (!doc) return toolError(`${a.id || "(no id)"} is not in the hub's index. search_models lists what is; Hugging Face has the rest.`);
+  const ggufs = doc.files.filter((f) => /\.gguf$/i.test(f[0]) && !/mmproj|imatrix/i.test(f[0]));
+  if (name === "get_model") {
+    const files = doc.files.map((f) => ({ path: f[0], size: f[1], sha256: hex(f[2]) }));
+    return toolResult({ id: doc.id, revision: doc.revision, purl: `pkg:huggingface/${doc.id}@${doc.revision}`, files_total: files.length, bytes_total: files.reduce((s, f) => s + f.size, 0), files: files.slice(0, 200), files_truncated: files.length > 200, gguf_quants: [...new Set(ggufs.map((f) => quantOf(f[0])).filter(Boolean))], sources: sourcesOf(doc), sha256sums: `${HUB}/${doc.id}/resolve/main/SHA256SUMS`, download_all: [`export HF_ENDPOINT=${HUB}`, `hf download ${doc.id}`] });
+  }
+  if (name === "resolve_file") {
+    const entry = a.path ? doc.files.find((f) => f[0] === a.path) : a.quant ? pickGguf(doc, String(a.quant)).file : null;
+    if (!entry) return toolError(a.path ? `${a.path} is not a file of ${doc.id} at ${doc.revision}. get_model lists the files.` : a.quant ? `${doc.id} has no single-file GGUF for ${a.quant}. It has: ${[...new Set(ggufs.map((f) => quantOf(f[0])).filter(Boolean))].join(", ") || "no GGUF files"}.` : "Give a path or a quant.");
+    const have = doc.sources.filter((s) => !s.p2p && !s.pull && ORDER.includes(s.kind) && !(s.missing || []).includes(entry[0]));
+    const { source } = choose(doc, entry, null);
+    const url = `${HUB}/${doc.id}/resolve/${doc.revision}/${encodePath(entry[0])}`, name0 = entry[0].split("/").pop(), isGguf = /\.gguf$/i.test(entry[0]);
+    return toolResult({ id: doc.id, revision: doc.revision, path: entry[0], size: entry[1], sha256: hex(entry[2]),
+      url, url_note: "Redirects to a source that is up right now; supports Range. No credentials needed.", served_by_now: source.kind,
+      sources: have.map((s) => ({ kind: s.kind, healthy: health[s.kind].ok, url: urlFor(doc, s, entry) })),
+      download: `curl -L -o ${JSON.stringify(name0)} ${JSON.stringify(url)}`, verify: `echo "${hex(entry[2])}  ${name0}" | sha256sum -c`,
+      handoff: { hf: [`export HF_ENDPOINT=${HUB}`, `hf download ${doc.id} ${entry[0]}`], ...(isGguf && quantOf(entry[0]) ? { ollama: `ollama pull hub.uor.foundation/${doc.id}:${quantOf(entry[0])}`, llama_cpp: `MODEL_ENDPOINT=${HUB}/ llama-server -hf ${doc.id}:${quantOf(entry[0])}` } : {}) } });
+  }
+  return toolError(`Unknown tool ${name}.`);
+}
+async function mcp(req, res) {
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, accept, mcp-protocol-version, mcp-session-id, mcp-method, mcp-name, last-event-id", "access-control-allow-methods": "POST, OPTIONS", "access-control-expose-headers": "mcp-protocol-version" };
+  if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
+  if (req.method !== "POST") { res.writeHead(405, { allow: "POST, OPTIONS", ...cors }); return res.end(); } // no server-initiated stream
+  let raw = "";
+  for await (const chunk of req) { raw += chunk; if (raw.length > 65536) { res.writeHead(413, cors); return res.end(); } }
+  let body;
+  try { body = JSON.parse(raw); } catch { return json(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, cors); }
+  const version = MCP_VERSIONS.includes(req.headers["mcp-protocol-version"]) ? req.headers["mcp-protocol-version"] : null;
+  const info = { name: "hologram-model-hub", title: "Hologram Model Hub", version: "1.0.0" };
+  const instructions = "Open models, every file named by its SHA-256. search_models to find one, get_model for its files, resolve_file for a download URL with the hash it must have. Weights are fetched by your shell or engine, never through a tool result.";
+  const one = async (m) => {
+    if (!m || m.jsonrpc !== "2.0" || typeof m.method !== "string") return { jsonrpc: "2.0", id: m?.id ?? null, error: { code: -32600, message: "Invalid request" } };
+    if (m.id === undefined) return null; // a notification: nothing to answer
+    const ok = (result) => ({ jsonrpc: "2.0", id: m.id, result });
+    if (m.method === "initialize") return ok({ protocolVersion: MCP_VERSIONS.includes(m.params?.protocolVersion) ? m.params.protocolVersion : "2025-06-18", capabilities: { tools: { listChanged: false } }, serverInfo: info, instructions });
+    if (m.method === "server/discover") return ok({ protocolVersions: MCP_VERSIONS, capabilities: { tools: { listChanged: false } }, serverInfo: info, instructions });
+    if (m.method === "ping") return ok({});
+    if (m.method === "tools/list") return ok({ tools: TOOLS });
+    if (m.method === "tools/call") { try { return ok(await callTool(m.params?.name, m.params?.arguments)); } catch (e) { return ok(toolError(`The hub failed on this call: ${String(e.message || e).slice(0, 120)}`)); } }
+    if (m.method === "resources/list") return ok({ resources: [] });
+    if (m.method === "prompts/list") return ok({ prompts: [] });
+    return { jsonrpc: "2.0", id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } };
+  };
+  const answers = (await Promise.all((Array.isArray(body) ? body : [body]).map(one))).filter(Boolean);
+  if (!answers.length) { res.writeHead(202, cors); return res.end(); }
+  return json(res, 200, Array.isArray(body) ? answers : answers[0], { ...cors, "cache-control": "no-store", ...(version ? { "mcp-protocol-version": version } : {}) });
+}
+
 const revisionOk = (doc, rev) => rev === "main" || (rev.length >= 7 && doc.revision.startsWith(rev));
 
 http.createServer(async (req, res) => {
   try {
-    if (req.method !== "GET" && req.method !== "HEAD") return refuse(res, 405, "ReadOnly", "The hub endpoint is read-only.");
     const url = new URL(req.url, "http://hub");
+    if (url.pathname === "/mcp") return mcp(req, res);
+    if (req.method !== "GET" && req.method !== "HEAD") return refuse(res, 405, "ReadOnly", "The hub endpoint is read-only.");
     let path = decodeURIComponent(url.pathname), via = url.searchParams.get("source");
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }

@@ -32,6 +32,7 @@ engines it feeds already speak OpenAI.
 |---|---|---|---|
 | Hugging Face Hub API | `export HF_ENDPOINT=https://hub.uor.foundation` | `hf`, `huggingface_hub`, transformers, diffusers, sentence-transformers, vLLM, SGLang, KServe, llama.cpp `-hf`, every BYO-container compute platform | Live. Matrix passes on `huggingface_hub` 1.32.0 and 0.36.2; `HfApi.list_models`, `model_info`, `list_repo_files` work |
 | Ollama registry | `ollama pull hub.uor.foundation/<org>/<name>:<quant>` | Ollama and everything built on it | Live. Ollama 0.34.2 pulled 969 MB in 67 s, verified the SHA-256 itself, and ran the model. **Failover measured:** with huggingface.co, hf.co and the CDN blackholed in the client, the same pull succeeded in 83 s from ModelScope, manifest and template from the hub's cache |
+| MCP | add the server URL `https://hub.uor.foundation/mcp` | Claude, ChatGPT developer mode, Cursor, VS Code, Gemini CLI | Live. Stateless Streamable HTTP, anonymous, three tools (`search_models`, `get_model`, `resolve_file`); measured with the official MCP inspector client: list, calls, and a tool error |
 | Hologram objects | `GET /api/v1/objects/{address}` | Agents and mirrors that want the raw, content-addressed truth | Live (Hologram Server) |
 | OCI registry | `hologram pull hub.uor.foundation/model-hub/index:<date>` | The daily index | Live (kappa-registry) |
 
@@ -110,7 +111,7 @@ Baseten, AkashML) accept only named sources; a hub gets in there only as a named
 | vLLM, SGLang, KServe `hf://`, TGI | `HF_ENDPOINT` | Use `huggingface_hub`; not run (need a GPU or a large image): UNVERIFIED |
 | transformers with torch, diffusers, sentence-transformers full load | `HF_ENDPOINT` | Same client path as measured; full load not run: UNVERIFIED |
 | Docker Model Runner, oras, modctl | OCI reference | Needs the OCI model-artifact dialect (next) |
-| Claude, ChatGPT, Cursor, Gemini CLI | MCP server URL | Needs the MCP server (next) |
+| MCP clients (Claude, ChatGPT developer mode, Cursor, VS Code, Gemini CLI) | MCP server URL | **Measured** with the official inspector client; not yet added inside each product: UNVERIFIED |
 | LM Studio, Jan, `docker model pull hf.co/…` | none | Not reachable |
 
 ## 4. The decision (ADR)
@@ -147,19 +148,19 @@ misleads the UIs that read it. (C) **One base URL, many dialects, one truth.** C
 | `/v2/`, `/v2/model-hub/…`, `/_*` | kappa-registry | OCI distribution, the daily index | registry | token for writes |
 | `/api/v1/objects[/{id}]`, `/api/v1/capabilities`, `/api/v1/modules`, `/openapi.json`, `/docs`, `/healthz` | Hologram Server | Hologram objects | immutable per address | publisher token for writes |
 | `/.well-known/model-hub.json`, `/llms.txt` | site | agent discovery | short | none |
-| `/mcp` (reserved), `/v1/…` (reserved, unused) | — | MCP; OpenAI shape deliberately empty | — | — |
+| `/mcp` | hub-resolve | MCP (POST only, stateless) | uncached | none |
+| `/v1/…` | — | reserved and deliberately empty: inference is out of scope | — | — |
 
 ## 6. Sequencing, each with its adoption signal and kill criterion
 1. **Failover proof: done.** With Hugging Face blackholed in the client, `hf download` and `snapshot_download` deliver
    the whole model (30 of 30 files matching) in 110 s; with ModelScope down too, from IPFS alone in 126 s. Signal to
    keep watching: reroutes per week in the log. It holds for the eleven pinned models and for whatever ModelScope
    mirrors; elsewhere Hugging Face remains a single source.
-2. **Lead `llms.txt` and the descriptor with the two lines** (`HF_ENDPOINT`, `ollama pull …`) and the search route.
-   Signal: agent user-agents on `/api/models`.
+2. **`llms.txt` leads with the short way: done** (`HF_ENDPOINT`, `ollama pull`, the search route, MCP). Signal: agent
+   user-agents on `/api/models`.
 3. **OCI model artifacts** on the same `/v2/{org}/{name}` routes (ModelPack raw layers and Docker `gguf.v3`). Signal:
    `docker model pull` and `oras pull` succeed in the rig. Kill: if no OCI client user-agent appears in 60 days.
-4. **MCP server, three tools** (`search_models`, `get_model`, `resolve_file`), stateless, anonymous, listed in the MCP
-   registry. Kill: fewer tool calls than `/api/models` searches from agents after 60 days.
+4. **MCP server: done** (three tools, stateless, anonymous). Left: publish `deploy/mcp-server.json` to the MCP registry, which needs the `uor.foundation` domain verified with `mcp-publisher` (Ilya). Kill: fewer tool calls than `/api/models` searches from agents after 60 days.
 5. **One truth.** Today the dialects read the site's published file lists and the address index, while the agent API
    reads objects. Move the dialects onto the objects (they need a by-name lookup the object API lacks: a small upstream
    PR or a name→address map published daily), then delete the duplicate lists.

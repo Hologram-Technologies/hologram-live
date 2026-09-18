@@ -2,6 +2,17 @@
 
 Open models. Every object is named by the BLAKE3 hash of its bytes; every model file by its SHA-256. Fetch from anywhere, check it yourself, trust no host.
 
+## The short way (use the tools you already have)
+
+- Any Hugging Face tool: `export HF_ENDPOINT=https://hub.uor.foundation`, then `hf download <owner>/<name>` (or `snapshot_download`, `from_pretrained`, `llama-server -hf`). Same commands, same cache. Each file comes from a source that is up right now (Hugging Face, ModelScope, IPFS); `main` is the indexed revision.
+- Check a download with no tool of ours: `curl -s https://hub.uor.foundation/<owner>/<name>/resolve/main/SHA256SUMS | sha256sum -c` inside the model directory.
+- Ollama: `ollama pull hub.uor.foundation/<owner>/<name>:<quant>` for any GGUF repository in the index. Ollama verifies the SHA-256 itself.
+- Search in a few hundred bytes: `GET /api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&sort=downloads&limit=5` (Hugging Face's list shape, plus a `hologram` block per row). `GET /api/models/<owner>/<name>` for one model, `/tree/main` for its files.
+- MCP: `https://hub.uor.foundation/mcp` (Streamable HTTP, no key). Tools: `search_models`, `get_model`, `resolve_file` (a URL, the SHA-256 it must have, and the commands that hand the file to an engine).
+- Which sources are up: `GET /api/hub/health`. Pin one: put `/via/ipfs`, `/via/modelscope` or `/via/huggingface` in front of the path.
+
+The rest of this page is the raw, content-addressed form of the same hub: slower to read, but every object proves itself.
+
 ## Find a model (two requests, no key)
 
 1. GET / with `Accept: application/json` returns the hub descriptor. Its `catalog` field is today's catalog address.

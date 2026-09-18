@@ -1,0 +1,8 @@
+{
+  "name": "foundation.uor.hub/model-hub",
+  "title": "Hologram Model Hub",
+  "description": "Open models with every file named by its SHA-256. Find a model, list its files, and get a download URL that redirects to a source that is up (Hugging Face, ModelScope, IPFS) with the hash the file must have.",
+  "version": "1.0.0",
+  "websiteUrl": "https://hub.uor.foundation",
+  "remotes": [{ "type": "streamable-http", "url": "https://hub.uor.foundation/mcp" }]
+}

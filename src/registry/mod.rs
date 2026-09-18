@@ -41,6 +41,23 @@ pub trait RegistryProvider: Send + Sync {
     fn search(&self, query: &ObjectQuery) -> Result<ObjectPage>;
 }
 
+/// Refuse bytes that do not hash to the id they were read under.
+///
+/// An id is the BLAKE3 of the content, so a provider can always tell whether
+/// what its backend returned is what was stored. Without this check a flipped
+/// bit on disk, or in a registry's blob store, is served with a 200 and an
+/// `ETag` naming the content the caller asked for. It is a storage fault,
+/// not a caller's mistake, so it surfaces as `LIVE_IO`.
+pub(crate) fn verify_content(id: &str, bytes: &[u8]) -> Result<()> {
+    let actual = format!("blake3:{}", blake3::hash(bytes).to_hex());
+    if actual == id {
+        return Ok(());
+    }
+    Err(crate::error::LiveError::Io(format!(
+        "object {id} is corrupt: the stored bytes hash to {actual}"
+    )))
+}
+
 /// Build the provider named by configuration.
 ///
 /// Local is the default so a stock install needs no external service;
@@ -55,5 +72,21 @@ pub fn provider_from_config(
             &config.registry,
         )?)),
         _ => Ok(std::sync::Arc::new(LocalRegistryProvider::new(store))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::verify_content;
+
+    #[test]
+    fn bytes_are_accepted_only_under_their_own_address() {
+        let bytes = b"what was stored";
+        let id = format!("blake3:{}", blake3::hash(bytes).to_hex());
+        verify_content(&id, bytes).expect("intact bytes pass");
+
+        let error = verify_content(&id, b"what came back").expect_err("other bytes are refused");
+        assert_eq!(error.code(), "LIVE_IO");
+        assert!(error.to_string().contains(&id), "{error}");
     }
 }

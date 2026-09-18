@@ -82,3 +82,7 @@ fi
 
 rm -rf "$WORK"
 echo "== $(date -u +%FT%TZ) published $REF ($(du -sh "$HUB/store" | cut -f1) store)"
+
+# Every hosted model is also pinned on IPFS (pin-model.sh pulls it back from the public registry, so this proves the
+# publish too). A pin failure is logged, never fatal: the registry copy is already live.
+[ -f "$HUB/filebase.env" ] && "$HUB/pin-model.sh" "$ID" || echo "pin skipped or failed for $ID"

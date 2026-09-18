@@ -40,8 +40,8 @@ file against its address in the browser, and every layer on `hologram pull`.
 
 | Phase | Scope | Status |
 |---|---|---|
-| A | Harden what is live: docs host fix, registry backup, external uptime probe, dedup measurement, deploy files in this repository | In progress |
-| B | Storage: IPFS pinning (Filebase), 15 GB of curated permissive-licence weights on the hub registry, verified state everywhere | In progress: hub hosting live (Kokoro-82M verified end to end); curated set publishing; Filebase waits on account |
+| A | Harden what is live: docs host fix, registry backup, external uptime probe, dedup measurement, deploy files in this repository | Done except dedup measurement (after the second daily snapshot) |
+| B | Storage: IPFS pinning (Filebase), 15 GB of curated permissive-licence weights on the hub registry, verified state everywhere | 11 models hosted (12 GB) and verified; IPFS pinning live with CID read-back, browser Verify includes IPFS; per-file verified state (B3) open |
 | C | Drop-in `HF_ENDPOINT`: upstream the hub shim as small PRs, serve read-only | Next |
 | D | Breadth: 5,000 models, search shards, apps, providers and hardware facets | Planned |
 | E | History and distribution: Time Machine, model tree, catalog P2P, edge cache | Planned |

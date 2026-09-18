@@ -109,6 +109,8 @@ async function main() {
   if (!index?.models) throw new Error(`no index at ${API}`);
   const indexed = new Map(index.models.map((m) => [m.name, m]));
   const sourceIndex = (await get(`${API}/v1/sources/index.json`))?.models || {};
+  // Models pinned on IPFS by the hub (pin-model.sh): root CID per model revision, served by a CORS-open gateway.
+  const pins = (await get(`https://${HUB}/pins.json`)) || { gateway: "https://ipfs.filebase.io/ipfs/", models: {} };
   // A source counts for a model only when every weight file there is byte identical (every file, if none are weights).
   const complete = (s) => (s.weights ? s.weights_identical === s.weights : s.identical === s.files);
 
@@ -155,6 +157,11 @@ async function main() {
       if (tags?.tags?.includes(hit.revision)) {
         const reference = `${HUB}/${repository}:${hit.revision}`;
         sources.unshift({ kind: "hologram", name: "Hologram", page: `https://${HUB}/v2/${repository}/tags/list`, resolve: null, missing: [], pull: reference });
+      }
+      const pin = pins.models?.[m.id];
+      if (pin && pin.revision === hit.revision && !sources.some((s) => s.kind === "ipfs")) {
+        const root = `${pins.gateway}${pin.root}/`;
+        sources.push({ kind: "ipfs", name: "IPFS", page: root, resolve: root, missing: [] });
       }
       row.sources = sources.map((s) => s.name);
       if (doc) {

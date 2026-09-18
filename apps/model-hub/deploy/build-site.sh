@@ -36,6 +36,8 @@ cp -a "$NEW" "$HUB/site.next"
 rm -rf "$HUB/site.prev"
 if [ -d "$HUB/site" ]; then mv "$HUB/site" "$HUB/site.prev"; fi
 mv "$HUB/site.next" "$HUB/site"
+# pins.json is written by pin-model.sh and must survive the swap: data.mjs reads it from the public URL.
+[ -f "$HUB/pins.json" ] && cp -f "$HUB/pins.json" "$HUB/site/pins.json"
 docker compose -f "$HUB/docker-compose.yml" restart site >/dev/null
 rm -rf "$HUB/site.prev"
 echo "== $(date -u +%FT%TZ) build ok: $(find "$HUB/site/models" -name index.html | wc -l) model pages"

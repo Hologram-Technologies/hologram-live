@@ -6,13 +6,15 @@ const $ = (s, el = document) => el.querySelector(s);
 
 themeSwitch();
 B.play();
+let view = null; // set by browse(): lets the archive swap the catalog under the same interface
 if ($("#browse")) browse();
 if ($("[data-verify]")) model();
 copyButtons();
+if ($("#archive")) archive();
 
 async function browse() {
   const data = await fetch(`${base}data/models.json`).then((r) => r.json());
-  const models = R.prepare(data.models, data.snapshot);
+  let models = R.prepare(data.models, data.snapshot);
   let state = R.parseState(location.search);
   const filters = $("#filters-body"), grid = $("#grid"), pager = $("#pager"), total = $("#total"), q = $("#q");
   const facetSearch = {}, openMore = new Set(), order = {};
@@ -24,6 +26,8 @@ async function browse() {
     const focus = document.activeElement?.dataset?.facetSearch;
     filters.innerHTML = R.filters(r, state, order);
     grid.innerHTML = R.grid(r, { base });
+    const at = document.documentElement.dataset.at;
+    if (at) for (const a of grid.querySelectorAll("a.card")) a.href = `${a.getAttribute("href")}?at=${at}`;
     B.play(grid);
     pager.innerHTML = R.pager(r, state);
     total.textContent = r.results.length.toLocaleString("en-US");
@@ -35,7 +39,8 @@ async function browse() {
     }
     syncSort();
     document.title = R.title(state);
-    const url = `${location.pathname}${R.stateToSearch(state)}`;
+    const search = R.stateToSearch(state);
+    const url = `${location.pathname}${at ? `${search ? `${search}&` : "?"}at=${at}` : search}`;
     if (push === "push") history.pushState(null, "", url);
     else if (push === "replace") history.replaceState(null, "", url);
   }
@@ -148,7 +153,165 @@ async function browse() {
   });
 
   window.addEventListener("popstate", () => { state = R.parseState(location.search); q.value = state.q; render(); });
+  view = { setCatalog(list, snapshot) { models = R.prepare(list, snapshot); state.page = 1; render("replace"); } };
   render("replace");
+}
+
+// The Archive: open any captured day. Bytes come from the IPFS gateway by CID; the browser verifies the day's index
+// against the BLAKE3 the ledger records, then every file against the index, before anything is shown.
+function archive() {
+  const box = $("#archive"), button = $("#archive-button"), menu = $("#archive-menu"), label = $("#archive-label");
+  const banner = $("#archive-banner"), ledger = JSON.parse($("#archive-days").textContent);
+  const days = ledger.days; // newest first
+  const params = new URLSearchParams(location.search);
+  const wanted = params.get("at");
+  const resolve = (date) => days.find((d) => d.date <= date) || null; // nearest earlier captured day
+  let hasher = null;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ---- menu
+  const items = () => [...menu.querySelectorAll('[role="menuitemradio"]')];
+  const open = (show, focusFirst) => {
+    menu.hidden = !show;
+    button.setAttribute("aria-expanded", String(show));
+    if (show && focusFirst) (menu.querySelector('[aria-checked="true"]') || items()[0]).focus();
+  };
+  button.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden, e.detail === 0); });
+  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest("#archive")) open(false); });
+  let typed = "", typedAt = 0;
+  menu.addEventListener("keydown", (e) => {
+    const list = items(), i = list.indexOf(document.activeElement);
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (step) { e.preventDefault(); list[(i + step + list.length) % list.length].focus(); return; }
+    if (e.key === "Escape") { open(false); button.focus(); return; }
+    if (e.key.length === 1 && /[a-z0-9 ]/i.test(e.key)) {
+      typed = (Date.now() - typedAt < 900 ? typed : "") + e.key.toLowerCase();
+      typedAt = Date.now();
+      const hit = list.find((b) => b.textContent.trim().toLowerCase().startsWith(typed));
+      if (hit) hit.focus();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    const choice = e.target.closest("[data-at]");
+    if (!choice) return;
+    open(false);
+    go(choice.dataset.at);
+  });
+
+  function mark(date) {
+    for (const b of items()) b.setAttribute("aria-checked", String(b.dataset.at === (date || "latest")));
+    const entry = date ? days.find((d) => d.date === date) : null;
+    $("#archive-cid").dataset.copy = entry?.cid || "";
+    $("#archive-cid").hidden = !entry;
+    // The registry serves the current day only, so the pull command is offered for Latest alone.
+    $("#archive-pull").dataset.copy = ledger.registry && days[0] ? `hologram pull ${ledger.registry}:${days[0].date}` : "";
+    $("#archive-pull").hidden = !!entry || !ledger.registry;
+  }
+
+  function go(date) {
+    const url = new URL(location.href);
+    if (date === "latest") { url.searchParams.delete("at"); location.href = url.toString(); return; }
+    url.searchParams.set("at", date);
+    history.replaceState(null, "", url.toString());
+    show(resolve(date));
+  }
+
+  // ---- verified reads
+  // Every file is checked against the BLAKE3 the day's index records (and the index against the ledger), so where
+  // the bytes come from is only a matter of speed: the hub's mirror answers in milliseconds, the IPFS gateway can
+  // take tens of seconds on a cold day. Verified bytes are kept in the Cache API under the content address.
+  const timed = async (url, ms) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try { return await fetch(url, { signal: controller.signal }); } finally { clearTimeout(timer); }
+  };
+  async function verified(entry, path, expect) {
+    const key = `${ledger.gateway}${entry.cid}/${path}`;
+    const store = await caches.open("model-hub-archive").catch(() => null);
+    const cached = store ? await store.match(key) : null;
+    if (cached) return new Uint8Array(await cached.arrayBuffer());
+    hasher ||= (await import("https://humuhumu33.github.io/hologram-api/vendor/hash-wasm/index.esm.min.js")).createBLAKE3;
+    const sources = [];
+    if (ledger.mirror) sources.push([`${ledger.mirror}${entry.date}/${path}`, 8000]);
+    sources.push([key, 120000]); // a cold day on the gateway: 25 to 55 s per file measured
+    let failure = "";
+    for (const [url, ms] of sources) {
+      const host = new URL(url).host;
+      let bytes;
+      try {
+        const r = await timed(url, ms);
+        if (!r.ok) { failure = `${host} answered ${r.status}`; continue; }
+        bytes = new Uint8Array(await r.arrayBuffer());
+      } catch { failure = `${host} did not answer`; continue; }
+      const h = await hasher();
+      h.update(bytes);
+      if (`blake3:${h.digest("hex")}` !== expect) { failure = `${host} served bytes that do not match the address`; continue; }
+      if (store) await store.put(key, new Response(bytes, { headers: { "content-type": "application/json" } })).catch(() => {});
+      return bytes;
+    }
+    throw new Error(`${path}: ${failure}`);
+  }
+
+  async function show(entry) {
+    if (!entry) { go("latest"); return; }
+    label.textContent = `Loading ${R.day(entry.date)}`;
+    box.classList.add("busy");
+    banner.hidden = false;
+    banner.querySelector("span").innerHTML = `Reading the index of <b>${R.day(entry.date)}</b> from IPFS. The first visit of a day can take a minute.`;
+    try {
+      const index = JSON.parse(new TextDecoder().decode(await verified(entry, "index.json", entry.index)));
+      const addressOf = new Map(index.files.map(([path, address]) => [path, address]));
+      const read = async (path) => (addressOf.has(path) ? JSON.parse(new TextDecoder().decode(await verified(entry, path, addressOf.get(path)))) : null);
+      const catalog = await read("models.json");
+      document.documentElement.dataset.at = entry.date;
+      label.textContent = `Index ${R.day(entry.date)}`;
+      box.classList.add("past");
+      banner.querySelector("span").innerHTML = `Viewing the index of <b>${R.day(entry.date)}</b>. Every file shown was checked against its address.`;
+      mark(entry.date);
+      if (view) view.setCatalog(catalog.models, catalog.snapshot);
+      const id = document.documentElement.dataset.model;
+      if (id) await showModel(entry, catalog, read, id);
+      document.title = `${document.title.replace(/ · Index .*$/, "")} · Index ${R.day(entry.date)}`;
+    } catch (error) {
+      label.textContent = `Index ${R.day(ledger.latest)}`;
+      banner.querySelector("span").innerHTML = `This day could not be loaded (${R.esc(error.message)}). <button type="button" class="link" data-at="${entry.date}">Try again</button>`;
+    } finally {
+      box.classList.remove("busy");
+    }
+  }
+
+  // A model page on a past day: that day's rank, downloads and files. Verify and downloads stay with the latest
+  // index, because they check live mirrors.
+  async function showModel(entry, catalog, read, id) {
+    const m = catalog.models.find((x) => x.id === id);
+    const note = $("#verdict");
+    for (const b of document.querySelectorAll("[data-verify], #dl-all, [data-zip]")) { b.disabled = true; b.title = "Verify and downloads use the latest index. Switch to Latest."; }
+    if (!m) {
+      const nearest = days.find((d) => d.date > entry.date) || days[0];
+      note.hidden = false; note.className = "verdict";
+      note.innerHTML = `Not in the index on ${R.day(entry.date)}. <button type="button" class="link" data-at="${nearest.date}">Open ${R.day(nearest.date)}</button>`;
+      return;
+    }
+    for (const dt of document.querySelectorAll(".facts dt")) {
+      const dd = dt.nextElementSibling;
+      if (dt.textContent === "Trending") dd.textContent = `#${m.rank}`;
+      if (dt.textContent.startsWith("Downloads")) dd.textContent = R.count(m.downloads);
+      if (dt.textContent === "Status") dd.firstElementChild.textContent = R.STATE_LABEL[m.state];
+    }
+    const files = await read(`files/${m.org}/${m.name}.json`);
+    const table = $("#files");
+    if (!files || !table) return;
+    const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
+    table.querySelector("thead tr").innerHTML = `<th>Path</th><th class="size">Size</th><th>Address</th>`;
+    table.tBodies[0].innerHTML = files.files.map(([path, size, address]) => `<tr data-path="${R.esc(path)}" data-size="${size ?? 0}" data-address="${R.esc(address)}"><td class="path" title="${R.esc(path)}">${R.esc(path)}</td><td class="size">${R.bytes(size)}</td><td class="addr">${copy(address, R.shortAddress(address))}</td></tr>`).join("");
+    const pill = $("#tab-files .pill");
+    if (pill) pill.textContent = files.files.length;
+    const head = $(".files-head .note");
+    if (head) head.textContent = `${files.files.length} files on ${R.day(entry.date)}, revision ${files.revision.slice(0, 12)}.`;
+  }
+
+  mark(null);
+  if (wanted) show(resolve(wanted));
 }
 
 function model() {
@@ -156,12 +319,54 @@ function model() {
   const id = button.dataset.verify, pinned = button.dataset.manifest;
   const glyph = [...document.querySelectorAll("#glyph .cell")];
   const sources = JSON.parse($("#sources")?.textContent || "[]");
-  const mark = (kind, state) => {
-    const li = document.querySelector(`.sources li[data-source="${kind}"]`);
-    if (!li) return;
-    li.dataset.state = state;
-    if (state === "busy") B.play(li);
+  const mark = (kind, state, reason = "") => {
+    for (const el of document.querySelectorAll(`.sources li[data-source="${kind}"], #dl-menu [data-source="${kind}"], #files th[data-source="${kind}"]`)) {
+      if (el.dataset.state === "off") continue;
+      el.dataset.state = state;
+      if (state === "busy") B.play(el);
+      if (el.matches("#dl-menu *")) { el.dataset.title ??= el.title; el.title = state === "bad" ? `Last check failed: ${reason}` : el.dataset.title; }
+    }
   };
+
+  // One probe per source, shared by Verify, the Download menu and the Files header: the source's copy of the probe
+  // file is fetched and checked against its address. P2P has no bytes to check in a browser; its torrent file must
+  // answer. The result is kept for the page's lifetime; Verify forces a fresh one.
+  const PROBE_MS = 6000;
+  let probing = null;
+  const within = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error("no answer within 6 s"), { code: "TIMEOUT" })), ms))]);
+  async function check(api, file, s) {
+    mark(s.kind, "busy");
+    try {
+      if (s.p2p) {
+        const r = await within(fetch(s.page, { method: "HEAD" }).catch(() => fetch(s.page, { method: "HEAD", mode: "no-cors" })), PROBE_MS);
+        if (r.type !== "opaque" && !r.ok) throw new Error(`answered ${r.status}`);
+      } else if (file) {
+        const url = s.resolve ? s.resolve + file.path.split("/").map(encodeURIComponent).join("/") : file.url;
+        await within(api.fetchVerified(url, file.address), PROBE_MS);
+      }
+      mark(s.kind, "ok");
+      return { s, ok: true };
+    } catch (e) {
+      const mismatch = e.code === "ADDRESS_MISMATCH";
+      const reason = mismatch ? "the bytes did not match their address"
+        : e.code !== "TIMEOUT" ? "could not be reached"
+        : s.kind === "ipfs" ? "gateway slow right now; the pin exists" : "no answer within 6 s";
+      mark(s.kind, "bad", reason);
+      return { s, ok: false, mismatch };
+    }
+  }
+  function probeAll(force) {
+    if (probing && !force) return probing;
+    probing = (async () => {
+      const api = await import("https://humuhumu33.github.io/hologram-api/hologram.js");
+      const doc = await api.resolve(id, { manifest: pinned });
+      const file = doc.files.find((f) => f.path === button.dataset.probe);
+      const results = await Promise.all(sources.filter((s) => !s.pull).map((s) => check(api, file, s)));
+      return { doc, results };
+    })();
+    probing.catch(() => { probing = null; });
+    return probing;
+  }
   const pinnedBytes = B.hexToBytes(pinned.split(":")[1]);
   const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const wait = (ms) => new Promise((r) => setTimeout(r, calm ? 0 : ms));
@@ -199,19 +404,11 @@ function model() {
     const started = performance.now();
     let received = null;
     try {
-      const api = await import("https://humuhumu33.github.io/hologram-api/hologram.js");
-      const doc = await api.resolve(id, { manifest: pinned });
+      // The expected address comes from the index; each source only supplies bytes. Peer to peer sources are
+      // checked piece by piece by the torrent client, so they do not enter the verdict.
+      const { doc, results: all } = await probeAll(true);
       received = B.hexToBytes(doc.manifest.split(":")[1]);
-      // The expected address comes from the index; each source only supplies bytes.
-      const file = doc.files.find((f) => f.path === button.dataset.probe);
-      // Peer to peer sources are checked piece by piece by the torrent client; the browser verifies HTTP sources.
-      const results = await Promise.all(sources.filter((s) => !s.p2p).map(async (s) => {
-        mark(s.kind, "busy");
-        if (!file) { mark(s.kind, "ok"); return { s, ok: true }; }
-        const url = s.resolve ? s.resolve + file.path.split("/").map(encodeURIComponent).join("/") : file.url;
-        try { await api.fetchVerified(url, file.address); mark(s.kind, "ok"); return { s, ok: true }; }
-        catch (e) { mark(s.kind, "bad"); return { s, ok: false, mismatch: e.code === "ADDRESS_MISMATCH" }; }
-      }));
+      const results = all.filter((r) => !r.s.p2p);
       const ms = Math.round(performance.now() - started);
       await lock(received);
       const good = results.filter((r) => r.ok).map((r) => r.s.name), bad = results.filter((r) => !r.ok);
@@ -237,7 +434,7 @@ function model() {
     }
   });
 
-  downloads();
+  downloads({ onOpen: () => probeAll().catch(() => {}) });
   panelTabs();
 
   const table = $("#files");
@@ -285,15 +482,30 @@ function panelTabs() {
 }
 
 // Every download is checked against the index address before it is kept.
-function downloads() {
+function downloads({ onOpen } = {}) {
   const table = $("#files");
   if (!table) return;
-  const box = $(".download-all"), menu = $("#dl-menu"), toggle = $("#dl-all"), progress = $("#dl-progress");
+  const progress = $("#dl-progress");
   const MEMORY_LIMIT = 256 * 1024 * 1024;
   const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const rowOf = (el) => el.closest("tr");
   const name = (path) => path.split("/").pop();
-  const say = (text, tone = "") => { progress.hidden = !text; progress.className = `progress ${tone}`; progress.textContent = text; };
+  const hero = $("#dl-status"), toggle = $("#dl-all"), menu = $("#dl-menu");
+  // The Download button is also the progress display: a label ("Downloading 43%") and a bar along its lower edge.
+  const label = toggle?.querySelector("span");
+  const show = (fraction, text) => {
+    if (!toggle) return;
+    toggle.classList.toggle("running", fraction !== null);
+    if (fraction === null) toggle.style.removeProperty("--progress"); else toggle.style.setProperty("--progress", `${Math.min(100, Math.floor(fraction * 100))}%`);
+    if (label) label.textContent = text;
+  };
+  let resting = null;
+  const rest = (text) => { show(null, text); clearTimeout(resting); resting = setTimeout(() => { if (label && !toggle.classList.contains("running")) label.textContent = "Download"; }, 4000); };
+  const say = (text, tone = "") => {
+    for (const el of [progress, hero]) { if (!el) continue; el.className = el === hero ? `verdict ${tone}` : `progress ${tone}`; el.textContent = text; }
+    progress.hidden = !text;
+    if (hero) hero.hidden = !text || !$("#pane-files")?.hidden;
+  };
 
   function save(blob, filename) {
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: filename });
@@ -331,94 +543,179 @@ function downloads() {
     }
   });
 
-  // Download all menu
-  const open = (show) => { menu.hidden = !show; toggle.setAttribute("aria-expanded", String(show)); };
-  toggle.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
-  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".download-all")) open(false); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
-  if (!window.showDirectoryPicker) for (const b of menu.querySelectorAll("[data-save]")) b.hidden = true;
-
+  const head = $(".files-head");
   const files = () => [...table.tBodies[0].rows].map((row) => ({
     path: row.dataset.path, size: Number(row.dataset.size), address: row.dataset.address,
     links: [...row.querySelectorAll("a[data-download]")].map((a) => ({ source: a.dataset.source, href: a.href })),
   }));
 
-  let cancelled = false;
-  menu.addEventListener("click", async (e) => {
-    const saveButton = e.target.closest("[data-save]"), script = e.target.closest("[data-script]");
-    if (!saveButton && !script) return;
-    open(false);
-    const list = files();
+  // The hero Download menu
+  const open = (show) => { if (!menu) return; menu.hidden = !show; toggle.setAttribute("aria-expanded", String(show)); if (show) onOpen?.(); };
+  toggle?.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
+  menu?.addEventListener("keydown", (e) => {
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const list = [...menu.querySelectorAll("[role=menuitem]:not(:disabled)")], i = list.indexOf(document.activeElement);
+    list[(i + step + list.length) % list.length]?.focus();
+  });
+  document.addEventListener("click", (e) => { if (menu && !menu.hidden && !e.target.closest(".download-all")) open(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
+  menu?.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) open(false); });
 
-    if (script) {
-      const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-      const lines = list.map((f) => `get ${q(f.path)} ${f.links.map((l) => q(l.href)).join(" ")}`);
-      const sums = list.map((f) => `${f.address.split(":")[1]}  ${f.path}`);
-      const text = `#!/usr/bin/env sh
-# ${box.dataset.repo} at ${box.dataset.revision}
-# Downloads every file, trying each source in turn, then checks every SHA-256 against the Hologram index.
-set -eu
-mkdir -p ${q(box.dataset.name)} && cd ${q(box.dataset.name)}
-get() { path="$1"; shift; mkdir -p "$(dirname "$path")"; for url in "$@"; do curl -fL --retry 3 -C - -o "$path" "$url" && return 0; done; echo "could not download $path" >&2; return 1; }
-${lines.join("\n")}
-cat > SHA256SUMS <<'SUMS'
-${sums.join("\n")}
-SUMS
-if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi
-`;
-      save(new Blob([text], { type: "text/x-shellscript" }), `${box.dataset.name}-download.sh`);
-      say(`Saved ${box.dataset.name}-download.sh. Run it with sh in a terminal; it checks every file when done.`, "ok");
+  // First choice: the download worker (zip-sw.js) answers zip/<model>/<source>.zip with a stream, and the browser's
+  // own download manager saves it: any size, any browser, nothing in memory. The page only watches the progress.
+  const head0 = $(".files-head");
+  const worker = "serviceWorker" in navigator
+    ? navigator.serviceWorker.register(`${base}zip-sw.js`).then(() => navigator.serviceWorker.ready).catch(() => null)
+    : Promise.resolve(null);
+  let watching = null, alive = null, frame = null, activeRow = null;
+  const leaving = (e) => { e.preventDefault(); e.returnValue = ""; };
+  const settle = () => {
+    clearInterval(alive); alive = null; watching = null;
+    setTimeout(() => { frame?.remove(); frame = null; }, 5000); // the frame carries the download: it stays until the end
+    removeEventListener("beforeunload", leaving);
+    const act = activeRow?.querySelector(".act");
+    if (act) act.textContent = "Download zip";
+    activeRow?.classList.remove("busy");
+    activeRow = null;
+  };
+  new BroadcastChannel("model-hub-zip").onmessage = ({ data }) => {
+    if (!watching || data.id !== head0?.dataset.repo) return;
+    if (data.state === "running") {
+      show(data.sent / data.total, `Downloading ${Math.min(99, Math.floor((data.sent / data.total) * 100))}%`);
+      say(`Downloading ${data.filename}. Verified ${data.files} of ${data.count} files, ${formatBytes(data.sent)} of ${formatBytes(data.total)}.`);
+      const cancel = Object.assign(document.createElement("button"), { type: "button", className: "link", textContent: "Cancel" });
+      cancel.onclick = () => navigator.serviceWorker.controller?.postMessage({ cancel: data.id });
+      progress.append(" ", cancel);
+    } else {
+      if (data.state === "done") { say(`Downloaded ${data.filename}: ${data.count} files, every one matching its address.`, "ok"); rest("Downloaded"); }
+      else if (data.state === "cancelled") { say(`Stopped after ${data.files} of ${data.count} files.`); rest("Download"); }
+      else { say(`${data.detail} The download was stopped.`, "bad"); rest("Download"); }
+      settle();
+    }
+  };
+  async function viaWorker(kind, row) {
+    const registration = await worker;
+    if (!registration) return false;
+    if (!navigator.serviceWorker.controller) await Promise.race([new Promise((r) => navigator.serviceWorker.addEventListener("controllerchange", r, { once: true })), new Promise((r) => setTimeout(r, 3000))]);
+    if (!navigator.serviceWorker.controller) return false;
+    const url = `${base}zip/${head0.dataset.repo.split("/").map(encodeURIComponent).join("/")}/${kind}.zip`;
+    const head = await fetch(url, { method: "HEAD" }).catch(() => null);
+    if (!head?.ok) return false;
+    watching = kind;
+    activeRow = row;
+    row.classList.add("busy");
+    const act = row.querySelector(".act");
+    if (act) act.textContent = "Cancel";
+    show(0, "Starting");
+    addEventListener("beforeunload", leaving);
+    alive = setInterval(() => navigator.serviceWorker.controller?.postMessage("alive"), 10000);
+    say(`Starting the download, ${formatBytes(Number(head.headers.get("content-length")))}.`);
+    // A hidden frame, so the page itself never navigates. It must outlive the download: removing it cancels the
+    // download in Chromium (measured: a 4.6 GB zip was cancelled at the end after the frame went at 60 s).
+    frame?.remove();
+    frame = Object.assign(document.createElement("iframe"), { hidden: true, src: url });
+    document.body.append(frame);
+    return true;
+  }
+
+  // Fallback, one zip per source: every file streams straight into the archive while its SHA-256 is computed. With the
+  // save picker (Chromium) nothing is held in memory; elsewhere the zip is assembled in memory up to a limit.
+  const IN_MEMORY_LIMIT = 1.5e9;
+  let cancelled = false;
+  document.addEventListener("click", async (e) => {
+    const button = e.target.closest("button[data-zip]");
+    if (!button) return;
+    // While a download runs, its own row is the Cancel control; the other rows wait.
+    if (watching) { if (button === activeRow) navigator.serviceWorker.controller?.postMessage({ cancel: head0.dataset.repo }); return; }
+    if (button.classList.contains("busy")) { cancelled = true; return; }
+    if (toggle?.classList.contains("running")) return;
+    const source = button.dataset.zip;
+    if (await viaWorker(button.dataset.kind, button)) return;
+    const list = files().map((f) => ({ ...f, href: f.links.find((l) => l.source === source)?.href })).filter((f) => f.href);
+    const skipped = table.tBodies[0].rows.length - list.length;
+    const total = list.reduce((s, f) => s + f.size, 0);
+    const zipName = `${head.dataset.name}-${head.dataset.revision.slice(0, 8)}.zip`;
+
+    let out = null, parts = null;
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({ suggestedName: zipName, types: [{ description: "Zip archive", accept: { "application/zip": [".zip"] } }] });
+        out = await handle.createWritable();
+      } catch { return; }
+    } else if (total <= IN_MEMORY_LIMIT) {
+      parts = [];
+    } else {
+      say(`${formatBytes(total)} is too large to assemble in this browser. Use Chrome or Edge, or download from the Files table.`, "bad");
       return;
     }
 
-    // Save to a folder: stream each file to disk while hashing it; a file that does not match is removed.
-    let root;
-    try { root = await window.showDirectoryPicker({ mode: "readwrite" }); } catch { return; }
-    const primary = saveButton.dataset.save;
-    const { createSHA256 } = await import("https://humuhumu33.github.io/hologram-api/vendor/hash-wasm/index.esm.min.js");
-    const totalBytes = list.reduce((s, f) => s + f.size, 0);
-    let doneBytes = 0, done = 0, bad = 0;
+    button.classList.add("busy");
+    show(0, "Starting");
+    // One download at a time: the other rows wait, and say so.
+    const act = button.querySelector(".act");
+    if (act) act.textContent = "Cancel";
+    const others = [...(menu?.querySelectorAll("[data-zip]") || [])].filter((b) => b !== button);
+    for (const o of others) { o.dataset.title ??= o.title; o.title = "One download at a time"; o.setAttribute("aria-disabled", "true"); }
     cancelled = false;
     const cancel = Object.assign(document.createElement("button"), { type: "button", className: "link", textContent: "Cancel" });
     cancel.onclick = () => { cancelled = true; };
-    for (const f of list) {
-      if (cancelled) break;
-      const parts = f.path.split("/");
-      let dir = root;
-      for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part, { create: true });
-      const order = [...f.links].sort((a, b) => (a.source === primary ? -1 : b.source === primary ? 1 : 0));
-      let ok = false;
-      for (const link of order) {
-        try {
-          const response = await fetch(link.href);
-          if (!response.ok || !response.body) throw new Error(String(response.status));
-          const handle = await dir.getFileHandle(parts.at(-1), { create: true });
-          const out = await handle.createWritable();
-          const hasher = await createSHA256();
-          const reader = response.body.getReader();
-          for (;;) {
-            if (cancelled) { await reader.cancel(); break; }
-            const { value, done: end } = await reader.read();
-            if (end) break;
-            hasher.update(value);
-            await out.write(value);
-            doneBytes += value.byteLength;
-            say(`Saving ${done + 1} of ${list.length} from ${link.source}, ${formatBytes(doneBytes)} of ${formatBytes(totalBytes)}`);
-            progress.append(" ", cancel);
-          }
-          await out.close();
-          if (cancelled) break;
-          if (`sha256:${hasher.digest("hex")}` === f.address) { ok = true; break; }
-          await dir.removeEntry(parts.at(-1));
-        } catch { /* try the next source */ }
+    const [{ ZipWriter }, { createSHA256 }] = await Promise.all([
+      import("./zip.mjs"),
+      import("https://humuhumu33.github.io/hologram-api/vendor/hash-wasm/index.esm.min.js"),
+    ]);
+    const zip = new ZipWriter((bytes) => (out ? out.write(bytes) : parts.push(bytes)));
+    let done = 0, doneBytes = 0, failure = null;
+    // The next response is requested while the current one streams, so the network never idles between files.
+    let next = fetch(list[0].href);
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const f = list[i];
+        const response = await next;
+        if (i + 1 < list.length) next = fetch(list[i + 1].href);
+        if (!response.ok || !response.body) throw new Error(`${source} answered ${response.status} for ${f.path}`);
+        const hasher = await createSHA256();
+        let last = 0;
+        const watched = response.body.pipeThrough(new TransformStream({
+          transform(chunk, controller) {
+            if (cancelled) { controller.error(new Error("cancelled")); return; }
+            doneBytes += chunk.byteLength;
+            if (doneBytes - last > 4e6) {
+              last = doneBytes;
+              say(`Zipping ${done + 1} of ${list.length} from ${source}, ${formatBytes(doneBytes)} of ${formatBytes(total)}`);
+              progress.append(" ", cancel);
+              const pct = `${Math.min(99, Math.floor((doneBytes / total) * 100))}%`;
+              show(doneBytes / total, `Downloading ${pct}`);
+            }
+            controller.enqueue(chunk);
+          },
+        }));
+        await zip.add(f.path, f.size, watched, (chunk) => hasher.update(chunk));
+        if (`sha256:${hasher.digest("hex")}` !== f.address) throw new Error(`${source} served different bytes for ${f.path}. Nothing was kept.`);
+        done++;
+        const pct = `${Math.min(99, Math.floor(Math.max(doneBytes / total, done / list.length) * 100))}%`;
+        say(`Zipping ${done} of ${list.length} from ${source}, ${formatBytes(doneBytes)} of ${formatBytes(total)}`);
+        progress.append(" ", cancel);
+        show(Math.max(doneBytes / total, done / list.length), `Downloading ${pct}`);
       }
-      if (cancelled) break;
-      done++;
-      if (!ok) bad++;
+      await zip.finish();
+    } catch (error) {
+      failure = cancelled ? null : error;
     }
-    if (cancelled) say(`Stopped after ${done} of ${list.length} files.`);
-    else if (bad) say(`Saved ${done - bad} of ${list.length} files. ${bad} could not be downloaded with matching bytes and were not kept.`, "bad");
-    else say(`Saved all ${list.length} files to ${root.name}. Every file matches its address.`, "ok");
+    if (failure || cancelled) {
+      if (out) await out.abort().catch(() => {});
+      say(cancelled ? `Stopped after ${done} of ${list.length} files.` : failure.message, cancelled ? "" : "bad");
+      if (failure) button.classList.add("bad");
+    } else {
+      if (out) await out.close(); else save(new Blob(parts, { type: "application/zip" }), zipName);
+      button.classList.add("done");
+      say(`Saved ${zipName}: ${done} files from ${source}, every one matching its address.${skipped ? ` ${skipped} not on ${source} were left out.` : ""}`, "ok");
+    }
+    button.classList.remove("busy");
+    rest(failure || cancelled ? "Download" : "Downloaded");
+    if (act) act.textContent = "Download zip";
+    for (const o of others) { o.title = o.dataset.title; o.removeAttribute("aria-disabled"); }
   });
 }
 

@@ -50,18 +50,15 @@ where
         .layer(middleware::from_fn_with_state(state.clone(), authenticate));
     let grpc = grpc::router(state.clone());
 
-    let router = Router::new()
+    let http = Router::new()
         .route("/", get(index))
         .route("/healthz", get(healthz))
         .route("/openapi.json", get(openapi))
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(protected)
-        .with_state(state.clone())
-        .merge(grpc)
-        .layer(DefaultBodyLimit::max(
-            state.config().server.max_http_body_bytes,
-        ));
+        .with_state(state.clone());
+    let router = assemble(http, grpc, state.config().server.max_http_body_bytes);
 
     let listener = tokio::net::TcpListener::bind(&state.config().server.listen)
         .await
@@ -82,6 +79,37 @@ where
         (Err(error), _) | (Ok(()), Err(error)) => Err(error),
         (Ok(()), Ok(())) => Ok(()),
     }
+}
+
+/// Join the HTTP routes and the gRPC service into the one router the listener serves.
+fn assemble(http: Router, grpc: Router, max_http_body_bytes: usize) -> Router {
+    http.merge(grpc)
+        .fallback(no_route)
+        .layer(DefaultBodyLimit::max(max_http_body_bytes))
+}
+
+/// Anything no route claims.
+///
+/// tonic's router carries its own catch-all, which answers every unknown path
+/// with `200 application/grpc` and `grpc-status: 12`. Merged into a router
+/// that has none, it became the whole server's fallback: a mistyped REST
+/// path, a browser preflight and a metrics scrape all read as successes.
+/// A gRPC caller still gets that answer; everyone else gets a 404 in the
+/// daemon's error envelope.
+async fn no_route(request: Request) -> Response {
+    let grpc = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/grpc"));
+    if grpc {
+        return tonic::Status::unimplemented("").into_http();
+    }
+    crate::modules::HttpError(LiveError::NotFound(format!(
+        "no route for {}",
+        request.uri().path()
+    )))
+    .into_response()
 }
 
 async fn index() -> Html<&'static str> {
@@ -184,4 +212,71 @@ fn principal_from_headers(state: &AppState, headers: &HeaderMap) -> Result<Princ
         id: "token-principal".to_owned(),
         scope: "default".to_owned(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use tower::ServiceExt;
+
+    /// The same shape `serve_with_ready` builds: some HTTP routes, and tonic's router, which brings its own catch-all.
+    fn router() -> Router {
+        let http = Router::new().route("/healthz", get(|| async { "ok" }));
+        let grpc = tonic::service::Routes::default().into_axum_router();
+        assemble(http, grpc, 1024)
+    }
+
+    async fn send(method: &str, path: &str, content_type: Option<&str>) -> Response {
+        let mut request = Request::builder().method(method).uri(path);
+        if let Some(value) = content_type {
+            request = request.header(header::CONTENT_TYPE, value);
+        }
+        router()
+            .oneshot(request.body(Body::empty()).expect("request"))
+            .await
+            .expect("infallible")
+    }
+
+    #[tokio::test]
+    async fn an_unknown_path_is_a_json_404_not_a_grpc_200() {
+        let response = send("GET", "/api/v1/nope", None).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json")
+        );
+        let body = to_bytes(response.into_body(), 4096).await.expect("body");
+        let error: serde_json::Value =
+            serde_json::from_slice(&body).expect("the daemon's error envelope");
+        assert_eq!(error["code"], "LIVE_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn a_preflight_on_an_unknown_path_is_not_answered_as_grpc() {
+        let response = send("OPTIONS", "/metrics", None).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_grpc_caller_still_gets_unimplemented_for_an_unknown_service() {
+        let response = send("POST", "/other.Service/Method", Some("application/grpc")).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("grpc-status")
+                .and_then(|v| v.to_str().ok()),
+            Some("12"),
+            "UNIMPLEMENTED, as tonic answers it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_known_route_is_untouched() {
+        assert_eq!(send("GET", "/healthz", None).await.status(), StatusCode::OK);
+    }
 }

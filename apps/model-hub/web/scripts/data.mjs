@@ -15,6 +15,8 @@ const DATA = join(SITE, "data");
 const AVATARS = join(SITE, "public", "avatars");
 const HF = "https://huggingface.co";
 const API = process.env.HOLOGRAM_API || "https://humuhumu33.github.io/hologram-api";
+// Models whose bytes are stored on a Hologram registry, published as models/<owner>/<name>:<revision>.
+const HUB = process.env.MODEL_HUB_REGISTRY || "hub.uor.foundation";
 const LIMIT = Number(process.argv[process.argv.indexOf("--limit") + 1]) || 500;
 const HEADERS = process.env.HF_TOKEN ? { authorization: `Bearer ${process.env.HF_TOKEN}` } : {};
 
@@ -107,6 +109,12 @@ async function main() {
   if (!index?.models) throw new Error(`no index at ${API}`);
   const indexed = new Map(index.models.map((m) => [m.name, m]));
   const sourceIndex = (await get(`${API}/v1/sources/index.json`))?.models || {};
+  // Models pinned on IPFS by the hub (pin-model.sh): root CID per model revision, served by a CORS-open gateway.
+  const pins = (await get(`https://${HUB}/pins.json`)) || { gateway: "https://ipfs.filebase.io/ipfs/", models: {} };
+  // The archive ledger (archive.sh): one entry per captured day, hash-chained, each day a CAR on IPFS.
+  const archive = await get(`https://${HUB}/archive.json`);
+  if (archive?.days?.length) await writeFile(join(DATA, "archive.json"), JSON.stringify(archive));
+  else await rm(join(DATA, "archive.json"), { force: true });
   // A source counts for a model only when every weight file there is byte identical (every file, if none are weights).
   const complete = (s) => (s.weights ? s.weights_identical === s.weights : s.identical === s.files);
 
@@ -147,6 +155,21 @@ async function main() {
       const sources = detail && detail.revision === hit.revision
         ? detail.sources.filter(complete).map((s) => ({ kind: s.kind, name: s.kind === "bittorrent" ? "P2P" : s.name, page: s.page, resolve: s.resolve || s.gateway || null, missing: s.missing || [], p2p: !!s.p2p }))
         : [{ kind: "huggingface.co", name: "Hugging Face", page: `https://huggingface.co/${m.id}`, resolve: null, missing: [] }];
+      // Listed only when this exact revision is published there; every file is present by construction.
+      const repository = `models/${m.id.toLowerCase()}`;
+      const tags = await get(`https://${HUB}/v2/${repository}/tags/list`);
+      if (tags?.tags?.includes(hit.revision)) {
+        const reference = `${HUB}/${repository}:${hit.revision}`;
+        sources.unshift({ kind: "hologram", name: "Hologram", page: `https://${HUB}/v2/${repository}/tags/list`, resolve: null, missing: [], pull: reference });
+      }
+      const pin = pins.models?.[m.id];
+      if (pin && pin.revision === hit.revision && !sources.some((s) => s.kind === "ipfs")) {
+        const root = `${pins.gateway}${pin.root}/`;
+        // Pins made before 2026-09-18 were packed without dotfiles (ipfs-car skips hidden paths unless told otherwise;
+        // measured: .gitattributes answered 404 on the gateway). pin-model.sh now packs them and marks the pin.
+        const absent = pin.hidden ? [] : (doc?.files || []).map((f) => f.path).filter((p) => p.split("/").some((part) => part.startsWith(".")));
+        sources.push({ kind: "ipfs", name: "IPFS", page: root, resolve: root, missing: absent });
+      }
       row.sources = sources.map((s) => s.name);
       if (doc) {
         const file = join(DATA, "files", org, `${name}.json`);

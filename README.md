@@ -70,6 +70,8 @@ http://127.0.0.1:11435/openapi.json
 
 `/docs` is the self-hosted Scalar reference; `/openapi.json` is the generated OpenAPI document. Native clients use the versioned Protobuf/gRPC service on the same endpoint.
 
+A path no route claims is answered `404` with the daemon's error envelope (`LIVE_NOT_FOUND`). A caller that sends `content-type: application/grpc` gets gRPC `UNIMPLEMENTED` instead, as any gRPC server answers an unknown service.
+
 ## Machine-readable CLI output
 
 Global `--json` is supported by every CLI command and may appear before or after the subcommand. A successful command writes one JSON value to stdout, including lifecycle actions, downloads, generated files, accepted mutations, and `run --output-format text`. Diagnostics remain on stderr, while a runtime failure writes a JSON object with `code` and `message` to stdout and exits nonzero. This makes the complete CLI safe to compose with `jq`:

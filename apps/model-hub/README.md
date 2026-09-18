@@ -53,6 +53,9 @@ is the GGUF file's SHA-256 from the index, the blob request is a `307` to a live
 digest itself. The chat template and parameters come from Hugging Face's own manifest, accepted only when it names
 the very bytes our index names, and kept so the pull still works when Hugging Face is away (measured: Ollama 0.34.2
 pulled, verified and ran a model; with Hugging Face blackholed the same pull completed from ModelScope).
+OCI clients get the same models as CNCF ModelPack artifacts from the same routes
+(`oras pull hub.uor.foundation/hexgrad/kokoro-82m:latest`, lowercase as OCI requires; measured: 72 files, every one
+matching), and agents get three tools over MCP at `https://hub.uor.foundation/mcp`.
 `GET /api/models?search=…` lists and searches in Hugging Face's shape (`HfApi.list_models` works), which is also the
 cheap path for agents. Why these dialects, what the research found, the path map and what comes next:
 [docs/one-endpoint.md](docs/one-endpoint.md).

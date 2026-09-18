@@ -5,7 +5,7 @@ hub.uor.foundation {
 	# Ollama's registry dialect: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`. The hub's own OCI registry keeps
 	# its namespace, model-hub; every other /v2/<org>/<name>/ is a model answered by hub-resolve.
 	@ollama {
-		path_regexp ollama ^/v2/[^/]+/[^/]+/(manifests|blobs)/
+		path_regexp ollama ^/v2/[^/]+/[^/]+/(manifests|blobs|tags)/
 		not path /v2/model-hub/*
 	}
 	handle @ollama {

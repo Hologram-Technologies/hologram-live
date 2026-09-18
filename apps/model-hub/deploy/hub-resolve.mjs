@@ -13,6 +13,7 @@
 //   GET  …/api/models/<org>/<name>/xet-read-token/<rev>                    307 to huggingface.co (its token, not ours)
 //   GET  /api/models/<org>/<name>/refs                                     branches: main at the indexed revision (llama.cpp -hf)
 //   GET|HEAD /v2/<org>/<name>/manifests/<quant> and /blobs/<digest>        Ollama's registry dialect (see below)
+//   (same routes, Accept: application/vnd.oci.image.manifest.v1+json)      OCI model artifacts, CNCF ModelPack: oras, modctl, Docker Model Runner
 //   POST /mcp                                                              MCP for agents: search_models, get_model, resolve_file
 // Older clients read those three headers from our 302 and GET the Location; huggingface_hub 1.32 follows the redirect
 // on HEAD too, so while Hugging Face is the source it meets Hugging Face's own Xet headers and downloads through Xet
@@ -231,9 +232,60 @@ async function manifestFor(doc, tag, file) {
   manifests.set(key, { at: Date.now(), bytes });
   return bytes;
 }
+
+// ---- OCI model artifacts (CNCF ModelPack) on the same /v2 routes, for clients that accept OCI manifests:
+// `oras pull hub.uor.foundation/<org>/<name>:latest`, modctl, KitOps, Docker Model Runner, containerd.
+// Every file is one raw layer, so a layer's digest is the file's SHA-256 from the index and its blob is a redirect to
+// a live source; the client verifies the digest. Only the manifest and the config (a few KB of JSON) are ours.
+// Tags: latest or main (or a prefix of the indexed revision) = every file; a GGUF quantisation = that file and the docs.
+const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
+const WEIGHTS = /\.(safetensors|gguf|bin|pt|pth|ckpt|onnx|h5|msgpack|ot|mlmodel|npz|tflite|pb)$/i;
+const layerType = (f) => `application/vnd.cncf.model.${f[3] || WEIGHTS.test(f[0]) ? "weight" : /(^|\/)(readme|license|notice|changelog)[^/]*$|\.(md|txt|pdf)$/i.test(f[0]) ? "doc" : /\.(py|sh|ipynb|js|ts|c|cpp|h|rs)$/i.test(f[0]) ? "code" : "weight.config"}.v1.raw`;
+function ociFiles(doc, tag) {
+  if (["latest", "main"].includes(tag.toLowerCase()) || (tag.length >= 7 && doc.revision.startsWith(tag))) return doc.files;
+  const { file } = pickGguf(doc, tag);
+  return file ? doc.files.filter((f) => f === file || /^(readme|license)[^/]*$/i.test(f[0])) : null;
+}
+async function ociManifest(doc, files) {
+  const row = (await rows()).find((m) => m.id === doc.id);
+  const license = (row?.tags.find((t) => t.startsWith("license:")) || "").slice(8);
+  const params = row?.hologram.parameters;
+  const config = Buffer.from(JSON.stringify({
+    descriptor: { name: doc.id, version: doc.revision, revision: doc.revision, vendor: doc.id.split("/")[0], sourceURL: `https://huggingface.co/${doc.id}`, docURL: `${HUB}/models/${doc.id}/`, ...(license ? { licenses: [license] } : {}) },
+    config: { format: files.some((f) => /\.gguf$/i.test(f[0])) ? "gguf" : files.some((f) => /\.safetensors$/i.test(f[0])) ? "safetensors" : "other", ...(params ? { paramSize: params >= 1e9 ? `${Math.round(params / 1e8) / 10}B` : `${Math.round(params / 1e6)}M` } : {}) },
+    modelfs: { type: "layers", diffIds: files.map((f) => f[2]) },
+  }));
+  const configDigest = await keep(config);
+  const bytes = Buffer.from(JSON.stringify({
+    schemaVersion: 2, mediaType: OCI_MANIFEST, artifactType: "application/vnd.cncf.model.manifest.v1+json",
+    config: { mediaType: "application/vnd.cncf.model.config.v1+json", digest: configDigest, size: config.length },
+    layers: files.map((f) => ({ mediaType: layerType(f), digest: f[2], size: f[1], annotations: { "org.opencontainers.image.title": f[0], "org.cncf.model.filepath": f[0], "org.cncf.model.file.metadata+json": JSON.stringify({ name: f[0], mode: 420, uid: 0, gid: 0, size: f[1], mtime: "1970-01-01T00:00:00Z", typeflag: 48 }) } })),
+    annotations: { "org.opencontainers.image.source": `https://huggingface.co/${doc.id}`, "org.opencontainers.image.revision": doc.revision, "org.opencontainers.image.url": `${HUB}/models/${doc.id}/` },
+  }));
+  await keep(bytes); // also fetchable by its digest, which is how OCI clients ask the second time
+  return bytes;
+}
 async function ollama(req, res, id, kind, ref) {
   const doc = await model(id);
   if (!doc) return ociError(res, 404, "NAME_UNKNOWN", `${id} is not in the Hologram index. Try: ollama pull hf.co/${id}`);
+  if (kind === "tags") {
+    const quants = [...new Set(doc.files.filter((f) => /\.gguf$/i.test(f[0]) && !/mmproj|imatrix|-\d{5}-of-/i.test(f[0])).map((f) => quantOf(f[0])).filter(Boolean))];
+    return json(res, 200, { name: doc.id, tags: ["latest", ...quants] });
+  }
+  if (kind === "manifests" && /^sha256:[0-9a-f]{64}$/.test(ref)) { // a manifest asked again by its digest
+    const kept = await smallBlob(doc.id, ref);
+    if (!kept) return ociError(res, 404, "MANIFEST_UNKNOWN", `${ref} is not a manifest the hub has generated; ask by tag first.`);
+    const type = JSON.parse(kept.toString("utf8")).mediaType || OCI_MANIFEST;
+    res.writeHead(200, { "content-type": type, "content-length": kept.length, "docker-content-digest": ref, "cache-control": "no-store" });
+    return res.end(req.method === "HEAD" ? undefined : kept);
+  }
+  if (kind === "manifests" && String(req.headers.accept || "").includes(OCI_MANIFEST)) {
+    const files = ociFiles(doc, ref);
+    if (!files) return ociError(res, 404, "MANIFEST_UNKNOWN", `${doc.id} has no tag ${ref}. Use latest, or one of its GGUF quantisations.`);
+    const bytes = await ociManifest(doc, files);
+    res.writeHead(200, { "content-type": OCI_MANIFEST, "content-length": bytes.length, "docker-content-digest": sha(bytes), "x-repo-commit": doc.revision, "cache-control": "no-store" });
+    return res.end(req.method === "HEAD" ? undefined : bytes);
+  }
   if (kind === "manifests") {
     const { file, sharded, quants } = pickGguf(doc, ref);
     if (!file) return ociError(res, 404, "MANIFEST_UNKNOWN", sharded ? `${ref} of ${doc.id} is split across several files; Ollama needs a single GGUF file.` : quants.length ? `${doc.id} has no ${ref}. It has: ${[...new Set(quants)].join(", ")}.` : `${doc.id} has no GGUF file; Ollama pulls GGUF models.`);
@@ -246,7 +298,7 @@ async function ollama(req, res, id, kind, ref) {
   if (entry) { // the weights: never through us
     if (req.method === "HEAD") { res.writeHead(200, { "content-length": entry[1], "docker-content-digest": ref, "accept-ranges": "bytes", "content-type": "application/octet-stream" }); return res.end(); }
     const { source, reason } = choose(doc, entry, null);
-    console.log(JSON.stringify({ t: new Date().toISOString(), dialect: "ollama", model: doc.id, file: entry[0], source: source.kind, reason }));
+    console.log(JSON.stringify({ t: new Date().toISOString(), dialect: /^ollama/i.test(req.headers["user-agent"] || "") ? "ollama" : "oci", model: doc.id, file: entry[0], source: source.kind, reason }));
     res.writeHead(307, { location: urlFor(doc, source, entry), "docker-content-digest": ref, "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });
     return res.end();
   }
@@ -362,7 +414,7 @@ http.createServer(async (req, res) => {
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
-    const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs)\/(.+)$/);
+    const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs|tags)\/(.+)$/);
     if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
     if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);
     if (path === "/api/hub/health") return json(res, 200, { sources: health, order: ORDER }, { "cache-control": "no-store", "access-control-allow-origin": "*" });

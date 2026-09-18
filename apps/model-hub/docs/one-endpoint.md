@@ -32,13 +32,13 @@ engines it feeds already speak OpenAI.
 |---|---|---|---|
 | Hugging Face Hub API | `export HF_ENDPOINT=https://hub.uor.foundation` | `hf`, `huggingface_hub`, transformers, diffusers, sentence-transformers, vLLM, SGLang, KServe, llama.cpp `-hf`, every BYO-container compute platform | Live. Matrix passes on `huggingface_hub` 1.32.0 and 0.36.2; `HfApi.list_models`, `model_info`, `list_repo_files` work |
 | Ollama registry | `ollama pull hub.uor.foundation/<org>/<name>:<quant>` | Ollama and everything built on it | Live. Ollama 0.34.2 pulled 969 MB in 67 s, verified the SHA-256 itself, and ran the model. **Failover measured:** with huggingface.co, hf.co and the CDN blackholed in the client, the same pull succeeded in 83 s from ModelScope, manifest and template from the hub's cache |
+| OCI model artifacts (CNCF ModelPack) | `oras pull hub.uor.foundation/<org>/<name>:latest` (lowercase name; a GGUF quantisation also works as the tag) | oras, modctl, KitOps, containerd, Docker Model Runner | Live. Every file is a raw layer whose digest is its SHA-256, every blob a redirect. Measured with oras 1.2.2: a whole model, 72 files, 347 MB in 17 s, `sha256sum -c` passes on all of them. Docker Model Runner and modctl not run: UNVERIFIED |
 | MCP | add the server URL `https://hub.uor.foundation/mcp` | Claude, ChatGPT developer mode, Cursor, VS Code, Gemini CLI | Live. Stateless Streamable HTTP, anonymous, three tools (`search_models`, `get_model`, `resolve_file`); measured with the official MCP inspector client: list, calls, and a tool error |
 | Hologram objects | `GET /api/v1/objects/{address}` | Agents and mirrors that want the raw, content-addressed truth | Live (Hologram Server) |
 | OCI registry | `hologram pull hub.uor.foundation/model-hub/index:<date>` | The daily index | Live (kappa-registry) |
 
-**Next, in order of reach per line of code:** OCI model artifacts with raw-file layers (Docker Model Runner,
-containerd, oras, modctl, llama.cpp `--docker-repo`); a three-tool MCP server; then one source of truth under all
-dialects (section 5).
+**Next:** one source of truth under all dialects (section 6, step 5); Docker Model Runner and modctl runs; the MCP
+registry entry; more IPFS pins (a first batch of 75 permissively licensed models, 199 GB, started 2026-09-18).
 
 ## 2. Evidence
 
@@ -110,7 +110,8 @@ Baseten, AkashML) accept only named sources; a hub gets in there only as a named
 | llama.cpp `-hf` | `MODEL_ENDPOINT`, then `HF_ENDPOINT` | Routes served (`refs`, `tree`, `resolve`); not run: UNVERIFIED |
 | vLLM, SGLang, KServe `hf://`, TGI | `HF_ENDPOINT` | Use `huggingface_hub`; not run (need a GPU or a large image): UNVERIFIED |
 | transformers with torch, diffusers, sentence-transformers full load | `HF_ENDPOINT` | Same client path as measured; full load not run: UNVERIFIED |
-| Docker Model Runner, oras, modctl | OCI reference | Needs the OCI model-artifact dialect (next) |
+| oras 1.2.2 | OCI reference, lowercase: `hub.uor.foundation/hexgrad/kokoro-82m:latest` | **Measured**: whole model pulled, every file matches |
+| Docker Model Runner, modctl, KitOps, containerd | OCI reference | Same manifest and blob routes; not run: UNVERIFIED |
 | MCP clients (Claude, ChatGPT developer mode, Cursor, VS Code, Gemini CLI) | MCP server URL | **Measured** with the official inspector client; not yet added inside each product: UNVERIFIED |
 | LM Studio, Jan, `docker model pull hf.co/…` | none | Not reachable |
 
@@ -144,7 +145,7 @@ misleads the UIs that read it. (C) **One base URL, many dialects, one truth.** C
 |---|---|---|---|---|
 | `/`, `/models/…`, `/data/…`, `/zip/…` (worker), `/archive/…`, `/archive.json`, `/pins.json` | site | website; `/` with `Accept: application/json` is the hub descriptor | short | none |
 | `/api/models`, `/api/models/{id}[/revision/{rev}]`, `/refs`, `/tree/{rev}`, `/xet-read-token/{rev}`, `/{org}/{name}/resolve/{rev}/{path}`, `/via/{source}/…`, `/api/hub/health` | hub-resolve | Hugging Face | 60 s metadata, redirects uncached | `Authorization` and `Cookie` stripped |
-| `/v2/{org}/{name}/manifests/{quant}`, `/v2/{org}/{name}/blobs/{digest}` (org ≠ `model-hub`) | hub-resolve | Ollama registry (OCI model artifacts next, same routes, by `Accept`) | uncached | stripped |
+| `/v2/{org}/{name}/manifests/{tag or digest}`, `/blobs/{digest}`, `/tags/list` (org ≠ `model-hub`) | hub-resolve | Ollama registry, or CNCF ModelPack when the client accepts `application/vnd.oci.image.manifest.v1+json` | uncached | stripped |
 | `/v2/`, `/v2/model-hub/…`, `/_*` | kappa-registry | OCI distribution, the daily index | registry | token for writes |
 | `/api/v1/objects[/{id}]`, `/api/v1/capabilities`, `/api/v1/modules`, `/openapi.json`, `/docs`, `/healthz` | Hologram Server | Hologram objects | immutable per address | publisher token for writes |
 | `/.well-known/model-hub.json`, `/llms.txt` | site | agent discovery | short | none |
@@ -158,8 +159,8 @@ misleads the UIs that read it. (C) **One base URL, many dialects, one truth.** C
    mirrors; elsewhere Hugging Face remains a single source.
 2. **`llms.txt` leads with the short way: done** (`HF_ENDPOINT`, `ollama pull`, the search route, MCP). Signal: agent
    user-agents on `/api/models`.
-3. **OCI model artifacts** on the same `/v2/{org}/{name}` routes (ModelPack raw layers and Docker `gguf.v3`). Signal:
-   `docker model pull` and `oras pull` succeed in the rig. Kill: if no OCI client user-agent appears in 60 days.
+3. **OCI model artifacts: done** on the same `/v2/{org}/{name}` routes (ModelPack raw layers), measured with oras.
+   Left: run Docker Model Runner and modctl against it. Kill: if no OCI client user-agent appears in 60 days.
 4. **MCP server: done** (three tools, stateless, anonymous). Left: publish `deploy/mcp-server.json` to the MCP registry, which needs the `uor.foundation` domain verified with `mcp-publisher` (Ilya). Kill: fewer tool calls than `/api/models` searches from agents after 60 days.
 5. **One truth.** Today the dialects read the site's published file lists and the address index, while the agent API
    reads objects. Move the dialects onto the objects (they need a by-name lookup the object API lacks: a small upstream

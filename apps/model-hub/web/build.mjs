@@ -43,7 +43,7 @@ function indexPill() {
       <div class="menu" id="archive-menu" role="menu" aria-label="Index history" hidden>
         <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i lead"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
         <div class="archive-days">${groups.slice(0, 3).join("")}${older}</div>
-        <p class="menu-note">Every day is stored on IPFS and checked in your browser before it is shown. The hub keeps only the current day; older days come from IPFS and can take a minute to open the first time.</p>
+        <p class="menu-note">Each day's index is saved on IPFS and verified in your browser. Today opens at once; older days can take a minute the first time.</p>
         <div class="archive-foot"><button type="button" class="copy" id="archive-cid" data-copy="" title="Copy this day's IPFS address">CID${R.icon.copy}</button><button type="button" class="copy" id="archive-pull" data-copy="" title="Copy the hologram pull command for the current index">hologram pull${R.icon.copy}</button></div>
       </div>
     </div>

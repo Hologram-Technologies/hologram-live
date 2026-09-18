@@ -11,6 +11,9 @@ hub.uor.foundation {
 		reverse_proxy hub-kappa:5000
 	}
 	handle {
+		# Archived days are read by the browser from any origin and verified there.
+		header /archive/* Access-Control-Allow-Origin "*"
+		header /archive.json Access-Control-Allow-Origin "*"
 		reverse_proxy hub-site:8080
 	}
 }

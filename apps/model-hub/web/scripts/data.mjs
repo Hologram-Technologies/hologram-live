@@ -111,6 +111,10 @@ async function main() {
   const sourceIndex = (await get(`${API}/v1/sources/index.json`))?.models || {};
   // Models pinned on IPFS by the hub (pin-model.sh): root CID per model revision, served by a CORS-open gateway.
   const pins = (await get(`https://${HUB}/pins.json`)) || { gateway: "https://ipfs.filebase.io/ipfs/", models: {} };
+  // The archive ledger (archive.sh): one entry per captured day, hash-chained, each day a CAR on IPFS.
+  const archive = await get(`https://${HUB}/archive.json`);
+  if (archive?.days?.length) await writeFile(join(DATA, "archive.json"), JSON.stringify(archive));
+  else await rm(join(DATA, "archive.json"), { force: true });
   // A source counts for a model only when every weight file there is byte identical (every file, if none are weights).
   const complete = (s) => (s.weights ? s.weights_identical === s.weights : s.identical === s.files);
 

@@ -22,7 +22,7 @@ file against its address in the browser, and every layer on `hologram pull`.
 | G3 | Drop-in `HF_ENDPOINT` | No | P0 | Upstream the hub shim (manifest codec, tree, resolve with Range and ETag) as small PRs; serve read-only on the hub |
 | G4 | Coverage | 500 trending; about 1,261 indexed | P0 | 5,000, then 25,000 models |
 | G5 | Use this model | Run it snippet | P1 | Snippets per library and app, pinned to the indexed revision, plus `hologram pull` |
-| G6 | Versions and history | Registry snapshots only | P1 | Time Machine: dropdown, hash-chained ledger, IPFS and registry |
+| G6 | Versions and history | The Archive: every day on IPFS and the registry, hash-chained ledger, `?at=` time travel, verified in the browser | P1 | Second pinning provider; capture on change rather than daily |
 | G7 | Model tree | Counts | P1 | Linked children; shared-file evidence from addresses |
 | G8 | Apps, providers, hardware filters | Partial | P1 | Apps facet, providers facet, "fits in memory" filter |
 | G9 | P2P for the catalog | 4 pilot torrents | P1 | Torrents for every indexed model with web seeds |
@@ -44,7 +44,7 @@ file against its address in the browser, and every layer on `hologram pull`.
 | B | Storage: IPFS pinning (Filebase), 15 GB of curated permissive-licence weights on the hub registry, verified state everywhere | 11 models hosted (12 GB) and verified; IPFS pinning live with CID read-back, browser Verify includes IPFS; per-file verified state (B3) open |
 | C | Drop-in `HF_ENDPOINT`: upstream the hub shim as small PRs, serve read-only | Next |
 | D | Breadth: 5,000 models, search shards, apps, providers and hardware facets | Planned |
-| E | History and distribution: Time Machine, model tree, catalog P2P, edge cache | Planned |
+| E | History and distribution: the Archive, model tree, catalog P2P, edge cache | The Archive live (daily capture, CID read-back, chained ledger, mirror + gateway reads verified in the browser); the rest planned |
 | F | Use and publish: Use this model, publisher tokens, `.holo` app, pull counts, tensor viewer | Planned |
 
 ## Decisions

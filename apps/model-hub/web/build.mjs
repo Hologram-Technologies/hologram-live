@@ -20,6 +20,35 @@ const INDEX = "https://github.com/humuhumu33/hologram-api";
 
 const data = JSON.parse(await readFile(join(SITE, "data", "models.json"), "utf8"));
 const models = R.prepare(data.models, data.snapshot);
+const archivePath = join(SITE, "data", "archive.json");
+const archive = existsSync(archivePath) ? JSON.parse(await readFile(archivePath, "utf8")) : null;
+
+// The header pill. With an archive it opens every captured day; the Wayback idea, one control.
+function indexPill() {
+  const latest = `Index ${R.day(data.snapshot)}`;
+  if (!archive) return `<a class="status" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
+  const days = [...archive.days].sort((a, b) => b.date.localeCompare(a.date));
+  const months = new Map();
+  for (const d of days) {
+    const key = d.date.slice(0, 7);
+    if (!months.has(key)) months.set(key, []);
+    months.get(key).push(d);
+  }
+  const monthName = (key) => new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const row = (d) => `<button type="button" role="menuitemradio" data-at="${d.date}" aria-checked="false">${R.icon.calendar}<span class="label">${R.day(d.date)}<span class="sub">${d.models} models, ${d.addressed} verified</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>`;
+  const groups = [...months].map(([key, list], i) => `<div class="archive-month"${i >= 3 ? " data-older" : ""}><h3>${monthName(key)}</h3>${list.map(row).join("")}</div>`);
+  const older = groups.length > 3 ? `<details class="archive-older"><summary>Older</summary>${groups.slice(3).join("")}</details>` : "";
+  return `<div class="archive" id="archive">
+      <button type="button" class="status" id="archive-button" aria-haspopup="menu" aria-expanded="false" aria-controls="archive-menu" title="Every day's index is stored on IPFS. Open any day."><span id="archive-label">${latest}</span>${R.icon.chevron}</button>
+      <div class="menu" id="archive-menu" role="menu" aria-label="Index history" hidden>
+        <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i lead"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
+        <div class="archive-days">${groups.slice(0, 3).join("")}${older}</div>
+        <p class="menu-note">Every day is stored on IPFS and checked in your browser before it is shown.</p>
+        <div class="archive-foot"><button type="button" class="copy" id="archive-cid" data-copy="" title="Copy this day's IPFS address">CID${R.icon.copy}</button><button type="button" class="copy" id="archive-pull" data-copy="" title="Copy the hologram pull command for this day">hologram pull${R.icon.copy}</button></div>
+      </div>
+    </div>
+    <script type="application/json" id="archive-days">${JSON.stringify({ gateway: archive.gateway, mirror: archive.mirror || null, latest: data.snapshot, days: days.map(({ date, cid, index, reference, models: n }) => ({ date, cid, index, reference, models: n })) })}</script>`;
+}
 
 const WALLPAPERS = [
   { key: "alps", name: "Alpine Dawn", by: "Unsplash", url: "https://unsplash.com/?utm_source=Hologram&utm_medium=referral" },
@@ -48,8 +77,8 @@ const themeSwitch = `<div class="appearance">
 
 const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "styles.css"];
 
-const page = ({ title, description, body, search = false }) => `<!doctype html>
-<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}">
+const page = ({ title, description, body, search = false, model = "" }) => `<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -73,11 +102,12 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
   <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"><span class="hub">Models Hub</span></a>
   <div class="top-end">
     ${search ? `<form class="field compact top-search" action="${base}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    <a class="status" href="${INDEX}" title="Addresses refresh daily">Index ${R.day(data.snapshot)}</a>
+    ${indexPill()}
     <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
     ${themeSwitch}
   </div>
 </header>
+${archive ? `<div class="archive-banner" id="archive-banner" role="status" hidden>${R.icon.calendar}<span>Viewing the index of <b id="archive-banner-date"></b>. Every file shown was checked against its address.</span><button type="button" class="link" data-at="latest">Back to latest</button></div>` : ""}
 ${body}
 </div>
 </body>
@@ -228,6 +258,7 @@ function modelPage(m, files, ov, readme) {
   }
 
   return page({
+    model: m.id,
     title: `${m.name} · Hologram Models Hub`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
     search: true,
@@ -293,6 +324,12 @@ for (const f of ["hologram-warm.css", "hologram-gap-tokens.css"]) await cp(join(
 await cp(join(KIT, "fonts"), join(DIST, "fonts"), { recursive: true });
 await cp(join(KIT, "logos"), join(DIST, "logos"), { recursive: true });
 if (existsSync(join(SITE, "public"))) await cp(join(SITE, "public"), DIST, { recursive: true });
+if (archive) {
+  // Machine access: the ledger, and one tiny stub per day so a script resolves a date with one request.
+  await cp(archivePath, join(DIST, "archive.json"));
+  await mkdir(join(DIST, "at"), { recursive: true });
+  for (const d of archive.days) await writeFile(join(DIST, "at", `${d.date}.json`), JSON.stringify({ date: d.date, cid: d.cid, index: d.index, reference: d.reference, gateway: archive.gateway, mirror: archive.mirror ? `${archive.mirror}${d.date}/` : null }));
+}
 await writeFile(join(DIST, ".nojekyll"), "");
 
 console.log(`built ${models.length} model pages + browse at base ${base} → ${DIST}`);

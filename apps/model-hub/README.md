@@ -9,6 +9,35 @@ hologram-live node comes with the Model Hub `.holo` application (issue
 [#76](https://github.com/Hologram-Technologies/hologram-live/issues/76), ADR 023 in
 [#75](https://github.com/Hologram-Technologies/hologram-live/pull/75)).
 
+## The Archive
+
+The header pill `Index <day>` opens every day the catalog was captured, the way the Wayback Machine opens a page's
+past. Choosing a day switches browse, filters, search and every model page to that day's index; the pill turns
+amber, a banner names the day, and **Back to latest** returns. `?at=YYYY-MM-DD` on any page opens the nearest
+captured day on or before that date, so a link to a day is a link to exactly what it showed.
+
+Each day is captured once by `deploy/archive.sh` after the daily registry push: the day's files are packed into a
+CAR (IPFS archive) whose root CID is computed locally, pinned through Filebase, and accepted only if the CID Filebase
+reports is the same. The day is appended to the ledger `archive.json` (`hologram.model-hub.archive/v1`), served at
+[hub.uor.foundation/archive.json](https://hub.uor.foundation/archive.json) and pinned itself:
+
+| Field | Meaning |
+|---|---|
+| `gateway`, `mirror` | Where the browser reads a day: `<gateway><cid>/<path>` on IPFS, `<mirror><date>/<path>` on the hub. The mirror only makes reads fast; it is never trusted |
+| `days[].date`, `cid` | The day and the root CID of its directory (`index.json`, `models.json`, one JSON per model) |
+| `days[].index` | BLAKE3 of that day's `index.json`, which names every other file by address |
+| `days[].reference` | The same day on the registry: `hologram pull hub.uor.foundation/model-hub/index:<date>` |
+| `days[].prev`, `prev_ledger` | The previous day's CID and the previous ledger's CID: a hash chain, so history cannot be rewritten silently |
+| `days[].models`, `addressed`, `files`, `bytes`, `source`, `archived` | What the day held and when it was captured |
+
+The browser trusts none of the sources: it reads `index.json`, hashes it against the ledger's `index`, then hashes
+every file against the address the index records, before anything is shown. Bytes that fail are refused and the
+next source is tried (measured: a corrupted mirror file was rejected and the gateway's copy used). Verified bytes are
+kept in the Cache API under their content address, so a revisited day is instant and works offline. **Verify** and
+downloads stay with the latest index because they check live mirrors. `at/<date>.json` stubs give agents the CID,
+index address, registry reference and both read locations for a day. What is immutable: the captures and the chain.
+What is one operator: the daily writer (a VPS cron) and the single pinning provider.
+
 ## Build
 
 ```bash

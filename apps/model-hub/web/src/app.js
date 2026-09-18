@@ -6,13 +6,15 @@ const $ = (s, el = document) => el.querySelector(s);
 
 themeSwitch();
 B.play();
+let view = null; // set by browse(): lets the archive swap the catalog under the same interface
 if ($("#browse")) browse();
 if ($("[data-verify]")) model();
 copyButtons();
+if ($("#archive")) archive();
 
 async function browse() {
   const data = await fetch(`${base}data/models.json`).then((r) => r.json());
-  const models = R.prepare(data.models, data.snapshot);
+  let models = R.prepare(data.models, data.snapshot);
   let state = R.parseState(location.search);
   const filters = $("#filters-body"), grid = $("#grid"), pager = $("#pager"), total = $("#total"), q = $("#q");
   const facetSearch = {}, openMore = new Set(), order = {};
@@ -24,6 +26,8 @@ async function browse() {
     const focus = document.activeElement?.dataset?.facetSearch;
     filters.innerHTML = R.filters(r, state, order);
     grid.innerHTML = R.grid(r, { base });
+    const at = document.documentElement.dataset.at;
+    if (at) for (const a of grid.querySelectorAll("a.card")) a.href = `${a.getAttribute("href")}?at=${at}`;
     B.play(grid);
     pager.innerHTML = R.pager(r, state);
     total.textContent = r.results.length.toLocaleString("en-US");
@@ -35,7 +39,8 @@ async function browse() {
     }
     syncSort();
     document.title = R.title(state);
-    const url = `${location.pathname}${R.stateToSearch(state)}`;
+    const search = R.stateToSearch(state);
+    const url = `${location.pathname}${at ? `${search ? `${search}&` : "?"}at=${at}` : search}`;
     if (push === "push") history.pushState(null, "", url);
     else if (push === "replace") history.replaceState(null, "", url);
   }
@@ -148,7 +153,165 @@ async function browse() {
   });
 
   window.addEventListener("popstate", () => { state = R.parseState(location.search); q.value = state.q; render(); });
+  view = { setCatalog(list, snapshot) { models = R.prepare(list, snapshot); state.page = 1; render("replace"); } };
   render("replace");
+}
+
+// The Archive: open any captured day. Bytes come from the IPFS gateway by CID; the browser verifies the day's index
+// against the BLAKE3 the ledger records, then every file against the index, before anything is shown.
+function archive() {
+  const box = $("#archive"), button = $("#archive-button"), menu = $("#archive-menu"), label = $("#archive-label");
+  const banner = $("#archive-banner"), ledger = JSON.parse($("#archive-days").textContent);
+  const days = ledger.days; // newest first
+  const params = new URLSearchParams(location.search);
+  const wanted = params.get("at");
+  const resolve = (date) => days.find((d) => d.date <= date) || null; // nearest earlier captured day
+  let hasher = null;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ---- menu
+  const items = () => [...menu.querySelectorAll('[role="menuitemradio"]')];
+  const open = (show, focusFirst) => {
+    menu.hidden = !show;
+    button.setAttribute("aria-expanded", String(show));
+    if (show && focusFirst) (menu.querySelector('[aria-checked="true"]') || items()[0]).focus();
+  };
+  button.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden, e.detail === 0); });
+  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest("#archive")) open(false); });
+  let typed = "", typedAt = 0;
+  menu.addEventListener("keydown", (e) => {
+    const list = items(), i = list.indexOf(document.activeElement);
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (step) { e.preventDefault(); list[(i + step + list.length) % list.length].focus(); return; }
+    if (e.key === "Escape") { open(false); button.focus(); return; }
+    if (e.key.length === 1 && /[a-z0-9 ]/i.test(e.key)) {
+      typed = (Date.now() - typedAt < 900 ? typed : "") + e.key.toLowerCase();
+      typedAt = Date.now();
+      const hit = list.find((b) => b.textContent.trim().toLowerCase().startsWith(typed));
+      if (hit) hit.focus();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    const choice = e.target.closest("[data-at]");
+    if (!choice) return;
+    open(false);
+    go(choice.dataset.at);
+  });
+
+  function mark(date) {
+    for (const b of items()) b.setAttribute("aria-checked", String(b.dataset.at === (date || "latest")));
+    const entry = date ? days.find((d) => d.date === date) : null;
+    $("#archive-cid").dataset.copy = entry?.cid || "";
+    $("#archive-cid").hidden = !entry;
+    $("#archive-pull").dataset.copy = entry ? `hologram pull ${entry.reference}` : "";
+    $("#archive-pull").hidden = !entry;
+  }
+
+  function go(date) {
+    const url = new URL(location.href);
+    if (date === "latest") { url.searchParams.delete("at"); location.href = url.toString(); return; }
+    url.searchParams.set("at", date);
+    history.replaceState(null, "", url.toString());
+    show(resolve(date));
+  }
+
+  // ---- verified reads
+  // Every file is checked against the BLAKE3 the day's index records (and the index against the ledger), so where
+  // the bytes come from is only a matter of speed: the hub's mirror answers in milliseconds, the IPFS gateway can
+  // take tens of seconds on a cold day. Verified bytes are kept in the Cache API under the content address.
+  const timed = async (url, ms) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try { return await fetch(url, { signal: controller.signal }); } finally { clearTimeout(timer); }
+  };
+  async function verified(entry, path, expect) {
+    const key = `${ledger.gateway}${entry.cid}/${path}`;
+    const store = await caches.open("model-hub-archive").catch(() => null);
+    const cached = store ? await store.match(key) : null;
+    if (cached) return new Uint8Array(await cached.arrayBuffer());
+    hasher ||= (await import("https://humuhumu33.github.io/hologram-api/vendor/hash-wasm/index.esm.min.js")).createBLAKE3;
+    const sources = [];
+    if (ledger.mirror) sources.push([`${ledger.mirror}${entry.date}/${path}`, 8000]);
+    sources.push([key, 30000]);
+    let failure = "";
+    for (const [url, ms] of sources) {
+      const host = new URL(url).host;
+      let bytes;
+      try {
+        const r = await timed(url, ms);
+        if (!r.ok) { failure = `${host} answered ${r.status}`; continue; }
+        bytes = new Uint8Array(await r.arrayBuffer());
+      } catch { failure = `${host} did not answer`; continue; }
+      const h = await hasher();
+      h.update(bytes);
+      if (`blake3:${h.digest("hex")}` !== expect) { failure = `${host} served bytes that do not match the address`; continue; }
+      if (store) await store.put(key, new Response(bytes, { headers: { "content-type": "application/json" } })).catch(() => {});
+      return bytes;
+    }
+    throw new Error(`${path}: ${failure}`);
+  }
+
+  async function show(entry) {
+    if (!entry) { go("latest"); return; }
+    label.textContent = `Loading ${R.day(entry.date)}`;
+    box.classList.add("busy");
+    try {
+      const index = JSON.parse(new TextDecoder().decode(await verified(entry, "index.json", entry.index)));
+      const addressOf = new Map(index.files.map(([path, address]) => [path, address]));
+      const read = async (path) => (addressOf.has(path) ? JSON.parse(new TextDecoder().decode(await verified(entry, path, addressOf.get(path)))) : null);
+      const catalog = await read("models.json");
+      document.documentElement.dataset.at = entry.date;
+      label.textContent = `Index ${R.day(entry.date)}`;
+      box.classList.add("past");
+      $("#archive-banner-date").textContent = R.day(entry.date);
+      banner.hidden = false;
+      mark(entry.date);
+      if (view) view.setCatalog(catalog.models, catalog.snapshot);
+      const id = document.documentElement.dataset.model;
+      if (id) await showModel(entry, catalog, read, id);
+      document.title = `${document.title.replace(/ · Index .*$/, "")} · Index ${R.day(entry.date)}`;
+    } catch (error) {
+      label.textContent = `Index ${R.day(ledger.latest)}`;
+      banner.hidden = false;
+      $("#archive-banner-date").textContent = R.day(entry.date);
+      banner.querySelector("span").innerHTML = `This day could not be loaded (${R.esc(error.message)}). <button type="button" class="link" data-at="${entry.date}">Try again</button>`;
+    } finally {
+      box.classList.remove("busy");
+    }
+  }
+
+  // A model page on a past day: that day's rank, downloads and files. Verify and downloads stay with the latest
+  // index, because they check live mirrors.
+  async function showModel(entry, catalog, read, id) {
+    const m = catalog.models.find((x) => x.id === id);
+    const note = $("#verdict");
+    for (const b of document.querySelectorAll("[data-verify], #dl-all, [data-zip]")) { b.disabled = true; b.title = "Verify and downloads use the latest index. Switch to Latest."; }
+    if (!m) {
+      const nearest = days.find((d) => d.date > entry.date) || days[0];
+      note.hidden = false; note.className = "verdict";
+      note.innerHTML = `Not in the index on ${R.day(entry.date)}. <button type="button" class="link" data-at="${nearest.date}">Open ${R.day(nearest.date)}</button>`;
+      return;
+    }
+    for (const dt of document.querySelectorAll(".facts dt")) {
+      const dd = dt.nextElementSibling;
+      if (dt.textContent === "Trending") dd.textContent = `#${m.rank}`;
+      if (dt.textContent.startsWith("Downloads")) dd.textContent = R.count(m.downloads);
+      if (dt.textContent === "Status") dd.firstElementChild.textContent = R.STATE_LABEL[m.state];
+    }
+    const files = await read(`files/${m.org}/${m.name}.json`);
+    const table = $("#files");
+    if (!files || !table) return;
+    const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
+    table.querySelector("thead tr").innerHTML = `<th>Path</th><th class="size">Size</th><th>Address</th>`;
+    table.tBodies[0].innerHTML = files.files.map(([path, size, address]) => `<tr data-path="${R.esc(path)}" data-size="${size ?? 0}" data-address="${R.esc(address)}"><td class="path" title="${R.esc(path)}">${R.esc(path)}</td><td class="size">${R.bytes(size)}</td><td class="addr">${copy(address, R.shortAddress(address))}</td></tr>`).join("");
+    const pill = $("#tab-files .pill");
+    if (pill) pill.textContent = files.files.length;
+    const head = $(".files-head .note");
+    if (head) head.textContent = `${files.files.length} files on ${R.day(entry.date)}, revision ${files.revision.slice(0, 12)}.`;
+  }
+
+  mark(null);
+  if (wanted) show(resolve(wanted));
 }
 
 function model() {

@@ -32,6 +32,7 @@ services:
     command: ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
     volumes:
       - ./site:/srv:ro
+      - ./archive:/srv/archive:ro
     mem_limit: 128m
     networks:
       default:

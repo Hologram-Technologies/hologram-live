@@ -38,6 +38,10 @@ if [ -d "$HUB/site" ]; then mv "$HUB/site" "$HUB/site.prev"; fi
 mv "$HUB/site.next" "$HUB/site"
 # pins.json is written by pin-model.sh and must survive the swap: data.mjs reads it from the public URL.
 [ -f "$HUB/pins.json" ] && cp -f "$HUB/pins.json" "$HUB/site/pins.json"
+[ -f "$HUB/archive.json" ] && cp -f "$HUB/archive.json" "$HUB/site/archive.json"
+[ -f "$HUB/archive.cid" ] && cp -f "$HUB/archive.cid" "$HUB/site/archive.cid"
+# The site container mounts ./archive on /srv/archive; the mount point must exist inside the read-only site.
+mkdir -p "$HUB/site/archive"
 docker compose -f "$HUB/docker-compose.yml" restart site >/dev/null
 rm -rf "$HUB/site.prev"
 echo "== $(date -u +%FT%TZ) build ok: $(find "$HUB/site/models" -name index.html | wc -l) model pages"

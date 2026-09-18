@@ -30,6 +30,23 @@ key ever written is `object-type`. A selective query therefore walks tag pages
 client-side, bounded by `registry.max_scan_pages`; reaching that bound sets
 `truncated` rather than silently returning a short page.
 
+That walk reads one manifest per tag, because kind, filename and creation time
+live in the manifest's annotations. Measured through the daemon against
+kappa-registry 2af8656, one search cost 0.78 s at 459 objects and 6.96 s at
+5,000, every time. The provider therefore keeps decoded records by tag. A tag is
+the hash of the bytes, so the blob a record describes never changes; only its
+annotations can. Three rules follow, and the tests hold each of them:
+
+- The tag listing is never cached, so an object written by anyone (the CLI
+  pushing to the registry, a second daemon on the same store) appears on the
+  next search.
+- A put or a rename through this provider replaces the record at once.
+- A record expires after five minutes, which bounds how long a rewrite this
+  daemon cannot see stays invisible. The cache holds at most 50,000 records.
+
+Warm, the same searches take 5 ms and 29 ms. What remains is the listing itself:
+one request per thousand tags per search.
+
 ## Alternatives considered
 
 **Authoring a new object API.** Rejected. kappa-registry already defines a

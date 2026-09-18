@@ -54,8 +54,9 @@ Append `Caddyfile.hub` (with the token) to the front Caddyfile, then `caddy relo
 
 ## Operations
 
-- **Uptime:** `.github/workflows/model-hub-uptime.yml` probes the public URLs every 15 minutes and opens an issue when they fail.
-- **Logs:** `/root/hub/logs/{build-site,snapshot,health}.log`.
+- **Uptime:** `.github/workflows/model-hub-uptime.yml` runs `uptime.mjs` every 15 minutes and keeps one issue open per outage. Beyond the public URLs it checks that the pointer names a catalog, that the catalog and one model hash to their addresses, that the snapshot is no older than 36 hours (the only check that notices a silently failing publish), and that the closed doors stay closed: unknown paths and gRPC 404, anonymous publish, list and search 401. Set `EXPECT_SEARCH=200` in the workflow when search opens. Run it by hand: `npm i --no-save hash-wasm@4.12.0 && node uptime.mjs`.
+- **Logs:** `/root/hub/logs/{build-site,snapshot,publish,archive,health}.log`.
+- **Rollback:** Data: write the current catalog's `prev` into `state/model-hub.json` and copy it to `site/.well-known/`. Server binary: keep `bin/hologram.prev`, swap, `docker compose restart hologram`. Caddy: keep a dated copy of the front Caddyfile before every edit, write it back in place (the file is a single-file bind mount) and reload.
 - **Backup:** none on this host and no S3 copy: every day's index is a pinned CAR on IPFS and the ledger is pinned. Losing the host loses the registry's day tags, the published objects and the current-day mirror; the next daily run republishes today, and every past day's index remains on IPFS.
 - **Archive:** `archive.json` on the site is the ledger; `logs/archive.log` records each day's CID and the read-back check. The Filebase gateway answers a cold CID in tens of seconds and rate-limits parallel reads (429 above a few at once), which is why the mirror exists; the mount point `site/archive` must exist inside the read-only site (build-site.sh creates it) or the site container will not start.
 - **Verify a published day from anywhere:** `hologram pull hub.uor.foundation/model-hub/index:<YYYY-MM-DD>`.

@@ -20,22 +20,20 @@ jobs:
   probe:
     runs-on: ubuntu-24.04
     steps:
-      - name: Probe site and registry
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: apps/model-hub/deploy
+          sparse-checkout-cone-mode: false
+
+      # uptime.mjs checks the site, the registry, the server, that the pointer names a catalog, that the catalog and a
+      # model hash to their addresses (BLAKE3: hash-wasm, pinned), that the daily publish is fresh, and that the doors
+      # that must stay closed are closed. A probe that cannot start is an outage too.
+      - name: Probe site, registry, server and hub
         id: probe
+        working-directory: apps/model-hub/deploy
         run: |
-          set -u
-          fail=""
-          check() {
-            code=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 20 --retry 2 --retry-delay 10 "$2" || echo 000)
-            echo "$1 $code"
-            [ "$code" = 200 ] || fail="$fail $1=$code"
-          }
-          check site https://hub.uor.foundation/
-          check model-page https://hub.uor.foundation/models/hexgrad/Kokoro-82M/
-          check registry https://hub.uor.foundation/v2/
-          check index-tags https://hub.uor.foundation/v2/model-hub/index/tags/list
-          grep -q '"tags":\[' /tmp/body || fail="$fail index-tags=empty"
-          echo "failures=${fail# }" >> "$GITHUB_OUTPUT"
+          npm install --no-save --no-audit --no-fund --loglevel=error hash-wasm@4.12.0
+          node uptime.mjs https://hub.uor.foundation || echo "failures=probe-crashed" >> "$GITHUB_OUTPUT"
 
       - name: Open, update or close the outage issue
         env:

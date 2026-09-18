@@ -79,7 +79,7 @@ is one raw file, because then the layer digest is the file's SHA-256, which is w
 |---|---|---|---|
 | Ollama | Yes, exactly `307` off-host, then 16 parallel `Range` parts | Yes ("verifying sha256 digest") | `HEAD` must answer `200` directly: a commit of 2026-09-17 blocks cross-host redirects on manifest and `HEAD`. Measured end to end |
 | containerd, Docker Model Runner | Yes (read in source) | Yes | DMR's `hf.co/…` path is hardcoded to huggingface.co; as a plain OCI registry it can pull from us |
-| oras, crane, skopeo | Go's default client follows (UNVERIFIED at line level) | Yes | |
+| oras, crane, skopeo, modctl | Yes (**measured** against the hub) | Yes (measured: every blob hashes to its digest) | |
 Formats with raw-file layers: CNCF ModelPack `weight.v1.raw`, Docker `vnd.docker.ai.gguf.v3` / `.safetensors`,
 Ollama `vnd.ollama.image.model`. Tar-layered formats (KitOps ModelKit) cannot be served this way.
 Not reachable: `docker model pull hf.co/…`, LM Studio, Jan (endpoints hardcoded).
@@ -107,11 +107,13 @@ Baseten, AkashML) accept only named sources; a hub gets in there only as a named
 | `HfApi.list_models`, `model_info`, `list_repo_files` | `HF_ENDPOINT` | **Measured** |
 | plain `curl -L`, `Range` | the URL | **Measured** |
 | Ollama 0.34.2 | the name: `hub.uor.foundation/<org>/<name>:<quant>` | **Measured**: pull, verify, run; pull again with Hugging Face blackholed |
-| llama.cpp `-hf` | `MODEL_ENDPOINT`, then `HF_ENDPOINT` | Routes served (`refs`, `tree`, `resolve`); not run: UNVERIFIED |
+| llama.cpp `-hf` (build 11028) | `MODEL_ENDPOINT=https://hub.uor.foundation/` | **Measured**: `-hf bartowski/MiniCPM5-2B-GGUF:IQ2_M` fetched the GGUF through the hub into the shared Hugging Face cache layout and loaded it; generated text not captured in the non-interactive container |
 | vLLM, SGLang, KServe `hf://`, TGI | `HF_ENDPOINT` | Use `huggingface_hub`; not run (need a GPU or a large image): UNVERIFIED |
 | transformers with torch, diffusers, sentence-transformers full load | `HF_ENDPOINT` | Same client path as measured; full load not run: UNVERIFIED |
 | oras 1.2.2 | OCI reference, lowercase: `hub.uor.foundation/hexgrad/kokoro-82m:latest` | **Measured**: whole model pulled, every file matches |
-| Docker Model Runner, modctl, KitOps, containerd | OCI reference | Same manifest and blob routes; not run: UNVERIFIED |
+| modctl 0.2.2 (the ModelPack reference tool) | OCI reference | **Measured**: pull and extract, 72 files, `sha256sum -c` passes on all |
+| skopeo, crane | OCI reference | **Measured**: skopeo copied the whole artifact (73 blobs, every one hashing to its name); crane fetched the manifest and a blob through the redirect, digest matching |
+| Docker Model Runner, KitOps, containerd | OCI reference | Same routes; not run: UNVERIFIED (Model Runner needs a VM or Docker Desktop, not the shared host) |
 | MCP clients (Claude, ChatGPT developer mode, Cursor, VS Code, Gemini CLI) | MCP server URL | **Measured** with the official inspector client; not yet added inside each product: UNVERIFIED |
 | LM Studio, Jan, `docker model pull hf.co/…` | none | Not reachable |
 

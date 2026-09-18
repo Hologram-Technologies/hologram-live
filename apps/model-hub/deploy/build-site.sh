@@ -43,6 +43,10 @@ mv "$HUB/site.next" "$HUB/site"
 [ -f "$HUB/pins.json" ] && cp -f "$HUB/pins.json" "$HUB/site/pins.json"
 [ -f "$HUB/archive.json" ] && cp -f "$HUB/archive.json" "$HUB/site/archive.json"
 [ -f "$HUB/archive.cid" ] && cp -f "$HUB/archive.cid" "$HUB/site/archive.cid"
+# The hub descriptor (the one pointer to today's catalog, state/model-hub.json) and the agent guide survive the swap too.
+mkdir -p "$HUB/site/.well-known"
+[ -f "$HUB/state/model-hub.json" ] && cp -f "$HUB/state/model-hub.json" "$HUB/site/.well-known/model-hub.json"
+[ -f "$HUB/pub/llms.txt" ] && cp -f "$HUB/pub/llms.txt" "$HUB/site/llms.txt"
 # The site container mounts ./archive on /srv/archive; the mount point must exist inside the read-only site.
 mkdir -p "$HUB/site/archive"
 docker compose -f "$HUB/docker-compose.yml" restart site >/dev/null

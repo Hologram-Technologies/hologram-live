@@ -55,6 +55,7 @@ file against its address in the browser, and every layer on `hologram pull`.
 | 2026-09-17 | Pinning provider: Filebase |
 | 2026-09-17 | Weights on the hub: up to 15 GB, small permissive-licence models |
 | 2026-09-18 | Reversed: no weights on the VPS. IPFS through Filebase is the only copy of weights the hub offers; the registry holds the daily index only |
-| 2026-09-18 | The index is backed up on IPFS only (no S3 copy); the VPS serves the current index only: registry and mirror hold today, every past day lives on IPFS |
+| 2026-09-18 | The index is backed up on IPFS only (no S3 copy); the hub's mirror serves the current index only, every past day is read from IPFS |
+| 2026-09-18 | Reconciled with the hub server work: the registry keeps every day's index (not current-day-only as first built). Its store also holds the objects `publish.sh` writes through the Hologram Server, so it must never be rebuilt. Growth to be measured over a week (one run re-uploaded 1,297 of 1,300 layers; the server work measured 96.7 % reuse) |
 | 2026-09-17 | Upstream the local hub shim as small reviewed PRs |
 | 2026-09-17 | External uptime monitoring: GitHub Actions probe |

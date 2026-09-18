@@ -1,0 +1,35 @@
+schema_version = 2
+role = "node"
+
+[paths]
+config_dir = "/var/lib/hologram/config"
+data_dir = "/var/lib/hologram/data"
+state_dir = "/var/lib/hologram/state"
+cache_dir = "/var/lib/hologram/cache"
+
+# Beyond loopback the server insists on auth. Caddy holds the token and adds it to the requests it lets through.
+[server]
+listen = "0.0.0.0:11435"
+
+[auth]
+required = true
+token_env = "HOLOGRAM_AUTH_TOKEN"
+
+[telemetry]
+enabled = false
+
+[tracing]
+filter = "info"
+format = "compact"
+
+# A hub needs storage and self-description only. No inference, chat, history or plugins on a public host.
+[modules]
+enabled = ["dev.hologram.live.system", "dev.hologram.live.kappa-registry"]
+
+[registry]
+provider = "kappa"
+endpoint = "http://hub-kappa:5000"
+namespace = "model-hub"
+token = ""
+request_timeout_secs = 30
+max_scan_pages = 20

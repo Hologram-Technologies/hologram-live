@@ -1,0 +1,23 @@
+{
+ "format": "hologram.model-hub.descriptor/v1",
+ "name": "Hologram Model Hub",
+ "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
+ "catalog": null,
+ "snapshot": null,
+ "fetch": "/api/v1/objects/{id}",
+ "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
+ "publish": "POST /api/v1/objects with a publisher token",
+ "openapi": "/openapi.json",
+ "capabilities": "/api/v1/capabilities",
+ "registry": "/v2/",
+ "guide": "/llms.txt",
+ "addresses": {
+  "objects": "blake3 of the object bytes",
+  "files": "sha256 of the file bytes, listed in the model object"
+ },
+ "kinds": {
+  "model-hub.catalog": "today's browse rows, plus objects: { <model id>: { model: <address>, sources: [<address>] } }, plus prev",
+  "model-hub.model": "one revision of one model: id, revision, license, files[{path,size,sha256}], prev",
+  "model-hub.source": "one place the bytes of one revision can be fetched: ipfs, http or hologram (chunks on any Hologram Server)"
+ }
+}

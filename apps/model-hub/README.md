@@ -44,7 +44,7 @@ reports is the same. The day is appended to the ledger `archive.json` (`hologram
 
 | Field | Meaning |
 |---|---|
-| `gateway`, `mirror`, `registry` | Where a day is read: `<gateway><cid>/<path>` on IPFS for every day; `<mirror><date>/<path>` on the hub and `hologram pull <registry>:<date>` for the current day only. The mirror only makes reads fast; it is never trusted |
+| `gateway`, `mirror`, `registry` | Where a day is read: `<gateway><cid>/<path>` on IPFS and `hologram pull <registry>:<date>` on the hub registry for every day; `<mirror><date>/<path>` on the hub for the current day only. The mirror only makes reads fast; it is never trusted |
 | `days[].date`, `cid` | The day and the root CID of its directory (`index.json`, `models.json`, one JSON per model) |
 | `days[].index` | BLAKE3 of that day's `index.json`, which names every other file by address |
 | `days[].prev`, `prev_ledger` | The previous day's CID and the previous ledger's CID: a hash chain, so history cannot be rewritten silently |
@@ -55,8 +55,8 @@ every file against the address the index records, before anything is shown. Byte
 next source is tried (measured: a corrupted mirror file was rejected and the gateway's copy used). Verified bytes are
 kept in the Cache API under their content address, so a revisited day is instant and works offline. **Verify** and
 downloads stay with the latest index because they check live mirrors. `at/<date>.json` stubs give agents the CID,
-index address and read locations for a day. The hub serves the current index only: its registry and mirror hold
-today, every past day lives on IPFS alone, and a past day's first visit can take a minute while the gateway fetches
+index address and read locations for a day. The hub's mirror holds today only; the registry keeps every day's tag (its store also
+holds the hub's published objects, so it is never rebuilt); a past day is read in the browser from IPFS, and its first visit can take a minute while the gateway fetches
 it (measured 25 to 55 s per file cold). What is immutable: the captures and the chain. What is one operator: the
 daily writer (a VPS cron) and the single pinning provider.
 

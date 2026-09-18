@@ -38,6 +38,29 @@ services:
       default:
         aliases: [hub-site]
 
+  hologram:
+    image: debian:bookworm-slim
+    restart: unless-stopped
+    command: ["/usr/local/bin/hologram", "serve"]
+    environment:
+      HOLOGRAM_CONFIG: /etc/hologram/live.toml
+      HOLOGRAM_AUTH_TOKEN: ${HOLOGRAM_AUTH_TOKEN}
+      HOME: /var/lib/hologram
+    volumes:
+      - ./bin/hologram:/usr/local/bin/hologram:ro
+      - ./hologram/live.toml:/etc/hologram/live.toml:ro
+      - ./hologram/state:/var/lib/hologram
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    mem_limit: 256m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+    depends_on: [kappa]
+    networks:
+      default:
+        aliases: [hub-server]
+
 networks:
   default:
     name: twenty_default

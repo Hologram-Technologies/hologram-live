@@ -17,7 +17,9 @@ Everything needed to rebuild `https://hub.uor.foundation` on one Linux host with
 | `bin/hologram` | Built by `build-hologram.sh` from this repository's `main` |
 | `bin/snapshot.mjs` | Turns one day's index into a library `.holo` manifest with one tensor layer per distinct file |
 | `build-site.sh` | Daily: sparse clone of this repository, build the site in `node:22-alpine`, atomic swap. Optional `build.env` holds `HF_TOKEN` and `HUB_BRANCH` (publish a branch ahead of its merge; falls back to `main` once the branch is gone) |
-| `snapshot.sh` | Daily after the site build: `hologram compile --thin` and `hologram push model-hub/index:<YYYY-MM-DD>`. The registry serves the current day only: its store is rebuilt before each push (the registry drops tags but never collects layer blobs), so history is IPFS's job |
+| `snapshot.sh` | Daily after the site build: `hologram compile --thin` and `hologram push model-hub/index:<YYYY-MM-DD>`. Tags never move and the registry keeps every day: its store also holds the hub's published objects, so it is never rebuilt |
+| `publish.sh` + `pub/hub.mjs` | Daily after `snapshot.sh`: publishes the day's models, sources and catalog as objects through the Hologram Server (`POST /api/v1/objects` over the internal network), then points the descriptor `state/model-hub.json` (served at `/.well-known/model-hub.json`) at the new catalog. `pub/llms.txt` is the agent guide served at `/llms.txt`. `pub.env` (mode 600) carries the tokens |
+| `hologram/live.toml` | Configuration of the `hologram` service (`hologram serve`, alias `hub-server:11435`, 256 MB): the public read API behind the front Caddy (`/api/v1/objects/{id}`, `/api/v1/capabilities`, `/openapi.json`, `/docs`, `/healthz`); publishing needs the publisher token |
 | `pin-model.sh <owner/name>` | Pins one model on IPFS through Filebase: permissive-licence allowlist, download from Hugging Face at the revision the address index pins, every file's SHA-256 checked against the index, CAR packed locally (`ipfs-car`), uploaded to the IPFS bucket, accepted only if the CID Filebase reports equals the CID computed here. Records `pins.json`, which the site reads to turn the IPFS column green. Nothing stays on the host: IPFS is the only copy of weights the hub offers (decision 2026-09-18) |
 | `archive.sh [date]` | Daily after `snapshot.sh`: rebuilds the day's directory from the snapshot, packs a CAR (`ipfs-car`), uploads it to the Filebase IPFS bucket, accepts it only if the read-back CID equals the local root, appends the day to the hash-chained ledger `archive.json` (pinned with `pins.json`; the ledger CID kept in `archive.cid`), keeps the current day's directory under `archive/<date>` as the fast mirror the site container serves at `/archive/<date>/` (older days removed), and warms the gateway. IPFS is the only backup of the index. Schema in `../README.md` |
 | `filebase.env` | `FILEBASE_KEY` and `FILEBASE_SECRET`, mode 600. Never committed |
@@ -35,7 +37,7 @@ cp <this directory>/snapshot.mjs bin/ && cp <built>/kappa-server <built>/hologra
 umask 077 && openssl rand -hex 32 > registry-token && touch build.env
 docker compose up -d
 ./build-site.sh
-crontab -e   # 45 9 * * * /root/hub/build-site.sh && /root/hub/snapshot.sh && /root/hub/archive.sh
+crontab -e   # 45 9 * * * /root/hub/build-site.sh && /root/hub/snapshot.sh && { /root/hub/publish.sh; /root/hub/archive.sh; }
              # */5 * * * * /root/hub/health.sh
 ```
 
@@ -53,7 +55,7 @@ Append `Caddyfile.hub` (with the token) to the front Caddyfile, then `caddy relo
 
 - **Uptime:** `.github/workflows/model-hub-uptime.yml` probes the public URLs every 15 minutes and opens an issue when they fail.
 - **Logs:** `/root/hub/logs/{build-site,snapshot,health}.log`.
-- **Backup:** none on this host and no S3 copy: every day's index is a pinned CAR on IPFS and the ledger is pinned. Losing the host loses only the current-day registry and mirror, both rebuilt by the next daily run.
+- **Backup:** none on this host and no S3 copy: every day's index is a pinned CAR on IPFS and the ledger is pinned. Losing the host loses the registry's day tags, the published objects and the current-day mirror; the next daily run republishes today, and every past day's index remains on IPFS.
 - **Archive:** `archive.json` on the site is the ledger; `logs/archive.log` records each day's CID and the read-back check. The Filebase gateway answers a cold CID in tens of seconds and rate-limits parallel reads (429 above a few at once), which is why the mirror exists; the mount point `site/archive` must exist inside the read-only site (build-site.sh creates it) or the site container will not start.
 - **Verify a published day from anywhere:** `hologram pull hub.uor.foundation/model-hub/index:<YYYY-MM-DD>`.
 - **IPFS:** measured 2026-09-18 with Kokoro-82M: Filebase read-back CID equals the local CID; the 327 MB weights fetched from `ipfs.filebase.io` in 33 s at 10 MB/s match Hugging Face SHA-256; the gateway sends `Access-Control-Allow-Origin: *`, so browser Verify reports "Identical bytes from Hugging Face, ModelScope and IPFS". Public gateways `ipfs.io` and `dweb.link` rate-limited the same CID (429), so the site uses the Filebase gateway.

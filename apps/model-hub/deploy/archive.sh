@@ -89,6 +89,10 @@ entry = {
     "archived": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 }
 entry["index"] = index_b3
+# The hub catalog of the day (state/model-hub.json): with it, a swapped pointer on the hub can be told from outside.
+state = "/root/hub/state/model-hub.json"
+if os.path.exists(state):
+    entry["catalog"] = json.load(open(state)).get("catalog")
 ledger["mirror"] = mirror          # current day only
 ledger["registry"] = registry      # current day only: hologram pull <registry>:<date>
 ledger["days"].append(entry)

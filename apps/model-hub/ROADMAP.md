@@ -19,7 +19,7 @@ file against its address in the browser, and every layer on `hologram pull`.
 |---|---|---|---|---|
 | G1 | Durable storage of bytes | Registry holds the daily index; 11 curated models pinned on IPFS through Filebase with CID read-back | P0 | Second pinning provider; more curated models as the Filebase plan allows |
 | G2 | Verification you can see | Browser verifies small files; pull verifies layers | P0 | Verified state per file; streamed hashing of weights |
-| G3 | Drop-in `HF_ENDPOINT` | No | P0 | Upstream the hub shim (manifest codec, tree, resolve with Range and ETag) as small PRs; serve read-only on the hub |
+| G3 | Drop-in `HF_ENDPOINT` | Live: redirects to a healthy source, two client lines measured; whole-repo failover open until the pins include dotfiles | P0 | Upstream the hub shim (manifest codec, tree, resolve with Range and ETag) as small PRs; serve read-only on the hub |
 | G4 | Coverage | 500 trending; about 1,261 indexed | P0 | 5,000, then 25,000 models |
 | G5 | Use this model | Run it snippet | P1 | Snippets per library and app, pinned to the indexed revision, plus `hologram pull` |
 | G6 | Versions and history | The Archive: every day on IPFS and the registry, hash-chained ledger, `?at=` time travel, verified in the browser | P1 | Second pinning provider; capture on change rather than daily |

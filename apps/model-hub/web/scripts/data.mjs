@@ -165,7 +165,10 @@ async function main() {
       const pin = pins.models?.[m.id];
       if (pin && pin.revision === hit.revision && !sources.some((s) => s.kind === "ipfs")) {
         const root = `${pins.gateway}${pin.root}/`;
-        sources.push({ kind: "ipfs", name: "IPFS", page: root, resolve: root, missing: [] });
+        // Pins made before 2026-09-18 were packed without dotfiles (ipfs-car skips hidden paths unless told otherwise;
+        // measured: .gitattributes answered 404 on the gateway). pin-model.sh now packs them and marks the pin.
+        const absent = pin.hidden ? [] : (doc?.files || []).map((f) => f.path).filter((p) => p.split("/").some((part) => part.startsWith(".")));
+        sources.push({ kind: "ipfs", name: "IPFS", page: root, resolve: root, missing: absent });
       }
       row.sources = sources.map((s) => s.name);
       if (doc) {

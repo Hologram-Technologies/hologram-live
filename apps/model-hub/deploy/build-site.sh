@@ -49,6 +49,7 @@ mkdir -p "$HUB/site/.well-known"
 [ -f "$HUB/pub/llms.txt" ] && cp -f "$HUB/pub/llms.txt" "$HUB/site/llms.txt"
 # The site container mounts ./archive on /srv/archive; the mount point must exist inside the read-only site.
 mkdir -p "$HUB/site/archive"
-docker compose -f "$HUB/docker-compose.yml" restart site >/dev/null
+# site and resolve mount directories inside ./site; after the swap they must look again.
+docker compose -f "$HUB/docker-compose.yml" restart site resolve >/dev/null
 rm -rf "$HUB/site.prev"
 echo "== $(date -u +%FT%TZ) build ok: $(find "$HUB/site/models" -name index.html | wc -l) model pages"

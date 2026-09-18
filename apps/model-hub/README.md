@@ -9,6 +9,37 @@ hologram-live node comes with the Model Hub `.holo` application (issue
 [#76](https://github.com/Hologram-Technologies/hologram-live/issues/76), ADR 023 in
 [#75](https://github.com/Hologram-Technologies/hologram-live/pull/75)).
 
+## Use it with your tools: `HF_ENDPOINT`
+
+```bash
+export HF_ENDPOINT=https://hub.uor.foundation
+hf download sentence-transformers/all-MiniLM-L6-v2
+```
+
+Everything that downloads from Hugging Face honours that variable (`hf`, `huggingface_hub`, transformers, diffusers,
+sentence-transformers, llama.cpp `-hf`), so the hub needs no client of its own. `deploy/hub-resolve.mjs` answers in
+Hugging Face's dialect from the address index and sends every file request, as a redirect, to a source that passed the
+last health probe: Hugging Face first (its CDN is the fastest), then ModelScope, then IPFS. No weight byte passes
+through the hub. `main` is the indexed revision, so a build gets the same bytes tomorrow. `/via/ipfs`,
+`/via/modelscope` or `/via/huggingface` in front of the path pins the first choice of source
+(`HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`). `…/resolve/main/SHA256SUMS` is generated for every model, so a
+download is checked with plain `sha256sum -c`; the clients themselves verify nothing.
+
+The dialect was recorded from the clients, not guessed (`web/qa/hf-dialect/recorder.mjs`): model info, the tree listing,
+`HEAD` and `GET` on `resolve`, and the Xet read-token route, which is a redirect to Hugging Face because
+`huggingface_hub` 1.32 follows our redirect on `HEAD`, meets Hugging Face's Xet headers there and asks this endpoint
+for the token. A user's Hugging Face token reaches whatever `HF_ENDPOINT` names: the front Caddy removes
+`Authorization` and `Cookie` before the service sees a request, and gated models are refused, never proxied. A model
+outside the index answers 404 with a sentence and is recorded in `state/resolve/requested.txt`.
+
+Measured 2026-09-18 with `web/qa/hf-dialect/matrix.sh` in `python:3.12-slim` against the public URL, on
+`huggingface_hub` 1.32.0 and 0.36.2: `hf download` and `snapshot_download` of a whole model (30 of 30 files matching
+`SHA256SUMS`), cache reuse, transformers `AutoConfig` and `AutoTokenizer`, a plain `GET` and a `Range` request,
+and the clients' own typed errors for an unknown model and revision. Single files through `/via/ipfs` work on both
+client lines. Open: a whole-repository download with Hugging Face blackholed failed at `.gitattributes`, because the
+IPFS archives had been packed without dotfiles (`ipfs-car` skips hidden paths); `pin-model.sh` now packs them and the
+eleven models are being pinned again. Until that run is repeated, full failover is UNVERIFIED.
+
 ## Download
 
 **Download** saves a whole model as one `.zip`, any size, in any current browser. A small service worker

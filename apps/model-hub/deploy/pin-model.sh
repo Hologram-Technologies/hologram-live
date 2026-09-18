@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pin one model on IPFS through Filebase and record it in /root/hub/pins.json.
 #
-#   pin-model.sh <owner/name>
+#   pin-model.sh <owner/name>          FORCE=1 pins again even when this revision is already pinned
 #
 # Bytes come from Hugging Face at the revision the Hologram address index pins and are refused unless their SHA-256
 # matches the index. The files are packed into a CAR locally with ipfs-car, uploaded to the Filebase IPFS bucket, and
@@ -24,7 +24,7 @@ WORK=$TM/pin/$(echo "$ID" | tr '/' '_')
 rm -rf "$WORK" && mkdir -p "$WORK/model"
 curl -fsS "$API/v1/huggingface.co/$ID/latest.json" -o "$WORK/index.json"
 REV=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["revision"])' "$WORK/index.json")
-if [ -f "$PINS" ] && python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); m=p.get("models",{}).get(sys.argv[2]); sys.exit(0 if m and m["revision"]==sys.argv[3] else 1)' "$PINS" "$ID" "$REV"; then
+if [ -z "${FORCE:-}" ] && [ -f "$PINS" ] && python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); m=p.get("models",{}).get(sys.argv[2]); sys.exit(0 if m and m["revision"]==sys.argv[3] else 1)' "$PINS" "$ID" "$REV"; then
   echo "already pinned: $ID@$REV"; rm -rf "$WORK"; exit 0
 fi
 LICENSE=$(curl -fsS "https://huggingface.co/api/models/$ID" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("cardData") or {}).get("license") or "")')
@@ -59,7 +59,7 @@ for f in index["files"]:
 print(f"verified {len(index['files'])} files against the index at {index['revision'][:12]}")
 PY
 
-ROOT=$(docker run --rm -v "$WORK:/w" -w /w node:22-alpine sh -c "npx --yes ipfs-car@3.1.0 pack model --output model.car 2>/dev/null" | tail -1)
+ROOT=$(docker run --rm -v "$WORK:/w" -w /w node:22-alpine sh -c "npx --yes ipfs-car@3.1.0 pack model --hidden --output model.car 2>/dev/null" | tail -1)
 echo "local root: $ROOT"
 
 set -a; . "$HUB/filebase.env"; set +a
@@ -82,7 +82,8 @@ python3 - "$PINS" "$ID" "$REV" "$ROOT" <<'PY'
 import json, os, sys, time
 path, model, rev, root = sys.argv[1:]
 pins = json.load(open(path)) if os.path.exists(path) else {"format": "hologram.model-hub.pins/v1", "gateway": "https://ipfs.filebase.io/ipfs/", "models": {}}
-pins["models"][model] = {"revision": rev, "root": root, "pinned": time.strftime("%Y-%m-%d", time.gmtime())}
+# hidden: the archive includes dotfiles (.gitattributes and the like), so it holds every file of the repository
+pins["models"][model] = {"revision": rev, "root": root, "pinned": time.strftime("%Y-%m-%d", time.gmtime()), "hidden": True}
 tmp = path + ".tmp"
 json.dump(pins, open(tmp, "w"), indent=1, sort_keys=True)
 os.replace(tmp, path)

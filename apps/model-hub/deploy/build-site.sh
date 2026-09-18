@@ -45,6 +45,8 @@ mv "$HUB/site.next" "$HUB/site"
 [ -f "$HUB/archive.cid" ] && cp -f "$HUB/archive.cid" "$HUB/site/archive.cid"
 # The hub descriptor (the one pointer to today's catalog, state/model-hub.json) and the agent guide survive the swap too.
 mkdir -p "$HUB/site/.well-known"
+# The MCP registry checks domain ownership at /.well-known/mcp-registry-auth (a public key, nothing secret).
+[ -f "$HUB/mcp-registry-auth" ] && cp -f "$HUB/mcp-registry-auth" "$HUB/site/.well-known/mcp-registry-auth"
 [ -f "$HUB/state/model-hub.json" ] && cp -f "$HUB/state/model-hub.json" "$HUB/site/.well-known/model-hub.json"
 [ -f "$HUB/pub/llms.txt" ] && cp -f "$HUB/pub/llms.txt" "$HUB/site/llms.txt"
 # The site container mounts ./archive on /srv/archive; the mount point must exist inside the read-only site.

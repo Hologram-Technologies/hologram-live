@@ -20,6 +20,35 @@ const INDEX = "https://github.com/humuhumu33/hologram-api";
 
 const data = JSON.parse(await readFile(join(SITE, "data", "models.json"), "utf8"));
 const models = R.prepare(data.models, data.snapshot);
+const archivePath = join(SITE, "data", "archive.json");
+const archive = existsSync(archivePath) ? JSON.parse(await readFile(archivePath, "utf8")) : null;
+
+// The header pill. With an archive it opens every captured day; the Wayback idea, one control.
+function indexPill() {
+  const latest = `Index ${R.day(data.snapshot)}`;
+  if (!archive) return `<a class="status" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
+  const days = [...archive.days].sort((a, b) => b.date.localeCompare(a.date));
+  const months = new Map();
+  for (const d of days) {
+    const key = d.date.slice(0, 7);
+    if (!months.has(key)) months.set(key, []);
+    months.get(key).push(d);
+  }
+  const monthName = (key) => new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const row = (d) => `<button type="button" role="menuitemradio" data-at="${d.date}" aria-checked="false">${R.icon.calendar}<span class="label">${R.day(d.date)}<span class="sub">${d.models} models, ${d.addressed} verified</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>`;
+  const groups = [...months].map(([key, list], i) => `<div class="archive-month"${i >= 3 ? " data-older" : ""}><h3>${monthName(key)}</h3>${list.map(row).join("")}</div>`);
+  const older = groups.length > 3 ? `<details class="archive-older"><summary>Older</summary>${groups.slice(3).join("")}</details>` : "";
+  return `<div class="archive" id="archive">
+      <button type="button" class="status" id="archive-button" aria-haspopup="menu" aria-expanded="false" aria-controls="archive-menu" title="Every day's index is stored on IPFS. Open any day."><span id="archive-label">${latest}</span>${R.icon.chevron}</button>
+      <div class="menu" id="archive-menu" role="menu" aria-label="Index history" hidden>
+        <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i lead"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
+        <div class="archive-days">${groups.slice(0, 3).join("")}${older}</div>
+        <p class="menu-note">Every day is stored on IPFS and checked in your browser before it is shown. The hub keeps only the current day; older days come from IPFS and can take a minute to open the first time.</p>
+        <div class="archive-foot"><button type="button" class="copy" id="archive-cid" data-copy="" title="Copy this day's IPFS address">CID${R.icon.copy}</button><button type="button" class="copy" id="archive-pull" data-copy="" title="Copy the hologram pull command for the current index">hologram pull${R.icon.copy}</button></div>
+      </div>
+    </div>
+    <script type="application/json" id="archive-days">${JSON.stringify({ gateway: archive.gateway, mirror: archive.mirror || null, registry: archive.registry || null, latest: data.snapshot, days: days.map(({ date, cid, index, models: n }) => ({ date, cid, index, models: n })) })}</script>`;
+}
 
 const WALLPAPERS = [
   { key: "alps", name: "Alpine Dawn", by: "Unsplash", url: "https://unsplash.com/?utm_source=Hologram&utm_medium=referral" },
@@ -48,8 +77,8 @@ const themeSwitch = `<div class="appearance">
 
 const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "styles.css"];
 
-const page = ({ title, description, body, search = false }) => `<!doctype html>
-<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}">
+const page = ({ title, description, body, search = false, model = "" }) => `<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -73,11 +102,12 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
   <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"><span class="hub">Models Hub</span></a>
   <div class="top-end">
     ${search ? `<form class="field compact top-search" action="${base}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    <a class="status" href="${INDEX}" title="Addresses refresh daily">Index ${R.day(data.snapshot)}</a>
+    ${indexPill()}
     <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
     ${themeSwitch}
   </div>
 </header>
+${archive ? `<div class="archive-banner" id="archive-banner" role="status" hidden>${R.icon.calendar}<span>Viewing the index of <b id="archive-banner-date"></b>. Every file shown was checked against its address.</span><button type="button" class="link" data-at="latest">Back to latest</button></div>` : ""}
 ${body}
 </div>
 </body>
@@ -117,6 +147,8 @@ const browse = page({
 });
 
 // ---- model pages
+// Sources a file can be downloaded from, as table columns. The hub registry holds the daily index only (decision
+// 2026-09-18), so it is not a weights source here; data.mjs still records it if a model ever appears there.
 const SOURCE_COLUMNS = [["huggingface.co", "Hugging Face"], ["modelscope.cn", "ModelScope"], ["ipfs", "IPFS"], ["bittorrent", "P2P"]];
 // The manifest address drawn as braille: 32 bytes, 32 cells, two rows of 16. Lossless: the dots are the bits.
 function signature(manifest) {
@@ -131,7 +163,7 @@ function signature(manifest) {
 function sourceList(sources) {
   return `<div class="sources">
     <span class="label">${sources.length > 1 ? "Identical bytes on" : "Available from"}</span>
-    <ul>${sources.map((s) => `<li data-source="${R.esc(s.kind)}"${s.p2p ? ' title="Peer to peer via BitTorrent. Your torrent client checks every piece; Hugging Face seeds it, so it completes with zero peers."' : ""}><span class="state">${s.p2p ? R.icon.nodes : R.icon.seal}${B.loader("orbit")}${R.icon.check}${R.icon.close}</span><a href="${R.esc(s.page)}"${s.p2p ? " download" : ' target="_blank" rel="noopener"'}>${R.esc(s.name)}${s.p2p ? R.icon.down : R.icon.external}</a></li>`).join("")}</ul>
+    <ul>${sources.map((s) => `<li data-source="${R.esc(s.kind)}"${s.p2p ? ' title="Peer to peer via BitTorrent. Your torrent client checks every piece; Hugging Face seeds it, so it completes with zero peers."' : s.pull ? ` title="Stored on Hologram. hologram pull ${R.esc(s.pull)} verifies every chunk as it arrives."` : ""}><span class="state">${s.p2p ? R.icon.nodes : R.icon.seal}${B.loader("orbit")}${R.icon.check}${R.icon.close}</span><a href="${R.esc(s.page)}"${s.p2p ? " download" : ' target="_blank" rel="noopener"'}>${R.esc(s.name)}${s.p2p ? R.icon.down : R.icon.external}</a></li>`).join("")}</ul>
   </div>`;
 }
 
@@ -158,7 +190,7 @@ function modelPage(m, files, ov, readme) {
     m.manifest ? fact("Manifest", copy(m.manifest, R.shortAddress(m.manifest))) : "",
   ].join("");
 
-  let filesPanel;
+  let filesPanel, downloadMenu = "";
   if (files) {
     const srcs = files.sources || [];
     const byKind = Object.fromEntries(srcs.map((s) => [s.kind, s]));
@@ -167,6 +199,10 @@ function modelPage(m, files, ov, readme) {
     // Red: not available there.
     const cell = ([kind, name], path, size, address, hfUrl) => {
       const s = byKind[kind];
+      if (s?.pull) {
+        const command = `hologram pull ${s.pull}`;
+        return `<td class="dl"><button type="button" class="dl-yes" data-copy="${R.esc(command)}" title="Stored on Hologram. Copy the pull command: every chunk is verified as it arrives" aria-label="Copy hologram pull command for ${R.esc(path)}">${R.icon.down}</button></td>`;
+      }
       if (!s || s.missing.includes(path)) {
         return `<td class="dl"><span class="dl-no" role="img" aria-label="Not available on ${name}" title="Not available on ${name}">${R.icon.close}</span></td>`;
       }
@@ -178,22 +214,45 @@ function modelPage(m, files, ov, readme) {
     };
     const total = files.files.reduce((sum, f) => sum + (f[1] || 0), 0);
     const rows = files.files.map(([path, size, address, , hfUrl]) => `<tr data-path="${R.esc(path)}" data-size="${size ?? 0}" data-address="${R.esc(address)}"><td class="path" title="${R.esc(path)}">${R.esc(path)}</td><td class="size">${R.bytes(size)}</td><td class="addr">${copy(address, R.shortAddress(address))}</td>${SOURCE_COLUMNS.map((c) => cell(c, path, size, address, hfUrl)).join("")}</tr>`).join("\n");
-    const http = SOURCE_COLUMNS.filter(([kind]) => byKind[kind] && !byKind[kind].p2p);
-    const torrent = byKind.bittorrent;
-    filesPanel = `<div class="section-head">
-      <div class="download-all" data-name="${R.esc(m.name)}" data-repo="${R.esc(m.id)}" data-revision="${R.esc(files.revision)}">
-        <button type="button" class="button" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu">${R.icon.down}Download all</button>
-        <div class="menu" id="dl-menu" role="menu" aria-label="Download all" hidden>
-          <p class="menu-note">${files.files.length} files, ${R.bytes(total)}. Every file is checked against its address.</p>
-          ${http.map(([kind, name]) => `<button type="button" role="menuitem" data-save="${name}" data-save-kind="${kind}">${R.icon.file}<span class="label">Save to a folder from ${name}</span></button>`).join("")}
-          ${torrent ? `<a role="menuitem" href="${R.esc(torrent.page)}">${R.icon.nodes}<span class="label">Peer to peer, every file (.torrent)</span></a>` : ""}
-          <button type="button" role="menuitem" data-script>${R.icon.copy}<span class="label">Download script for a terminal</span></button>
+    // One button above each source column: every file this source has, as one zip, each file checked against its
+    // address as it streams. P2P is the torrent; Hologram copies the pull command.
+    const head = ([kind, name]) => {
+      const s = byKind[kind];
+      const count = s ? files.files.filter(([path]) => !s.missing.includes(path)).length : 0;
+      const label = `<span class="name">${name}</span>`;
+      if (!s) return `<th class="dl" data-source="${R.esc(kind)}" data-state="off"><span class="dl-all off" aria-hidden="true">${R.icon.down}</span>${label}</th>`;
+      if (s.pull) return `<th class="dl" data-source="${R.esc(kind)}"><button type="button" class="dl-yes dl-all" data-copy="hologram pull ${R.esc(s.pull)}" title="Copy the hologram pull command: every file, verified as it arrives" aria-label="Copy hologram pull command">${R.icon.down}</button>${label}</th>`;
+      if (s.p2p) return `<th class="dl" data-source="${R.esc(kind)}"><a class="dl-yes dl-all" href="${R.esc(s.page)}" title="Torrent with every file. Your client checks every piece" aria-label="Download torrent">${R.icon.down}</a>${label}</th>`;
+      return `<th class="dl" data-source="${R.esc(kind)}"><button type="button" class="dl-yes dl-all" data-zip="${name}" title="Download ${count} of ${files.files.length} files from ${name} as one zip, each checked against its address" aria-label="Download all files from ${name} as one zip">${R.icon.down}</button>${label}</th>`;
+    };
+    // The Download menu: every source in column order, always; its availability (probed when the menu opens, see
+    // app.js); one action. A source the model is not on keeps its row, disabled, so absence is visible, not silent.
+    const n = files.files.length;
+    const row = (kind, name, facts, act, tag, attrs) => `<${tag} role="menuitem" class="src" data-source="${R.esc(kind)}" ${attrs}><span class="state" aria-hidden="true">${B.loader("orbit")}</span><span class="label">${name}<span class="sub">${facts}</span></span><span class="act">${act}</span></${tag}>`;
+    const item = ([kind, name]) => {
+      const s = byKind[kind];
+      if (!s) {
+        const why = kind === "ipfs" ? "not pinned yet" : kind === "bittorrent" ? "no torrent yet" : "not on this source";
+        return row(kind, name, why, kind === "bittorrent" ? "Get torrent" : "Download zip", "button", `type="button" disabled data-state="off" title="This model is not published on ${name}"`);
+      }
+      if (s.p2p) return row(kind, name, `torrent, ${n} files`, "Get torrent", "a", `href="${R.esc(s.page)}" download title="A BitTorrent file with every file, seeded by Hugging Face. Your client checks every piece"`);
+      const have = files.files.filter(([path]) => !s.missing.includes(path));
+      const size = have.reduce((sum, f) => sum + (f[1] || 0), 0);
+      return row(kind, name, `${have.length === n ? n : `${have.length} of ${n}`} files, ${R.bytes(size)}`, "Download zip", "button", `type="button" data-zip="${name}" data-kind="${R.esc(kind)}" title="Every file ${name} has, as one zip, each checked against its address"`);
+    };
+    downloadMenu = `<div class="download-all">
+        <button type="button" class="button success" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu" title="Choose a source; the model arrives as one zip, every file checked against its address">${R.icon.down}<span>Download</span></button>
+        <div class="menu" id="dl-menu" role="menu" aria-label="Download" hidden>
+          <p class="menu-note">Choose where to download from. Every file is checked against its address as it arrives.</p>
+          ${SOURCE_COLUMNS.map(item).join("")}
         </div>
-      </div>
+      </div>`;
+    filesPanel = `<div class="section-head files-head" data-name="${R.esc(m.name)}" data-repo="${R.esc(m.id)}" data-revision="${R.esc(files.revision)}">
+      <p class="note">${files.files.length} files, ${R.bytes(total)}. Every download is checked against its address.</p>
     </div>
     <p class="progress" id="dl-progress" role="status" hidden></p>
     <div class="scroll"><table id="files">
-      <thead><tr><th><button type="button" data-col="path" aria-sort="ascending">Path${R.icon.chevron}</button></th><th class="size"><button type="button" data-col="size">Size${R.icon.chevron}</button></th><th>Address</th>${SOURCE_COLUMNS.map(([, name]) => `<th class="dl">${name}</th>`).join("")}</tr></thead>
+      <thead><tr><th><button type="button" data-col="path" aria-sort="ascending">Path${R.icon.chevron}</button></th><th class="size"><button type="button" data-col="size">Size${R.icon.chevron}</button></th><th>Address</th>${SOURCE_COLUMNS.map(head).join("")}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
   } else {
@@ -204,6 +263,7 @@ function modelPage(m, files, ov, readme) {
   }
 
   return page({
+    model: m.id,
     title: `${m.name} · Hologram Models Hub`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
     search: true,
@@ -218,12 +278,13 @@ function modelPage(m, files, ov, readme) {
     </div>
     <div class="actions">
       ${m.manifest && files
-        ? `<button type="button" class="button primary" data-verify="${R.esc(m.id)}" data-manifest="${R.esc(m.manifest)}" data-probe="${R.esc(probe(files) || "")}">${R.icon.check}${B.loader("orbit")}<span>Verify</span></button>`
+        ? `<button type="button" class="button primary" data-verify="${R.esc(m.id)}" data-manifest="${R.esc(m.manifest)}" data-probe="${R.esc(probe(files) || "")}">${R.icon.check}${B.loader("orbit")}<span>Verify</span></button>${downloadMenu}`
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
   </div>
-  ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p }) => ({ kind, name, resolve, p2p })))}</script>` : ""}
+  ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>` : ""}
   <p class="verdict" id="verdict" role="status" hidden></p>
+  <p class="verdict" id="dl-status" role="status" hidden></p>
 </section>
 <main class="detail">
   <section class="panel"><dl class="facts">${facts}</dl></section>
@@ -252,6 +313,8 @@ await writeFile(join(DIST, "404.html"), page({
 for (const m of models) {
   const filesPath = join(SITE, "data", "files", m.org, `${m.name}.json`);
   const files = existsSync(filesPath) ? JSON.parse(await readFile(filesPath, "utf8")) : null;
+  // The same file list, published: the download worker reads it, and so can any agent.
+  if (files) { await mkdir(join(DIST, "data", "files", m.org), { recursive: true }); await cp(filesPath, join(DIST, "data", "files", m.org, `${m.name}.json`)); }
   const ovPath = join(SITE, "data", "overview", m.org, `${m.name}.json`), mdPath = join(SITE, "data", "overview", m.org, `${m.name}.md`);
   const ov = existsSync(ovPath) ? JSON.parse(await readFile(ovPath, "utf8")) : null;
   const readme = existsSync(mdPath) ? await readFile(mdPath, "utf8") : null;
@@ -260,14 +323,25 @@ for (const m of models) {
   await writeFile(join(dir, "index.html"), modelPage(m, files, ov, readme));
 }
 
-const slim = models.map(({ stateLabel, task, recency, isNew, ...m }) => m);
+// `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
+const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "render.mjs", "braille.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "render.mjs", "braille.mjs", "zip.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
 await mkdir(join(DIST, "kit"), { recursive: true });
 for (const f of ["hologram-warm.css", "hologram-gap-tokens.css"]) await cp(join(KIT, f), join(DIST, "kit", f));
 await cp(join(KIT, "fonts"), join(DIST, "fonts"), { recursive: true });
 await cp(join(KIT, "logos"), join(DIST, "logos"), { recursive: true });
 if (existsSync(join(SITE, "public"))) await cp(join(SITE, "public"), DIST, { recursive: true });
+// The download worker is a classic script (module workers are not everywhere yet): ZipWriter first, then the worker.
+await writeFile(join(DIST, "zip-sw.js"), `${(await readFile(join(SITE, "src", "zip.mjs"), "utf8")).replace(/^export /gm, "")}\n${await readFile(join(SITE, "src", "zip-sw.js"), "utf8")}`);
+await mkdir(join(DIST, "vendor", "hash-wasm"), { recursive: true });
+await cp(join(SITE, "vendor", "hash-wasm", "sha256.umd.min.js"), join(DIST, "vendor", "hash-wasm", "sha256.umd.min.js"));
+if (archive) {
+  // Machine access: the ledger, and one tiny stub per day so a script resolves a date with one request.
+  await cp(archivePath, join(DIST, "archive.json"));
+  await mkdir(join(DIST, "at"), { recursive: true });
+  for (const d of archive.days) await writeFile(join(DIST, "at", `${d.date}.json`), JSON.stringify({ date: d.date, cid: d.cid, index: d.index, gateway: archive.gateway, mirror: archive.mirror && d === archive.days[archive.days.length - 1] ? `${archive.mirror}${d.date}/` : null, registry: archive.registry && d === archive.days[archive.days.length - 1] ? `${archive.registry}:${d.date}` : null }));
+}
 await writeFile(join(DIST, ".nojekyll"), "");
 
 console.log(`built ${models.length} model pages + browse at base ${base} → ${DIST}`);

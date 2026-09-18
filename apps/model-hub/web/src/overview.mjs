@@ -115,6 +115,7 @@ function family(o, repo) {
   return chips ? `<p class="ov-lede">Models built on ${R.esc(repo.split("/")[1])}.</p><div class="ov-chips">${chips}</div>` : "";
 }
 
+const ENDPOINT = "https://hub.uor.foundation";
 function run(o, m) {
   const r = o.run || {};
   const lib = v(o.glance?.library), format = v(o.glance?.format);
@@ -128,8 +129,13 @@ function run(o, m) {
     code = `from transformers import ${cls.join(", ")}\n\nmodel = ${cls[0]}.from_pretrained("${m.id}"${rev})${cls[1] ? `\nprocessor = ${cls[1]}.from_pretrained("${m.id}"${rev})` : ""}`;
   } else code = `hf download ${m.id}${o.revision ? ` --revision ${o.revision}` : ""}`;
   const providers = v(r.providers) || [];
+  // The hub speaks Hugging Face's dialect: one variable and the same tools fetch every file from a source that is up.
+  const endpoint = m.state === "addressed" ? `export HF_ENDPOINT=${ENDPOINT}
+cd "$(hf download ${m.id} --quiet)" && curl -s $HF_ENDPOINT/${m.id}/resolve/main/SHA256SUMS | sha256sum -c --quiet` : "";
   return `${v(r.auto_model) ? `<p class="ov-lede">Loads with Transformers <code>${R.esc(v(r.auto_model))}</code>${v(r.processor) ? ` and <code>${R.esc(v(r.processor))}</code>` : ""}, pinned to the indexed revision.</p>` : `<p class="ov-lede">Pinned to the indexed revision.</p>`}
   <div class="ov-code"><pre><code>${R.esc(code)}</code></pre><button type="button" class="copy" data-copy="${R.esc(code)}" aria-label="Copy code">${R.icon.copy}</button></div>
+  ${endpoint ? `<p class="ov-lede">Through the hub: the same tools, each file from a source that is up (Hugging Face, ModelScope, IPFS), at this revision. The second line checks every file against its address.</p>
+  <div class="ov-code"><pre><code>${R.esc(endpoint)}</code></pre><button type="button" class="copy" data-copy="${R.esc(endpoint)}" aria-label="Copy commands">${R.icon.copy}</button></div>` : ""}
   ${providers.length ? `<p class="ov-lede">Hosted inference, live now</p><div class="ov-chips">${providers.map((p) => `<span class="ov-chip">${R.esc(p.provider)}</span>`).join("")}</div>` : ""}`;
 }
 

@@ -539,7 +539,6 @@ function downloads({ onOpen } = {}) {
     links: [...row.querySelectorAll("a[data-download]")].map((a) => ({ source: a.dataset.source, href: a.href })),
   }));
 
-  // Terminal script: every file, every source, SHA-256 checked at the end.
   // The hero Download menu
   const open = (show) => { if (!menu) return; menu.hidden = !show; toggle.setAttribute("aria-expanded", String(show)); if (show) onOpen?.(); };
   toggle?.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
@@ -553,28 +552,6 @@ function downloads({ onOpen } = {}) {
   document.addEventListener("click", (e) => { if (menu && !menu.hidden && !e.target.closest(".download-all")) open(false); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
   menu?.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) open(false); });
-
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest("[data-script]")) return;
-    const list = files();
-    const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-    const lines = list.map((f) => `get ${q(f.path)} ${f.links.map((l) => q(l.href)).join(" ")}`);
-    const sums = list.map((f) => `${f.address.split(":")[1]}  ${f.path}`);
-    const text = `#!/usr/bin/env sh
-# ${head.dataset.repo} at ${head.dataset.revision}
-# Downloads every file, trying each source in turn, then checks every SHA-256 against the Hologram index.
-set -eu
-mkdir -p ${q(head.dataset.name)} && cd ${q(head.dataset.name)}
-get() { path="$1"; shift; mkdir -p "$(dirname "$path")"; for url in "$@"; do curl -fL --retry 3 -C - -o "$path" "$url" && return 0; done; echo "could not download $path" >&2; return 1; }
-${lines.join("\n")}
-cat > SHA256SUMS <<'SUMS'
-${sums.join("\n")}
-SUMS
-if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi
-`;
-    save(new Blob([text], { type: "text/x-shellscript" }), `${head.dataset.name}-download.sh`);
-    say(`Saved ${head.dataset.name}-download.sh. Run it with sh in a terminal; it checks every file when done.`, "ok");
-  });
 
   // One zip per source: every file streams straight into the archive while its SHA-256 is computed. With the
   // save picker (Chromium) nothing is held in memory; elsewhere the zip is assembled in memory up to a limit.
@@ -599,7 +576,7 @@ if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shas
     } else if (total <= IN_MEMORY_LIMIT) {
       parts = [];
     } else {
-      say(`${formatBytes(total)} is too large to assemble in this browser. Use Chrome or Edge, or the terminal script.`, "bad");
+      say(`${formatBytes(total)} is too large to assemble in this browser. Use Chrome or Edge, or download from the Files table.`, "bad");
       return;
     }
 

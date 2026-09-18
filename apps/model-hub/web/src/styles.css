@@ -515,7 +515,6 @@ th.dl { font-size: var(--text-sm); }
 .menu .src .state::before { content: ""; grid-area: 1 / 1; width: var(--space-2); height: var(--space-2); border-radius: 50%; background: var(--hh-text-dim); }
 .menu .src .state .bx.loader { display: none; grid-area: 1 / 1; font-size: var(--text-sm); color: var(--hh-text-dim); }
 .menu .src .state .i { grid-area: 1 / 1; width: var(--space-4); height: var(--space-4); color: var(--hh-text-dim); }
-.menu .src .state.icon::before { display: none; }
 .menu .src[data-state="busy"] .state::before { display: none; }
 .menu .src[data-state="busy"] .state .bx.loader { display: inline-flex; }
 .menu .src[data-state="ok"] .state::before { background: var(--hh-ok); }
@@ -527,7 +526,6 @@ th.dl { font-size: var(--text-sm); }
 .menu .src:disabled .label, .menu .src:disabled .act, .menu .src[aria-disabled="true"] .act { color: var(--hh-text-dim); }
 .menu .src:disabled .act { border-style: dashed; }
 .menu .src.busy .act { color: var(--hh-accent); border-color: var(--hh-accent); }
-.menu .sep { height: 1px; margin: var(--space-2) var(--space-3); background: var(--hh-line); }
 .menu a[role="menuitem"], .menu button[role="menuitem"] { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); text-align: left; transition: background var(--hh-ease); }
 .menu [role="menuitem"]:hover, .menu [role="menuitem"]:focus-visible { background: var(--hh-fill); outline: 0; }
 .menu [role="menuitem"] .i { flex: none; color: var(--hh-text-dim); }
@@ -542,7 +540,6 @@ th.dl { font-size: var(--text-sm); }
 }
 .files-head { justify-content: space-between; margin-bottom: var(--space-3); }
 .files-head .note { margin: 0; }
-.files-head .link { min-height: var(--hh-control); font-size: var(--text-sm); color: var(--hh-text-dim); }
 th.dl { vertical-align: bottom; padding-bottom: var(--space-2); }
 th.dl .name { display: block; }
 th.dl .name::before { content: ""; display: inline-block; width: var(--space-2); height: var(--space-2); margin-right: var(--space-1); border-radius: 50%; background: var(--hh-text-dim); vertical-align: middle; }

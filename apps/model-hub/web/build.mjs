@@ -245,13 +245,10 @@ function modelPage(m, files, ov, readme) {
         <div class="menu" id="dl-menu" role="menu" aria-label="Download" hidden>
           <p class="menu-note">Choose where to download from. Every file is checked against its address as it arrives.</p>
           ${SOURCE_COLUMNS.map(item).join("")}
-          <div class="sep" role="separator"></div>
-          <button type="button" role="menuitem" class="src" data-script title="A shell script that downloads every file, trying each source, then checks every SHA-256"><span class="state icon" aria-hidden="true">${R.icon.file}</span><span class="label">Terminal script<span class="sub">every file, every SHA-256</span></span><span class="act">Save script</span></button>
         </div>
       </div>`;
     filesPanel = `<div class="section-head files-head" data-name="${R.esc(m.name)}" data-repo="${R.esc(m.id)}" data-revision="${R.esc(files.revision)}">
       <p class="note">${files.files.length} files, ${R.bytes(total)}. Every download is checked against its address.</p>
-      <button type="button" class="link" data-script title="A shell script that downloads every file, trying each source, then checks every SHA-256">Terminal script</button>
     </div>
     <p class="progress" id="dl-progress" role="status" hidden></p>
     <div class="scroll"><table id="files">

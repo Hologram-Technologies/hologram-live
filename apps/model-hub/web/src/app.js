@@ -288,12 +288,17 @@ function panelTabs() {
 function downloads() {
   const table = $("#files");
   if (!table) return;
-  const box = $(".download-all"), menu = $("#dl-menu"), toggle = $("#dl-all"), progress = $("#dl-progress");
+  const progress = $("#dl-progress");
   const MEMORY_LIMIT = 256 * 1024 * 1024;
   const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const rowOf = (el) => el.closest("tr");
   const name = (path) => path.split("/").pop();
-  const say = (text, tone = "") => { progress.hidden = !text; progress.className = `progress ${tone}`; progress.textContent = text; };
+  const hero = $("#dl-status"), toggle = $("#dl-all"), menu = $("#dl-menu");
+  const say = (text, tone = "") => {
+    for (const el of [progress, hero]) { if (!el) continue; el.className = el === hero ? `verdict ${tone}` : `progress ${tone}`; el.textContent = text; }
+    progress.hidden = !text;
+    if (hero) hero.hidden = !text || !$("#pane-files")?.hidden;
+  };
 
   function save(blob, filename) {
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: filename });
@@ -331,34 +336,31 @@ function downloads() {
     }
   });
 
-  // Download all menu
-  const open = (show) => { menu.hidden = !show; toggle.setAttribute("aria-expanded", String(show)); };
-  toggle.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
-  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".download-all")) open(false); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
-  if (!window.showDirectoryPicker) for (const b of menu.querySelectorAll("[data-save]")) b.hidden = true;
-
+  const head = $(".files-head");
   const files = () => [...table.tBodies[0].rows].map((row) => ({
     path: row.dataset.path, size: Number(row.dataset.size), address: row.dataset.address,
     links: [...row.querySelectorAll("a[data-download]")].map((a) => ({ source: a.dataset.source, href: a.href })),
   }));
 
-  let cancelled = false;
-  menu.addEventListener("click", async (e) => {
-    const saveButton = e.target.closest("[data-save]"), script = e.target.closest("[data-script]");
-    if (!saveButton && !script) return;
-    open(false);
-    const list = files();
+  // Terminal script: every file, every source, SHA-256 checked at the end.
+  // The hero Download menu
+  const open = (show) => { if (!menu) return; menu.hidden = !show; toggle.setAttribute("aria-expanded", String(show)); };
+  toggle?.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
+  document.addEventListener("click", (e) => { if (menu && !menu.hidden && !e.target.closest(".download-all")) open(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
+  menu?.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) open(false); });
 
-    if (script) {
-      const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-      const lines = list.map((f) => `get ${q(f.path)} ${f.links.map((l) => q(l.href)).join(" ")}`);
-      const sums = list.map((f) => `${f.address.split(":")[1]}  ${f.path}`);
-      const text = `#!/usr/bin/env sh
-# ${box.dataset.repo} at ${box.dataset.revision}
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-script]")) return;
+    const list = files();
+    const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+    const lines = list.map((f) => `get ${q(f.path)} ${f.links.map((l) => q(l.href)).join(" ")}`);
+    const sums = list.map((f) => `${f.address.split(":")[1]}  ${f.path}`);
+    const text = `#!/usr/bin/env sh
+# ${head.dataset.repo} at ${head.dataset.revision}
 # Downloads every file, trying each source in turn, then checks every SHA-256 against the Hologram index.
 set -eu
-mkdir -p ${q(box.dataset.name)} && cd ${q(box.dataset.name)}
+mkdir -p ${q(head.dataset.name)} && cd ${q(head.dataset.name)}
 get() { path="$1"; shift; mkdir -p "$(dirname "$path")"; for url in "$@"; do curl -fL --retry 3 -C - -o "$path" "$url" && return 0; done; echo "could not download $path" >&2; return 1; }
 ${lines.join("\n")}
 cat > SHA256SUMS <<'SUMS'
@@ -366,59 +368,91 @@ ${sums.join("\n")}
 SUMS
 if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi
 `;
-      save(new Blob([text], { type: "text/x-shellscript" }), `${box.dataset.name}-download.sh`);
-      say(`Saved ${box.dataset.name}-download.sh. Run it with sh in a terminal; it checks every file when done.`, "ok");
+    save(new Blob([text], { type: "text/x-shellscript" }), `${head.dataset.name}-download.sh`);
+    say(`Saved ${head.dataset.name}-download.sh. Run it with sh in a terminal; it checks every file when done.`, "ok");
+  });
+
+  // One zip per source: every file streams straight into the archive while its SHA-256 is computed. With the
+  // save picker (Chromium) nothing is held in memory; elsewhere the zip is assembled in memory up to a limit.
+  const IN_MEMORY_LIMIT = 1.5e9;
+  let cancelled = false;
+  document.addEventListener("click", async (e) => {
+    const button = e.target.closest("button[data-zip]");
+    if (!button || button.classList.contains("busy") || toggle?.classList.contains("busy")) return;
+    const source = button.dataset.zip;
+    const label = toggle?.querySelector("span");
+    const list = files().map((f) => ({ ...f, href: f.links.find((l) => l.source === source)?.href })).filter((f) => f.href);
+    const skipped = table.tBodies[0].rows.length - list.length;
+    const total = list.reduce((s, f) => s + f.size, 0);
+    const zipName = `${head.dataset.name}-${head.dataset.revision.slice(0, 8)}.zip`;
+
+    let out = null, parts = null;
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({ suggestedName: zipName, types: [{ description: "Zip archive", accept: { "application/zip": [".zip"] } }] });
+        out = await handle.createWritable();
+      } catch { return; }
+    } else if (total <= IN_MEMORY_LIMIT) {
+      parts = [];
+    } else {
+      say(`${formatBytes(total)} is too large to assemble in this browser. Use Chrome or Edge, or the terminal script.`, "bad");
       return;
     }
 
-    // Save to a folder: stream each file to disk while hashing it; a file that does not match is removed.
-    let root;
-    try { root = await window.showDirectoryPicker({ mode: "readwrite" }); } catch { return; }
-    const primary = saveButton.dataset.save;
-    const { createSHA256 } = await import("https://humuhumu33.github.io/hologram-api/vendor/hash-wasm/index.esm.min.js");
-    const totalBytes = list.reduce((s, f) => s + f.size, 0);
-    let doneBytes = 0, done = 0, bad = 0;
+    button.classList.add("busy");
+    toggle?.classList.add("busy");
     cancelled = false;
     const cancel = Object.assign(document.createElement("button"), { type: "button", className: "link", textContent: "Cancel" });
     cancel.onclick = () => { cancelled = true; };
-    for (const f of list) {
-      if (cancelled) break;
-      const parts = f.path.split("/");
-      let dir = root;
-      for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part, { create: true });
-      const order = [...f.links].sort((a, b) => (a.source === primary ? -1 : b.source === primary ? 1 : 0));
-      let ok = false;
-      for (const link of order) {
-        try {
-          const response = await fetch(link.href);
-          if (!response.ok || !response.body) throw new Error(String(response.status));
-          const handle = await dir.getFileHandle(parts.at(-1), { create: true });
-          const out = await handle.createWritable();
-          const hasher = await createSHA256();
-          const reader = response.body.getReader();
-          for (;;) {
-            if (cancelled) { await reader.cancel(); break; }
-            const { value, done: end } = await reader.read();
-            if (end) break;
-            hasher.update(value);
-            await out.write(value);
-            doneBytes += value.byteLength;
-            say(`Saving ${done + 1} of ${list.length} from ${link.source}, ${formatBytes(doneBytes)} of ${formatBytes(totalBytes)}`);
-            progress.append(" ", cancel);
-          }
-          await out.close();
-          if (cancelled) break;
-          if (`sha256:${hasher.digest("hex")}` === f.address) { ok = true; break; }
-          await dir.removeEntry(parts.at(-1));
-        } catch { /* try the next source */ }
+    const [{ ZipWriter }, { createSHA256 }] = await Promise.all([
+      import("./zip.mjs"),
+      import("https://humuhumu33.github.io/hologram-api/vendor/hash-wasm/index.esm.min.js"),
+    ]);
+    const zip = new ZipWriter((bytes) => (out ? out.write(bytes) : parts.push(bytes)));
+    let done = 0, doneBytes = 0, failure = null;
+    // The next response is requested while the current one streams, so the network never idles between files.
+    let next = fetch(list[0].href);
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const f = list[i];
+        const response = await next;
+        if (i + 1 < list.length) next = fetch(list[i + 1].href);
+        if (!response.ok || !response.body) throw new Error(`${source} answered ${response.status} for ${f.path}`);
+        const hasher = await createSHA256();
+        let last = 0;
+        const watched = response.body.pipeThrough(new TransformStream({
+          transform(chunk, controller) {
+            if (cancelled) { controller.error(new Error("cancelled")); return; }
+            doneBytes += chunk.byteLength;
+            if (doneBytes - last > 4e6) {
+              last = doneBytes;
+              say(`Zipping ${done + 1} of ${list.length} from ${source}, ${formatBytes(doneBytes)} of ${formatBytes(total)}`);
+              progress.append(" ", cancel);
+              if (label) label.textContent = `${Math.min(99, Math.floor((doneBytes / total) * 100))}%`;
+            }
+            controller.enqueue(chunk);
+          },
+        }));
+        await zip.add(f.path, f.size, watched, (chunk) => hasher.update(chunk));
+        if (`sha256:${hasher.digest("hex")}` !== f.address) throw new Error(`${source} served different bytes for ${f.path}. Nothing was kept.`);
+        done++;
       }
-      if (cancelled) break;
-      done++;
-      if (!ok) bad++;
+      await zip.finish();
+    } catch (error) {
+      failure = cancelled ? null : error;
     }
-    if (cancelled) say(`Stopped after ${done} of ${list.length} files.`);
-    else if (bad) say(`Saved ${done - bad} of ${list.length} files. ${bad} could not be downloaded with matching bytes and were not kept.`, "bad");
-    else say(`Saved all ${list.length} files to ${root.name}. Every file matches its address.`, "ok");
+    if (failure || cancelled) {
+      if (out) await out.abort().catch(() => {});
+      say(cancelled ? `Stopped after ${done} of ${list.length} files.` : failure.message, cancelled ? "" : "bad");
+      if (failure) button.classList.add("bad");
+    } else {
+      if (out) await out.close(); else save(new Blob(parts, { type: "application/zip" }), zipName);
+      button.classList.add("done");
+      say(`Saved ${zipName}: ${done} files from ${source}, every one matching its address.${skipped ? ` ${skipped} not on ${source} were left out.` : ""}`, "ok");
+    }
+    button.classList.remove("busy");
+    toggle?.classList.remove("busy");
+    if (label) label.textContent = "Download";
   });
 }
 

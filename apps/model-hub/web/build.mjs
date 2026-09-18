@@ -158,7 +158,7 @@ function modelPage(m, files, ov, readme) {
     m.manifest ? fact("Manifest", copy(m.manifest, R.shortAddress(m.manifest))) : "",
   ].join("");
 
-  let filesPanel;
+  let filesPanel, downloadMenu = "";
   if (files) {
     const srcs = files.sources || [];
     const byKind = Object.fromEntries(srcs.map((s) => [s.kind, s]));
@@ -182,24 +182,42 @@ function modelPage(m, files, ov, readme) {
     };
     const total = files.files.reduce((sum, f) => sum + (f[1] || 0), 0);
     const rows = files.files.map(([path, size, address, , hfUrl]) => `<tr data-path="${R.esc(path)}" data-size="${size ?? 0}" data-address="${R.esc(address)}"><td class="path" title="${R.esc(path)}">${R.esc(path)}</td><td class="size">${R.bytes(size)}</td><td class="addr">${copy(address, R.shortAddress(address))}</td>${SOURCE_COLUMNS.map((c) => cell(c, path, size, address, hfUrl)).join("")}</tr>`).join("\n");
-    const http = SOURCE_COLUMNS.filter(([kind]) => byKind[kind] && !byKind[kind].p2p && !byKind[kind].pull);
-    const hub = byKind.hologram;
-    const torrent = byKind.bittorrent;
-    filesPanel = `<div class="section-head">
-      <div class="download-all" data-name="${R.esc(m.name)}" data-repo="${R.esc(m.id)}" data-revision="${R.esc(files.revision)}">
-        <button type="button" class="button" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu">${R.icon.down}Download all</button>
-        <div class="menu" id="dl-menu" role="menu" aria-label="Download all" hidden>
-          <p class="menu-note">${files.files.length} files, ${R.bytes(total)}. Every file is checked against its address.</p>
-          ${http.map(([kind, name]) => `<button type="button" role="menuitem" data-save="${name}" data-save-kind="${kind}">${R.icon.file}<span class="label">Save to a folder from ${name}</span></button>`).join("")}
-          ${hub ? `<button type="button" role="menuitem" data-copy="hologram pull ${R.esc(hub.pull)}">${R.icon.copy}<span class="label">Copy hologram pull (every file, verified)</span></button>` : ""}
-          ${torrent ? `<a role="menuitem" href="${R.esc(torrent.page)}">${R.icon.nodes}<span class="label">Peer to peer, every file (.torrent)</span></a>` : ""}
-          <button type="button" role="menuitem" data-script>${R.icon.copy}<span class="label">Download script for a terminal</span></button>
+    // One button above each source column: every file this source has, as one zip, each file checked against its
+    // address as it streams. P2P is the torrent; Hologram copies the pull command.
+    const head = ([kind, name]) => {
+      const s = byKind[kind];
+      const count = s ? files.files.filter(([path]) => !s.missing.includes(path)).length : 0;
+      const label = `<span class="name">${name}</span>`;
+      if (!s) return `<th class="dl"><span class="dl-all off" aria-hidden="true">${R.icon.down}</span>${label}</th>`;
+      if (s.pull) return `<th class="dl"><button type="button" class="dl-yes dl-all" data-copy="hologram pull ${R.esc(s.pull)}" title="Copy the hologram pull command: every file, verified as it arrives" aria-label="Copy hologram pull command">${R.icon.down}</button>${label}</th>`;
+      if (s.p2p) return `<th class="dl"><a class="dl-yes dl-all" href="${R.esc(s.page)}" title="Torrent with every file. Your client checks every piece" aria-label="Download torrent">${R.icon.down}</a>${label}</th>`;
+      return `<th class="dl"><button type="button" class="dl-yes dl-all" data-zip="${name}" title="Download ${count} of ${files.files.length} files from ${name} as one zip, each checked against its address" aria-label="Download all files from ${name} as one zip">${R.icon.down}</button>${label}</th>`;
+    };
+    const item = ([kind, name]) => {
+      const s = byKind[kind];
+      if (!s) return "";
+      const count = files.files.filter(([path]) => !s.missing.includes(path)).length;
+      const size = files.files.filter(([path]) => !s.missing.includes(path)).reduce((sum, f) => sum + (f[1] || 0), 0);
+      const detail = count === files.files.length ? `${count} files, ${R.bytes(size)}` : `${count} of ${files.files.length} files, ${R.bytes(size)}`;
+      if (s.pull) return `<button type="button" role="menuitem" data-copy="hologram pull ${R.esc(s.pull)}">${R.icon.copy}<span class="label">${name}<span class="sub">Copies the pull command. Every chunk verified as it arrives</span></span></button>`;
+      if (s.p2p) return `<a role="menuitem" href="${R.esc(s.page)}">${R.icon.nodes}<span class="label">${name}<span class="sub">Torrent with every file. Your client checks every piece</span></span></a>`;
+      return `<button type="button" role="menuitem" data-zip="${name}">${R.icon.down}<span class="label">${name}<span class="sub">One zip, ${detail}, each checked against its address</span></span></button>`;
+    };
+    downloadMenu = `<div class="download-all">
+        <button type="button" class="button" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu">${R.icon.down}<span>Download</span></button>
+        <div class="menu" id="dl-menu" role="menu" aria-label="Download" hidden>
+          <p class="menu-note">Choose where to download from.</p>
+          ${SOURCE_COLUMNS.map(item).join("")}
+          <button type="button" role="menuitem" data-script>${R.icon.file}<span class="label">Terminal script<span class="sub">Downloads every file from any source, then checks every SHA-256</span></span></button>
         </div>
-      </div>
+      </div>`;
+    filesPanel = `<div class="section-head files-head" data-name="${R.esc(m.name)}" data-repo="${R.esc(m.id)}" data-revision="${R.esc(files.revision)}">
+      <p class="note">${files.files.length} files, ${R.bytes(total)}. Every download is checked against its address.</p>
+      <button type="button" class="link" data-script title="A shell script that downloads every file, trying each source, then checks every SHA-256">Terminal script</button>
     </div>
     <p class="progress" id="dl-progress" role="status" hidden></p>
     <div class="scroll"><table id="files">
-      <thead><tr><th><button type="button" data-col="path" aria-sort="ascending">Path${R.icon.chevron}</button></th><th class="size"><button type="button" data-col="size">Size${R.icon.chevron}</button></th><th>Address</th>${SOURCE_COLUMNS.map(([, name]) => `<th class="dl">${name}</th>`).join("")}</tr></thead>
+      <thead><tr><th><button type="button" data-col="path" aria-sort="ascending">Path${R.icon.chevron}</button></th><th class="size"><button type="button" data-col="size">Size${R.icon.chevron}</button></th><th>Address</th>${SOURCE_COLUMNS.map(head).join("")}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
   } else {
@@ -224,12 +242,13 @@ function modelPage(m, files, ov, readme) {
     </div>
     <div class="actions">
       ${m.manifest && files
-        ? `<button type="button" class="button primary" data-verify="${R.esc(m.id)}" data-manifest="${R.esc(m.manifest)}" data-probe="${R.esc(probe(files) || "")}">${R.icon.check}${B.loader("orbit")}<span>Verify</span></button>`
+        ? `<button type="button" class="button primary" data-verify="${R.esc(m.id)}" data-manifest="${R.esc(m.manifest)}" data-probe="${R.esc(probe(files) || "")}">${R.icon.check}${B.loader("orbit")}<span>Verify</span></button>${downloadMenu}`
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
   </div>
   ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull }) => ({ kind, name, resolve, p2p, pull })))}</script>` : ""}
   <p class="verdict" id="verdict" role="status" hidden></p>
+  <p class="verdict" id="dl-status" role="status" hidden></p>
 </section>
 <main class="detail">
   <section class="panel"><dl class="facts">${facts}</dl></section>
@@ -268,7 +287,7 @@ for (const m of models) {
 
 const slim = models.map(({ stateLabel, task, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "render.mjs", "braille.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "render.mjs", "braille.mjs", "zip.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
 await mkdir(join(DIST, "kit"), { recursive: true });
 for (const f of ["hologram-warm.css", "hologram-gap-tokens.css"]) await cp(join(KIT, f), join(DIST, "kit", f));
 await cp(join(KIT, "fonts"), join(DIST, "fonts"), { recursive: true });

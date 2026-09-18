@@ -1,2 +1,4 @@
 scripts/*.sh text eol=lf
 tools/componentize-py/*.patch text eol=lf -whitespace
+# Shell scripts and configs copied to a Linux host: a Windows checkout must not turn them into CRLF.
+apps/model-hub/deploy/** text eol=lf

@@ -52,8 +52,7 @@ impl AppState {
         config.create_directories()?;
         let modules = ModuleRegistry::build(&config.modules.enabled)?;
         let store = Arc::new(ObjectStore::open(config.paths.data_dir.join("registry"))?);
-        let registry: Arc<dyn RegistryProvider> =
-            crate::registry::provider_from_config(&config, store.clone())?;
+        let registry = build_registry(&config, store.clone()).await?;
         let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
         let actor_system = ActorSystem::start();
         let audit = AuditLog::open(
@@ -518,6 +517,19 @@ impl AppState {
     }
 }
 
+/// Build the configured registry provider on a blocking thread.
+///
+/// The kappa provider owns a blocking HTTP client, which must not be built or
+/// dropped on a runtime thread. The CLI paths already construct it inside
+/// `spawn_blocking` (see `kappa_client`); the daemon's own start did not.
+async fn build_registry(
+    config: &AppConfig,
+    store: Arc<ObjectStore>,
+) -> Result<Arc<dyn RegistryProvider>> {
+    let config = config.clone();
+    blocking(move || crate::registry::provider_from_config(&config, store)).await
+}
+
 async fn blocking<T, F>(function: F) -> Result<T>
 where
     T: Send + 'static,
@@ -552,5 +564,33 @@ fn resource_for(request: &RpcRequest) -> Option<String> {
         RpcRequest::NodeHeartbeat { node } => Some(node.node_id.clone()),
         RpcRequest::PluginCall { plugin_id, .. } => Some(plugin_id.clone()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `hologram serve` with `registry.provider = "kappa"` builds the provider
+    /// from `AppState::build`, which is async. The kappa client is a blocking
+    /// reqwest client, and building one on a runtime thread panics
+    /// ("Cannot drop a runtime in a context where blocking is not allowed").
+    /// An optimized build can win that race and start; a debug build on
+    /// Windows panicked on every start.
+    #[tokio::test]
+    async fn the_kappa_provider_is_built_off_the_async_runtime() {
+        let root = std::env::temp_dir().join(format!(
+            "hologram-app-registry-{}",
+            crate::util::now_millis()
+        ));
+        let store = Arc::new(ObjectStore::open(&root).expect("open store"));
+        let mut config = AppConfig::default();
+        config.registry.provider = "kappa".to_owned();
+        config.registry.endpoint = "http://127.0.0.1:1".to_owned();
+
+        build_registry(&config, store)
+            .await
+            .expect("the provider builds without touching the network");
+        let _ = std::fs::remove_dir_all(root);
     }
 }

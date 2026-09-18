@@ -319,12 +319,54 @@ function model() {
   const id = button.dataset.verify, pinned = button.dataset.manifest;
   const glyph = [...document.querySelectorAll("#glyph .cell")];
   const sources = JSON.parse($("#sources")?.textContent || "[]");
-  const mark = (kind, state) => {
-    const li = document.querySelector(`.sources li[data-source="${kind}"]`);
-    if (!li) return;
-    li.dataset.state = state;
-    if (state === "busy") B.play(li);
+  const mark = (kind, state, reason = "") => {
+    for (const el of document.querySelectorAll(`.sources li[data-source="${kind}"], #dl-menu [data-source="${kind}"], #files th[data-source="${kind}"]`)) {
+      if (el.dataset.state === "off") continue;
+      el.dataset.state = state;
+      if (state === "busy") B.play(el);
+      if (el.matches("#dl-menu *")) { el.dataset.title ??= el.title; el.title = state === "bad" ? `Last check failed: ${reason}` : el.dataset.title; }
+    }
   };
+
+  // One probe per source, shared by Verify, the Download menu and the Files header: the source's copy of the probe
+  // file is fetched and checked against its address. P2P has no bytes to check in a browser; its torrent file must
+  // answer. The result is kept for the page's lifetime; Verify forces a fresh one.
+  const PROBE_MS = 6000;
+  let probing = null;
+  const within = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error("no answer within 6 s"), { code: "TIMEOUT" })), ms))]);
+  async function check(api, file, s) {
+    mark(s.kind, "busy");
+    try {
+      if (s.p2p) {
+        const r = await within(fetch(s.page, { method: "HEAD" }).catch(() => fetch(s.page, { method: "HEAD", mode: "no-cors" })), PROBE_MS);
+        if (r.type !== "opaque" && !r.ok) throw new Error(`answered ${r.status}`);
+      } else if (file) {
+        const url = s.resolve ? s.resolve + file.path.split("/").map(encodeURIComponent).join("/") : file.url;
+        await within(api.fetchVerified(url, file.address), PROBE_MS);
+      }
+      mark(s.kind, "ok");
+      return { s, ok: true };
+    } catch (e) {
+      const mismatch = e.code === "ADDRESS_MISMATCH";
+      const reason = mismatch ? "the bytes did not match their address"
+        : e.code !== "TIMEOUT" ? "could not be reached"
+        : s.kind === "ipfs" ? "gateway slow right now; the pin exists" : "no answer within 6 s";
+      mark(s.kind, "bad", reason);
+      return { s, ok: false, mismatch };
+    }
+  }
+  function probeAll(force) {
+    if (probing && !force) return probing;
+    probing = (async () => {
+      const api = await import("https://humuhumu33.github.io/hologram-api/hologram.js");
+      const doc = await api.resolve(id, { manifest: pinned });
+      const file = doc.files.find((f) => f.path === button.dataset.probe);
+      const results = await Promise.all(sources.filter((s) => !s.pull).map((s) => check(api, file, s)));
+      return { doc, results };
+    })();
+    probing.catch(() => { probing = null; });
+    return probing;
+  }
   const pinnedBytes = B.hexToBytes(pinned.split(":")[1]);
   const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const wait = (ms) => new Promise((r) => setTimeout(r, calm ? 0 : ms));
@@ -362,19 +404,11 @@ function model() {
     const started = performance.now();
     let received = null;
     try {
-      const api = await import("https://humuhumu33.github.io/hologram-api/hologram.js");
-      const doc = await api.resolve(id, { manifest: pinned });
+      // The expected address comes from the index; each source only supplies bytes. Peer to peer sources are
+      // checked piece by piece by the torrent client, so they do not enter the verdict.
+      const { doc, results: all } = await probeAll(true);
       received = B.hexToBytes(doc.manifest.split(":")[1]);
-      // The expected address comes from the index; each source only supplies bytes.
-      const file = doc.files.find((f) => f.path === button.dataset.probe);
-      // Peer to peer sources are checked piece by piece by the torrent client; the browser verifies HTTP sources.
-      const results = await Promise.all(sources.filter((s) => !s.p2p && !s.pull).map(async (s) => {
-        mark(s.kind, "busy");
-        if (!file) { mark(s.kind, "ok"); return { s, ok: true }; }
-        const url = s.resolve ? s.resolve + file.path.split("/").map(encodeURIComponent).join("/") : file.url;
-        try { await api.fetchVerified(url, file.address); mark(s.kind, "ok"); return { s, ok: true }; }
-        catch (e) { mark(s.kind, "bad"); return { s, ok: false, mismatch: e.code === "ADDRESS_MISMATCH" }; }
-      }));
+      const results = all.filter((r) => !r.s.p2p);
       const ms = Math.round(performance.now() - started);
       await lock(received);
       const good = results.filter((r) => r.ok).map((r) => r.s.name), bad = results.filter((r) => !r.ok);
@@ -400,7 +434,7 @@ function model() {
     }
   });
 
-  downloads();
+  downloads({ onOpen: () => probeAll().catch(() => {}) });
   panelTabs();
 
   const table = $("#files");
@@ -448,7 +482,7 @@ function panelTabs() {
 }
 
 // Every download is checked against the index address before it is kept.
-function downloads() {
+function downloads({ onOpen } = {}) {
   const table = $("#files");
   if (!table) return;
   const progress = $("#dl-progress");
@@ -507,8 +541,15 @@ function downloads() {
 
   // Terminal script: every file, every source, SHA-256 checked at the end.
   // The hero Download menu
-  const open = (show) => { if (!menu) return; menu.hidden = !show; toggle.setAttribute("aria-expanded", String(show)); };
+  const open = (show) => { if (!menu) return; menu.hidden = !show; toggle.setAttribute("aria-expanded", String(show)); if (show) onOpen?.(); };
   toggle?.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
+  menu?.addEventListener("keydown", (e) => {
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const list = [...menu.querySelectorAll("[role=menuitem]:not(:disabled)")], i = list.indexOf(document.activeElement);
+    list[(i + step + list.length) % list.length]?.focus();
+  });
   document.addEventListener("click", (e) => { if (menu && !menu.hidden && !e.target.closest(".download-all")) open(false); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
   menu?.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) open(false); });
@@ -564,6 +605,10 @@ if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shas
 
     button.classList.add("busy");
     toggle?.classList.add("busy");
+    // One download at a time: the other rows wait, and say so.
+    const act = button.querySelector(".act");
+    const others = [...(menu?.querySelectorAll("[data-zip]") || [])].filter((b) => b !== button);
+    for (const o of others) { o.dataset.title ??= o.title; o.title = "One download at a time"; o.setAttribute("aria-disabled", "true"); }
     cancelled = false;
     const cancel = Object.assign(document.createElement("button"), { type: "button", className: "link", textContent: "Cancel" });
     cancel.onclick = () => { cancelled = true; };
@@ -591,7 +636,9 @@ if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shas
               last = doneBytes;
               say(`Zipping ${done + 1} of ${list.length} from ${source}, ${formatBytes(doneBytes)} of ${formatBytes(total)}`);
               progress.append(" ", cancel);
-              if (label) label.textContent = `${Math.min(99, Math.floor((doneBytes / total) * 100))}%`;
+              const pct = `${Math.min(99, Math.floor((doneBytes / total) * 100))}%`;
+              if (label) label.textContent = pct;
+              if (act) act.textContent = pct;
             }
             controller.enqueue(chunk);
           },
@@ -599,6 +646,11 @@ if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shas
         await zip.add(f.path, f.size, watched, (chunk) => hasher.update(chunk));
         if (`sha256:${hasher.digest("hex")}` !== f.address) throw new Error(`${source} served different bytes for ${f.path}. Nothing was kept.`);
         done++;
+        const pct = `${Math.min(99, Math.floor(Math.max(doneBytes / total, done / list.length) * 100))}%`;
+        say(`Zipping ${done} of ${list.length} from ${source}, ${formatBytes(doneBytes)} of ${formatBytes(total)}`);
+        progress.append(" ", cancel);
+        if (label) label.textContent = pct;
+        if (act) act.textContent = pct;
       }
       await zip.finish();
     } catch (error) {
@@ -616,6 +668,8 @@ if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shas
     button.classList.remove("busy");
     toggle?.classList.remove("busy");
     if (label) label.textContent = "Download";
+    if (act) act.textContent = "Download zip";
+    for (const o of others) { o.title = o.dataset.title; o.removeAttribute("aria-disabled"); }
   });
 }
 

@@ -220,27 +220,33 @@ function modelPage(m, files, ov, readme) {
       const s = byKind[kind];
       const count = s ? files.files.filter(([path]) => !s.missing.includes(path)).length : 0;
       const label = `<span class="name">${name}</span>`;
-      if (!s) return `<th class="dl"><span class="dl-all off" aria-hidden="true">${R.icon.down}</span>${label}</th>`;
-      if (s.pull) return `<th class="dl"><button type="button" class="dl-yes dl-all" data-copy="hologram pull ${R.esc(s.pull)}" title="Copy the hologram pull command: every file, verified as it arrives" aria-label="Copy hologram pull command">${R.icon.down}</button>${label}</th>`;
-      if (s.p2p) return `<th class="dl"><a class="dl-yes dl-all" href="${R.esc(s.page)}" title="Torrent with every file. Your client checks every piece" aria-label="Download torrent">${R.icon.down}</a>${label}</th>`;
-      return `<th class="dl"><button type="button" class="dl-yes dl-all" data-zip="${name}" title="Download ${count} of ${files.files.length} files from ${name} as one zip, each checked against its address" aria-label="Download all files from ${name} as one zip">${R.icon.down}</button>${label}</th>`;
+      if (!s) return `<th class="dl" data-source="${R.esc(kind)}" data-state="off"><span class="dl-all off" aria-hidden="true">${R.icon.down}</span>${label}</th>`;
+      if (s.pull) return `<th class="dl" data-source="${R.esc(kind)}"><button type="button" class="dl-yes dl-all" data-copy="hologram pull ${R.esc(s.pull)}" title="Copy the hologram pull command: every file, verified as it arrives" aria-label="Copy hologram pull command">${R.icon.down}</button>${label}</th>`;
+      if (s.p2p) return `<th class="dl" data-source="${R.esc(kind)}"><a class="dl-yes dl-all" href="${R.esc(s.page)}" title="Torrent with every file. Your client checks every piece" aria-label="Download torrent">${R.icon.down}</a>${label}</th>`;
+      return `<th class="dl" data-source="${R.esc(kind)}"><button type="button" class="dl-yes dl-all" data-zip="${name}" title="Download ${count} of ${files.files.length} files from ${name} as one zip, each checked against its address" aria-label="Download all files from ${name} as one zip">${R.icon.down}</button>${label}</th>`;
     };
+    // The Download menu: every source in column order, always; its availability (probed when the menu opens, see
+    // app.js); one action. A source the model is not on keeps its row, disabled, so absence is visible, not silent.
+    const n = files.files.length;
+    const row = (kind, name, facts, act, tag, attrs) => `<${tag} role="menuitem" class="src" data-source="${R.esc(kind)}" ${attrs}><span class="state" aria-hidden="true">${B.loader("orbit")}</span><span class="label">${name}<span class="sub">${facts}</span></span><span class="act">${act}</span></${tag}>`;
     const item = ([kind, name]) => {
       const s = byKind[kind];
-      if (!s) return "";
-      const count = files.files.filter(([path]) => !s.missing.includes(path)).length;
-      const size = files.files.filter(([path]) => !s.missing.includes(path)).reduce((sum, f) => sum + (f[1] || 0), 0);
-      const detail = count === files.files.length ? `${count} files, ${R.bytes(size)}` : `${count} of ${files.files.length} files, ${R.bytes(size)}`;
-      if (s.pull) return `<button type="button" role="menuitem" data-copy="hologram pull ${R.esc(s.pull)}">${R.icon.copy}<span class="label">${name}<span class="sub">Copies the pull command. Every chunk verified as it arrives</span></span></button>`;
-      if (s.p2p) return `<a role="menuitem" href="${R.esc(s.page)}">${R.icon.nodes}<span class="label">${name}<span class="sub">Torrent with every file. Your client checks every piece</span></span></a>`;
-      return `<button type="button" role="menuitem" data-zip="${name}">${R.icon.down}<span class="label">${name}<span class="sub">One zip, ${detail}, each checked against its address</span></span></button>`;
+      if (!s) {
+        const why = kind === "ipfs" ? "not pinned yet" : kind === "bittorrent" ? "no torrent yet" : "not on this source";
+        return row(kind, name, why, kind === "bittorrent" ? "Get torrent" : "Download zip", "button", `type="button" disabled data-state="off" title="This model is not published on ${name}"`);
+      }
+      if (s.p2p) return row(kind, name, `torrent, ${n} files`, "Get torrent", "a", `href="${R.esc(s.page)}" download title="A BitTorrent file with every file, seeded by Hugging Face. Your client checks every piece"`);
+      const have = files.files.filter(([path]) => !s.missing.includes(path));
+      const size = have.reduce((sum, f) => sum + (f[1] || 0), 0);
+      return row(kind, name, `${have.length === n ? n : `${have.length} of ${n}`} files, ${R.bytes(size)}`, "Download zip", "button", `type="button" data-zip="${name}" title="Every file ${name} has, as one zip, each checked against its address"`);
     };
     downloadMenu = `<div class="download-all">
         <button type="button" class="button" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu">${R.icon.down}<span>Download</span></button>
         <div class="menu" id="dl-menu" role="menu" aria-label="Download" hidden>
-          <p class="menu-note">Choose where to download from.</p>
+          <p class="menu-note">Choose where to download from. Every file is checked against its address as it arrives.</p>
           ${SOURCE_COLUMNS.map(item).join("")}
-          <button type="button" role="menuitem" data-script>${R.icon.file}<span class="label">Terminal script<span class="sub">Downloads every file from any source, then checks every SHA-256</span></span></button>
+          <div class="sep" role="separator"></div>
+          <button type="button" role="menuitem" class="src" data-script title="A shell script that downloads every file, trying each source, then checks every SHA-256"><span class="state icon" aria-hidden="true">${R.icon.file}</span><span class="label">Terminal script<span class="sub">every file, every SHA-256</span></span><span class="act">Save script</span></button>
         </div>
       </div>`;
     filesPanel = `<div class="section-head files-head" data-name="${R.esc(m.name)}" data-repo="${R.esc(m.id)}" data-revision="${R.esc(files.revision)}">
@@ -279,7 +285,7 @@ function modelPage(m, files, ov, readme) {
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
   </div>
-  ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull }) => ({ kind, name, resolve, p2p, pull })))}</script>` : ""}
+  ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>` : ""}
   <p class="verdict" id="verdict" role="status" hidden></p>
   <p class="verdict" id="dl-status" role="status" hidden></p>
 </section>

@@ -61,6 +61,28 @@ services:
       default:
         aliases: [hub-server]
 
+  # The Hugging Face dialect (HF_ENDPOINT=https://hub.uor.foundation): metadata from the published file lists, every
+  # file request answered with a redirect to a live source. No weight byte passes through it.
+  resolve:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ["node", "/app/hub-resolve.mjs"]
+    environment:
+      HUB_DATA: /data
+      HUB_STATE: /state
+    volumes:
+      - ./bin/hub-resolve.mjs:/app/hub-resolve.mjs:ro
+      - ./site/data:/data:ro
+      - ./state/resolve:/state
+    mem_limit: 96m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "5" }
+    networks:
+      default:
+        aliases: [hub-resolve]
+
 networks:
   default:
     name: twenty_default

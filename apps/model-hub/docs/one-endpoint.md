@@ -101,7 +101,7 @@ Baseten, AkashML) accept only named sources; a hub gets in there only as a named
 ## 3. Compatibility matrix
 | Tool | The one setting | Works against the hub |
 |---|---|---|
-| `hf` CLI, `huggingface_hub` 1.32 / 0.36 | `HF_ENDPOINT` | **Measured**: whole-model download, 30 of 30 files match; cache reuse; typed errors |
+| `hf` CLI, `huggingface_hub` 1.32 / 0.36 | `HF_ENDPOINT` | **Measured**: whole-model download, 30 of 30 files match; cache reuse; typed errors; and the same with Hugging Face blackholed (ModelScope + IPFS, then IPFS alone) |
 | transformers (`AutoConfig`, `AutoTokenizer`) | `HF_ENDPOINT` | **Measured** |
 | `HfApi.list_models`, `model_info`, `list_repo_files` | `HF_ENDPOINT` | **Measured** |
 | plain `curl -L`, `Range` | the URL | **Measured** |
@@ -150,8 +150,10 @@ misleads the UIs that read it. (C) **One base URL, many dialects, one truth.** C
 | `/mcp` (reserved), `/v1/…` (reserved, unused) | — | MCP; OpenAI shape deliberately empty | — | — |
 
 ## 6. Sequencing, each with its adoption signal and kill criterion
-1. **Finish failover proof** (pins now include dotfiles; rerun the drill with Hugging Face blackholed). Signal: reroutes
-   per week in the log. Kill: none, it is the product's claim.
+1. **Failover proof: done.** With Hugging Face blackholed in the client, `hf download` and `snapshot_download` deliver
+   the whole model (30 of 30 files matching) in 110 s; with ModelScope down too, from IPFS alone in 126 s. Signal to
+   keep watching: reroutes per week in the log. It holds for the eleven pinned models and for whatever ModelScope
+   mirrors; elsewhere Hugging Face remains a single source.
 2. **Lead `llms.txt` and the descriptor with the two lines** (`HF_ENDPOINT`, `ollama pull …`) and the search route.
    Signal: agent user-agents on `/api/models`.
 3. **OCI model artifacts** on the same `/v2/{org}/{name}` routes (ModelPack raw layers and Docker `gguf.v3`). Signal:

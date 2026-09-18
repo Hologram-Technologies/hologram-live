@@ -35,10 +35,12 @@ outside the index answers 404 with a sentence and is recorded in `state/resolve/
 Measured 2026-09-18 with `web/qa/hf-dialect/matrix.sh` in `python:3.12-slim` against the public URL, on
 `huggingface_hub` 1.32.0 and 0.36.2: `hf download` and `snapshot_download` of a whole model (30 of 30 files matching
 `SHA256SUMS`), cache reuse, transformers `AutoConfig` and `AutoTokenizer`, a plain `GET` and a `Range` request,
-and the clients' own typed errors for an unknown model and revision. Single files through `/via/ipfs` work on both
-client lines. Open: a whole-repository download with Hugging Face blackholed failed at `.gitattributes`, because the
-IPFS archives had been packed without dotfiles (`ipfs-car` skips hidden paths); `pin-model.sh` now packs them and the
-eleven models are being pinned again. Until that run is repeated, full failover is UNVERIFIED.
+and the clients' own typed errors for an unknown model and revision. **Failover, measured the same day** with huggingface.co, hf.co and
+Hugging Face's CDN hosts blackholed in the client container and Hugging Face marked down on the hub: `hf download` and
+`snapshot_download` of the whole model, 30 of 30 files matching, transformers loading, in 110 s from ModelScope and
+IPFS; and with ModelScope down as well, the same from IPFS alone in 126 s (135 reroutes logged). The first attempt
+had failed at `.gitattributes`: the IPFS archives had been packed without dotfiles (`ipfs-car` skips hidden paths).
+`pin-model.sh` now packs them and all eleven models were pinned again. Test whole repositories, not single files.
 
 ### Ollama, and the design behind both
 

@@ -409,6 +409,11 @@ http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://hub");
     if (url.pathname === "/mcp") return mcp(req, res);
+    // Browsers on other sites (transformers.js, huggingface.js) read this endpoint too: everything is public and
+    // read-only, so every answer may be read cross-origin, the redirect included, and a Range preflight is allowed.
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-expose-headers", "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location");
+    if (req.method === "OPTIONS") { res.writeHead(204, { "access-control-allow-methods": "GET, HEAD, OPTIONS", "access-control-allow-headers": "range, accept, content-type, if-none-match, user-agent", "access-control-max-age": "86400" }); return res.end(); }
     if (req.method !== "GET" && req.method !== "HEAD") return refuse(res, 405, "ReadOnly", "The hub endpoint is read-only.");
     let path = decodeURIComponent(url.pathname), via = url.searchParams.get("source");
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);

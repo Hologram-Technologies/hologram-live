@@ -9,9 +9,10 @@
 # records the day's CID, the BLAKE3 of its index.json (what the browser verifies first), and the previous entry's
 # CID, so history cannot be rewritten silently. The ledger itself is pinned; its CID is recorded by the next entry.
 #
-# The day's directory is also kept under /root/hub/archive/<date>, served as https://hub.uor.foundation/archive/<date>/.
-# That mirror is only a fast path: the browser verifies every file against the ledger whichever source answered, and
-# falls back to the IPFS gateway when the mirror is silent. IPFS remains the store; the mirror is a cache.
+# The current day's directory is also kept under /root/hub/archive/<date>, served as
+# https://hub.uor.foundation/archive/<date>/. That mirror is only a fast path for the current day: the browser verifies
+# every file against the ledger whichever source answered, and falls back to the IPFS gateway when the mirror is
+# silent. The hub serves the current index only (decision 2026-09-18); every past day lives on IPFS alone.
 set -euo pipefail
 
 HUB=/root/hub
@@ -23,6 +24,7 @@ LEDGER=$HUB/archive.json
 BUCKET=hologram-model-hub
 GATEWAY=https://ipfs.filebase.io/ipfs/
 MIRROR=https://hub.uor.foundation/archive/
+REGISTRY=hub.uor.foundation/model-hub/index
 LOG=$HUB/logs/archive.log
 mkdir -p "$HUB/logs" "$TM/archive"
 exec > >(tee -a "$LOG") 2>&1
@@ -72,22 +74,23 @@ for f in "$WORK"/store/blobs/blake3/*; do cmp -s "$f" "$WORK/index.json" && INDE
 
 # The previous ledger's CID goes into this entry, then the new ledger is pinned and its CID kept beside it.
 PREV_LEDGER=$(cat "$HUB/archive.cid" 2>/dev/null || true)
-python3 - "$LEDGER" "$WORK/index.json" "$STAGE/models.json" "$DATE" "$ROOT" "$PREV_LEDGER" "$GATEWAY" "$INDEX_B3" "$MIRROR" <<'PY'
+python3 - "$LEDGER" "$WORK/index.json" "$STAGE/models.json" "$DATE" "$ROOT" "$PREV_LEDGER" "$GATEWAY" "$INDEX_B3" "$MIRROR" "$REGISTRY" <<'PY'
 import json, os, sys, time
-ledger_path, index_path, models_path, date, root, prev_ledger, gateway, index_b3, mirror = sys.argv[1:]
+ledger_path, index_path, models_path, date, root, prev_ledger, gateway, index_b3, mirror, registry = sys.argv[1:]
 index = json.load(open(index_path))
 models = json.load(open(models_path))
 ledger = json.load(open(ledger_path)) if os.path.exists(ledger_path) else {"format": "hologram.model-hub.archive/v1", "gateway": gateway, "days": []}
 prev = ledger["days"][-1]["cid"] if ledger["days"] else None
 entry = {
-    "date": date, "cid": root, "reference": f"hub.uor.foundation/model-hub/index:{date}",
+    "date": date, "cid": root,
     "models": len(models["models"]), "addressed": sum(1 for m in models["models"] if m.get("state") == "addressed"),
     "files": len(index["files"]), "bytes": sum(f[2] for f in index["files"]),
     "source": index.get("source"), "prev": prev, "prev_ledger": prev_ledger or None,
     "archived": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 }
 entry["index"] = index_b3
-ledger["mirror"] = mirror
+ledger["mirror"] = mirror          # current day only
+ledger["registry"] = registry      # current day only: hologram pull <registry>:<date>
 ledger["days"].append(entry)
 ledger["days"].sort(key=lambda e: e["date"])
 tmp = ledger_path + ".tmp"
@@ -97,11 +100,13 @@ print(json.dumps({k: entry[k] for k in ("date", "cid", "files", "bytes", "prev")
 PY
 
 rc copyto /hub/archive.json "fb:$BUCKET/archive.json" -q
+[ -f "$HUB/pins.json" ] && rc copyto /hub/pins.json "fb:$BUCKET/pins.json" -q
 LEDGER_CID=$(cid_of archive.json)
 [ -n "$LEDGER_CID" ] && echo "$LEDGER_CID" > "$HUB/archive.cid"
 cp "$LEDGER" "$HUB/site/archive.json"; cp "$HUB/archive.cid" "$HUB/site/archive.cid" 2>/dev/null || true
-# The mirror: the same bytes the CAR holds, served from this host.
+# The mirror: the same bytes the CAR holds, served from this host for the current day only.
 mkdir -p "$HUB/archive"; rm -rf "$HUB/archive/$DATE"; mv "$STAGE" "$HUB/archive/$DATE"
+find "$HUB/archive" -mindepth 1 -maxdepth 1 -type d ! -name "$DATE" -exec rm -rf {} +
 rm -f "$TM/archive/$DATE.car"
 # Warm the gateway for the files the site reads first. A cold read can take tens of seconds; the gateway
 # answers 429 above a few parallel requests, so this stays sequential.

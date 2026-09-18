@@ -43,11 +43,11 @@ function indexPill() {
       <div class="menu" id="archive-menu" role="menu" aria-label="Index history" hidden>
         <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i lead"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
         <div class="archive-days">${groups.slice(0, 3).join("")}${older}</div>
-        <p class="menu-note">Every day is stored on IPFS and checked in your browser before it is shown.</p>
-        <div class="archive-foot"><button type="button" class="copy" id="archive-cid" data-copy="" title="Copy this day's IPFS address">CID${R.icon.copy}</button><button type="button" class="copy" id="archive-pull" data-copy="" title="Copy the hologram pull command for this day">hologram pull${R.icon.copy}</button></div>
+        <p class="menu-note">Every day is stored on IPFS and checked in your browser before it is shown. The hub keeps only the current day; older days come from IPFS and can take a minute to open the first time.</p>
+        <div class="archive-foot"><button type="button" class="copy" id="archive-cid" data-copy="" title="Copy this day's IPFS address">CID${R.icon.copy}</button><button type="button" class="copy" id="archive-pull" data-copy="" title="Copy the hologram pull command for the current index">hologram pull${R.icon.copy}</button></div>
       </div>
     </div>
-    <script type="application/json" id="archive-days">${JSON.stringify({ gateway: archive.gateway, mirror: archive.mirror || null, latest: data.snapshot, days: days.map(({ date, cid, index, reference, models: n }) => ({ date, cid, index, reference, models: n })) })}</script>`;
+    <script type="application/json" id="archive-days">${JSON.stringify({ gateway: archive.gateway, mirror: archive.mirror || null, registry: archive.registry || null, latest: data.snapshot, days: days.map(({ date, cid, index, models: n }) => ({ date, cid, index, models: n })) })}</script>`;
 }
 
 const WALLPAPERS = [
@@ -330,7 +330,7 @@ if (archive) {
   // Machine access: the ledger, and one tiny stub per day so a script resolves a date with one request.
   await cp(archivePath, join(DIST, "archive.json"));
   await mkdir(join(DIST, "at"), { recursive: true });
-  for (const d of archive.days) await writeFile(join(DIST, "at", `${d.date}.json`), JSON.stringify({ date: d.date, cid: d.cid, index: d.index, reference: d.reference, gateway: archive.gateway, mirror: archive.mirror ? `${archive.mirror}${d.date}/` : null }));
+  for (const d of archive.days) await writeFile(join(DIST, "at", `${d.date}.json`), JSON.stringify({ date: d.date, cid: d.cid, index: d.index, gateway: archive.gateway, mirror: archive.mirror && d === archive.days[archive.days.length - 1] ? `${archive.mirror}${d.date}/` : null, registry: archive.registry && d === archive.days[archive.days.length - 1] ? `${archive.registry}:${d.date}` : null }));
 }
 await writeFile(join(DIST, ".nojekyll"), "");
 

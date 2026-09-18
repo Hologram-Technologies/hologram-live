@@ -203,8 +203,9 @@ function archive() {
     const entry = date ? days.find((d) => d.date === date) : null;
     $("#archive-cid").dataset.copy = entry?.cid || "";
     $("#archive-cid").hidden = !entry;
-    $("#archive-pull").dataset.copy = entry ? `hologram pull ${entry.reference}` : "";
-    $("#archive-pull").hidden = !entry;
+    // The registry serves the current day only, so the pull command is offered for Latest alone.
+    $("#archive-pull").dataset.copy = ledger.registry && days[0] ? `hologram pull ${ledger.registry}:${days[0].date}` : "";
+    $("#archive-pull").hidden = !!entry || !ledger.registry;
   }
 
   function go(date) {
@@ -232,7 +233,7 @@ function archive() {
     hasher ||= (await import("https://humuhumu33.github.io/hologram-api/vendor/hash-wasm/index.esm.min.js")).createBLAKE3;
     const sources = [];
     if (ledger.mirror) sources.push([`${ledger.mirror}${entry.date}/${path}`, 8000]);
-    sources.push([key, 30000]);
+    sources.push([key, 120000]); // a cold day on the gateway: 25 to 55 s per file measured
     let failure = "";
     for (const [url, ms] of sources) {
       const host = new URL(url).host;
@@ -255,6 +256,8 @@ function archive() {
     if (!entry) { go("latest"); return; }
     label.textContent = `Loading ${R.day(entry.date)}`;
     box.classList.add("busy");
+    banner.hidden = false;
+    banner.querySelector("span").innerHTML = `Reading the index of <b>${R.day(entry.date)}</b> from IPFS. The first visit of a day can take a minute.`;
     try {
       const index = JSON.parse(new TextDecoder().decode(await verified(entry, "index.json", entry.index)));
       const addressOf = new Map(index.files.map(([path, address]) => [path, address]));
@@ -263,8 +266,7 @@ function archive() {
       document.documentElement.dataset.at = entry.date;
       label.textContent = `Index ${R.day(entry.date)}`;
       box.classList.add("past");
-      $("#archive-banner-date").textContent = R.day(entry.date);
-      banner.hidden = false;
+      banner.querySelector("span").innerHTML = `Viewing the index of <b>${R.day(entry.date)}</b>. Every file shown was checked against its address.`;
       mark(entry.date);
       if (view) view.setCatalog(catalog.models, catalog.snapshot);
       const id = document.documentElement.dataset.model;
@@ -272,8 +274,6 @@ function archive() {
       document.title = `${document.title.replace(/ · Index .*$/, "")} · Index ${R.day(entry.date)}`;
     } catch (error) {
       label.textContent = `Index ${R.day(ledger.latest)}`;
-      banner.hidden = false;
-      $("#archive-banner-date").textContent = R.day(entry.date);
       banner.querySelector("span").innerHTML = `This day could not be loaded (${R.esc(error.message)}). <button type="button" class="link" data-at="${entry.date}">Try again</button>`;
     } finally {
       box.classList.remove("busy");

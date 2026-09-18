@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Daily Model Hub index snapshot → hub.uor.foundation registry as model-hub/index:<YYYY-MM-DD>.
 # Runs after build-site.sh (same data). Uses the official hologram CLI: compile a thin library .holo whose layers are
-# the day's files by BLAKE3, then `hologram push`. Files unchanged since an earlier day are layers the registry
-# already holds, so they are not uploaded again. Pushes go to the registry over the internal docker network; the
+# the day's files by BLAKE3, then `hologram push`. Pushes go to the registry over the internal docker network; the
 # registry token never leaves this server.
+#
+# The registry serves the current day only (decision 2026-09-18): its store is rebuilt from scratch before each push,
+# because the registry can drop tags but never collects layer blobs. History lives on IPFS (archive.sh).
 set -euo pipefail
 
 HUB=/root/hub
@@ -53,13 +55,25 @@ rm -rf "$WORK" && mkdir -p "$WORK"
 docker run --rm -v "$DATA:/data:ro" -v "$WORK:/out" -v "$HUB/bin/snapshot.mjs:/app/snapshot.mjs:ro" -w /app node:22-alpine \
   sh -c "npm init -y >/dev/null && npm i --no-fund --no-audit --loglevel=error hash-wasm@4.12.0 >/dev/null && node snapshot.mjs /data /out $DATE $SOURCE"
 
-# Stage every layer's bytes in the CLI's object store so push finds them locally.
-mkdir -p "$TM/data/registry/blobs/blake3" "$TM/data/registry/metadata"
-cp --update=none "$WORK/store/blobs/blake3/"* "$TM/data/registry/blobs/blake3/"
+# Stage the day's layer bytes in the CLI's object store so push finds them locally (the current day only).
+rm -rf "$TM/data/registry/blobs/blake3" && mkdir -p "$TM/data/registry/blobs/blake3" "$TM/data/registry/metadata"
+cp "$WORK/store/blobs/blake3/"* "$TM/data/registry/blobs/blake3/"
 
 run hologram --json compile "work/$DATE/hologram.json" --thin --output "work/$DATE/index.holo" | tail -1
-run hologram --json push "work/$DATE/index.holo" "$REF" | tail -1
 
-# Keep only the last 3 working copies; the registry is the durable home.
-ls -1d "$TM/work"/* 2>/dev/null | sort | head -n -3 | xargs -r rm -rf
+# A fresh registry store, then the push. If the push fails the previous store comes back.
+compose() { docker compose -f "$HUB/docker-compose.yml" "$@" >/dev/null 2>&1; }
+compose stop kappa
+rm -rf "$HUB/store.prev"; mv "$HUB/store" "$HUB/store.prev"; mkdir "$HUB/store"
+compose up -d kappa; sleep 3
+if run hologram --json push "work/$DATE/index.holo" "$REF" | tail -1; then
+  rm -rf "$HUB/store.prev"
+else
+  echo "push failed: restoring the previous store"
+  compose stop kappa; rm -rf "$HUB/store"; mv "$HUB/store.prev" "$HUB/store"; compose up -d kappa
+  exit 1
+fi
+
+# Keep the current day's working copy only; archive.sh reads it next, then IPFS is the durable home.
+ls -1d "$TM/work"/* 2>/dev/null | sort | head -n -1 | xargs -r rm -rf
 echo "== $(date -u +%FT%TZ) snapshot $DATE ok"

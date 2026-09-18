@@ -55,5 +55,6 @@ file against its address in the browser, and every layer on `hologram pull`.
 | 2026-09-17 | Pinning provider: Filebase |
 | 2026-09-17 | Weights on the hub: up to 15 GB, small permissive-licence models |
 | 2026-09-18 | Reversed: no weights on the VPS. IPFS through Filebase is the only copy of weights the hub offers; the registry holds the daily index only |
+| 2026-09-18 | The index is backed up on IPFS only (no S3 copy); the VPS serves the current index only: registry and mirror hold today, every past day lives on IPFS |
 | 2026-09-17 | Upstream the local hub shim as small reviewed PRs |
 | 2026-09-17 | External uptime monitoring: GitHub Actions probe |

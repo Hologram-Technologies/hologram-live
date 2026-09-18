@@ -23,10 +23,9 @@ reports is the same. The day is appended to the ledger `archive.json` (`hologram
 
 | Field | Meaning |
 |---|---|
-| `gateway`, `mirror` | Where the browser reads a day: `<gateway><cid>/<path>` on IPFS, `<mirror><date>/<path>` on the hub. The mirror only makes reads fast; it is never trusted |
+| `gateway`, `mirror`, `registry` | Where a day is read: `<gateway><cid>/<path>` on IPFS for every day; `<mirror><date>/<path>` on the hub and `hologram pull <registry>:<date>` for the current day only. The mirror only makes reads fast; it is never trusted |
 | `days[].date`, `cid` | The day and the root CID of its directory (`index.json`, `models.json`, one JSON per model) |
 | `days[].index` | BLAKE3 of that day's `index.json`, which names every other file by address |
-| `days[].reference` | The same day on the registry: `hologram pull hub.uor.foundation/model-hub/index:<date>` |
 | `days[].prev`, `prev_ledger` | The previous day's CID and the previous ledger's CID: a hash chain, so history cannot be rewritten silently |
 | `days[].models`, `addressed`, `files`, `bytes`, `source`, `archived` | What the day held and when it was captured |
 
@@ -35,8 +34,10 @@ every file against the address the index records, before anything is shown. Byte
 next source is tried (measured: a corrupted mirror file was rejected and the gateway's copy used). Verified bytes are
 kept in the Cache API under their content address, so a revisited day is instant and works offline. **Verify** and
 downloads stay with the latest index because they check live mirrors. `at/<date>.json` stubs give agents the CID,
-index address, registry reference and both read locations for a day. What is immutable: the captures and the chain.
-What is one operator: the daily writer (a VPS cron) and the single pinning provider.
+index address and read locations for a day. The hub serves the current index only: its registry and mirror hold
+today, every past day lives on IPFS alone, and a past day's first visit can take a minute while the gateway fetches
+it (measured 25 to 55 s per file cold). What is immutable: the captures and the chain. What is one operator: the
+daily writer (a VPS cron) and the single pinning provider.
 
 ## Build
 

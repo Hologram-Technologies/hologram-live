@@ -1,4 +1,24 @@
 hub.uor.foundation {
+	# The Hugging Face dialect (HF_ENDPOINT=https://hub.uor.foundation). Clients send the user's Hugging Face token to
+	# whatever HF_ENDPOINT names: it is removed here, before anything of ours can see or log it.
+	@hf path_regexp hf ^(/via/[a-z.]+)?(/api/models(/|$)|/api/hub/health$|/mcp$|/[^/]+/[^/]+/resolve/)
+	# Ollama's registry dialect: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`. The hub's own OCI registry keeps
+	# its namespace, model-hub; every other /v2/<org>/<name>/ is a model answered by hub-resolve.
+	@ollama {
+		path_regexp ollama ^/v2/[^/]+/[^/]+/(manifests|blobs|tags)/
+		not path /v2/model-hub/*
+	}
+	handle @ollama {
+		request_header -Authorization
+		reverse_proxy hub-resolve:8090
+	}
+
+	handle @hf {
+		request_header -Authorization
+		request_header -Cookie
+		reverse_proxy hub-resolve:8090
+	}
+
 	encode zstd gzip
 
 	@registry path /v2 /v2/* /_*

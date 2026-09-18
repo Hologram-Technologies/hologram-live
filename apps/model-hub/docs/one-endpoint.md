@@ -106,6 +106,7 @@ Baseten, AkashML) accept only named sources; a hub gets in there only as a named
 | transformers (`AutoConfig`, `AutoTokenizer`) | `HF_ENDPOINT` | **Measured** |
 | `HfApi.list_models`, `model_info`, `list_repo_files` | `HF_ENDPOINT` | **Measured** |
 | plain `curl -L`, `Range` | the URL | **Measured** |
+| A browser on another origin (what transformers.js and `huggingface.js` do) | the URL | **Measured** from `humuhumu33.github.io`: model info, a file through the redirect with its SHA-256 matching, the same through `/via/ipfs`, and `Range` reads on 327 MB weights from both sources. Every read route sends `Access-Control-Allow-Origin: *` (it did not before 2026-09-18: only search did). One ranged read of a small JSON file came back empty once, unexplained |
 | Ollama 0.34.2 | the name: `hub.uor.foundation/<org>/<name>:<quant>` | **Measured**: pull, verify, run; pull again with Hugging Face blackholed |
 | llama.cpp `-hf` (build 11028) | `MODEL_ENDPOINT=https://hub.uor.foundation/` | **Measured**: `-hf bartowski/MiniCPM5-2B-GGUF:IQ2_M` fetched the GGUF through the hub into the shared Hugging Face cache layout and loaded it; generated text not captured in the non-interactive container |
 | vLLM, SGLang, KServe `hf://`, TGI | `HF_ENDPOINT` | Use `huggingface_hub`; not run (need a GPU or a large image): UNVERIFIED |

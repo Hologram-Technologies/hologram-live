@@ -22,6 +22,7 @@ struct BddWorld {
     object_kappa: Option<String>,
     search_page: Option<serde_json::Value>,
     previous_page_ids: Vec<String>,
+    http_answer: Option<(u16, String)>,
 }
 
 impl Drop for BddWorld {
@@ -991,6 +992,44 @@ fn run_archive_over_http(world: &mut BddWorld, input: String) {
         String::from_utf8_lossy(&output.stderr)
     );
     world.run_result = Some(serde_json::from_slice(&output.stdout).expect("HTTP run result"));
+}
+
+#[when(expr = "I request the path {string} over HTTP")]
+fn request_path_over_http(world: &mut BddWorld, path: String) {
+    let config_path = home_path(world).join(".config/hologram/live.toml");
+    let config: toml::Value =
+        toml::from_str(&std::fs::read_to_string(config_path).expect("read configuration"))
+            .expect("parse configuration");
+    let endpoint = config["client"]["local_endpoint"]
+        .as_str()
+        .expect("local endpoint");
+    // No --fail: the status is the evidence, whatever it is.
+    let output = Command::new("curl")
+        .args([
+            "--silent",
+            "--show-error",
+            "--write-out",
+            "\n%{http_code}",
+            &format!("{endpoint}{path}"),
+        ])
+        .output()
+        .expect("run HTTP request");
+    assert!(
+        output.status.success(),
+        "HTTP request failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let answer = String::from_utf8_lossy(&output.stdout).into_owned();
+    let (body, status) = answer.rsplit_once('\n').expect("status line");
+    world.http_answer = Some((status.parse().expect("status code"), body.to_owned()));
+}
+
+#[then(expr = "the HTTP answer is {int} with error code {string}")]
+fn http_answer_is(world: &mut BddWorld, status: u16, code: String) {
+    let (actual, body) = world.http_answer.as_ref().expect("HTTP answer");
+    assert_eq!(*actual, status, "body: {body}");
+    let error: serde_json::Value = serde_json::from_str(body).expect("the daemon's error envelope");
+    assert_eq!(error["code"].as_str(), Some(code.as_str()));
 }
 
 #[then("the archive appears in the resident list")]

@@ -4,6 +4,7 @@
 // a source that is alive, as a redirect: no weight byte passes through this process. One file, no dependencies.
 //
 // Recorded from huggingface_hub 1.32 (web/qa/hf-dialect/recorder.mjs), the whole dialect a download needs:
+//   GET  /api/models?search=&author=&pipeline_tag=&library=&filter=&sort=&limit=   list and search (HfApi.list_models)
 //   GET  [/via/<source>]/api/models/<org>/<name>[/revision/<rev>]          model info: sha, siblings
 //   GET  [/via/<source>]/api/models/<org>/<name>/tree/<rev>[/<dir>]        file listing
 //   HEAD [/via/<source>]/<org>/<name>/resolve/<rev>/<path>                 302 + X-Repo-Commit, X-Linked-ETag, X-Linked-Size
@@ -125,6 +126,40 @@ async function missing(res, id) {
   if (/^[\w.-]+\/[\w.-]+$/.test(id)) appendFile(join(STATE, "requested.txt"), `${new Date().toISOString().slice(0, 10)} ${id}\n`).catch(() => {});
   return refuse(res, 404, "RepoNotFound", `${id} is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile.`);
 }
+// The catalog the site shows, in the shape Hugging Face's list route answers. A search costs an agent a few hundred
+// bytes instead of the whole catalog. Only models whose files are addressed are listed.
+let catalog = { at: 0, rows: [] };
+async function rows() {
+  if (Date.now() - catalog.at > 60_000) {
+    try {
+      const doc = JSON.parse(await readFile(join(DATA, "models.json"), "utf8"));
+      catalog = { at: Date.now(), rows: doc.models.filter((m) => m.state === "addressed").map((m) => ({
+        _id: hex(m.manifest).slice(0, 24), id: m.id, modelId: m.id, author: m.org, sha: m.revision, private: false, gated: false, disabled: false,
+        likes: m.likes || 0, downloads: m.downloads || 0, trendingScore: Math.max(0, 501 - (m.rank || 501)), createdAt: m.created ? `${m.created}T00:00:00.000Z` : undefined,
+        pipeline_tag: m.task || undefined, library_name: m.library || undefined,
+        tags: [m.task, m.library, m.format && m.format.toLowerCase(), m.arch, m.license && `license:${m.license}`, ...(m.languages || [])].filter(Boolean),
+        hologram: { manifest: m.manifest, files: m.files, weight_bytes: m.weightBytes, parameters: m.params || undefined, context: m.context || undefined, sources: m.sources },
+      })) };
+    } catch { catalog.at = Date.now(); }
+  }
+  return catalog.rows;
+}
+const SORTS = { downloads: "downloads", likes: "likes", trendingScore: "trendingScore", trending_score: "trendingScore", createdAt: "createdAt", created_at: "createdAt" };
+async function list(res, q) {
+  const has = (v, needle) => String(v || "").toLowerCase().includes(needle.toLowerCase());
+  let out = await rows();
+  const search = q.get("search"), author = q.get("author"), task = q.get("pipeline_tag"), library = q.get("library");
+  if (search) out = out.filter((m) => has(m.id, search));
+  if (author) out = out.filter((m) => m.author.toLowerCase() === author.toLowerCase());
+  if (task) out = out.filter((m) => m.pipeline_tag === task);
+  if (library) out = out.filter((m) => m.library_name === library);
+  for (const tag of q.getAll("filter").flatMap((f) => f.split(","))) out = out.filter((m) => m.tags.some((t) => t.toLowerCase() === tag.toLowerCase()));
+  const key = SORTS[q.get("sort") || "trendingScore"] || "trendingScore", up = q.get("direction") === "1";
+  out = [...out].sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * (up ? 1 : -1));
+  const limit = Math.min(500, Math.max(1, Number(q.get("limit")) || 50));
+  return json(res, 200, out.slice(0, limit), { "access-control-allow-origin": "*", "x-total-count": String(out.length) });
+}
+
 const revisionOk = (doc, rev) => rev === "main" || (rev.length >= 7 && doc.revision.startsWith(rev));
 
 http.createServer(async (req, res) => {
@@ -135,6 +170,7 @@ http.createServer(async (req, res) => {
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
+    if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);
     if (path === "/api/hub/health") return json(res, 200, { sources: health, order: ORDER }, { "cache-control": "no-store", "access-control-allow-origin": "*" });
 
     // Measured with huggingface_hub 1.32: the client follows our redirect on HEAD, meets Hugging Face's Xet headers

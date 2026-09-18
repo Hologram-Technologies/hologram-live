@@ -323,7 +323,8 @@ for (const m of models) {
   await writeFile(join(dir, "index.html"), modelPage(m, files, ov, readme));
 }
 
-const slim = models.map(({ stateLabel, task, recency, isNew, ...m }) => m);
+// `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
+const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
 for (const f of ["app.js", "render.mjs", "braille.mjs", "zip.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
 await mkdir(join(DIST, "kit"), { recursive: true });

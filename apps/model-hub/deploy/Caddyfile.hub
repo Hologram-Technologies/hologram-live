@@ -1,7 +1,7 @@
 hub.uor.foundation {
 	# The Hugging Face dialect (HF_ENDPOINT=https://hub.uor.foundation). Clients send the user's Hugging Face token to
 	# whatever HF_ENDPOINT names: it is removed here, before anything of ours can see or log it.
-	@hf path_regexp hf ^(/via/[a-z.]+)?(/api/models/|/api/hub/health$|/[^/]+/[^/]+/resolve/)
+	@hf path_regexp hf ^(/via/[a-z.]+)?(/api/models(/|$)|/api/hub/health$|/[^/]+/[^/]+/resolve/)
 	handle @hf {
 		request_header -Authorization
 		request_header -Cookie

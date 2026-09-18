@@ -1,0 +1,67 @@
+# hub.uor.foundation: Model Hub site + Kappa Registry, fronted by the existing twenty Caddy.
+# Lives at /root/hub on the VPS. Joins twenty_default so Caddy reaches both services by name.
+name: hub
+
+services:
+  kappa:
+    image: debian:bookworm-slim
+    restart: unless-stopped
+    command: ["/usr/local/bin/kappa-server"]
+    environment:
+      KAPPA_LISTEN_ADDR: 0.0.0.0:5000
+      KAPPA_STORE_ROOT: /data
+      # Writes are gated at Caddy (bearer token); the registry itself stays permissive so public reads need no token.
+      KAPPA_AUTH_REQUIRED: "false"
+      # Refuse writes before the shared disk gets tight.
+      KAPPA_DISK_PRESSURE_THRESHOLD_MB: "8192"
+      KAPPA_MAX_BLOB_SIZE: "1181116006" # 1.1 GiB: the largest curated model file is 988 MB
+    volumes:
+      - ./bin/kappa-server:/usr/local/bin/kappa-server:ro
+      - ./store:/data
+      # The registry builds an outbound HTTPS client at startup and needs the system CA bundle.
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    mem_limit: 1g
+    cpus: 1.5
+    networks:
+      default:
+        aliases: [hub-kappa]
+
+  site:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    command: ["caddy", "file-server", "--root", "/srv", "--listen", ":8080"]
+    volumes:
+      - ./site:/srv:ro
+      - ./archive:/srv/archive:ro
+    mem_limit: 128m
+    networks:
+      default:
+        aliases: [hub-site]
+
+  hologram:
+    image: debian:bookworm-slim
+    restart: unless-stopped
+    command: ["/usr/local/bin/hologram", "serve"]
+    environment:
+      HOLOGRAM_CONFIG: /etc/hologram/live.toml
+      HOLOGRAM_AUTH_TOKEN: ${HOLOGRAM_AUTH_TOKEN}
+      HOME: /var/lib/hologram
+    volumes:
+      - ./bin/hologram:/usr/local/bin/hologram:ro
+      - ./hologram/live.toml:/etc/hologram/live.toml:ro
+      - ./hologram/state:/var/lib/hologram
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    mem_limit: 256m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+    depends_on: [kappa]
+    networks:
+      default:
+        aliases: [hub-server]
+
+networks:
+  default:
+    name: twenty_default
+    external: true

@@ -241,10 +241,7 @@ function modelPage(m, files, ov, readme) {
       return row(kind, name, `${have.length === n ? n : `${have.length} of ${n}`} files, ${R.bytes(size)}`, "Download zip", "button", `type="button" data-zip="${name}" data-kind="${R.esc(kind)}" title="Every file ${name} has, as one zip, each checked against its address"`);
     };
     downloadMenu = `<div class="download-all">
-        <div class="split">
-          <button type="button" class="button success" id="dl-auto" data-zip="Hugging Face" data-kind="auto" title="One zip with every file, each checked against its address. Every file comes from the first source that answers">${R.icon.down}<span>Download</span></button>
-          <button type="button" class="button success" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu" aria-label="Choose a source" title="Choose a source">${R.icon.chevron}</button>
-        </div>
+        <button type="button" class="button success" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu" title="Choose a source; the model arrives as one zip, every file checked against its address">${R.icon.down}<span>Download</span></button>
         <div class="menu" id="dl-menu" role="menu" aria-label="Download" hidden>
           <p class="menu-note">Choose where to download from. Every file is checked against its address as it arrives.</p>
           ${SOURCE_COLUMNS.map(item).join("")}

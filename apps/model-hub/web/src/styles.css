@@ -512,10 +512,11 @@ th.dl { font-size: var(--text-sm); }
 .dl-yes .i, .dl-no .i { width: var(--space-4); height: var(--space-4); }
 .section-head { flex-wrap: wrap; }
 .download-all { position: relative; }
-.split { display: inline-flex; }
-.split .button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.split .button:last-child { padding: 0 var(--space-2); border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: color-mix(in srgb, var(--success-foreground) 25%, transparent); }
-.split .button.busy { cursor: progress; }
+/* While a download runs the button is the progress display: the label counts, a bar fills along its lower edge. */
+#dl-all { --progress: 0%; position: relative; overflow: hidden; font-variant-numeric: tabular-nums; }
+#dl-all.running::before, #dl-all.running::after { content: ""; position: absolute; left: 0; bottom: 0; height: var(--space-1); background: var(--success-foreground); }
+#dl-all.running::before { width: 100%; opacity: .2; }
+#dl-all.running::after { width: var(--progress); opacity: .7; transition: width 300ms linear; }
 .download-all .menu { width: min(26rem, calc(100vw - 2 * var(--hh-gutter))); }
 /* A source row: availability dot, name and facts, one action. */
 .menu .src[role="menuitem"] { height: var(--space-12); min-height: var(--space-12); padding: 0 var(--space-3); line-height: 1.43; }
@@ -541,7 +542,6 @@ th.dl { font-size: var(--text-sm); }
 .menu [role="menuitem"] .label { flex: 1; min-width: 0; }
 .menu [role="menuitem"] .sub { display: block; color: var(--hh-text-dim); }
 .menu-note { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.43; }
-#dl-all.busy { cursor: progress; }
 @media (max-width: 720px) {
   .hero { position: relative; }
   .actions .download-all { position: static; }

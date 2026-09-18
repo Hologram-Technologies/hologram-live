@@ -490,7 +490,17 @@ function downloads({ onOpen } = {}) {
   const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const rowOf = (el) => el.closest("tr");
   const name = (path) => path.split("/").pop();
-  const hero = $("#dl-status"), toggle = $("#dl-all"), menu = $("#dl-menu"), auto = $("#dl-auto");
+  const hero = $("#dl-status"), toggle = $("#dl-all"), menu = $("#dl-menu");
+  // The Download button is also the progress display: a label ("Downloading 43%") and a bar along its lower edge.
+  const label = toggle?.querySelector("span");
+  const show = (fraction, text) => {
+    if (!toggle) return;
+    toggle.classList.toggle("running", fraction !== null);
+    if (fraction === null) toggle.style.removeProperty("--progress"); else toggle.style.setProperty("--progress", `${Math.min(100, Math.floor(fraction * 100))}%`);
+    if (label) label.textContent = text;
+  };
+  let resting = null;
+  const rest = (text) => { show(null, text); clearTimeout(resting); resting = setTimeout(() => { if (label && !toggle.classList.contains("running")) label.textContent = "Download"; }, 4000); };
   const say = (text, tone = "") => {
     for (const el of [progress, hero]) { if (!el) continue; el.className = el === hero ? `verdict ${tone}` : `progress ${tone}`; el.textContent = text; }
     progress.hidden = !text;
@@ -559,32 +569,33 @@ function downloads({ onOpen } = {}) {
   const worker = "serviceWorker" in navigator
     ? navigator.serviceWorker.register(`${base}zip-sw.js`).then(() => navigator.serviceWorker.ready).catch(() => null)
     : Promise.resolve(null);
-  let watching = null, alive = null;
+  let watching = null, alive = null, frame = null, activeRow = null;
   const leaving = (e) => { e.preventDefault(); e.returnValue = ""; };
   const settle = () => {
     clearInterval(alive); alive = null; watching = null;
+    setTimeout(() => { frame?.remove(); frame = null; }, 5000); // the frame carries the download: it stays until the end
     removeEventListener("beforeunload", leaving);
-    for (const b of [toggle, auto]) b?.classList.remove("busy");
-    const label = auto?.querySelector("span");
-    if (label) label.textContent = "Download";
+    const act = activeRow?.querySelector(".act");
+    if (act) act.textContent = "Download zip";
+    activeRow?.classList.remove("busy");
+    activeRow = null;
   };
   new BroadcastChannel("model-hub-zip").onmessage = ({ data }) => {
     if (!watching || data.id !== head0?.dataset.repo) return;
-    const label = auto?.querySelector("span");
     if (data.state === "running") {
-      if (label) label.textContent = `${Math.min(99, Math.floor((data.sent / data.total) * 100))}%`;
+      show(data.sent / data.total, `Downloading ${Math.min(99, Math.floor((data.sent / data.total) * 100))}%`);
       say(`Downloading ${data.filename}. Verified ${data.files} of ${data.count} files, ${formatBytes(data.sent)} of ${formatBytes(data.total)}.`);
       const cancel = Object.assign(document.createElement("button"), { type: "button", className: "link", textContent: "Cancel" });
       cancel.onclick = () => navigator.serviceWorker.controller?.postMessage({ cancel: data.id });
       progress.append(" ", cancel);
     } else {
-      if (data.state === "done") say(`Downloaded ${data.filename}: ${data.count} files, every one matching its address.`, "ok");
-      else if (data.state === "cancelled") say(`Stopped after ${data.files} of ${data.count} files.`);
-      else say(`${data.detail} The download was stopped.`, "bad");
+      if (data.state === "done") { say(`Downloaded ${data.filename}: ${data.count} files, every one matching its address.`, "ok"); rest("Downloaded"); }
+      else if (data.state === "cancelled") { say(`Stopped after ${data.files} of ${data.count} files.`); rest("Download"); }
+      else { say(`${data.detail} The download was stopped.`, "bad"); rest("Download"); }
       settle();
     }
   };
-  async function viaWorker(kind) {
+  async function viaWorker(kind, row) {
     const registration = await worker;
     if (!registration) return false;
     if (!navigator.serviceWorker.controller) await Promise.race([new Promise((r) => navigator.serviceWorker.addEventListener("controllerchange", r, { once: true })), new Promise((r) => setTimeout(r, 3000))]);
@@ -593,14 +604,19 @@ function downloads({ onOpen } = {}) {
     const head = await fetch(url, { method: "HEAD" }).catch(() => null);
     if (!head?.ok) return false;
     watching = kind;
-    for (const b of [toggle, auto]) b?.classList.add("busy");
+    activeRow = row;
+    row.classList.add("busy");
+    const act = row.querySelector(".act");
+    if (act) act.textContent = "Cancel";
+    show(0, "Starting");
     addEventListener("beforeunload", leaving);
     alive = setInterval(() => navigator.serviceWorker.controller?.postMessage("alive"), 10000);
     say(`Starting the download, ${formatBytes(Number(head.headers.get("content-length")))}.`);
-    // A hidden frame, so the page itself never navigates.
-    const frame = Object.assign(document.createElement("iframe"), { hidden: true, src: url });
+    // A hidden frame, so the page itself never navigates. It must outlive the download: removing it cancels the
+    // download in Chromium (measured: a 4.6 GB zip was cancelled at the end after the frame went at 60 s).
+    frame?.remove();
+    frame = Object.assign(document.createElement("iframe"), { hidden: true, src: url });
     document.body.append(frame);
-    setTimeout(() => frame.remove(), 60000);
     return true;
   }
 
@@ -610,11 +626,13 @@ function downloads({ onOpen } = {}) {
   let cancelled = false;
   document.addEventListener("click", async (e) => {
     const button = e.target.closest("button[data-zip]");
-    if (!button || button.classList.contains("busy") || toggle?.classList.contains("busy")) return;
+    if (!button) return;
+    // While a download runs, its own row is the Cancel control; the other rows wait.
+    if (watching) { if (button === activeRow) navigator.serviceWorker.controller?.postMessage({ cancel: head0.dataset.repo }); return; }
+    if (button.classList.contains("busy")) { cancelled = true; return; }
+    if (toggle?.classList.contains("running")) return;
     const source = button.dataset.zip;
-    if (watching) return;
-    if (await viaWorker(button.dataset.kind || "auto")) return;
-    const label = auto?.querySelector("span");
+    if (await viaWorker(button.dataset.kind, button)) return;
     const list = files().map((f) => ({ ...f, href: f.links.find((l) => l.source === source)?.href })).filter((f) => f.href);
     const skipped = table.tBodies[0].rows.length - list.length;
     const total = list.reduce((s, f) => s + f.size, 0);
@@ -634,9 +652,10 @@ function downloads({ onOpen } = {}) {
     }
 
     button.classList.add("busy");
-    toggle?.classList.add("busy");
+    show(0, "Starting");
     // One download at a time: the other rows wait, and say so.
     const act = button.querySelector(".act");
+    if (act) act.textContent = "Cancel";
     const others = [...(menu?.querySelectorAll("[data-zip]") || [])].filter((b) => b !== button);
     for (const o of others) { o.dataset.title ??= o.title; o.title = "One download at a time"; o.setAttribute("aria-disabled", "true"); }
     cancelled = false;
@@ -667,8 +686,7 @@ function downloads({ onOpen } = {}) {
               say(`Zipping ${done + 1} of ${list.length} from ${source}, ${formatBytes(doneBytes)} of ${formatBytes(total)}`);
               progress.append(" ", cancel);
               const pct = `${Math.min(99, Math.floor((doneBytes / total) * 100))}%`;
-              if (label) label.textContent = pct;
-              if (act) act.textContent = pct;
+              show(doneBytes / total, `Downloading ${pct}`);
             }
             controller.enqueue(chunk);
           },
@@ -679,8 +697,7 @@ function downloads({ onOpen } = {}) {
         const pct = `${Math.min(99, Math.floor(Math.max(doneBytes / total, done / list.length) * 100))}%`;
         say(`Zipping ${done} of ${list.length} from ${source}, ${formatBytes(doneBytes)} of ${formatBytes(total)}`);
         progress.append(" ", cancel);
-        if (label) label.textContent = pct;
-        if (act) act.textContent = pct;
+        show(Math.max(doneBytes / total, done / list.length), `Downloading ${pct}`);
       }
       await zip.finish();
     } catch (error) {
@@ -696,8 +713,7 @@ function downloads({ onOpen } = {}) {
       say(`Saved ${zipName}: ${done} files from ${source}, every one matching its address.${skipped ? ` ${skipped} not on ${source} were left out.` : ""}`, "ok");
     }
     button.classList.remove("busy");
-    toggle?.classList.remove("busy");
-    if (label) label.textContent = "Download";
+    rest(failure || cancelled ? "Download" : "Downloaded");
     if (act) act.textContent = "Download zip";
     for (const o of others) { o.title = o.dataset.title; o.removeAttribute("aria-disabled"); }
   });

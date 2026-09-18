@@ -33,9 +33,11 @@ impl RegistryProvider for LocalRegistryProvider {
     }
 
     fn get_object(&self, id: &str) -> Result<ObjectContent> {
+        let bytes = self.store.get(id)?;
+        super::verify_content(id, &bytes)?;
         Ok(ObjectContent {
             metadata: self.store.metadata(id)?,
-            bytes: self.store.get(id)?,
+            bytes,
         })
     }
 
@@ -98,6 +100,37 @@ mod tests {
         ));
         let store = Arc::new(ObjectStore::open(&root).expect("open"));
         (LocalRegistryProvider::new(store), root)
+    }
+
+    #[test]
+    fn a_blob_corrupted_on_disk_is_refused_not_served() {
+        let (registry, root) = provider("corrupt");
+        let stored = registry
+            .put_object(
+                "file".into(),
+                "text/plain".into(),
+                Some("a.txt".into()),
+                b"the bytes that were stored",
+            )
+            .expect("put");
+        assert_eq!(
+            registry.get_object(&stored.id).expect("intact read").bytes,
+            b"the bytes that were stored"
+        );
+
+        // One flipped bit, straight into the blob file: what a failing disk does.
+        let digest = stored.id.strip_prefix("blake3:").expect("blake3 id");
+        let blob = root.join("blobs/blake3").join(digest);
+        let mut bytes = std::fs::read(&blob).expect("read blob");
+        bytes[3] ^= 0x01;
+        std::fs::write(&blob, &bytes).expect("corrupt blob");
+
+        let error = registry
+            .get_object(&stored.id)
+            .expect_err("corrupt bytes must never be returned under the id of the intact ones");
+        assert_eq!(error.code(), "LIVE_IO");
+        assert!(error.to_string().contains("corrupt"), "{error}");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

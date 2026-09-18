@@ -181,6 +181,9 @@ impl RegistryProvider for KappaRegistryProvider {
             .metadata_by_tag(&tag_for(id))?
             .ok_or_else(|| LiveError::NotFound(format!("object {id} not found")))?;
         let bytes = self.client.get_blob(id)?;
+        // The registry is a separate process with its own disk: what it
+        // returns is checked here, not assumed.
+        super::verify_content(id, &bytes)?;
         Ok(ObjectContent { metadata, bytes })
     }
 

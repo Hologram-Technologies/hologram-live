@@ -9,15 +9,18 @@ LOG="$HUB/logs/build-site.log"
 mkdir -p "$HUB/logs"
 exec >>"$LOG" 2>&1
 echo "== $(date -u +%FT%TZ) build start"
+# build.env may set HF_TOKEN (catalog refresh) and HUB_BRANCH (a branch to publish ahead of its merge; default main).
+[ -f "$HUB/build.env" ] && . "$HUB/build.env"
+BRANCH=${HUB_BRANCH:-main}
 
 if [ ! -d "$SRC/.git" ]; then
   git clone --quiet --depth 1 --filter=blob:none --sparse https://github.com/Hologram-Technologies/hologram-live.git "$SRC"
   git -C "$SRC" sparse-checkout set apps/model-hub/web
-else
-  git -C "$SRC" fetch --quiet --depth 1 origin main
-  git -C "$SRC" reset --quiet --hard origin/main
 fi
-echo "source $(git -C "$SRC" rev-parse --short HEAD)"
+# A branch published ahead of its merge disappears when it merges: fall back to main rather than stop the daily refresh.
+git -C "$SRC" fetch --quiet --depth 1 origin "$BRANCH" || { echo "branch $BRANCH is gone, building main"; BRANCH=main; git -C "$SRC" fetch --quiet --depth 1 origin main; }
+git -C "$SRC" reset --quiet --hard FETCH_HEAD
+echo "source $BRANCH $(git -C "$SRC" rev-parse --short HEAD)"
 
 # Build inside node:22-alpine so the host's Node version never matters.
 docker run --rm \

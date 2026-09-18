@@ -16,7 +16,7 @@ Everything needed to rebuild `https://hub.uor.foundation` on one Linux host with
 | `bin/kappa-server` | Built by `build-kappa-server.sh`: kappa-registry at the revision `scripts/check-kappa-registry.sh` tests, with the same two build patches |
 | `bin/hologram` | Built by `build-hologram.sh` from this repository's `main` |
 | `bin/snapshot.mjs` | Turns one day's index into a library `.holo` manifest with one tensor layer per distinct file |
-| `build-site.sh` | Daily: sparse clone of this repository, build the site in `node:22-alpine`, atomic swap. Optional `build.env` holds `HF_TOKEN` |
+| `build-site.sh` | Daily: sparse clone of this repository, build the site in `node:22-alpine`, atomic swap. Optional `build.env` holds `HF_TOKEN` and `HUB_BRANCH` (publish a branch ahead of its merge; falls back to `main` once the branch is gone) |
 | `snapshot.sh` | Daily after the site build: `hologram compile --thin` and `hologram push model-hub/index:<YYYY-MM-DD>`. Never moves an existing tag |
 | `push-model.sh <owner/name>` | Publishes one Hugging Face model as `models/<owner>/<name>:<revision>`: permissive licence allowlist, 15 GB hub budget, download at the revision the address index pins, SHA-256 checked against the index, 64 MiB chunks, `hologram compile --thin` + `push` |
 | `bin/pack-model.mjs` | Chunks and verifies one model; writes `model.json` (`hologram.model-hub.model/v1`: per file path, SHA-256, BLAKE3, size, ordered chunks) as layer 0 |

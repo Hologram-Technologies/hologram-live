@@ -11,6 +11,8 @@
 //   GET  [/via/<source>]/<org>/<name>/resolve/<rev>/<path>                 302 to the chosen source (Range is re-sent there)
 //   GET  …/resolve/<rev>/SHA256SUMS                                        generated: `sha256sum -c` checks a download
 //   GET  …/api/models/<org>/<name>/xet-read-token/<rev>                    307 to huggingface.co (its token, not ours)
+//   GET  /api/models/<org>/<name>/refs                                     branches: main at the indexed revision (llama.cpp -hf)
+//   GET|HEAD /v2/<org>/<name>/manifests/<quant> and /blobs/<digest>        Ollama's registry dialect (see below)
 // Older clients read those three headers from our 302 and GET the Location; huggingface_hub 1.32 follows the redirect
 // on HEAD too, so while Hugging Face is the source it meets Hugging Face's own Xet headers and downloads through Xet
 // (hence the token route). We never send an X-Xet-* header ourselves: from ModelScope and IPFS the client uses plain
@@ -20,7 +22,7 @@
 // is the fastest), ModelScope, IPFS. Probes run in the background; a request never waits for one.
 import http from "node:http";
 import { createHash } from "node:crypto";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -160,6 +162,103 @@ async function list(res, q) {
   return json(res, 200, out.slice(0, limit), { "access-control-allow-origin": "*", "x-total-count": String(out.length) });
 }
 
+// ---- Ollama's registry dialect: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`
+// From Ollama's source (server/images.go, download.go): it GETs a Docker v2 manifest, HEADs each blob for its size
+// (we answer 200 directly: a cross-host redirect on HEAD is refused by newer Ollama), GETs each blob expecting 307 to
+// another host or 200 with a Location header, downloads the target in parallel Range parts, and verifies every
+// blob's SHA-256 itself. The model layer's digest is the GGUF file's SHA-256, which is exactly what the index holds,
+// so the weights are one redirect to a live source and the client proves the bytes.
+// The small layers (config, chat template, params) are metadata. Hugging Face already derives them for every GGUF
+// repository; we take its manifest only when its model digest is a file of OUR index at the pinned revision, keep the
+// small blobs (each checked against its digest), and fall back to a minimal manifest when Hugging Face is away.
+const MANIFEST_TYPE = "application/vnd.docker.distribution.manifest.v2+json";
+const small = new Map();      // digest → Buffer: config, template, params. Never weights (1 MiB ceiling).
+const manifests = new Map();  // "<id>:<tag>" → { at, bytes }
+const sha = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+const ociError = (res, status, code, message) => json(res, status, { errors: [{ code, message }] }, { "cache-control": "no-store" });
+const quantOf = (p) => (p.match(/(?:^|[-._])((?:I?Q\d\w*|BF16|F16|F32|MXFP4\w*))\.gguf$/i) || [])[1] || "";
+const cacheFile = (digest) => join(STATE, "ollama", digest.replace(":", "-"));
+async function keep(bytes) {
+  const digest = sha(bytes);
+  small.set(digest, bytes);
+  await mkdir(join(STATE, "ollama"), { recursive: true }).catch(() => {});
+  await writeFile(cacheFile(digest), bytes).catch(() => {});
+  return digest;
+}
+async function smallBlob(id, digest) {
+  if (small.has(digest)) return small.get(digest);
+  try { const bytes = await readFile(cacheFile(digest)); if (sha(bytes) === digest) { small.set(digest, bytes); return bytes; } } catch { /* not kept yet */ }
+  try {
+    const r = await fetch(`https://hf.co/v2/${id}/blobs/${digest}`, { signal: AbortSignal.timeout(8000), headers: { "user-agent": "ollama/0.0 (hub-resolve)" } });
+    if (!r.ok || Number(r.headers.get("content-length") || 0) > 1048576) return null;
+    const bytes = Buffer.from(await r.arrayBuffer());
+    if (bytes.length > 1048576 || sha(bytes) !== digest) return null; // a source never vouches for itself
+    await keep(bytes);
+    return bytes;
+  } catch { return null; }
+}
+function pickGguf(doc, tag) {
+  const ggufs = doc.files.filter((f) => /\.gguf$/i.test(f[0]) && !/mmproj|imatrix/i.test(f[0]));
+  const whole = ggufs.filter((f) => !/-\d{5}-of-\d{5}/.test(f[0]));
+  const t = tag.toLowerCase();
+  const match = (list) => list.find((f) => [f[0].toLowerCase(), f[0].split("/").pop().toLowerCase()].some((n) => n === t || n === `${t}.gguf`)) || list.find((f) => quantOf(f[0]).toLowerCase() === t);
+  if (t === "latest") return { file: whole.find((f) => /q4_k_m/i.test(f[0])) || whole[0], sharded: !whole.length && ggufs.length > 0, quants: whole.map((f) => quantOf(f[0])).filter(Boolean) };
+  return { file: match(whole), sharded: !match(whole) && Boolean(match(ggufs)), quants: whole.map((f) => quantOf(f[0])).filter(Boolean) };
+}
+async function manifestFor(doc, tag, file) {
+  const key = `${doc.id}:${tag}`, digest = `sha256:${hex(file[2])}`, hit = manifests.get(key);
+  if (hit && Date.now() - hit.at < 600_000) return hit.bytes;
+  const saved = join(STATE, "ollama", `manifest-${doc.id.replace("/", "--")}-${hex(file[2]).slice(0, 16)}.json`);
+  let bytes = null;
+  if (health["huggingface.co"].ok) {
+    try {
+      const r = await fetch(`https://hf.co/v2/${doc.id}/manifests/${encodeURIComponent(tag)}`, { signal: AbortSignal.timeout(8000), headers: { accept: MANIFEST_TYPE, "user-agent": "ollama/0.0 (hub-resolve)" } });
+      if (r.ok) {
+        const theirs = Buffer.from(await r.arrayBuffer()), m = JSON.parse(theirs.toString("utf8"));
+        const model = (m.layers || []).find((l) => l.mediaType === "application/vnd.ollama.image.model");
+        // Only if Hugging Face names the very bytes our index names, at our pinned revision.
+        if (model?.digest === digest && model.size === file[1]) { bytes = theirs; await mkdir(join(STATE, "ollama"), { recursive: true }).catch(() => {}); await writeFile(saved, theirs).catch(() => {}); }
+      }
+    } catch { /* fall through */ }
+  }
+  if (!bytes) bytes = await readFile(saved).catch(() => null);
+  if (!bytes) { // minimal: the weights alone. Ollama reads the chat template from the GGUF metadata when it can.
+    const config = Buffer.from(JSON.stringify({ model_format: "gguf", model_family: "unknown", model_families: [], model_type: "", file_type: quantOf(file[0]) || "unknown", architecture: "amd64", os: "linux", rootfs: { type: "layers", diff_ids: [digest] } }));
+    const configDigest = await keep(config);
+    bytes = Buffer.from(JSON.stringify({ schemaVersion: 2, mediaType: MANIFEST_TYPE, config: { digest: configDigest, mediaType: "application/vnd.docker.container.image.v1+json", size: config.length }, layers: [{ digest, mediaType: "application/vnd.ollama.image.model", size: file[1] }] }));
+  }
+  manifests.set(key, { at: Date.now(), bytes });
+  return bytes;
+}
+async function ollama(req, res, id, kind, ref) {
+  const doc = await model(id);
+  if (!doc) return ociError(res, 404, "NAME_UNKNOWN", `${id} is not in the Hologram index. Try: ollama pull hf.co/${id}`);
+  if (kind === "manifests") {
+    const { file, sharded, quants } = pickGguf(doc, ref);
+    if (!file) return ociError(res, 404, "MANIFEST_UNKNOWN", sharded ? `${ref} of ${doc.id} is split across several files; Ollama needs a single GGUF file.` : quants.length ? `${doc.id} has no ${ref}. It has: ${[...new Set(quants)].join(", ")}.` : `${doc.id} has no GGUF file; Ollama pulls GGUF models.`);
+    const bytes = await manifestFor(doc, ref, file);
+    res.writeHead(200, { "content-type": MANIFEST_TYPE, "content-length": bytes.length, "docker-content-digest": sha(bytes), "x-repo-commit": doc.revision, "cache-control": "no-store" });
+    return res.end(req.method === "HEAD" ? undefined : bytes);
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(ref)) return ociError(res, 400, "DIGEST_INVALID", "A blob is named sha256:<64 hex digits>.");
+  const entry = doc.files.find((f) => f[2] === ref);
+  if (entry) { // the weights: never through us
+    if (req.method === "HEAD") { res.writeHead(200, { "content-length": entry[1], "docker-content-digest": ref, "accept-ranges": "bytes", "content-type": "application/octet-stream" }); return res.end(); }
+    const { source, reason } = choose(doc, entry, null);
+    console.log(JSON.stringify({ t: new Date().toISOString(), dialect: "ollama", model: doc.id, file: entry[0], source: source.kind, reason }));
+    res.writeHead(307, { location: urlFor(doc, source, entry), "docker-content-digest": ref, "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });
+    return res.end();
+  }
+  const bytes = await smallBlob(doc.id, ref);
+  if (!bytes) return ociError(res, 404, "BLOB_UNKNOWN", `${ref} is not part of ${doc.id}.`);
+  // Ollama asks a 200 for its Location and then reads that URL in Range parts: answer both from here.
+  const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range || "");
+  const from = range ? Number(range[1]) : 0, to = range && range[2] ? Math.min(Number(range[2]), bytes.length - 1) : bytes.length - 1;
+  const part = bytes.subarray(from, to + 1);
+  res.writeHead(range ? 206 : 200, { "content-type": "application/octet-stream", "content-length": part.length, "docker-content-digest": ref, "accept-ranges": "bytes", location: `https://${req.headers["x-forwarded-host"] || req.headers.host}${req.url}`, ...(range ? { "content-range": `bytes ${from}-${to}/${bytes.length}` } : {}) });
+  return res.end(req.method === "HEAD" ? undefined : part);
+}
+
 const revisionOk = (doc, rev) => rev === "main" || (rev.length >= 7 && doc.revision.startsWith(rev));
 
 http.createServer(async (req, res) => {
@@ -170,6 +269,8 @@ http.createServer(async (req, res) => {
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
+    const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs)\/(.+)$/);
+    if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
     if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);
     if (path === "/api/hub/health") return json(res, 200, { sources: health, order: ORDER }, { "cache-control": "no-store", "access-control-allow-origin": "*" });
 
@@ -179,6 +280,12 @@ http.createServer(async (req, res) => {
     const xet = path.match(/^\/api\/models\/[^/]+\/[^/]+\/xet-read-token\/[^/]+$/);
     if (xet) { res.writeHead(307, { location: `https://huggingface.co${path}`, "cache-control": "no-store", "content-length": "0" }); return res.end(); }
 
+    const refs = path.match(/^\/api\/models\/([^/]+\/[^/]+)\/refs$/);
+    if (refs) {
+      const doc = await model(refs[1]);
+      if (!doc) return missing(res, refs[1]);
+      return json(res, 200, { branches: [{ name: "main", ref: "refs/heads/main", targetCommit: doc.revision }], tags: [], converts: [] });
+    }
     const info = path.match(/^\/api\/models\/([^/]+\/[^/]+?)(?:\/revision\/(.+))?$/), tree = path.match(/^\/api\/models\/([^/]+\/[^/]+)\/tree\/([^/]+)(?:\/(.*))?$/);
     if (tree) {
       const doc = await model(tree[1]);

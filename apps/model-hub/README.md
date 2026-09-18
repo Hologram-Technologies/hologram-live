@@ -40,6 +40,21 @@ client lines. Open: a whole-repository download with Hugging Face blackholed fai
 IPFS archives had been packed without dotfiles (`ipfs-car` skips hidden paths); `pin-model.sh` now packs them and the
 eleven models are being pinned again. Until that run is repeated, full failover is UNVERIFIED.
 
+### Ollama, and the design behind both
+
+```bash
+ollama pull hub.uor.foundation/bartowski/MiniCPM5-2B-GGUF:Q4_K_M
+```
+
+The same service speaks Ollama's registry dialect for every GGUF repository in the index: the manifest's model layer
+is the GGUF file's SHA-256 from the index, the blob request is a `307` to a live source, and Ollama verifies the
+digest itself. The chat template and parameters come from Hugging Face's own manifest, accepted only when it names
+the very bytes our index names, and kept so the pull still works when Hugging Face is away (measured: Ollama 0.34.2
+pulled, verified and ran a model; with Hugging Face blackholed the same pull completed from ModelScope).
+`GET /api/models?search=…` lists and searches in Hugging Face's shape (`HfApi.list_models` works), which is also the
+cheap path for agents. Why these dialects, what the research found, the path map and what comes next:
+[docs/one-endpoint.md](docs/one-endpoint.md).
+
 ## Download
 
 **Download** saves a whole model as one `.zip`, any size, in any current browser. A small service worker

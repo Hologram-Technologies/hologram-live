@@ -490,7 +490,7 @@ function downloads({ onOpen } = {}) {
   const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const rowOf = (el) => el.closest("tr");
   const name = (path) => path.split("/").pop();
-  const hero = $("#dl-status"), toggle = $("#dl-all"), menu = $("#dl-menu");
+  const hero = $("#dl-status"), toggle = $("#dl-all"), menu = $("#dl-menu"), auto = $("#dl-auto");
   const say = (text, tone = "") => {
     for (const el of [progress, hero]) { if (!el) continue; el.className = el === hero ? `verdict ${tone}` : `progress ${tone}`; el.textContent = text; }
     progress.hidden = !text;
@@ -553,7 +553,58 @@ function downloads({ onOpen } = {}) {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
   menu?.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) open(false); });
 
-  // One zip per source: every file streams straight into the archive while its SHA-256 is computed. With the
+  // First choice: the download worker (zip-sw.js) answers zip/<model>/<source>.zip with a stream, and the browser's
+  // own download manager saves it: any size, any browser, nothing in memory. The page only watches the progress.
+  const head0 = $(".files-head");
+  const worker = "serviceWorker" in navigator
+    ? navigator.serviceWorker.register(`${base}zip-sw.js`).then(() => navigator.serviceWorker.ready).catch(() => null)
+    : Promise.resolve(null);
+  let watching = null, alive = null;
+  const leaving = (e) => { e.preventDefault(); e.returnValue = ""; };
+  const settle = () => {
+    clearInterval(alive); alive = null; watching = null;
+    removeEventListener("beforeunload", leaving);
+    for (const b of [toggle, auto]) b?.classList.remove("busy");
+    const label = auto?.querySelector("span");
+    if (label) label.textContent = "Download";
+  };
+  new BroadcastChannel("model-hub-zip").onmessage = ({ data }) => {
+    if (!watching || data.id !== head0?.dataset.repo) return;
+    const label = auto?.querySelector("span");
+    if (data.state === "running") {
+      if (label) label.textContent = `${Math.min(99, Math.floor((data.sent / data.total) * 100))}%`;
+      say(`Downloading ${data.filename}. Verified ${data.files} of ${data.count} files, ${formatBytes(data.sent)} of ${formatBytes(data.total)}.`);
+      const cancel = Object.assign(document.createElement("button"), { type: "button", className: "link", textContent: "Cancel" });
+      cancel.onclick = () => navigator.serviceWorker.controller?.postMessage({ cancel: data.id });
+      progress.append(" ", cancel);
+    } else {
+      if (data.state === "done") say(`Downloaded ${data.filename}: ${data.count} files, every one matching its address.`, "ok");
+      else if (data.state === "cancelled") say(`Stopped after ${data.files} of ${data.count} files.`);
+      else say(`${data.detail} The download was stopped.`, "bad");
+      settle();
+    }
+  };
+  async function viaWorker(kind) {
+    const registration = await worker;
+    if (!registration) return false;
+    if (!navigator.serviceWorker.controller) await Promise.race([new Promise((r) => navigator.serviceWorker.addEventListener("controllerchange", r, { once: true })), new Promise((r) => setTimeout(r, 3000))]);
+    if (!navigator.serviceWorker.controller) return false;
+    const url = `${base}zip/${head0.dataset.repo.split("/").map(encodeURIComponent).join("/")}/${kind}.zip`;
+    const head = await fetch(url, { method: "HEAD" }).catch(() => null);
+    if (!head?.ok) return false;
+    watching = kind;
+    for (const b of [toggle, auto]) b?.classList.add("busy");
+    addEventListener("beforeunload", leaving);
+    alive = setInterval(() => navigator.serviceWorker.controller?.postMessage("alive"), 10000);
+    say(`Starting the download, ${formatBytes(Number(head.headers.get("content-length")))}.`);
+    // A hidden frame, so the page itself never navigates.
+    const frame = Object.assign(document.createElement("iframe"), { hidden: true, src: url });
+    document.body.append(frame);
+    setTimeout(() => frame.remove(), 60000);
+    return true;
+  }
+
+  // Fallback, one zip per source: every file streams straight into the archive while its SHA-256 is computed. With the
   // save picker (Chromium) nothing is held in memory; elsewhere the zip is assembled in memory up to a limit.
   const IN_MEMORY_LIMIT = 1.5e9;
   let cancelled = false;
@@ -561,7 +612,9 @@ function downloads({ onOpen } = {}) {
     const button = e.target.closest("button[data-zip]");
     if (!button || button.classList.contains("busy") || toggle?.classList.contains("busy")) return;
     const source = button.dataset.zip;
-    const label = toggle?.querySelector("span");
+    if (watching) return;
+    if (await viaWorker(button.dataset.kind || "auto")) return;
+    const label = auto?.querySelector("span");
     const list = files().map((f) => ({ ...f, href: f.links.find((l) => l.source === source)?.href })).filter((f) => f.href);
     const skipped = table.tBodies[0].rows.length - list.length;
     const total = list.reduce((s, f) => s + f.size, 0);

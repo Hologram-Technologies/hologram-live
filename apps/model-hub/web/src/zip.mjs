@@ -26,6 +26,21 @@ function dosStamp(d = new Date()) {
 }
 
 export class ZipWriter {
+  // The exact byte length of the archive for `entries` ([{ name, size }], in the order they will be added). STORE
+  // only, so every part is a fixed function of names and sizes; a download can declare Content-Length before the
+  // first byte. Must mirror add() and finish() exactly: qa/zip-size.test.mjs holds the two together.
+  static sizeOf(entries) {
+    let offset = 0, directory = 0, any64 = false;
+    for (const e of entries) {
+      const name = encoder.encode(e.name).length, zip64 = e.size >= LIMIT32, bigOffset = offset >= LIMIT32;
+      any64 ||= zip64;
+      directory += 46 + name + (zip64 || bigOffset ? 4 + (zip64 ? 16 : 0) + (bigOffset ? 8 : 0) : 0);
+      offset += 30 + name + (zip64 ? 20 : 0) + e.size + (zip64 ? 24 : 16);
+    }
+    const needs64 = entries.length >= 0xffff || offset >= LIMIT32 || directory >= LIMIT32 || any64;
+    return offset + directory + (needs64 ? 56 + 20 : 0) + 22;
+  }
+
   constructor(write) {
     this.write = write;
     this.offset = 0;

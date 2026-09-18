@@ -238,10 +238,13 @@ function modelPage(m, files, ov, readme) {
       if (s.p2p) return row(kind, name, `torrent, ${n} files`, "Get torrent", "a", `href="${R.esc(s.page)}" download title="A BitTorrent file with every file, seeded by Hugging Face. Your client checks every piece"`);
       const have = files.files.filter(([path]) => !s.missing.includes(path));
       const size = have.reduce((sum, f) => sum + (f[1] || 0), 0);
-      return row(kind, name, `${have.length === n ? n : `${have.length} of ${n}`} files, ${R.bytes(size)}`, "Download zip", "button", `type="button" data-zip="${name}" title="Every file ${name} has, as one zip, each checked against its address"`);
+      return row(kind, name, `${have.length === n ? n : `${have.length} of ${n}`} files, ${R.bytes(size)}`, "Download zip", "button", `type="button" data-zip="${name}" data-kind="${R.esc(kind)}" title="Every file ${name} has, as one zip, each checked against its address"`);
     };
     downloadMenu = `<div class="download-all">
-        <button type="button" class="button success" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu">${R.icon.down}<span>Download</span></button>
+        <div class="split">
+          <button type="button" class="button success" id="dl-auto" data-zip="Hugging Face" data-kind="auto" title="One zip with every file, each checked against its address. Every file comes from the first source that answers">${R.icon.down}<span>Download</span></button>
+          <button type="button" class="button success" id="dl-all" aria-haspopup="menu" aria-expanded="false" aria-controls="dl-menu" aria-label="Choose a source" title="Choose a source">${R.icon.chevron}</button>
+        </div>
         <div class="menu" id="dl-menu" role="menu" aria-label="Download" hidden>
           <p class="menu-note">Choose where to download from. Every file is checked against its address as it arrives.</p>
           ${SOURCE_COLUMNS.map(item).join("")}
@@ -313,6 +316,8 @@ await writeFile(join(DIST, "404.html"), page({
 for (const m of models) {
   const filesPath = join(SITE, "data", "files", m.org, `${m.name}.json`);
   const files = existsSync(filesPath) ? JSON.parse(await readFile(filesPath, "utf8")) : null;
+  // The same file list, published: the download worker reads it, and so can any agent.
+  if (files) { await mkdir(join(DIST, "data", "files", m.org), { recursive: true }); await cp(filesPath, join(DIST, "data", "files", m.org, `${m.name}.json`)); }
   const ovPath = join(SITE, "data", "overview", m.org, `${m.name}.json`), mdPath = join(SITE, "data", "overview", m.org, `${m.name}.md`);
   const ov = existsSync(ovPath) ? JSON.parse(await readFile(ovPath, "utf8")) : null;
   const readme = existsSync(mdPath) ? await readFile(mdPath, "utf8") : null;
@@ -329,6 +334,10 @@ for (const f of ["hologram-warm.css", "hologram-gap-tokens.css"]) await cp(join(
 await cp(join(KIT, "fonts"), join(DIST, "fonts"), { recursive: true });
 await cp(join(KIT, "logos"), join(DIST, "logos"), { recursive: true });
 if (existsSync(join(SITE, "public"))) await cp(join(SITE, "public"), DIST, { recursive: true });
+// The download worker is a classic script (module workers are not everywhere yet): ZipWriter first, then the worker.
+await writeFile(join(DIST, "zip-sw.js"), `${(await readFile(join(SITE, "src", "zip.mjs"), "utf8")).replace(/^export /gm, "")}\n${await readFile(join(SITE, "src", "zip-sw.js"), "utf8")}`);
+await mkdir(join(DIST, "vendor", "hash-wasm"), { recursive: true });
+await cp(join(SITE, "vendor", "hash-wasm", "sha256.umd.min.js"), join(DIST, "vendor", "hash-wasm", "sha256.umd.min.js"));
 if (archive) {
   // Machine access: the ledger, and one tiny stub per day so a script resolves a date with one request.
   await cp(archivePath, join(DIST, "archive.json"));

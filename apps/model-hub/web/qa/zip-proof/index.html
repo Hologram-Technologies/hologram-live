@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>zip proof</title>
+<p>Transport proof for zip-sw.js: a generated zip streamed to the browser's download manager.</p>
+<a id="go-tiny" href="zip/_proof/tiny.zip">tiny</a>
+<a id="go-6g" href="zip/_proof/6g.zip">6g</a>
+<a id="go-good" href="zip/test/good/auto.zip">a model with a connection cut mid-file</a>
+<a id="go-bad" href="zip/test/bad/auto.zip">a model with one wrong address</a>
+<a id="go-plain" href="/plain/6g.bin">plain server download, 6g at 60 MB/s (control)</a>
+<a id="go-6gnet" href="zip/_proof/6g.zip?rate=60">6g at 60 MB/s</a>
+<button id="frame-tiny" type="button" onclick="document.body.append(Object.assign(document.createElement('iframe'), { hidden: true, src: 'zip/_proof/tiny.zip' }))">tiny through a hidden frame</button>
+<pre id="log"></pre>
+<script type="module">
+  const log = (text) => { document.querySelector("#log").textContent += `${text}\n`; };
+  window.progress = null;
+  new BroadcastChannel("model-hub-zip").onmessage = (e) => { window.progress = e.data; };
+  await navigator.serviceWorker.register("zip-sw.js");
+  const registration = await navigator.serviceWorker.ready;
+  if (!navigator.serviceWorker.controller) await new Promise((resolve) => navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true }));
+  setInterval(() => registration.active?.postMessage("ping"), 10000); // keep the worker alive during long downloads
+  window.expected = {};
+  for (const spec of ["good", "bad"]) {
+    const head = await fetch(`zip/test/${spec}/auto.zip`, { method: "HEAD" }).catch(() => null);
+    window.expected[spec] = head?.ok ? Number(head.headers.get("content-length")) : 0;
+  }
+  for (const spec of ["tiny", "6g"]) {
+    const head = await fetch(`zip/_proof/${spec}.zip`, { method: "HEAD" });
+    window.expected[spec] = Number(head.headers.get("content-length"));
+    log(`${spec}: ${window.expected[spec]} bytes declared`);
+  }
+  window.ready = true;
+</script>

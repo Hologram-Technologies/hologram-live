@@ -11,6 +11,9 @@ hub.uor.foundation {
 		reverse_proxy hub-kappa:5000
 	}
 	handle {
+		# zip/ links are answered inside the browser by the download worker; anything that reaches the server has none.
+		@zip path /zip/*
+		respond @zip "This zip is assembled in your browser. Open the model page on hub.uor.foundation and press Download." 404
 		# Archived days are read by the browser from any origin and verified there.
 		header /archive/* Access-Control-Allow-Origin "*"
 		header /archive.json Access-Control-Allow-Origin "*"

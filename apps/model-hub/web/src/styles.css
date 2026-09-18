@@ -512,6 +512,10 @@ th.dl { font-size: var(--text-sm); }
 .dl-yes .i, .dl-no .i { width: var(--space-4); height: var(--space-4); }
 .section-head { flex-wrap: wrap; }
 .download-all { position: relative; }
+.split { display: inline-flex; }
+.split .button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split .button:last-child { padding: 0 var(--space-2); border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: color-mix(in srgb, var(--success-foreground) 25%, transparent); }
+.split .button.busy { cursor: progress; }
 .download-all .menu { width: min(26rem, calc(100vw - 2 * var(--hh-gutter))); }
 /* A source row: availability dot, name and facts, one action. */
 .menu .src[role="menuitem"] { height: var(--space-12); min-height: var(--space-12); padding: 0 var(--space-3); line-height: 1.43; }

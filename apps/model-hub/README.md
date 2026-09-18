@@ -9,6 +9,27 @@ hologram-live node comes with the Model Hub `.holo` application (issue
 [#76](https://github.com/Hologram-Technologies/hologram-live/issues/76), ADR 023 in
 [#75](https://github.com/Hologram-Technologies/hologram-live/pull/75)).
 
+## Download
+
+**Download** saves a whole model as one `.zip`, any size, in any current browser. A small service worker
+(`web/src/zip-sw.js`, which answers only `zip/…` and never a page) assembles the archive while it streams, so the
+browser's own download manager saves it with a real progress bar and nothing is held in memory: the zip is
+uncompressed, so its exact size is declared before the first byte. Every file is hashed as it passes and compared with
+its address from the index; a wrong byte fails the download and nothing is kept. Each file comes from the first source
+that answers (Hugging Face, ModelScope, IPFS), a dropped connection resumes from the byte it reached, from the same
+source or the next, and the menu beside the button restricts the zip to one source. Inside every zip: `SHA256SUMS`
+(`sha256sum -c SHA256SUMS` checks it offline, forever) and `HOLOGRAM.json` (model, revision, index manifest, which
+source delivered each file). `zip/<org>/<name>/auto.zip` is the link; `data/files/<org>/<name>.json` is the file list
+it reads. Without a service worker the page falls back to the file picker stream (Chrome, Edge) or an in-memory zip
+up to 1.5 GB.
+
+Measured 2026-09-18 (`web/qa/zip-proof`, Docker on the hub host): a generated 5.9 GB zip saved with the declared size
+exactly, valid, in Chromium 131 (140 s, browser memory 377 to 471 MB), WebKit 18.2 (38 s, 383 to 419 MB) and stock
+Firefox 156 (169 s at 60 MB/s, container under 1 GB). A connection cut mid-file resumed and verified; a planted wrong
+address failed the download in all three with nothing left on disk. Playwright's own Firefox build cannot judge
+downloads: an ordinary 6 GB server download exhausts its memory too. `node qa/zip-size.test.mjs` holds the declared
+size and the written bytes together (empty file, UTF-8 names, 65,536 entries, a file above 4 GiB).
+
 ## The Archive
 
 The header pill `Index <day>` opens every day the catalog was captured, the way the Wayback Machine opens a page's

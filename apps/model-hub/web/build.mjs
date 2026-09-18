@@ -147,7 +147,9 @@ const browse = page({
 });
 
 // ---- model pages
-const SOURCE_COLUMNS = [["hologram", "Hologram"], ["huggingface.co", "Hugging Face"], ["modelscope.cn", "ModelScope"], ["ipfs", "IPFS"], ["bittorrent", "P2P"]];
+// Sources a file can be downloaded from, as table columns. The hub registry holds the daily index only (decision
+// 2026-09-18), so it is not a weights source here; data.mjs still records it if a model ever appears there.
+const SOURCE_COLUMNS = [["huggingface.co", "Hugging Face"], ["modelscope.cn", "ModelScope"], ["ipfs", "IPFS"], ["bittorrent", "P2P"]];
 // The manifest address drawn as braille: 32 bytes, 32 cells, two rows of 16. Lossless: the dots are the bits.
 function signature(manifest) {
   const bytes = B.hexToBytes(manifest.split(":")[1]);

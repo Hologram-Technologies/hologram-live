@@ -104,7 +104,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 /* The brand kit's success pair: --success behind --success-foreground. Used for Download. */
 .button.success { background: var(--success); border-color: var(--success); color: var(--success-foreground); }
 .button.success .i { color: var(--success-foreground); stroke-width: 2.25; }
-.button.success:hover { border-color: var(--success); opacity: .85; }
+/* Hover adds a ring instead of dimming, so the fill is always exactly --success (the green of "Verified"). */
+.button.success:hover, .button.success:focus-visible { border-color: var(--success); box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--success) 30%, transparent); }
 .button:disabled { opacity: .5; }
 
 .pill { display: inline-flex; align-items: center; height: var(--hh-control); padding: 0 var(--space-3); border-radius: var(--hh-control); background: var(--hh-fill); font-family: var(--font-mono); font-size: var(--text-sm); }
@@ -570,7 +571,6 @@ th.dl[data-state="bad"] .name::before { background: var(--hh-bad); }
 .ov-facts dd { margin: 0; font-family: var(--font-mono); text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .ov-facts dd a, .ov-list a, .ov-lede a, .md a { color: var(--hh-text); text-decoration: underline; text-decoration-color: var(--hh-line-focus); text-underline-offset: var(--space-1); }
 .ov-note { display: inline-flex; margin-left: var(--space-2); font-family: var(--font-sans); color: var(--hh-text-dim); }
-.ov-note.yes { color: var(--hh-ok); }
 .ov-note.no { color: var(--hh-bad); }
 .ov-lede { font-size: var(--text-sm); color: var(--hh-text-dim); }
 .ov-lede code { font-family: var(--font-mono); color: var(--hh-text); }

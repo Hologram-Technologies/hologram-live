@@ -18,7 +18,8 @@ const API = process.env.HOLOGRAM_API || "https://humuhumu33.github.io/hologram-a
 // Models whose bytes are stored on a Hologram registry, published as models/<owner>/<name>:<revision>.
 const HUB = process.env.MODEL_HUB_REGISTRY || "hub.uor.foundation";
 const LIMIT = Number(process.argv[process.argv.indexOf("--limit") + 1]) || 500;
-const HEADERS = process.env.HF_TOKEN ? { authorization: `Bearer ${process.env.HF_TOKEN}` } : {};
+// The Hugging Face token goes to huggingface.co and nowhere else: never to the hub, the address index or a gateway.
+const headersFor = (url) => (process.env.HF_TOKEN && /^https:\/\/huggingface\.co\//.test(url) ? { authorization: `Bearer ${process.env.HF_TOKEN}` } : {});
 
 async function get(url, as = "json", tries = 3) {
   if (!/^https?:/.test(url)) {
@@ -26,7 +27,7 @@ async function get(url, as = "json", tries = 3) {
     return text == null ? null : as === "json" ? JSON.parse(text) : text;
   }
   for (let i = 0; i < tries; i++) {
-    const res = await fetch(url, { headers: HEADERS }).catch(() => null);
+    const res = await fetch(url, { headers: headersFor(url) }).catch(() => null);
     if (res?.ok) {
       try { return as === "json" ? await res.json() : as === "bytes" ? new Uint8Array(await res.arrayBuffer()) : await res.text(); }
       catch { return null; }
@@ -113,6 +114,7 @@ async function main() {
   const pins = (await get(`https://${HUB}/pins.json`)) || { gateway: "https://ipfs.filebase.io/ipfs/", models: {} };
   // The archive ledger (archive.sh): one entry per captured day, hash-chained, each day a CAR on IPFS.
   const archive = await get(`https://${HUB}/archive.json`);
+  await mkdir(DATA, { recursive: true }); // a fresh checkout (CI) has no data directory yet
   if (archive?.days?.length) await writeFile(join(DATA, "archive.json"), JSON.stringify(archive));
   else await rm(join(DATA, "archive.json"), { force: true });
   // A source counts for a model only when every weight file there is byte identical (every file, if none are weights).

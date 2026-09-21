@@ -1,0 +1,37 @@
+# Vendored from Hologram-Technologies/kappa-registry @ c7b2ee7; see ../../README.md.
+
+[package]
+name = "kappa-store-redb"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Optional redb query accelerator for kappa-registry."
+
+[lib]
+name = "kappa_store_redb"
+path = "src/lib.rs"
+
+[features]
+default = ["encryption"]
+encryption = ["kappa-core/encryption"]
+
+[dependencies]
+kappa-core = { path = "../kappa-core", default-features = false }
+redb = { version = "4" }
+blake3 = { version = "1" }
+hex = { version = "0.4" }
+tracing = { version = "0.1" }
+tempfile = { version = "3" }
+uuid = { version = "1", features = ["v4"] }
+sha2 = { version = "0.11" }
+md-5 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+getrandom = { version = "0.4", features = ["sys_rng"] }
+base64-simd = "0.8"
+crc-fast = "1"
+zstd = "0.13"
+xz2 = "0.1"
+bzip2 = "0.5"

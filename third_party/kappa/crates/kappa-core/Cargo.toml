@@ -1,0 +1,54 @@
+# Vendored from Hologram-Technologies/kappa-registry @ c7b2ee7 (upstream UOR-Foundation/kappa-registry @ 2af8656
+# plus the patches in ../../patches). Manifest rewritten to stand alone; see ../../README.md.
+
+[package]
+name = "kappa-core"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Content-addressed graph database primitives."
+
+[lib]
+name = "kappa_core"
+path = "src/lib.rs"
+
+[features]
+default = ["encryption"]
+encryption = ["dep:rekindle-aead"]
+
+[dependencies]
+dcbor = { path = "../../../dcbor/dcbor", features = ["derive", "multithreaded"] }
+sha2 = { version = "0.11" }
+sha3 = { version = "0.12" }
+blake3 = { version = "1" }
+sha1-checked = { version = "0.10" }
+hex = { version = "0.4" }
+ed25519-dalek = { version = "3", default-features = false, features = ["rand_core"] }
+p256 = { version = "0.14", features = ["ecdsa"] }
+k256 = { version = "0.14", features = ["ecdsa"] }
+signature = { version = "3" }
+frost-core = { version = "3", features = ["serialization"] }
+frost-ed25519 = { version = "3", features = ["serialization"] }
+frost-p256 = { version = "3", features = ["serialization"] }
+frost-secp256k1 = { version = "3", features = ["serialization"] }
+rand_core = { version = "0.10", default-features = false }
+rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+getrandom = { version = "0.4", features = ["sys_rng"] }
+rekindle-aead = { git = "https://github.com/ScopeCreep-zip/rekindle", branch = "feat/cli-tui-restructure-rewrite", default-features = false, optional = true }
+hmac = "0.13"
+subtle = "2"
+md-5 = "0.10"
+crc-fast = "1"
+zeroize = { version = "1.9" }
+dashmap = { version = "6" }
+thiserror = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+async-trait = { version = "0.1" }
+tracing = { version = "0.1" }
+chrono = { version = "0.4" }
+uuid = { version = "1", features = ["v4"] }
+zstd = "0.13"
+xz2 = "0.1"
+bzip2 = "0.5"

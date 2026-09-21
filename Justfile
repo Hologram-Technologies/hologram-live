@@ -6,7 +6,8 @@ default:
 
 # Format the rust code
 fmt:
-    cargo fmt --all --check
+    # Every workspace member; not the vendored crates in third_party/ (ADR 032).
+    cargo fmt --check
 
 # Check code
 check:

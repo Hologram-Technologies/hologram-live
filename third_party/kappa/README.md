@@ -1,18 +1,30 @@
-# Kappa store pin
+# Kappa store, vendored
 
-The registry (`apps/registry/`, cargo feature `oci`, off by default) stores its bytes in the Kappa store. This file
-is the record `scripts/check-kappa-pin.sh` audits. ADR 025 is the decision.
+The registry (`apps/registry/`, cargo feature `oci`, off by default) stores its bytes in the Kappa store. Its two
+crates are vendored here, so the registry builds from this repository alone (ADR 032, which supersedes the git pin of
+ADR 025). `scripts/check-kappa-pin.sh` audits this directory.
 
 | | |
 |---|---|
 | Upstream | https://github.com/UOR-Foundation/kappa-registry |
-| Upstream revision the pin is based on | 2af86560a177fc9651b6c0e92e7974140ed77dd5 |
-| Fork | https://github.com/Hologram-Technologies/kappa-registry, branch `hologram-registry-pin`. Development copy: https://github.com/humuhumu33/kappa-registry (the upstream pull requests come from there) |
-| Pin revision (must equal Cargo.lock) | c7b2ee722cfad39bfe486af0f5f37646bccc68f5 |
-| Crates used | kappa-core, kappa-store-redb, both with `default-features = false`. Nothing else from the workspace |
+| Upstream revision the copy is based on | 2af86560a177fc9651b6c0e92e7974140ed77dd5 |
+| Copied from | https://github.com/Hologram-Technologies/kappa-registry @ c7b2ee722cfad39bfe486af0f5f37646bccc68f5 = upstream + the six patches below |
+| Crates | `crates/kappa-core`, `crates/kappa-store-redb`: `src/` and `README.md` only; tests, benches and the rest of the workspace are not copied |
+| Licence | `MIT OR Apache-2.0`, as declared in the upstream workspace manifest. Upstream ships no licence file yet: https://github.com/UOR-Foundation/kappa-registry/issues/16 |
+| Record | `VENDORED.sha256`: one line per vendored file. The guard fails if a file differs, appears or disappears |
 
-The plain upstream dependency builds as published (P0 verdict). The fork exists for the patches below, not to make
-the workspace parse.
+**What was changed in copying, and only this.** Each `Cargo.toml` was rewritten to stand alone: fields and
+dependencies that said `workspace = true` now carry the workspace's own values, the crate-to-crate links are paths,
+`[dev-dependencies]` is dropped because the tests are not copied, and `dcbor` points at `../../../dcbor/dcbor`.
+The Rust sources are byte for byte those of the fork revision.
+
+**Not built, but named.** `kappa-core`'s optional `encryption` feature still names `rekindle-aead` by git branch. The
+registry depends on `kappa-core` with `default-features = false`, so that dependency is never resolved, fetched or
+built, and the guard fails if `rekindle` or `aws-lc` enters the registry graph.
+
+**To change vendored code:** edit it here, add the change as a patch file below with its upstream link, run
+`scripts/check-kappa-pin.sh --record`, and say why in the pull request. **To re-vendor:** replace `crates/` from a new
+revision, keep the manifest rewrite, re-record, and update this table.
 
 ## Carried patches
 
@@ -34,19 +46,11 @@ Verified on the fork (Windows): `kappa-store-redb` tests pass with the feature o
 Upstream pull requests opened 2026-09-21: #13 (optional encryption), #14 (resumable uploads), #15 (sync before
 rename). Each was tested on its own branch from upstream `main`.
 
-Planned, not written yet:
+## The one other vendored dependency
 
-| Patch | Why | Blocks |
+`kappa-core` needs `dcbor`, which upstream names by branch on a personal fork. It is vendored too, in
+`../dcbor/` (BSD-2-Clause-Patent, licence file included), so no branch can move or vanish under the build.
+
+| Crate | From | Commit |
 |---|---|---|
-| `dcbor` named by `rev` on a mirror | a deleted branch must not break the build | a release |
-| LICENSE file | the crates declare `MIT OR Apache-2.0` and ship no file. Asked upstream: https://github.com/UOR-Foundation/kappa-registry/issues/16 | a release |
-
-## Fork-branch dependencies
-
-Upstream names `dcbor` by branch on a personal fork. `Cargo.lock` fixes the commit, so a `--locked` build
-reproduces while that commit stays fetchable. With `encryption` off, `rekindle-aead` (the other branch-named
-dependency) is no longer in the graph at all.
-
-| Crate | Upstream | Locked commit | Our mirror |
-|---|---|---|---|
-| dcbor, dcbor-derive | https://github.com/usrbinkat/bc-dcbor-rust (branch `feat/dcbor-derive`) | 2e5b901e8c9946794c5491cf92eeec2540b84261 | not yet |
+| dcbor, dcbor-derive | https://github.com/usrbinkat/bc-dcbor-rust, branch `feat/dcbor-derive` (a fork of BlockchainCommons/bc-dcbor-rust) | 2e5b901e8c9946794c5491cf92eeec2540b84261 |

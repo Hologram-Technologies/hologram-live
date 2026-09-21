@@ -17,7 +17,8 @@ members = [
 ]
 resolver = "2"
 # The gate tools judge the binary from outside; cargo must not claim them.
-exclude = ["apps/registry/gates/differential"]
+# Vendored store crates are built as dependencies, never linted, formatted or tested as ours.
+exclude = ["apps/registry/gates/differential", "third_party/kappa/crates", "third_party/dcbor"]
 
 [lib]
 name = "hologram_live"
@@ -41,8 +42,8 @@ blake3 = "1"
 bytes = { version = "1", optional = true }
 # Already locked through tonic and reqwest; the registry streams blob bodies with `ReaderStream`.
 tokio-util = { version = "0.7", features = ["io"], optional = true }
-kappa-core = { git = "https://github.com/Hologram-Technologies/kappa-registry", rev = "c7b2ee722cfad39bfe486af0f5f37646bccc68f5", optional = true, default-features = false }
-kappa-store-redb = { git = "https://github.com/Hologram-Technologies/kappa-registry", rev = "c7b2ee722cfad39bfe486af0f5f37646bccc68f5", optional = true, default-features = false }
+kappa-core = { path = "third_party/kappa/crates/kappa-core", optional = true, default-features = false }
+kappa-store-redb = { path = "third_party/kappa/crates/kappa-store-redb", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
 fs4 = "1.1"
 hyper-util = { version = "0.1", features = ["tokio"] }

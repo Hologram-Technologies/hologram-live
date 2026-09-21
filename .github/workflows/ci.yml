@@ -16,7 +16,9 @@ jobs:
         with:
           components: rustfmt,clippy
       - run: ./scripts/check-product-boundaries.sh
-      - run: cargo fmt --all --check
+      # Without --all: every workspace member, but not the vendored crates in
+      # third_party/, which are other people's code, kept byte for byte (ADR 032).
+      - run: cargo fmt --check
       - run: cargo check --workspace --all-targets --locked
       # Several tests create and execute real subprocess fixtures. Serializing
       # them prevents Linux ETXTBSY races while a neighboring fixture is being

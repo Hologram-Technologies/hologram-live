@@ -7,7 +7,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `tokio`                                      | async runtime, sockets, signals, and process control              |
 | `axum`                                       | browser-facing JSON/HTTP routes and shared HTTP serving           |
 | `tonic`, `prost`                             | native Protobuf/gRPC API and client                               |
-| `reqwest`                                    | outbound HTTP over Rustls: verified update downloads, the Ollama inference engine, and mediated Component fetch |
+| `reqwest`                                    | outbound HTTP over Rustls: verified update downloads, Ollama/vLLM inference, and mediated Component fetch |
 | `serde`, `serde_json`, `toml`                | typed configuration and public JSON                               |
 | `clap`                                       | CLI parsing                                                       |
 | `fs4`                                        | cross-platform daemon ownership lock                              |
@@ -26,11 +26,20 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | Tauri (`apps/desktop`)                       | desktop shell and managed `hologram` sidecar                      |
 | Cucumber (development only)                  | executable Gherkin public-boundary scenarios                      |
 
-The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary. Third-party plugin modules run as separate subprocesses speaking gRPC over a Unix socket rather than as loaded native code.
+The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary. Third-party plugin modules run as separate subprocesses speaking gRPC over a Unix socket rather than as loaded native code. The explicit exception is the off-by-default `llamacpp` feature recorded in ADR 033.
 
 `hologram-client` is deliberately standalone: it mirrors the wire shapes rather than importing them from `hologram-live`, because depending on the daemon would pull `wasmtime`, `axum`, and `tonic` into every consumer's build for the sake of a handful of JSON structures. Its only dependencies are `reqwest`, `rustls`, `serde`, and `serde_json`. The daemon takes it as a dev-dependency so a contract test can prove the mirrored types still agree; that keeps it out of the server's normal dependency graph, which the product-boundary gate checks.
 
 Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the server's Cargo dependency graph. The small `hologram-application-watch` workspace crate is Tauri-independent and injected into the desktop adapter; the standalone `hologram-live` server package does not depend on it.
+
+## Optional: llama.cpp (`--features llamacpp`)
+
+| Dependency | Purpose |
+| --- | --- |
+| `llama-cpp-2` | in-process GGUF model loading, tokenization, sampling, and decode |
+| `encoding_rs` | stateful UTF-8 assembly across token-piece boundaries |
+
+The feature requires CMake, Clang, and a C++ compiler. `llamacpp-metal` and `llamacpp-cuda` select the corresponding native GPU backend; the default build resolves neither dependency.
 
 ## Optional: the registry (`--features oci`)
 

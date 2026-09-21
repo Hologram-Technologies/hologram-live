@@ -14,7 +14,7 @@ pub struct ModelsArgs {
 enum ModelsCommand {
     /// List imported inference models.
     List,
-    /// Import a local .wcpu artifact directory produced by weightc.
+    /// Import a local .wcpu artifact directory or GGUF model file.
     Import { path: PathBuf },
     /// Remove an imported model and its copied artifact.
     Remove { id: String },

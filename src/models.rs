@@ -2,12 +2,14 @@ use crate::error::{LiveError, Result};
 use crate::protocol::ObjectMetadata;
 use crate::store::ObjectStore;
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use utoipa::ToSchema;
 
 pub const MODEL_KIND: &str = "model";
 const MODEL_MEDIA_TYPE: &str = "application/vnd.hologram.model+json";
+const GGUF_FILE_NAME: &str = "model.gguf";
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ModelInfo {
@@ -30,6 +32,8 @@ struct ModelManifest {
     source: String,
     size: u64,
     files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    content_blake3: Option<String>,
 }
 
 /// Catalog of imported inference models.
@@ -77,6 +81,7 @@ impl ModelCatalog {
             source: source.display().to_string(),
             size,
             files: files.into_iter().map(|(path, _)| path).collect(),
+            content_blake3: None,
         };
         let bytes = serde_json::to_vec_pretty(&manifest)?;
         let metadata = self.store.put(
@@ -91,6 +96,86 @@ impl ModelCatalog {
                 .map_err(|error| LiveError::io(&destination, error))?;
         }
         copy_directory(source, &destination)?;
+        Ok(model_info(metadata, &manifest))
+    }
+
+    /// Import a single-file GGUF model for the in-process `llamacpp` engine.
+    pub fn import_gguf(&self, source: &Path) -> Result<ModelInfo> {
+        if !source.is_file()
+            || source
+                .extension()
+                .is_none_or(|extension| !extension.eq_ignore_ascii_case("gguf"))
+        {
+            return Err(LiveError::Protocol(format!(
+                "{} is not a .gguf file",
+                source.display()
+            )));
+        }
+        let mut input =
+            std::fs::File::open(source).map_err(|error| LiveError::io(source, error))?;
+        let mut staged = tempfile::NamedTempFile::new_in(&self.models_dir)
+            .map_err(|error| LiveError::io(&self.models_dir, error))?;
+        let mut hasher = blake3::Hasher::new();
+        let mut magic = [0_u8; 4];
+        if let Err(error) = input.read_exact(&mut magic) {
+            if error.kind() != std::io::ErrorKind::UnexpectedEof {
+                return Err(LiveError::io(source, error));
+            }
+        }
+        if &magic != b"GGUF" {
+            return Err(LiveError::Protocol(format!(
+                "{} does not have GGUF magic bytes",
+                source.display()
+            )));
+        }
+        hasher.update(&magic);
+        staged
+            .write_all(&magic)
+            .map_err(|error| LiveError::io(staged.path(), error))?;
+        let mut size = 4_u64;
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        loop {
+            let read = input
+                .read(&mut buffer)
+                .map_err(|error| LiveError::io(source, error))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            staged
+                .write_all(&buffer[..read])
+                .map_err(|error| LiveError::io(staged.path(), error))?;
+            size = size.saturating_add(read.try_into().unwrap_or(u64::MAX));
+        }
+        let name = source
+            .file_stem()
+            .map(|value| value.to_string_lossy().into_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "model".to_owned());
+        let manifest = ModelManifest {
+            name,
+            engine: "llamacpp".to_owned(),
+            source: source.display().to_string(),
+            size,
+            files: vec![GGUF_FILE_NAME.to_owned()],
+            content_blake3: Some(format!("blake3:{}", hasher.finalize().to_hex())),
+        };
+        let encoded = serde_json::to_vec_pretty(&manifest)?;
+        let metadata = self.store.put(
+            MODEL_KIND,
+            MODEL_MEDIA_TYPE,
+            Some(manifest.name.clone()),
+            &encoded,
+        )?;
+        let destination = self.artifact_path(&metadata.id);
+        std::fs::create_dir_all(&destination)
+            .map_err(|error| LiveError::io(&destination, error))?;
+        let file = destination.join(GGUF_FILE_NAME);
+        if !file.exists() {
+            staged
+                .persist_noclobber(&file)
+                .map_err(|error| LiveError::io(&file, error.error))?;
+        }
         Ok(model_info(metadata, &manifest))
     }
 
@@ -132,6 +217,17 @@ impl ModelCatalog {
             )));
         }
         Ok(path)
+    }
+
+    /// Local path of an imported single-file GGUF artifact.
+    pub fn artifact_file(&self, id: &str) -> Result<PathBuf> {
+        let file = self.artifact_dir(id)?.join(GGUF_FILE_NAME);
+        if !file.is_file() {
+            return Err(LiveError::NotFound(format!(
+                "model {id} has no {GGUF_FILE_NAME}; it may be a .wcpu artifact"
+            )));
+        }
+        Ok(file)
     }
 
     pub fn remove(&self, id: &str) -> Result<()> {
@@ -231,7 +327,7 @@ mod tests {
     use super::*;
 
     struct Fixture {
-        _temporary: tempfile::TempDir,
+        temporary: tempfile::TempDir,
         store_root: PathBuf,
         models_dir: PathBuf,
         artifact: PathBuf,
@@ -249,7 +345,7 @@ mod tests {
             store_root: root.join("store"),
             models_dir: root.join("models"),
             artifact,
-            _temporary: temporary,
+            temporary,
         }
     }
 
@@ -276,6 +372,59 @@ mod tests {
         assert!(catalog.list().expect("list after remove").is_empty());
         assert!(!artifact.exists());
         assert!(catalog.get(&imported.id).is_err());
+    }
+
+    #[test]
+    fn gguf_import_records_a_single_file_and_the_llamacpp_engine() {
+        let fixture = fixture();
+        let source = fixture.temporary.path().join("tiny.gguf");
+        std::fs::write(&source, b"GGUF\x03\x00\x00\x00rest-of-file").expect("write gguf");
+        let store = Arc::new(ObjectStore::open(&fixture.store_root).expect("store"));
+        let catalog = ModelCatalog::open(store, &fixture.models_dir).expect("catalog");
+
+        let info = catalog.import_gguf(&source).expect("import");
+
+        assert_eq!(info.engine, "llamacpp");
+        assert_eq!(info.name, "tiny");
+        let stored = catalog.artifact_file(&info.id).expect("artifact file");
+        assert_eq!(
+            std::fs::read(stored).expect("read stored"),
+            b"GGUF\x03\x00\x00\x00rest-of-file"
+        );
+    }
+
+    #[test]
+    fn gguf_import_rejects_a_directory_and_bad_magic() {
+        let fixture = fixture();
+        let store = Arc::new(ObjectStore::open(&fixture.store_root).expect("store"));
+        let catalog = ModelCatalog::open(store, &fixture.models_dir).expect("catalog");
+        let directory = fixture.temporary.path().join("not-a-file.gguf");
+        std::fs::create_dir_all(&directory).expect("directory");
+        assert!(catalog.import_gguf(&directory).is_err());
+
+        let bad = fixture.temporary.path().join("bad.gguf");
+        std::fs::write(&bad, b"not gguf").expect("bad fixture");
+        let error = catalog.import_gguf(&bad).expect_err("bad magic");
+        assert!(error.to_string().contains("magic"), "{error}");
+    }
+
+    #[test]
+    fn gguf_identity_covers_model_bytes() {
+        let fixture = fixture();
+        let source = fixture.temporary.path().join("tiny.gguf");
+        let store = Arc::new(ObjectStore::open(&fixture.store_root).expect("store"));
+        let catalog = ModelCatalog::open(store, &fixture.models_dir).expect("catalog");
+        std::fs::write(&source, b"GGUFfirst").expect("first model");
+        let first = catalog.import_gguf(&source).expect("first import");
+        std::fs::write(&source, b"GGUFother").expect("second model");
+        let second = catalog.import_gguf(&source).expect("second import");
+
+        assert_ne!(first.id, second.id);
+        assert_eq!(
+            std::fs::read(catalog.artifact_file(&first.id).expect("first file"))
+                .expect("first bytes"),
+            b"GGUFfirst"
+        );
     }
 
     #[test]

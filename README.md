@@ -103,21 +103,30 @@ The response comes from the inference engine selected in `live.toml`:
 
 ```toml
 [inference]
-engine = "echo"            # echo | weightc | ollama
-default_model = ""         # blake3:... of an imported model (weightc) or a model tag (ollama)
+engine = "echo"            # echo | weightc | ollama | llamacpp | vllm
+default_model = ""         # imported id (weightc/llamacpp) or served name (Ollama/vLLM)
 weightc_path = "weightc"
 ollama_endpoint = "http://127.0.0.1:11434"
+vllm_endpoint = "http://127.0.0.1:8000"
+vllm_token_env = "VLLM_API_KEY"
+model_path = ""            # local GGUF file (llamacpp)
+n_ctx = 4096
+n_gpu_layers = 0
+llamacpp_max_concurrent_requests = 1
 request_timeout_secs = 300
 resident_sessions = false  # weightc only: keep one resident enter session per conversation
 max_resident_sessions = 4  # LRU cap on resident sessions
 ```
 
-The default `echo` engine repeats the user message; it needs no model and no external process. The `weightc` engine shells out to `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact, and the `ollama` engine proxies `POST /api/generate` on the configured endpoint.
+The default `echo` engine repeats the user message; it needs no model and no external process. The `weightc` engine shells out to `weightc ask <artifact-dir> <prompt> --json` against an imported `.wcpu` artifact. `ollama` proxies `/api/generate`, while `vllm` uses the OpenAI-compatible `/v1/completions` and `/v1/models` endpoints with native streaming and optional authentication from `VLLM_API_KEY`.
+
+`llamacpp` loads a local GGUF model in-process and streams decoded pieces with exact token counts. Set `model_path` directly, or import a GGUF file and put its returned `blake3:...` id in `default_model`. It is off by default because it builds native C++ code and gives model execution the daemon's crash boundary. Build it with `cargo build --release --features llamacpp`; use `llamacpp-metal` or `llamacpp-cuda` for the corresponding GPU backend. These builds require CMake, Clang, and a C++ compiler.
 
 With `resident_sessions = true`, the weightc engine instead keeps a supervised `weightc enter --jsonl` process per conversation, so turns reuse the live KV context instead of replaying a transcript, and only the new message crosses the wire each turn. Sessions are LRU-capped by `max_resident_sessions`; a crashed session is reported as a typed error and lazily respawned (starting fresh context) on the next turn. This mode needs a weightc build with `enter --jsonl` support. Models are managed with:
 
 ```bash
 hologram models import ./tinyllama.wcpu
+hologram models import ./tinyllama.gguf
 hologram models list
 hologram models remove blake3:...
 ```

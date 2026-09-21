@@ -69,9 +69,9 @@ This document is deliberately strict about what the current stable build does an
 - `.holo` v4 inference-model packaging, import, verified application-directory metadata, and metadata-only `hologram ai inspect`.
 - Direct execution of locked Python OCI rootfs archives through the experimental local container provider, using the current schema-3 normalized Docker archive with canonical SHA-256 blob paths, manifest/tar encoding, source epoch, and compression; non-canonical planned/completed provenance covers hashed source inputs, requested base, pinned uv, observed Docker/image identities, output layer κ, and the remaining clean-host reproducibility blocker.
 - Durable local conversation history.
-- Conversation-backed chat over a configurable inference engine (`echo` by default; `weightc` one-shot CLI or an Ollama-compatible HTTP endpoint via `live.toml`), with independent, switchable threads in the desktop app.
+- Conversation-backed chat over a configurable inference engine (`echo` by default; `weightc`, Ollama, vLLM, or feature-gated in-process llama.cpp via `live.toml`), with independent, switchable threads in the desktop app.
 - Optional resident per-conversation weightc sessions (`resident_sessions = true`): a supervised `weightc enter --jsonl` process per conversation with KV continuity, LRU-capped and lazily respawned on failure.
-- Import, listing, and removal of `weightc` `.wcpu` model artifact directories.
+- Import, listing, and removal of `weightc` `.wcpu` directories and llama.cpp GGUF model files.
 - OpenAI-compatible (`/v1/chat/completions`, `/v1/models`) and Ollama-compatible (`/api/generate`, `/api/chat`, `/api/tags`, `/api/show`) HTTP inference APIs, both streaming (SSE and NDJSON respectively) and non-streaming, with an `x-hologram-stream: native | emulated` response header and token usage reported when the engine measures it.
 - Minimal control-plane node inventory and heartbeat records.
 - Dynamic third-party modules as sha256-pinned, supervised subprocess plugins speaking gRPC over a Unix socket (`plugins list` / `plugins call`); plugins receive no host resource access in v1.

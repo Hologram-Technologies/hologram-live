@@ -55,6 +55,8 @@ clap = { version = "4.5", features = ["derive", "env"] }
 fs4 = "1.1"
 hyper-util = { version = "0.1", features = ["tokio"] }
 kameo = "0.22"
+encoding_rs = { version = "0.8", optional = true }
+llama-cpp-2 = { version = "=0.1.156", optional = true, default-features = false }
 opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["grpc-tonic", "metrics", "trace", "tls-ring", "tls-roots"] }
 opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }
@@ -107,6 +109,11 @@ hologram-client = { path = "crates/hologram-client" }
 
 [features]
 bdd = []
+# In-process GGUF execution. Off by default because it compiles llama.cpp and
+# gives native model code the daemon's process boundary.
+llamacpp = ["dep:encoding_rs", "dep:llama-cpp-2"]
+llamacpp-cuda = ["llamacpp", "llama-cpp-2/cuda"]
+llamacpp-metal = ["llamacpp", "llama-cpp-2/metal"]
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
 oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:getrandom", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
 

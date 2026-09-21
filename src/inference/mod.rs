@@ -7,11 +7,17 @@
 //! HTTP endpoint.
 
 mod echo;
+#[cfg(feature = "llamacpp")]
+mod llamacpp;
 mod ollama;
+mod vllm;
 mod weightc;
 
 pub use echo::EchoEngine;
+#[cfg(feature = "llamacpp")]
+pub use llamacpp::LlamaCppEngine;
 pub use ollama::OllamaEngine;
+pub use vllm::VllmEngine;
 pub use weightc::WeightcEngine;
 
 use crate::config::InferenceConfig;
@@ -193,8 +199,30 @@ pub fn engine_from_config(
             mailbox_capacity,
         ))),
         "ollama" => Ok(Arc::new(OllamaEngine::new(config)?)),
+        "vllm" => Ok(Arc::new(VllmEngine::new(config)?)),
+        #[cfg(feature = "llamacpp")]
+        "llamacpp" => {
+            let mut resolved = config.clone();
+            if resolved.model_path.trim().is_empty() {
+                if resolved.default_model.trim().is_empty() {
+                    return Err(LiveError::Config(
+                        "llamacpp requires inference.model_path or an imported inference.default_model"
+                            .to_owned(),
+                    ));
+                }
+                resolved.model_path = catalog
+                    .artifact_file(&resolved.default_model)?
+                    .display()
+                    .to_string();
+            }
+            Ok(Arc::new(LlamaCppEngine::new(&resolved)?))
+        }
+        #[cfg(not(feature = "llamacpp"))]
+        "llamacpp" => Err(LiveError::Config(
+            "inference.engine \"llamacpp\" needs a build with --features llamacpp".to_owned(),
+        )),
         other => Err(LiveError::Config(format!(
-            "unsupported inference.engine {other:?}; expected echo, weightc, or ollama"
+            "unsupported inference.engine {other:?}; expected echo, weightc, ollama, llamacpp, or vllm"
         ))),
     }
 }

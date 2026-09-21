@@ -50,6 +50,12 @@ impl Layout {
         self.root.join("kappa").join("blobs")
     }
 
+    /// Where the Kappa store stages uploads: beside its blob root.
+    #[must_use]
+    pub fn staging(&self) -> PathBuf {
+        self.root.join("kappa").join("staging")
+    }
+
     #[must_use]
     pub fn kappa_db(&self) -> PathBuf {
         self.root.join("kappa").join("kappa.redb")

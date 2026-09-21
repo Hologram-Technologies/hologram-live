@@ -1,7 +1,7 @@
 From 358773a47054a7153dedda69440d219adf64514e Mon Sep 17 00:00:00 2001
 From: humuhumu33 <68450279+humuhumu33@users.noreply.github.com>
 Date: Mon, 21 Sep 2026 13:06:15 +0100
-Subject: [PATCH 3/3] test(store-redb): gate the encrypted upload tests on the
+Subject: [PATCH 3/6] test(store-redb): gate the encrypted upload tests on the
  encryption feature
 
 ---

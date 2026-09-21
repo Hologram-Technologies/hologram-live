@@ -480,7 +480,6 @@ impl OciStore {
     }
 
     /// Every recorded session, for resuming at start and for purging.
-    #[expect(dead_code, reason = "used by session resume in P1 T6")]
     pub(crate) fn upload_rows(&self) -> Result<Vec<(UploadId, UploadRow)>, OciStoreError> {
         let txn = self.links.begin_read().map_err(io)?;
         let uploads = txn.open_table(UPLOADS).map_err(io)?;

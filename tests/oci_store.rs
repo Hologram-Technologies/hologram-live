@@ -253,3 +253,119 @@ fn two_gib_stay_under_200_mb() {
     println!("SC-007 measurement: peak RSS {peak_mb} MB while pushing 2 GiB");
     assert!(peak_mb < 200, "peak RSS was {peak_mb} MB");
 }
+
+// ---- Task 6: sessions that survive a restart ------------------------------
+
+use hologram_live::oci_store::{ResumeReport, UploadId};
+
+/// The sha256 of the first `frames` known frames, as the child writes them.
+fn sha_of_known_frames(frames: u64) -> Digest {
+    use sha2::Digest as _;
+    let mut sha = sha2::Sha256::new();
+    for index in 0..frames {
+        sha.update(frame(index));
+    }
+    let mut hex = String::new();
+    for byte in sha.finalize() {
+        use std::fmt::Write as _;
+        write!(hex, "{byte:02x}").expect("write to a string");
+    }
+    Digest::parse(&format!("sha256:{hex}")).expect("digest")
+}
+
+#[test]
+fn an_upload_resumes_after_the_process_is_killed() {
+    use std::io::BufRead;
+    let dir = tempfile::tempdir().expect("tempdir");
+    // The child opens the store, begins an upload, appends 3 known frames,
+    // prints the upload id and then sleeps until it is killed.
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_oci_child"))
+        .arg(dir.path())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    let mut id = String::new();
+    std::io::BufReader::new(child.stdout.as_mut().expect("stdout"))
+        .read_line(&mut id)
+        .expect("read the upload id");
+    child.kill().expect("kill"); // SIGKILL on Unix, TerminateProcess on Windows
+    child.wait().expect("wait");
+
+    let store = OciStore::open(dir.path(), options()).expect("reopen");
+    let id = UploadId::parse(id.trim()).expect("id");
+    let status = store.upload_status(&id).expect("the session survived");
+    assert_eq!(status.received, 3 * FRAME as u64);
+    store
+        .upload_append(&id, status.received, &frame(3))
+        .expect("append the rest");
+    let digest = sha_of_known_frames(4);
+    assert_eq!(store.upload_finish(&id, &digest).expect("finish"), digest);
+    // The running blake3 was lost with the process; the alias is found by one read.
+    let (stat, _) = store
+        .blob_open(&repo("a/x"), &digest)
+        .expect("linked in its repository");
+    assert_eq!(stat.size, 4 * FRAME as u64);
+}
+
+#[test]
+fn a_staging_file_with_no_row_and_a_row_with_no_file_are_both_cleaned() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let orphan_row = {
+        let store = OciStore::open(dir.path(), options()).expect("open");
+        let id = store.upload_begin(&repo("a/x")).expect("begin");
+        store.upload_append(&id, 0, b"abc").expect("append");
+        id
+    };
+    let staging = dir.path().join("kappa/staging");
+    std::fs::remove_file(staging.join(orphan_row.as_str())).expect("remove the staged file");
+    std::fs::write(
+        staging.join("6f1c2a9e-3b7d-4c55-9f0a-2d8e7b6a5c41"),
+        b"stray",
+    )
+    .expect("plant");
+
+    let store = OciStore::open(dir.path(), options()).expect("reopen");
+
+    assert!(matches!(
+        store.upload_status(&orphan_row),
+        Err(OciStoreError::UnknownUpload(_))
+    ));
+    assert_eq!(std::fs::read_dir(&staging).expect("read_dir").count(), 0);
+    // Opening again finds nothing left to do.
+    drop(store);
+    let store = OciStore::open(dir.path(), options()).expect("open a third time");
+    assert_eq!(
+        store.resume_uploads().expect("resume"),
+        ResumeReport::default()
+    );
+}
+
+#[test]
+fn an_upload_untouched_for_longer_than_the_purge_age_is_aborted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let short = OpenOptions {
+        create: true,
+        upload_max_age: Duration::from_secs(1),
+    };
+    let store = OciStore::open(dir.path(), short).expect("open");
+    let id = store.upload_begin(&repo("a/x")).expect("begin");
+    store.upload_append(&id, 0, b"abc").expect("append");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock");
+    let now_ms = u64::try_from(now.as_millis()).expect("fits");
+
+    assert_eq!(
+        store.purge_expired_uploads(now_ms).expect("purge"),
+        0,
+        "still fresh"
+    );
+    assert_eq!(
+        store.purge_expired_uploads(now_ms + 2_000).expect("purge"),
+        1
+    );
+    assert!(matches!(
+        store.upload_status(&id),
+        Err(OciStoreError::UnknownUpload(_))
+    ));
+}

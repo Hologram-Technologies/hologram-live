@@ -19,7 +19,7 @@ pub use blobs::{AsyncBlob, BlobRead, BlobStat};
 pub use layout::Layout;
 pub use links::{Link, LinkKind, ReferrerDescriptor};
 pub use types::{Algorithm, Digest, Reference, RepoName, Tag, UploadId};
-pub use uploads::{Framer, UploadStatus, FRAME};
+pub use uploads::{Framer, ResumeReport, UploadStatus, FRAME};
 
 use kappa_core::clock::Clock;
 use kappa_store_redb::{PersistentStore, PersistentStoreConfig};
@@ -130,16 +130,28 @@ impl OciStore {
         let mut config = PersistentStoreConfig::new(layout.blob_root(), layout.kappa_db());
         // Expiry of upload sessions is ours: it goes by last activity.
         config.upload_timeout_secs = None;
+        // Staging survives a restart, so interrupted uploads can resume (FR-006).
+        config.preserve_staging = true;
         let kappa = PersistentStore::new(config, Arc::new(WallClock)).map_err(kappa_open_error)?;
         links::create_tables(&links)?;
         layout.write_marker_if_missing()?;
-        Ok(Self {
+        let store = Self {
             kappa: Arc::new(kappa),
             links,
             layout,
             sessions: uploads::Sessions::default(),
             upload_max_age: options.upload_max_age,
-        })
+        };
+        let report = store.resume_uploads()?;
+        if report != ResumeReport::default() {
+            tracing::info!(
+                resumed = report.resumed,
+                dropped_rows = report.dropped_rows,
+                dropped_files = report.dropped_files,
+                "upload sessions after restart"
+            );
+        }
+        Ok(store)
     }
 
     #[must_use]

@@ -1,7 +1,7 @@
 From 9793e77210feeb7e5db42177bd3b318ffdf6906e Mon Sep 17 00:00:00 2001
 From: humuhumu33 <68450279+humuhumu33@users.noreply.github.com>
 Date: Mon, 21 Sep 2026 13:01:17 +0100
-Subject: [PATCH 2/3] fix(store-redb): depend on kappa-core by path so default
+Subject: [PATCH 2/6] fix(store-redb): depend on kappa-core by path so default
  features can be off
 
 ---

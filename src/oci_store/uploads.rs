@@ -51,6 +51,17 @@ impl Framer {
     }
 }
 
+/// What `resume_uploads` found at start.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ResumeReport {
+    /// Sessions re-attached to their staging file.
+    pub resumed: usize,
+    /// Rows whose staging file was gone.
+    pub dropped_rows: usize,
+    /// Staging files no row knew about.
+    pub dropped_files: usize,
+}
+
 /// What a status request reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadStatus {
@@ -66,6 +77,8 @@ pub(crate) struct SessionState {
     /// is computed from the finished blob instead.
     blake3: Option<blake3::Hasher>,
     created_ms: u64,
+    /// Last append, for expiry by inactivity.
+    touched_ms: u64,
     row_written_ms: u64,
 }
 
@@ -110,6 +123,7 @@ impl OciStore {
             received: 0,
             blake3: Some(blake3::Hasher::new()),
             created_ms: now,
+            touched_ms: now,
             row_written_ms: now,
         };
         self.sessions()
@@ -151,6 +165,7 @@ impl OciStore {
         }
         state.received = total;
         let now = now_ms();
+        state.touched_ms = now;
         if now.saturating_sub(state.row_written_ms) >= ROW_WRITE_INTERVAL_MS {
             self.upload_row_put(
                 id,
@@ -252,6 +267,91 @@ impl OciStore {
                 .map_err(|error| store_io("abort upload", &error))?;
         }
         self.upload_row_delete(id)
+    }
+
+    /// Re-attach to the uploads a restart interrupted. Called once, by `open`.
+    ///
+    /// The offset always comes from the staging file's length, never from the
+    /// row: the row is written at most every few seconds, the file is the
+    /// truth. A torn last frame is fine, since finish verifies the whole.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database or the staging directory cannot be read.
+    pub fn resume_uploads(&self) -> Result<ResumeReport, OciStoreError> {
+        let mut report = ResumeReport::default();
+        let mut known = std::collections::HashSet::new();
+        for (id, row) in self.upload_rows()? {
+            let resumed = RepoName::parse(&row.repo).ok().and_then(|repo| {
+                let namespace = self
+                    .kappa()
+                    .namespace_resolve_or_create(repo.as_str(), NAMESPACE_OWNER, Some("oci"))
+                    .ok()?;
+                let received = self
+                    .kappa()
+                    .upload_resume(&row.kappa_id, &namespace, 0)
+                    .ok()?;
+                Some((repo, received))
+            });
+            let Some((repo, received)) = resumed else {
+                self.upload_row_delete(&id)?;
+                report.dropped_rows += 1;
+                continue;
+            };
+            known.insert(row.kappa_id.clone());
+            let state = SessionState {
+                repo,
+                kappa_id: row.kappa_id,
+                received,
+                blake3: None,
+                created_ms: row.created_ms,
+                touched_ms: row.touched_ms,
+                row_written_ms: row.touched_ms,
+            };
+            self.sessions()
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(id.as_str().to_owned(), Arc::new(Mutex::new(state)));
+            report.resumed += 1;
+        }
+        // Staging files no row knows: a crash between the store's begin and
+        // our row, or leftovers of a finished upload.
+        if let Ok(entries) = std::fs::read_dir(self.layout().staging()) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let is_file = entry.file_type().is_ok_and(|kind| kind.is_file());
+                if is_file && !known.contains(&name) && std::fs::remove_file(entry.path()).is_ok() {
+                    report.dropped_files += 1;
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    /// Abort every session untouched for longer than the purge age. The
+    /// server calls this on a timer; `now_ms` is a parameter so a test can
+    /// move the clock. Returns how many were aborted.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the store or the database refuses.
+    pub fn purge_expired_uploads(&self, now_ms: u64) -> Result<usize, OciStoreError> {
+        let max_age_ms = u64::try_from(self.upload_max_age().as_millis()).unwrap_or(u64::MAX);
+        let expired: Vec<String> = self
+            .sessions()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|(_, session)| {
+                let state = session.lock().unwrap_or_else(PoisonError::into_inner);
+                now_ms.saturating_sub(state.touched_ms) > max_age_ms
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &expired {
+            self.upload_cancel(&UploadId::parse(id)?)?;
+        }
+        Ok(expired.len())
     }
 
     fn session(&self, id: &UploadId) -> Result<Arc<Mutex<SessionState>>, OciStoreError> {

@@ -1,0 +1,48 @@
+name = "02-unknown-route"
+summary = "Paths under /v2/ that match nothing, and known paths with a wrong method."
+repo = "gate-b/routes"
+
+[[step]]
+id = "nothing"
+method = "GET"
+path = "/v2/nothing"
+
+[[step]]
+id = "nothing-deep"
+method = "GET"
+path = "/v2/{repo}/nothing/here"
+
+[[step]]
+id = "reference-with-slash"
+method = "GET"
+path = "/v2/{repo}/manifests/a/b"
+
+[[step]]
+id = "manifest-post"
+method = "POST"
+path = "/v2/{repo}/manifests/latest"
+
+[[step]]
+id = "tags-delete"
+method = "DELETE"
+path = "/v2/{repo}/tags/list"
+
+[[step]]
+id = "uploads-get"
+method = "GET"
+path = "/v2/{repo}/blobs/uploads/"
+
+[[step]]
+id = "blob-put"
+method = "PUT"
+path = "/v2/{repo}/blobs/{sha256:seed=3:len=1024}"
+
+[[step]]
+id = "manifest-options"
+method = "OPTIONS"
+path = "/v2/{repo}/manifests/latest"
+
+[[step]]
+id = "catalog-post"
+method = "POST"
+path = "/v2/_catalog"

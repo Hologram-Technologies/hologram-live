@@ -1,0 +1,45 @@
+name = "07-push-monolithic"
+summary = "A blob in one request, and in POST then PUT."
+repo = "gate-b/monolithic"
+
+[[step]]
+id = "post-with-digest"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=3:len=1024}" }
+body = 'bytes:seed=3:len=1024'
+
+[[step]]
+id = "head-after-post"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=3:len=1024}"
+
+[[step]]
+id = "two-step-start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upload = "header:location" }
+
+[[step]]
+id = "two-step-put"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=2:len=512}" }
+body = 'bytes:seed=2:len=512'
+
+[[step]]
+id = "head-after-put"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=2:len=512}"
+
+[[step]]
+id = "put-again"
+method = "PUT"
+url = "{upload}"
+query = { digest = "{sha256:seed=2:len=512}" }
+
+[state]
+catalog = true
+tags = ["{repo}"]

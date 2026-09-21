@@ -1,0 +1,75 @@
+name = "05-blob-read"
+summary = "One 3 MiB blob, read whole, by HEAD, and by every Range form."
+repo = "gate-b/blob"
+
+[[step]]
+id = "layer-start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upload = "header:location" }
+
+[[step]]
+id = "layer-put"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=1:len=3145728}" }
+body = 'bytes:seed=1:len=3145728'
+
+[[step]]
+id = "get"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+
+[[step]]
+id = "head"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+
+[[step]]
+id = "range-first-byte"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { range = "bytes=0-0" }
+
+[[step]]
+id = "range-open-ended"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { range = "bytes=1048576-" }
+
+[[step]]
+id = "range-suffix"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { range = "bytes=-5" }
+
+[[step]]
+id = "range-two"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { range = "bytes=0-0,5-9" }
+
+[[step]]
+id = "range-past-the-end"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { range = "bytes=9999999-" }
+
+[[step]]
+id = "range-malformed"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { range = "bytes=a-b" }
+
+[[step]]
+id = "range-on-head"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { range = "bytes=0-9" }
+
+[[step]]
+id = "if-none-match"
+method = "GET"
+path = "/v2/{repo}/blobs/{sha256:seed=1:len=3145728}"
+headers = { if-none-match = "\"{sha256:seed=1:len=3145728}\"" }

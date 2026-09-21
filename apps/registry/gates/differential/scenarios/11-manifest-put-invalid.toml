@@ -1,0 +1,109 @@
+name = "11-manifest-put-invalid"
+summary = "Every way a manifest PUT is refused, and the two ways it is leniently taken."
+repo = "gate-b/invalid"
+
+[manifests.image]
+config = "seed=2:len=512"
+layers = ["seed=3:len=1024"]
+
+[manifests.missing-layer]
+config = "seed=2:len=512"
+layers = ["seed=77:len=64"]
+
+[manifests.orphan-index]
+media_type = "application/vnd.oci.image.index.v1+json"
+children = ["missing-layer"]
+
+[[step]]
+id = "config-start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upload = "header:location" }
+
+[[step]]
+id = "config-put"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=2:len=512}" }
+body = 'bytes:seed=2:len=512'
+
+[[step]]
+id = "layer-start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upload = "header:location" }
+
+[[step]]
+id = "layer-put"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=3:len=1024}" }
+body = 'bytes:seed=3:len=1024'
+
+[[step]]
+id = "missing-layer"
+method = "PUT"
+path = "/v2/{repo}/manifests/missing"
+headers = { "content-type" = "application/vnd.oci.image.manifest.v1+json" }
+body = 'manifest:missing-layer'
+
+[[step]]
+id = "bad-json"
+method = "PUT"
+path = "/v2/{repo}/manifests/bad"
+headers = { "content-type" = "application/vnd.oci.image.manifest.v1+json" }
+body = 'text:not a manifest'
+
+[[step]]
+id = "schema-1"
+method = "PUT"
+path = "/v2/{repo}/manifests/old"
+headers = { "content-type" = "application/vnd.docker.distribution.manifest.v1+prettyjws" }
+body = 'manifest:image'
+
+[[step]]
+id = "unknown-media-type"
+method = "PUT"
+path = "/v2/{repo}/manifests/odd"
+headers = { "content-type" = "application/json" }
+body = 'manifest:image'
+
+[[step]]
+id = "no-content-type"
+method = "PUT"
+path = "/v2/{repo}/manifests/untyped"
+body = 'manifest:image'
+
+[[step]]
+id = "digest-disagrees"
+method = "PUT"
+path = "/v2/{repo}/manifests/{sha256:seed=99:len=8}"
+headers = { "content-type" = "application/vnd.oci.image.manifest.v1+json" }
+body = 'manifest:image'
+
+[[step]]
+id = "too-large"
+method = "PUT"
+path = "/v2/{repo}/manifests/huge"
+headers = { "content-type" = "application/vnd.oci.image.manifest.v1+json" }
+body = 'bytes:seed=9:len=4194305'
+
+[[step]]
+id = "index-missing-child"
+method = "PUT"
+path = "/v2/{repo}/manifests/orphan"
+headers = { "content-type" = "application/vnd.oci.image.index.v1+json" }
+body = 'manifest:orphan-index'
+
+[[step]]
+id = "good"
+method = "PUT"
+path = "/v2/{repo}/manifests/good"
+headers = { "content-type" = "application/vnd.oci.image.manifest.v1+json" }
+body = 'manifest:image'
+
+[state]
+catalog = true
+tags = ["{repo}"]

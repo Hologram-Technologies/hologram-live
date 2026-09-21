@@ -1,0 +1,208 @@
+name: gates
+
+# Hologram Registry's equivalence gates. Each job judges the real binary from
+# outside, with a tool we did not write. Path-filtered like registry-os.
+on:
+  push:
+    branches: ["registry/**"]
+  pull_request:
+    paths:
+      - "src/oci_store/**"
+      - "src/modules/oci/**"
+      - "src/registry_compat/**"
+      - "apps/registry/**"
+      - "third_party/kappa/**"
+      - "tests/oci_*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/gates.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gate-a:
+    name: Gate A · OCI conformance (all four categories)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Blocking. First green on 6d23904: 74 passed, 0 failed, 5 skipped (the
+    # automatic cross-mount specs, which the suite runs only when told to).
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      # opencontainers/distribution-spec v1.1.1, by digest.
+      CONFORMANCE_IMAGE: ghcr.io/opencontainers/distribution-spec/conformance@sha256:609201aab0905b1e90ded490e5f0dbaadc9a4bef98aca4cd38ff308f588ed27a
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gates
+      - name: Build the server
+        run: cargo build --locked --features oci --bin hologram
+      - name: Write the configuration
+        run: |
+          mkdir -p "$RUNNER_TEMP/reg/config" "$RUNNER_TEMP/report"
+          chmod 0777 "$RUNNER_TEMP/report"
+          cat > "$RUNNER_TEMP/reg/config/live.toml" <<EOF
+          schema_version = 2
+
+          [paths]
+          config_dir = "$RUNNER_TEMP/reg/config"
+          data_dir = "$RUNNER_TEMP/reg/data"
+          state_dir = "$RUNNER_TEMP/reg/state"
+          cache_dir = "$RUNNER_TEMP/reg/cache"
+
+          [server]
+          listen = "127.0.0.1:5000"
+
+          [modules]
+          enabled = ["dev.hologram.live.system", "dev.hologram.live.oci"]
+          EOF
+      - name: Start the server
+        env:
+          # The management category deletes; the reference's own switch turns it on.
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        run: |
+          ./target/debug/hologram --config "$RUNNER_TEMP/reg/config/live.toml" serve > "$RUNNER_TEMP/report/server.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5000/v2/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/report/server.log"
+          exit 1
+      - name: OCI conformance, every category
+        # The suite pushes what it then reads, so nothing is seeded.
+        run: |
+          set -o pipefail
+          docker run --rm --network host \
+            -v "$RUNNER_TEMP/report:/report" \
+            -e OCI_ROOT_URL=http://127.0.0.1:5000 \
+            -e OCI_NAMESPACE=myorg/myrepo \
+            -e OCI_CROSSMOUNT_NAMESPACE=myorg/other \
+            -e OCI_TEST_PULL=1 \
+            -e OCI_TEST_PUSH=1 \
+            -e OCI_TEST_CONTENT_DISCOVERY=1 \
+            -e OCI_TEST_CONTENT_MANAGEMENT=1 \
+            -e OCI_HIDE_SKIPPED_WORKFLOWS=1 \
+            -e OCI_REPORT_DIR=/report \
+            "$CONFORMANCE_IMAGE" | tee "$RUNNER_TEMP/report/conformance.log"
+      - name: Verdict
+        if: always()
+        run: |
+          {
+            echo '### Gate A · OCI conformance (all four categories)'
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/report/conformance.log" | grep -E 'Ran [0-9]+ of|Passed|\[FAIL\]' || echo 'no verdict: the suite did not run'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gate-a-report
+          path: ${{ runner.temp }}/report
+          if-no-files-found: warn
+
+  gate-b:
+    name: Gate B · same session, reference and us
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      GATE: apps/registry/gates/differential
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gates
+          workspaces: |
+            .
+            apps/registry/gates/differential
+      - name: The gate's own tests (normalise, compare, allowlist)
+        run: cargo test --locked --manifest-path "$GATE/Cargo.toml"
+      - name: Build the gate and the server
+        run: |
+          cargo build --locked --manifest-path "$GATE/Cargo.toml"
+          cargo build --locked --features oci --bin hologram
+      - name: The reference compared with itself shows nothing (blocking)
+        # If this is red the normaliser is wrong, or a scenario is: never the product.
+        run: |
+          set -o pipefail
+          "$GATE/target/debug/differential" run --left reference --right reference | tee "$RUNNER_TEMP/gate-b-self.md"
+      - name: Record the reference's transcripts
+        if: always()
+        run: |
+          "$GATE/target/debug/differential" record --target reference --out "$RUNNER_TEMP/golden"
+      - name: The reference compared with Hologram Registry (reported, not blocking yet)
+        # Blocks from the day the list of unlisted differences is empty (plan, P9).
+        continue-on-error: true
+        run: |
+          "$GATE/target/debug/differential" run --left reference --right "binary:$PWD/target/debug/hologram"             --allowlist apps/registry/DIFFERENCES.md --report "$RUNNER_TEMP/gate-b.md"
+      - name: Verdict
+        if: always()
+        run: |
+          cat "$RUNNER_TEMP/gate-b-self.md" "$RUNNER_TEMP/gate-b.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gate-b
+          path: |
+            ${{ runner.temp }}/golden
+            ${{ runner.temp }}/gate-b.md
+            ${{ runner.temp }}/gate-b-self.md
+          if-no-files-found: warn
+
+  gate-c:
+    name: Gate C · unchanged clients (docker, skopeo)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gates
+      - name: Build the server
+        run: cargo build --locked --features oci --bin hologram
+      - name: Start Hologram Registry on 5000 and the reference, as a peer, on 5001
+        env:
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        run: |
+          mkdir -p "$RUNNER_TEMP/reg/config"
+          cat > "$RUNNER_TEMP/reg/config/live.toml" <<EOF
+          schema_version = 2
+
+          [paths]
+          config_dir = "$RUNNER_TEMP/reg/config"
+          data_dir = "$RUNNER_TEMP/reg/data"
+          state_dir = "$RUNNER_TEMP/reg/state"
+          cache_dir = "$RUNNER_TEMP/reg/cache"
+
+          [server]
+          listen = "127.0.0.1:5000"
+
+          [modules]
+          enabled = ["dev.hologram.live.system", "dev.hologram.live.oci"]
+          EOF
+          ./target/debug/hologram --config "$RUNNER_TEMP/reg/config/live.toml" serve > "$RUNNER_TEMP/server.log" 2>&1 &
+          source apps/registry/gates/reference.env
+          docker run -d --name reference -p 127.0.0.1:5001:5000 -e REGISTRY_STORAGE_DELETE_ENABLED=true "${REGISTRY_REF/:3@/@}"
+          for port in 5000 5001; do
+            for _ in $(seq 1 60); do
+              if curl -fsS "http://127.0.0.1:$port/v2/" > /dev/null; then continue 2; fi
+              sleep 1
+            done
+            cat "$RUNNER_TEMP/server.log"; exit 1
+          done
+      - name: docker
+        run: apps/registry/gates/clients/docker.sh
+      - name: skopeo
+        run: apps/registry/gates/clients/skopeo.sh
+      - name: The server's log, when a client failed
+        if: failure()
+        run: tail -n 80 "$RUNNER_TEMP/server.log"

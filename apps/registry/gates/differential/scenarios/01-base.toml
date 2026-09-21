@@ -1,0 +1,40 @@
+name = "01-base"
+summary = "The base route, in every form a client or a probe sends."
+repo = "gate-b/base"
+
+[[step]]
+id = "get"
+method = "GET"
+path = "/v2/"
+
+[[step]]
+id = "no-slash"
+method = "GET"
+path = "/v2"
+
+[[step]]
+id = "head"
+method = "HEAD"
+path = "/v2/"
+
+[[step]]
+id = "options"
+method = "OPTIONS"
+path = "/v2/"
+
+[[step]]
+id = "post"
+method = "POST"
+path = "/v2/"
+
+[[step]]
+id = "preflight-catalog"
+method = "OPTIONS"
+path = "/v2/_catalog"
+headers = { origin = "https://ui.example", "access-control-request-method" = "GET" }
+
+[[step]]
+id = "preflight-manifest-delete"
+method = "OPTIONS"
+path = "/v2/{repo}/manifests/latest"
+headers = { origin = "https://ui.example", "access-control-request-method" = "DELETE", "access-control-request-headers" = "authorization" }

@@ -1,0 +1,77 @@
+name = "08-push-chunked"
+summary = "Start, PATCH with and without Content-Range, a gap, an overlap, status, finish."
+repo = "gate-b/chunked"
+
+[[step]]
+id = "start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upload = "header:location" }
+
+[[step]]
+id = "status-empty"
+method = "GET"
+url = "{upload}"
+
+[[step]]
+id = "chunk-1"
+method = "PATCH"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream", "content-range" = "0-1048575" }
+body = 'bytes:seed=4:len=1048576'
+capture = { upload = "header:location" }
+
+[[step]]
+id = "status-after-1"
+method = "GET"
+url = "{upload}"
+
+[[step]]
+id = "gap"
+method = "PATCH"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream", "content-range" = "2097152-2098175" }
+body = 'bytes:seed=3:len=1024'
+
+[[step]]
+id = "overlap"
+method = "PATCH"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream", "content-range" = "0-1023" }
+body = 'bytes:seed=3:len=1024'
+
+[[step]]
+id = "status-after-refusals"
+method = "GET"
+url = "{upload}"
+
+[[step]]
+id = "finish-wrong-digest-form"
+method = "PUT"
+url = "{upload}"
+query = { digest = "sha256:abc" }
+
+[[step]]
+id = "finish"
+method = "PUT"
+url = "{upload}"
+query = { digest = "{sha256:seed=4:len=1048576}" }
+
+[[step]]
+id = "head"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=4:len=1048576}"
+
+[[step]]
+id = "status-after-finish"
+method = "GET"
+url = "{upload}"
+
+[[step]]
+id = "cancel-after-finish"
+method = "DELETE"
+url = "{upload}"
+
+[state]
+catalog = true
+tags = ["{repo}"]

@@ -35,7 +35,8 @@ is to be fixed before 1.0.0, and then its rows go.
 ## The table the gate reads
 
 Keep its two markers and its seven columns. `*` in step, field, reference or product matches anything there; a row
-with `*` in the field covers a whole answer that differs by design.
+with `*` in the field covers a whole answer that differs by design. Use it only where every field differs; where one field differs, name
+that field, so a change to the status or anything else still fails.
 
 <!-- gate-b:begin -->
 | id | scenario | step | field | reference | product | reason |
@@ -51,8 +52,11 @@ with `*` in the field covers a whole answer that differs by design.
 | D-009 | 07-push-monolithic | post-with-digest | * | * | * | a monolithic upload finishes in one request (201); the reference opens a session (202) |
 | D-010 | 07-push-monolithic | head-after-post | * | * | * | follows from D-009: the blob exists after the one request |
 | D-011 | 09-digest-mismatch | session-after | * | * | * | an upload whose bytes do not match its digest is discarded; the reference keeps the session |
-| D-012 | 11-manifest-put-invalid | bad-json | * | * | * | the parse error in detail is our parser's words, not Go's |
-| D-013 | 12-digest-forms | finish-sha512 | * | * | * | debt, to fix before 1.0.0: sha512 is kept as pushed; the reference rewrites it to sha256 |
-| D-014 | 12-digest-forms | head-after-sha512 | * | * | * | debt, as D-013 |
-| D-015 | 12-digest-forms | head-after-sha512-by-sha256 | * | * | * | debt, as D-013: the blob is not found by its sha256 |
+| D-012a | 11-manifest-put-invalid | bad-json | body | * | * | the parse error in detail is our parser's words, not Go's |
+| D-012b | 11-manifest-put-invalid | bad-json | header:content-length | * | * | follows from D-012a: the detail's length |
+| D-013a | 12-digest-forms | finish-sha512 | header:docker-content-digest | * | * | debt, to fix before 1.0.0: sha512 is kept as pushed; the reference rewrites it to sha256 |
+| D-013b | 12-digest-forms | finish-sha512 | header:location | * | * | debt, as D-013a |
+| D-014a | 12-digest-forms | head-after-sha512 | header:docker-content-digest | * | * | debt, as D-013a |
+| D-014b | 12-digest-forms | head-after-sha512 | header:etag | * | * | debt, as D-013a |
+| D-015 | 12-digest-forms | head-after-sha512-by-sha256 | * | * | * | debt, as D-013a: the blob is not found by its sha256 |
 <!-- gate-b:end -->

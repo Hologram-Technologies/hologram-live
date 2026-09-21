@@ -67,7 +67,11 @@ impl OciStore {
         Ok((stat, Box::new(StoreReader(reader))))
     }
 
-    fn require_link(&self, repo: &RepoName, digest: &Digest) -> Result<(), OciStoreError> {
+    pub(crate) fn require_link(
+        &self,
+        repo: &RepoName,
+        digest: &Digest,
+    ) -> Result<(), OciStoreError> {
         if self.link_get(repo, digest)?.is_some() {
             return Ok(());
         }
@@ -85,7 +89,11 @@ impl OciStore {
 
     /// The digest the store holds these bytes under: the requested one, or
     /// its alias when the store does not know the requested one.
-    fn resolve_stored(&self, repo: &RepoName, digest: &Digest) -> Result<Digest, OciStoreError> {
+    pub(crate) fn resolve_stored(
+        &self,
+        repo: &RepoName,
+        digest: &Digest,
+    ) -> Result<Digest, OciStoreError> {
         match self.kappa().blob_exists(digest.as_str()) {
             Ok(true) => return Ok(digest.clone()),
             Ok(false) | Err(StoreError::NotFound(_)) => {}

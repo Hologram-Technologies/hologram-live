@@ -12,12 +12,14 @@
 pub mod blobs;
 pub mod layout;
 pub mod links;
+pub mod manifests;
 pub mod types;
 pub mod uploads;
 
 pub use blobs::{AsyncBlob, BlobRead, BlobStat};
 pub use layout::Layout;
 pub use links::{Link, LinkKind, ReferrerDescriptor};
+pub use manifests::{ManifestPlan, StoredManifest, SubjectPlan};
 pub use types::{Algorithm, Digest, Reference, RepoName, Tag, UploadId};
 pub use uploads::{Framer, ResumeReport, UploadStatus, FRAME};
 

@@ -266,17 +266,17 @@ impl OciError {
                 Context::Blob | Context::Upload => Self::new(ErrorCode::BlobUnknown),
             },
             OciStoreError::UnknownUpload(_) => Self::upload_unknown(),
-            OciStoreError::DigestMismatch { claimed } => {
-                Self::new(ErrorCode::DigestInvalid).with_detail(json!(claimed))
-            }
-            OciStoreError::OffsetMismatch { expected, .. } => {
-                let range = format!("0-{}", expected.saturating_sub(1));
-                let error = Self::new(ErrorCode::RangeInvalid);
-                match HeaderValue::from_str(&range) {
-                    Ok(value) => error.with_header(axum::http::header::RANGE, value),
-                    Err(_) => error,
-                }
-            }
+            // In the reference's words (gate B, `digest-mismatch`); a manifest
+            // whose digest disagrees gets no detail.
+            OciStoreError::DigestMismatch { claimed } => match context {
+                Context::Manifest => Self::new(ErrorCode::DigestInvalid),
+                _ => Self::new(ErrorCode::DigestInvalid).with_detail(json!(format!(
+                    "invalid digest for referenced layer: {claimed}, content does not match digest"
+                ))),
+            },
+            // The reference sends no `Range` with this refusal (gate B,
+            // `push-chunked`); a client asks the status route where it stands.
+            OciStoreError::OffsetMismatch { .. } => Self::new(ErrorCode::RangeInvalid),
             OciStoreError::MissingReferences(digests) => {
                 Self::new(ErrorCode::ManifestBlobUnknown).with_detail(json!(digests))
             }
@@ -492,7 +492,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_stale_offset_says_where_the_upload_stands() {
+    async fn a_stale_offset_is_416_without_a_range() {
         let error = OciError::from_store(
             OciStoreError::OffsetMismatch {
                 expected: 100,
@@ -502,7 +502,7 @@ mod tests {
         );
         let (status, headers, _) = parts(error).await;
         assert_eq!(status, StatusCode::RANGE_NOT_SATISFIABLE);
-        assert_eq!(headers["range"], "0-99");
+        assert!(headers.get("range").is_none());
     }
 
     #[tokio::test]

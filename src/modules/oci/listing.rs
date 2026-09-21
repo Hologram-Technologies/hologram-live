@@ -47,7 +47,9 @@ fn trim<T>(mut items: Vec<T>, limit: usize) -> (Vec<T>, bool) {
 }
 
 fn respond(body: &Value, content_type: &'static str, next: Option<String>) -> Response {
-    let text = body.to_string();
+    // The reference's encoder ends the body with a newline (gate B, every
+    // listing).
+    let text = body.to_string() + "\n";
     let mut response = Response::new(Body::empty());
     let headers = response.headers_mut();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
@@ -133,7 +135,27 @@ pub async fn catalog(store: Arc<OciStore>, query: Option<&str>) -> Result<Respon
     let Page { n, last } = page(query)?;
     let limit = n.unwrap_or(CATALOG_DEFAULT);
     let found = blocking(Context::Tags, move || {
-        store.repos_page(last.as_deref(), limit.saturating_add(1))
+        // A repository that holds blobs and no manifest is not in the
+        // reference's catalogue (gate B, every push scenario). The scan is per
+        // repository; a manifest count kept at write time would remove it.
+        let mut out = Vec::new();
+        let mut after = last;
+        loop {
+            let page = store.repos_page(after.as_deref(), 1000)?;
+            let exhausted = page.len() < 1000;
+            after = page.last().map(|repo| repo.as_str().to_owned());
+            for repo in page {
+                if holds_a_manifest(&store, &repo)? {
+                    out.push(repo);
+                    if out.len() > limit {
+                        return Ok(out);
+                    }
+                }
+            }
+            if exhausted {
+                return Ok(out);
+            }
+        }
     })
     .await?;
     let (repos, more) = trim(found, limit);

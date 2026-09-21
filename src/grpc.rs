@@ -1230,6 +1230,7 @@ impl From<NodeRecord> for pb::NodeRecord {
             version: value.version,
             operations: value.operations,
             last_seen_millis: value.last_seen_millis,
+            endpoint: value.endpoint,
         }
     }
 }
@@ -1241,6 +1242,7 @@ impl From<pb::NodeRecord> for NodeRecord {
             version: value.version,
             operations: value.operations,
             last_seen_millis: value.last_seen_millis,
+            endpoint: value.endpoint,
         }
     }
 }

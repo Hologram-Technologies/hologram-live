@@ -119,6 +119,7 @@ where
             );
         }
     }
+    let cluster_task = crate::cluster::spawn(state.clone());
     let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
         // the module API and gRPC, shutdown included, live on the socket.
@@ -151,6 +152,10 @@ where
             .await
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };
+    if let Some(cluster_task) = cluster_task {
+        cluster_task.abort();
+        let _ = cluster_task.await;
+    }
     state.chat().engine().shutdown().await;
     state.plugins().shutdown().await;
     let audit = state.audit().flush().await;

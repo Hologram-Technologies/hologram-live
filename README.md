@@ -54,6 +54,30 @@ Run the service in the foreground instead with:
 ./target/release/hologram serve
 ```
 
+Servers can form a membership cluster from one or more existing Hologram
+origins. Give every node the same dedicated cluster secret (at least 32 bytes),
+advertise the origin other nodes can reach, and seed a new node with any live
+member:
+
+```bash
+# first node
+HOLOGRAM_CLUSTER_TOKEN='replace-with-a-random-32-byte-secret' \
+  hologram serve --advertise https://registry-a.example.com
+
+# joining node
+HOLOGRAM_CLUSTER_TOKEN='replace-with-a-random-32-byte-secret' \
+  hologram serve \
+    --advertise https://registry-b.example.com \
+    --join https://registry-a.example.com
+```
+
+The joining node heartbeats immediately, learns the live membership set, and
+then heartbeats those peers directly. Failed seeds remain eligible for retry;
+members disappear from `/api/v1/nodes` after their TTL. Join messages use a
+short-lived keyed proof over the exact payload, so the cluster secret and the
+separate user authentication token are never sent over the wire. Non-loopback
+origins must use HTTPS.
+
 The default configuration and local endpoint are:
 
 ```text
@@ -1139,6 +1163,27 @@ Adding this section does not require a configuration rewrite: every section is
 defaulted, so a file written before `[registry]` existed keeps loading unchanged.
 
 The client can route to local or remote authorities after a capability handshake. Non-loopback remote endpoints require HTTPS, and authentication, authorization, TLS, and integrity errors never trigger fallback to another authority.
+
+Cluster membership is off by default. Service installations enable it in the
+same file used by `hologram start`:
+
+```toml
+[cluster]
+advertise_endpoint = "https://registry-a.example.com"
+seeds = ["https://registry-seed.example.com"]
+token_env = "HOLOGRAM_CLUSTER_TOKEN"
+heartbeat_interval_secs = 15
+request_timeout_secs = 5
+node_ttl_secs = 60
+max_peers = 64
+```
+
+Hologram membership and Kappa data distribution are intentionally separate
+layers. Joining discovers Hologram frontends and their capabilities; it never
+replays a Docker upload or another mutation against a different server. With
+the OCI feature enabled, each frontend owns a Kappa-backed registry volume;
+Kappa's data-plane federation remains responsible for content convergence.
+Keeping the layers separate preserves Docker upload-session ownership.
 
 ## Architecture
 

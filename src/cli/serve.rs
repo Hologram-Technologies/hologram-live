@@ -12,6 +12,12 @@ pub struct ServeArgs {
     reference: Option<String>,
     #[arg(long)]
     listen: Option<String>,
+    /// Public origin this server advertises to cluster peers.
+    #[arg(long, value_name = "URL")]
+    advertise: Option<String>,
+    /// Existing Hologram server to join. May be repeated.
+    #[arg(long = "join", value_name = "URL")]
+    join: Vec<String>,
     /// Serve the Docker-compatible registry from the reference registry's
     /// configuration file (`config.yml`), with `REGISTRY_*` variables over it.
     /// Only the system and registry modules run.
@@ -155,6 +161,10 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
     if let Some(listen) = args.listen {
         config.server.listen = listen;
     }
+    if let Some(advertise) = args.advertise {
+        config.cluster.advertise_endpoint = Some(advertise);
+    }
+    config.cluster.seeds.extend(args.join);
     config.validate()?;
     let listen = config.server.listen.clone();
     let mut declared: Vec<String> = config

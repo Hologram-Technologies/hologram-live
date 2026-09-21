@@ -64,7 +64,11 @@ fn created(repo: &RepoName, digest: &Digest) -> Result<Response, OciError> {
 fn digest_param(query: Option<&str>, name: &str) -> Result<Option<Digest>, OciError> {
     query_param(query, name)
         .map(|text| {
-            Digest::parse(&text).map_err(|error| OciError::from_store(error, Context::Upload))
+            // In the reference's words for a query value (gate B, `push-chunked`).
+            Digest::parse(&text).map_err(|_| {
+                OciError::new(ErrorCode::DigestInvalid)
+                    .with_detail(serde_json::json!("digest parsing failed"))
+            })
         })
         .transpose()
 }

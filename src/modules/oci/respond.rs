@@ -45,8 +45,10 @@ pub enum ByteRange {
     Whole,
     /// One satisfiable range: 206.
     Part { start: u64, len: u64 },
-    /// Malformed, or wholly past the end: 416.
+    /// Every range starts past the end: 416 with `Content-Range: bytes */size`.
     Unsatisfiable,
+    /// Not a range this server can read: 416 without `Content-Range`.
+    Malformed,
 }
 
 /// Read a blob `GET`'s `Range` header the way the reference's file server does.
@@ -64,19 +66,19 @@ pub fn byte_range(header: Option<&HeaderValue>, size: u64) -> ByteRange {
         .ok()
         .and_then(|value| value.strip_prefix("bytes="))
     else {
-        return ByteRange::Unsatisfiable;
+        return ByteRange::Malformed;
     };
     let mut ranges = Vec::new();
     let mut past_the_end = false;
     for part in spec.split(',').map(str::trim).filter(|part| !part.is_empty()) {
         let Some((first, last)) = part.split_once('-') else {
-            return ByteRange::Unsatisfiable;
+            return ByteRange::Malformed;
         };
         let (first, last) = (first.trim(), last.trim());
         if first.is_empty() {
             // A suffix: the last `n` bytes.
             let Ok(n) = last.parse::<u64>() else {
-                return ByteRange::Unsatisfiable;
+                return ByteRange::Malformed;
             };
             let n = n.min(size);
             if n == 0 {
@@ -87,7 +89,7 @@ pub fn byte_range(header: Option<&HeaderValue>, size: u64) -> ByteRange {
             continue;
         }
         let Ok(start) = first.parse::<u64>() else {
-            return ByteRange::Unsatisfiable;
+            return ByteRange::Malformed;
         };
         if start >= size {
             past_the_end = true;
@@ -98,7 +100,7 @@ pub fn byte_range(header: Option<&HeaderValue>, size: u64) -> ByteRange {
         } else {
             match last.parse::<u64>() {
                 Ok(end) if end >= start => end.min(size - 1),
-                _ => return ByteRange::Unsatisfiable,
+                _ => return ByteRange::Malformed,
             }
         };
         ranges.push((start, end - start + 1));
@@ -144,9 +146,9 @@ mod tests {
             "the end is clamped"
         );
         assert_eq!(range("bytes=100-", 100), ByteRange::Unsatisfiable);
-        assert_eq!(range("bytes=9-3", 100), ByteRange::Unsatisfiable);
-        assert_eq!(range("bytes=a-b", 100), ByteRange::Unsatisfiable);
-        assert_eq!(range("items=0-9", 100), ByteRange::Unsatisfiable);
+        assert_eq!(range("bytes=9-3", 100), ByteRange::Malformed);
+        assert_eq!(range("bytes=a-b", 100), ByteRange::Malformed);
+        assert_eq!(range("items=0-9", 100), ByteRange::Malformed);
         assert_eq!(range("bytes=0-0", 0), ByteRange::Unsatisfiable);
         assert_eq!(range("bytes=0-9,20-29", 100), ByteRange::Whole);
         assert_eq!(

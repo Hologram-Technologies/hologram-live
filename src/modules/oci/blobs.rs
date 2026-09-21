@@ -1,14 +1,15 @@
 //! Routes 8 and 9: a blob's bytes, streamed, whole or one range of them.
 
-use super::error::{Context, ErrorCode, OciError};
+use super::error::{Context, OciError};
 use super::respond::{byte_range, not_modified, stamp_digest, ByteRange};
 use crate::oci_store::{AsyncBlob, BlobRead, Digest, OciStore, RepoName};
 use axum::body::Body;
 use axum::http::header::{
     ACCEPT_RANGES, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
+    X_CONTENT_TYPE_OPTIONS,
 };
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
 use tokio_util::io::ReaderStream;
 
@@ -17,8 +18,9 @@ const CHUNK: usize = 1 << 20;
 
 /// # Errors
 ///
-/// `BLOB_UNKNOWN` when `repo` holds no link to `digest`; `RANGE_INVALID` for a
-/// range that is malformed or past the end; `UNKNOWN` when the store fails.
+/// `BLOB_UNKNOWN` when `repo` holds no link to `digest`; `UNKNOWN` when the
+/// store fails. A range that is malformed or past the end is a 416 answer,
+/// not an error: the reference answers it in plain text.
 pub async fn get(
     store: Arc<OciStore>,
     repo: RepoName,
@@ -46,6 +48,7 @@ pub async fn get(
     // The digest the client asked by, which is the one it will verify against.
     stamp_digest(out, &asked);
     if not_modified(headers, &asked) {
+        out.insert(CACHE_CONTROL, HeaderValue::from_static("max-age=31536000"));
         *response.status_mut() = StatusCode::NOT_MODIFIED;
         return Ok(response);
     }
@@ -58,10 +61,17 @@ pub async fn get(
             );
             (start, len)
         }
+        // The reference's file server answers these, in plain text, before
+        // the registry's error shape (gate B, `blob-read`).
         ByteRange::Unsatisfiable => {
-            return Err(OciError::new(ErrorCode::RangeInvalid)
-                .with_header(CONTENT_RANGE, header(&format!("bytes */{size}"))?));
+            let refused = refuse_range(&asked, "invalid range: failed to overlap\n");
+            let mut refused = refused;
+            refused
+                .headers_mut()
+                .insert(CONTENT_RANGE, header(&format!("bytes */{size}"))?);
+            return Ok(refused);
         }
+        ByteRange::Malformed => return Ok(refuse_range(&asked, "invalid range\n")),
     };
     out.insert(CONTENT_LENGTH, HeaderValue::from(len));
     out.insert(
@@ -78,6 +88,16 @@ pub async fn get(
         *response.body_mut() = body(reader, start, len);
     }
     Ok(response)
+}
+
+fn refuse_range(digest: &Digest, text: &'static str) -> Response {
+    let mut response = (StatusCode::RANGE_NOT_SATISFIABLE, text).into_response();
+    let headers = response.headers_mut();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
+    headers.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    stamp_digest(headers, digest);
+    headers.remove(axum::http::header::ETAG);
+    response
 }
 
 /// `len` bytes of `reader` from `start`, read a chunk at a time off the runtime.

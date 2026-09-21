@@ -5,9 +5,54 @@ Hologram Registry is measured against the Docker Registry image, pinned by diges
 field: status, the headers that carry meaning, and the body. This file lists every difference that is kept on
 purpose, and why. A difference that is not listed here fails the gate. So does a line here that no longer happens.
 
-The table is read by the gate. Keep its two markers and its seven columns.
+## For operators
+
+**blake3 digests.** Hologram Registry accepts `blake3:` digests beside `sha256:` and `sha512:`, and serves the same
+bytes by either name. The reference refuses them. Clients that never send blake3 see no difference.
+
+**Where the reference fails, we answer.** For a repository name longer than 255 characters, and for a malformed digest
+in a manifest path, the reference answers `500 UNKNOWN`. We answer the plain 404 and `400 DIGEST_INVALID`. For a
+name of exactly 255 characters the reference answers `NAME_INVALID`; we accept it.
+
+**Monolithic upload.** `POST /v2/<name>/blobs/uploads/?digest=<d>` with the whole blob in the body finishes the upload
+in one request (`201`), as the OCI specification describes. The reference ignores the digest and opens an ordinary
+session (`202`); a client then finishes it as usual. Both answers are allowed by the specification.
+
+**Several ranges in one request.** A blob `GET` with more than one range is answered with the whole blob (`200`). The
+reference answers `206 multipart/byteranges`. No registry client asks for several ranges.
+
+**After a digest mismatch.** When the bytes of an upload do not hash to the digest the client gave, the upload is
+discarded: the next status request answers `BLOB_UPLOAD_UNKNOWN`. The reference keeps the session open. A client
+starts the upload again in both cases.
+
+**Parse errors in a manifest.** The `detail` of `MANIFEST_INVALID` for a body that is not JSON is our parser's words,
+not Go's.
+
+**sha512 is kept as pushed.** A blob finished with a `sha512:` digest is stored and reported under that digest. The
+reference rewrites it to the blob's `sha256:` digest and serves it only by that. This one is a debt, not a choice: it
+is to be fixed before 1.0.0, and then its rows go.
+
+## The table the gate reads
+
+Keep its two markers and its seven columns. `*` in step, field, reference or product matches anything there; a row
+with `*` in the field covers a whole answer that differs by design.
 
 <!-- gate-b:begin -->
 | id | scenario | step | field | reference | product | reason |
 |---|---|---|---|---|---|---|
+| D-001 | 12-digest-forms | head-blake3 | * | * | * | blake3 digests are accepted (FR-022); the reference refuses them |
+| D-002 | 12-digest-forms | finish-blake3 | * | * | * | blake3 digests are accepted (FR-022); the reference refuses them |
+| D-003 | 03-names | name-13 | * | * | * | a name of 255 characters is accepted; the reference answers NAME_INVALID |
+| D-004 | 03-names | name-14 | * | * | * | the reference answers 500 for a name over 255 characters; we answer the plain 404 |
+| D-005 | 03-names | name-15 | * | * | * | the reference answers 500 for a name over 255 characters; we answer the plain 404 |
+| D-006 | 03-names | name-16 | * | * | * | the reference answers 500 for a name over 255 characters; we answer the plain 404 |
+| D-007 | 04-errors-read | digest-invalid-manifest | * | * | * | the reference answers 500 for a malformed digest in a manifest path; we answer 400 DIGEST_INVALID |
+| D-008 | 05-blob-read | range-two | * | * | * | several ranges are answered with the whole blob; the reference sends multipart/byteranges |
+| D-009 | 07-push-monolithic | post-with-digest | * | * | * | a monolithic upload finishes in one request (201); the reference opens a session (202) |
+| D-010 | 07-push-monolithic | head-after-post | * | * | * | follows from D-009: the blob exists after the one request |
+| D-011 | 09-digest-mismatch | session-after | * | * | * | an upload whose bytes do not match its digest is discarded; the reference keeps the session |
+| D-012 | 11-manifest-put-invalid | bad-json | * | * | * | the parse error in detail is our parser's words, not Go's |
+| D-013 | 12-digest-forms | finish-sha512 | * | * | * | debt, to fix before 1.0.0: sha512 is kept as pushed; the reference rewrites it to sha256 |
+| D-014 | 12-digest-forms | head-after-sha512 | * | * | * | debt, as D-013 |
+| D-015 | 12-digest-forms | head-after-sha512-by-sha256 | * | * | * | debt, as D-013: the blob is not found by its sha256 |
 <!-- gate-b:end -->

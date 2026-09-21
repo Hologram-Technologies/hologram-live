@@ -51,8 +51,8 @@ pub async fn get(
     // A conditional request is answered first, whatever `Accept` says (gate
     // B, `manifest-read`): a proxy polling a tag it holds sends no `Accept`.
     if not_modified(headers, &manifest.digest) {
+        // Bare, as the reference answers it (gate B, `manifest-read`).
         let mut response = Response::new(Body::empty());
-        stamp_digest(response.headers_mut(), &manifest.digest);
         *response.status_mut() = StatusCode::NOT_MODIFIED;
         return Ok(response);
     }
@@ -79,10 +79,6 @@ pub async fn get(
     let mut response = Response::new(Body::empty());
     let out = response.headers_mut();
     stamp_digest(out, &manifest.digest);
-    if not_modified(headers, &manifest.digest) {
-        *response.status_mut() = StatusCode::NOT_MODIFIED;
-        return Ok(response);
-    }
     out.insert(
         CONTENT_TYPE,
         HeaderValue::from_str(&manifest.media_type).map_err(|error| OciError::internal(&error))?,

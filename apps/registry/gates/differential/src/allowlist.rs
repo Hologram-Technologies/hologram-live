@@ -13,6 +13,7 @@ pub struct Row {
     pub scenario: String,
     /// `*` matches every step of the scenario.
     pub step: String,
+    /// `*` matches every field of the step: the whole answer differs by design.
     pub field: String,
     pub reference: String,
     pub product: String,
@@ -76,12 +77,14 @@ pub fn judge(differences: &[Difference], rows: &[Row], ran: &[String]) -> Verdic
     let mut verdict = Verdict::default();
     let mut used = vec![false; rows.len()];
     for difference in differences {
+        // `*` in step, field, reference or product matches anything there.
+        let matches = |pattern: &str, value: &str| pattern == "*" || pattern == value;
         let hit = rows.iter().position(|row| {
             row.scenario == difference.scenario
-                && (row.step == "*" || row.step == difference.step)
-                && row.field == difference.field
-                && row.reference == difference.left
-                && row.product == difference.right
+                && matches(&row.step, &difference.step)
+                && matches(&row.field, &difference.field)
+                && matches(&row.reference, &difference.left)
+                && matches(&row.product, &difference.right)
         });
         match hit {
             Some(at) => {
@@ -149,6 +152,20 @@ mod tests {
         let other = diff("base", "anything", "header:x-content-type-options", "nosniff", "sniff");
         assert!(judge(&[same], &list, &ran()).passed());
         assert!(!judge(&[other], &list, &ran()).passed());
+    }
+
+    #[test]
+    fn a_whole_step_can_be_listed_and_goes_stale_when_it_stops_differing() {
+        let list = allowlist("| D-003 | base | get | * | * | * | the reference answers 500 here |");
+        let both = [
+            diff("base", "get", "status", "500", "404"),
+            diff("base", "get", "body", "x", "y"),
+        ];
+        let verdict = judge(&both, &list, &ran());
+        assert!(verdict.passed());
+        assert_eq!(verdict.listed.len(), 2);
+        assert!(!judge(&[diff("base", "other", "status", "500", "404")], &list, &ran()).passed());
+        assert_eq!(judge(&[], &list, &ran()).stale, ["D-003"]);
     }
 
     #[test]

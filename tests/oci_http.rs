@@ -229,7 +229,11 @@ async fn the_range_forms_over_http() {
     let past = send(&volume, "GET", &path, &[("range", "bytes=9999999-")]).await;
     assert_eq!(past.status(), StatusCode::RANGE_NOT_SATISFIABLE);
     assert_eq!(header(&past, "content-range"), format!("bytes */{size}"));
-    assert_eq!(error_code(past).await, "RANGE_INVALID");
+    assert_eq!(body(past).await, b"invalid range: failed to overlap\n");
+    let malformed = send(&volume, "GET", &path, &[("range", "bytes=9-3")]).await;
+    assert_eq!(malformed.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert!(malformed.headers().get("content-range").is_none());
+    assert_eq!(body(malformed).await, b"invalid range\n");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -464,7 +468,7 @@ async fn a_blob_pushed_in_chunks_reads_back() {
     )
     .await;
     assert_eq!(stale.status(), StatusCode::RANGE_NOT_SATISFIABLE);
-    assert_eq!(header(&stale, "range"), "0-1048575");
+    assert!(stale.headers().get("range").is_none(), "as the reference");
 
     let status = send(&volume, "GET", &location, &[]).await;
     assert_eq!(status.status(), StatusCode::NO_CONTENT);
@@ -787,6 +791,21 @@ async fn a_browser_on_another_origin_can_preflight_and_list() {
     );
 }
 
+/// An empty manifest in `name`, so the catalogue counts it.
+async fn seed_manifest_in(volume: &Volume, name: &str) {
+    let manifest =
+        format!(r#"{{"schemaVersion":2,"mediaType":"{MANIFEST_TYPE}","layers":[]}}"#).into_bytes();
+    let pushed = send_body(
+        volume,
+        "PUT",
+        &format!("/v2/{name}/manifests/v1"),
+        &[("content-type", MANIFEST_TYPE)],
+        manifest,
+    )
+    .await;
+    assert_eq!(pushed.status(), StatusCode::CREATED, "{name}");
+}
+
 // ---- Discovery and management ------------------------------------------------
 
 async fn json_body(response: Response) -> serde_json::Value {
@@ -858,6 +877,14 @@ async fn the_catalogue_lists_repositories_and_pages() {
     seed(&volume.store);
     push_blob(&volume.store, "alpha/one", b"one");
     push_blob(&volume.store, "zeta/last", b"two");
+    // Repositories that hold blobs and no manifest are not listed.
+    let only_blobs = send(&volume, "GET", "/v2/_catalog", &[]).await;
+    assert_eq!(
+        json_body(only_blobs).await["repositories"],
+        serde_json::json!(["team/app"])
+    );
+    seed_manifest_in(&volume, "alpha/one").await;
+    seed_manifest_in(&volume, "zeta/last").await;
     let all = send(&volume, "GET", "/v2/_catalog", &[]).await;
     assert_eq!(
         json_body(all).await["repositories"],

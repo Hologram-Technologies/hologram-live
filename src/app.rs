@@ -13,7 +13,8 @@ use crate::nodes::NodeDirectory;
 use crate::observability::TracingHandle;
 use crate::plugin::PluginRegistry;
 use crate::protocol::{
-    CapabilityManifest, HealthResponse, ModuleInfo, RpcRequest, RpcResponse, PROTOCOL_VERSION,
+    CapabilityManifest, HealthResponse, ModuleInfo, NodeRecord, RpcRequest, RpcResponse,
+    PROTOCOL_VERSION,
 };
 use crate::registry::RegistryProvider;
 use crate::store::ObjectStore;
@@ -245,6 +246,21 @@ impl AppState {
                 .max_rpc_bytes
                 .try_into()
                 .unwrap_or(u32::MAX),
+        }
+    }
+
+    pub fn local_node_record(&self, endpoint: String) -> NodeRecord {
+        let manifest = self.capability_manifest();
+        NodeRecord {
+            node_id: manifest.server_id,
+            version: manifest.server_version,
+            operations: manifest
+                .operations
+                .into_iter()
+                .map(|operation| operation.id)
+                .collect(),
+            endpoint,
+            last_seen_millis: crate::util::now_millis(),
         }
     }
 

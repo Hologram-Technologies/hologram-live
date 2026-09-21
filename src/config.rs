@@ -110,6 +110,39 @@ pub struct AppConfig {
     pub plugins: PluginsConfig,
     #[serde(default)]
     pub registry: RegistryConfig,
+    #[serde(default)]
+    pub cluster: ClusterConfig,
+}
+
+/// Seed-based Hologram server membership.
+///
+/// A node participates when it has an advertised endpoint. Seeds are only
+/// initial contacts: successful joins exchange the rest of the live member
+/// set, so every node does not need every other node in its configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ClusterConfig {
+    pub advertise_endpoint: Option<String>,
+    pub seeds: Vec<String>,
+    pub token_env: String,
+    pub heartbeat_interval_secs: u64,
+    pub request_timeout_secs: u64,
+    pub node_ttl_secs: u64,
+    pub max_peers: usize,
+}
+
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            advertise_endpoint: None,
+            seeds: Vec::new(),
+            token_env: "HOLOGRAM_CLUSTER_TOKEN".to_owned(),
+            heartbeat_interval_secs: 15,
+            request_timeout_secs: 5,
+            node_ttl_secs: 60,
+            max_peers: 64,
+        }
+    }
 }
 
 /// Selects which `RegistryProvider` backs object storage.
@@ -294,6 +327,7 @@ impl Default for AppConfig {
             holo: HoloConfig::default(),
             plugins: PluginsConfig::default(),
             registry: RegistryConfig::default(),
+            cluster: ClusterConfig::default(),
         }
     }
 }
@@ -666,6 +700,61 @@ impl AppConfig {
         self.validate_holo_resident()?;
         self.validate_plugins()?;
         self.validate_registry()?;
+        self.validate_cluster()?;
+        Ok(())
+    }
+
+    fn validate_cluster(&self) -> Result<()> {
+        if self.cluster.token_env.trim().is_empty() {
+            return Err(LiveError::Config(
+                "cluster.token_env must not be empty".to_owned(),
+            ));
+        }
+        if !self.cluster.seeds.is_empty() && self.cluster.advertise_endpoint.is_none() {
+            return Err(LiveError::Config(
+                "cluster.advertise_endpoint is required when cluster.seeds is not empty".to_owned(),
+            ));
+        }
+        if let Some(endpoint) = &self.cluster.advertise_endpoint {
+            validate_cluster_endpoint(endpoint)?;
+            let cluster_token = env::var(&self.cluster.token_env).map_err(|_| {
+                LiveError::Config(format!(
+                    "cluster.advertise_endpoint is set but {} is not set",
+                    self.cluster.token_env
+                ))
+            })?;
+            if cluster_token.len() < 32 {
+                return Err(LiveError::Config(format!(
+                    "{} must contain at least 32 bytes",
+                    self.cluster.token_env
+                )));
+            }
+            if self.auth_token().as_deref() == Some(cluster_token.as_str()) {
+                return Err(LiveError::Config(
+                    "the cluster token must be different from the user authentication token"
+                        .to_owned(),
+                ));
+            }
+        }
+        for endpoint in &self.cluster.seeds {
+            validate_cluster_endpoint(endpoint)?;
+        }
+        if self.cluster.heartbeat_interval_secs == 0
+            || self.cluster.request_timeout_secs == 0
+            || self.cluster.node_ttl_secs == 0
+            || self.cluster.max_peers == 0
+        {
+            return Err(LiveError::Config(
+                "cluster intervals, timeout, TTL, and max_peers must be greater than zero"
+                    .to_owned(),
+            ));
+        }
+        if self.cluster.node_ttl_secs <= self.cluster.heartbeat_interval_secs {
+            return Err(LiveError::Config(
+                "cluster.node_ttl_secs must be greater than cluster.heartbeat_interval_secs"
+                    .to_owned(),
+            ));
+        }
         Ok(())
     }
 
@@ -762,6 +851,10 @@ impl AppConfig {
         env::var(&self.auth.token_env).ok()
     }
 
+    pub fn cluster_token(&self) -> Option<String> {
+        env::var(&self.cluster.token_env).ok()
+    }
+
     fn apply_environment(&mut self) -> Result<()> {
         if let Ok(value) = env::var("HOLOGRAM_LISTEN") {
             self.server.listen = value;
@@ -836,6 +929,38 @@ fn validate_endpoint(endpoint: &str, local: bool) -> Result<()> {
     )))
 }
 
+pub(crate) fn validate_cluster_endpoint(endpoint: &str) -> Result<()> {
+    let parsed = reqwest::Url::parse(endpoint)
+        .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| LiveError::Config(format!("cluster endpoint has no host: {endpoint}")))?;
+    let address_host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    let loopback = address_host == "localhost"
+        || address_host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    if parsed.scheme() != "https" && !(parsed.scheme() == "http" && loopback) {
+        return Err(LiveError::Config(format!(
+            "cluster endpoint must use HTTPS unless it is loopback: {endpoint}"
+        )));
+    }
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(LiveError::Config(format!(
+            "cluster endpoint must be an origin without a path, query, or fragment: {endpoint}"
+        )));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(LiveError::Config(format!(
+            "cluster endpoint must not contain credentials: {endpoint}"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -846,6 +971,24 @@ mod tests {
             config.registry.provider, "local",
             "hologram must stay a single binary needing no external service"
         );
+    }
+
+    #[test]
+    fn cluster_defaults_to_disabled() {
+        let config = AppConfig::default();
+        assert!(config.cluster.advertise_endpoint.is_none());
+        assert!(config.cluster.seeds.is_empty());
+    }
+
+    #[test]
+    fn cluster_origins_require_https_or_an_exact_loopback_host() {
+        assert!(validate_cluster_endpoint("https://node.example").is_ok());
+        assert!(validate_cluster_endpoint("http://127.0.0.1:11435").is_ok());
+        assert!(validate_cluster_endpoint("http://[::1]:11435").is_ok());
+        assert!(validate_cluster_endpoint("http://localhost:11435").is_ok());
+        assert!(validate_cluster_endpoint("http://localhost.example:11435").is_err());
+        assert!(validate_cluster_endpoint("https://user:secret@node.example").is_err());
+        assert!(validate_cluster_endpoint("https://node.example/a/path").is_err());
     }
 
     #[test]

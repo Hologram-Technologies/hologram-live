@@ -11,6 +11,7 @@ pub mod audit;
 pub mod auth;
 pub mod chat;
 pub mod client;
+pub mod cluster;
 pub mod compile;
 pub mod config;
 pub mod error;

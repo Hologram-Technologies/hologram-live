@@ -79,11 +79,16 @@ where
         })?;
     on_ready()?;
     tracing::info!(listen = %state.config().server.listen, "hologram server ready");
+    let cluster_task = crate::cluster::spawn(state.clone());
     let shutdown_state = state.clone();
     let result = axum::serve(listener, router)
         .with_graceful_shutdown(async move { shutdown_state.wait_shutdown().await })
         .await
         .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")));
+    if let Some(cluster_task) = cluster_task {
+        cluster_task.abort();
+        let _ = cluster_task.await;
+    }
     state.chat().engine().shutdown().await;
     state.plugins().shutdown().await;
     let audit = state.audit().flush().await;
@@ -185,6 +190,13 @@ async fn authenticate(State(state): State<AppState>, mut request: Request, next:
         method = %request.method(),
         path = %request.uri().path()
     );
+    let path = request.uri().path();
+    // Cluster joins carry a short-lived keyed proof over the exact body. The
+    // handler verifies it after extraction, so the general user token is never
+    // sent between nodes or accepted for membership.
+    if path == crate::cluster::JOIN_PATH {
+        return next.run(request).instrument(span).await;
+    }
     match principal_from_headers(&state, request.headers()) {
         Ok(principal) => {
             request.extensions_mut().insert(principal);

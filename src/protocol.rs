@@ -559,7 +559,20 @@ pub struct NodeRecord {
     pub node_id: String,
     pub version: String,
     pub operations: Vec<String>,
+    #[serde(default)]
+    pub endpoint: String,
     pub last_seen_millis: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ClusterJoinRequest {
+    pub node: NodeRecord,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ClusterJoinResponse {
+    pub node: NodeRecord,
+    pub peers: Vec<NodeRecord>,
 }
 
 /// Runtime status of one allowlisted subprocess plugin.

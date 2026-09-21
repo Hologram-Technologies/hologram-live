@@ -1825,6 +1825,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "toml 0.8.23",
  "tonic",
  "tonic-prost",

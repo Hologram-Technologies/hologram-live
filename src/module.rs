@@ -273,11 +273,45 @@ mod tests {
             !routers.open.has_routes(),
             "no default module authenticates itself"
         );
+        #[cfg(not(feature = "oci"))]
         assert_eq!(
             crate::modules::builtin_ids(),
             crate::modules::default_builtin_ids(),
             "the opt-in list is empty in this build"
         );
+    }
+
+    /// The registry module is in the catalogue and off until it is named.
+    #[cfg(feature = "oci")]
+    #[test]
+    fn the_registry_module_is_opt_in_and_mounted_outside_the_bearer_layer() {
+        let id = crate::modules::oci::MODULE_ID;
+        assert!(crate::modules::builtin_ids()
+            .iter()
+            .any(|known| known == id));
+        assert!(!crate::modules::default_builtin_ids()
+            .iter()
+            .any(|known| known == id));
+
+        let mut enabled = crate::config::ModulesConfig::default().enabled;
+        let stock = ModuleRegistry::build(&enabled).expect("resolve");
+        assert!(!stock.routers().open.has_routes());
+        enabled.push(id.to_owned());
+        let with_registry = ModuleRegistry::build(&enabled).expect("resolve");
+        let routers = with_registry.routers();
+        assert!(
+            routers.open.has_routes(),
+            "/v2/ is mounted beside the layer"
+        );
+        assert!(routers.protected.has_routes());
+
+        // The registry documents itself in the server's one OpenAPI document.
+        assert!(with_registry
+            .openapi()
+            .paths
+            .paths
+            .contains_key("/v2/{name}/manifests/{reference}"));
+        assert!(!stock.openapi().paths.paths.contains_key("/v2/"));
     }
 
     #[test]

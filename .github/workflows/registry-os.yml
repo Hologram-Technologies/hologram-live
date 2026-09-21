@@ -46,6 +46,10 @@ jobs:
         run: cargo test --locked --features oci --lib oci_store -- --test-threads=1 --nocapture
       - name: Integration tests
         run: cargo test --locked --features oci --test oci_store -- --test-threads=1
+      - name: Registry module, unit tests (parser, errors, ranges)
+        run: cargo test --locked --features oci --lib -- modules::oci module::tests
+      - name: Registry over HTTP, through the handler and through the binary
+        run: cargo test --locked --features oci --test oci_http
       - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)
         if: runner.os == 'Linux'
         run: cargo test --release --locked --features oci --test oci_store -- --ignored --nocapture two_gib

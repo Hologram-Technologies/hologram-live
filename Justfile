@@ -75,6 +75,8 @@ oci-check:
     cargo check --locked --features oci --all-targets
     cargo test --locked --features oci --lib oci_store -- --test-threads=1
     cargo test --locked --features oci --test oci_store -- --test-threads=1
+    cargo test --locked --features oci --lib -- modules::oci module::tests
+    cargo test --locked --features oci --test oci_http
 
 # Keep the standalone server dependency graph free of desktop code.
 product-boundary:

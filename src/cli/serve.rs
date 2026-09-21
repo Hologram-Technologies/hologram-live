@@ -133,6 +133,11 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
                 "dev.hologram.live.system".to_owned(),
                 hologram_live::modules::oci::MODULE_ID.to_owned(),
             ];
+            // AppState::build opens the plugin host and the inference engine in
+            // every mode; keep them inert (ADR 028).
+            config.plugins.enabled = false;
+            "echo".clone_into(&mut config.inference.engine);
+            config.registry_mode = true;
             config.create_directories()?;
             config
         }

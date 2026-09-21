@@ -1294,6 +1294,126 @@ mod served {
         assert!(String::from_utf8_lossy(&error.body).contains("MANIFEST_UNKNOWN"));
     }
 
+    /// `registry serve config.yml`: the registry's own file, no live.toml.
+    fn start_registry_mode(root: &Path) -> Server {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .expect("bind")
+            .local_addr()
+            .expect("address")
+            .port();
+        let file = root.join("config.yml");
+        std::fs::write(
+            &file,
+            format!(
+                "version: 0.1\nlog:\n  level: warn\nstorage:\n  filesystem:\n    rootdirectory: {}\nhttp:\n  addr: 127.0.0.1:{port}\n",
+                root.join("volume").display().to_string().replace('\\', "/")
+            ),
+        )
+        .expect("write config.yml");
+        let child = Command::new(env!("CARGO_BIN_EXE_hologram"))
+            .arg("serve")
+            .arg("--registry-config")
+            .arg(&file)
+            .env("HOME", root)
+            .env("USERPROFILE", root)
+            .env("HOLOGRAM_CONFIG_DIR", root.join("config"))
+            .env(TOKEN_ENV, TOKEN)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn hologram serve --registry-config");
+        let server = Server { child, port };
+        let deadline = Instant::now() + Duration::from_mins(1);
+        while TcpStream::connect(("127.0.0.1", port)).is_err() {
+            assert!(Instant::now() < deadline, "the registry did not start");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        server
+    }
+
+    /// ADR 028: the public port answers /v2/ and the public pages, and nothing
+    /// that administers the server, with or without a token.
+    #[test]
+    fn registry_mode_serves_v2_publicly_and_no_administration() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let server = start_registry_mode(root.path());
+
+        let base = request(server.port, "GET", "/v2/", false);
+        assert_eq!(base.status, 200, "{}", base.head);
+        for page in ["/", "/healthz", "/openapi.json", "/docs"] {
+            assert_eq!(
+                request(server.port, "GET", page, false).status,
+                200,
+                "{page}"
+            );
+        }
+        for token in [false, true] {
+            for path in ["/api/v1/modules", "/api/v1/capabilities", "/api/v1/objects"] {
+                let answer = request(server.port, "GET", path, token);
+                assert_eq!(
+                    answer.status, 404,
+                    "{path} is administration: {}",
+                    answer.head
+                );
+            }
+        }
+        // gRPC, which carries shutdown, is not on the public port.
+        let call = request_with(
+            server.port,
+            "POST",
+            "/hologram.live.v1.HologramLive/Call",
+            true,
+            "application/grpc",
+            &[0, 0, 0, 0, 0],
+        );
+        assert_eq!(
+            header_of(&call.head, "grpc-status"),
+            Some("12"),
+            "{}",
+            call.head
+        );
+        assert!(
+            root.path().join("volume/live/state").is_dir(),
+            "paths under the root"
+        );
+    }
+
+    /// The administration socket answers the module API, and only its owner can open it.
+    #[cfg(unix)]
+    #[test]
+    fn registry_mode_serves_administration_on_an_owner_only_socket() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::net::UnixStream;
+        let root = tempfile::tempdir().expect("tempdir");
+        let server = start_registry_mode(root.path());
+        let socket = root.path().join("volume/live/state/admin.sock");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !socket.exists() {
+            assert!(Instant::now() < deadline, "no administration socket");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let mode = std::fs::metadata(&socket)
+            .expect("socket")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "owner only");
+
+        let mut stream = UnixStream::connect(&socket).expect("connect");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .expect("timeout");
+        stream
+            .write_all(b"GET /api/v1/modules HTTP/1.1\r\nHost: admin\r\nConnection: close\r\n\r\n")
+            .expect("send");
+        let mut raw = Vec::new();
+        stream.read_to_end(&mut raw).expect("read");
+        let answer = parse(&raw);
+        assert_eq!(answer.status, 200, "{}", answer.head);
+        assert!(String::from_utf8_lossy(&answer.body).contains("dev.hologram.live.oci"));
+        drop(server);
+    }
+
     #[test]
     fn a_layer_larger_than_the_servers_body_limit_goes_in_and_the_limit_still_binds_the_rest() {
         let root = tempfile::tempdir().expect("tempdir");

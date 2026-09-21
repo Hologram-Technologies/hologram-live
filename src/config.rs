@@ -110,6 +110,12 @@ pub struct AppConfig {
     pub plugins: PluginsConfig,
     #[serde(default)]
     pub registry: RegistryConfig,
+    /// Started from a registry configuration (`registry serve config.yml`):
+    /// the public listener carries only `/v2/` and the public system pages,
+    /// and administration moves to [`AppConfig::admin_socket`] (ADR 028).
+    /// Never read from a file: only `serve --registry-config` sets it.
+    #[serde(skip)]
+    pub registry_mode: bool,
 }
 
 /// Selects which `RegistryProvider` backs object storage.
@@ -294,6 +300,7 @@ impl Default for AppConfig {
             holo: HoloConfig::default(),
             plugins: PluginsConfig::default(),
             registry: RegistryConfig::default(),
+            registry_mode: false,
         }
     }
 }
@@ -571,7 +578,12 @@ impl AppConfig {
             .listen
             .parse()
             .map_err(|error| LiveError::Config(format!("invalid server.listen: {error}")))?;
-        if !is_loopback(listen.ip()) && !self.auth.required {
+        if self.registry_mode {
+            // A public anonymous registry, as the reference is by default:
+            // the public listener carries nothing but /v2/ and the public
+            // system pages, so the rules below have nothing left to guard.
+            self.validate_registry_mode()?;
+        } else if !is_loopback(listen.ip()) && !self.auth.required {
             return Err(LiveError::Config(
                 "non-loopback server.listen requires auth.required = true".to_owned(),
             ));
@@ -581,6 +593,7 @@ impl AppConfig {
         // not face a network until it does.
         #[cfg(feature = "oci")]
         if !is_loopback(listen.ip())
+            && !self.registry_mode
             && self
                 .modules
                 .enabled
@@ -752,6 +765,45 @@ impl AppConfig {
                 return Err(LiveError::Config(format!(
                     "plugin {} sha256 must be 64 hex characters",
                     module.id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Where registry mode serves administration: the module API and gRPC,
+    /// including `shutdown`. A Unix socket, mode 0600, under the state
+    /// directory, so `docker exec` reaches it and the network cannot (FR-S06).
+    pub fn admin_socket(&self) -> PathBuf {
+        self.paths.state_dir.join("admin.sock")
+    }
+
+    fn validate_registry_mode(&self) -> Result<()> {
+        let allowed = ["dev.hologram.live.system", "dev.hologram.live.oci"];
+        if let Some(extra) = self
+            .modules
+            .enabled
+            .iter()
+            .find(|id| !allowed.contains(&id.as_str()))
+        {
+            return Err(LiveError::Config(format!(
+                "registry mode runs only the system and registry modules, not {extra}"
+            )));
+        }
+        if self.plugins.enabled {
+            return Err(LiveError::Config(
+                "registry mode runs no plugins: set plugins.enabled = false".to_owned(),
+            ));
+        }
+        // sun_path is 108 bytes on Linux and 104 on macOS, with the final NUL.
+        #[cfg(unix)]
+        {
+            let socket = self.admin_socket();
+            if socket.as_os_str().len() >= 104 {
+                return Err(LiveError::Config(format!(
+                    "the administration socket path is too long for a Unix socket ({} bytes): {}; use a shorter storage.filesystem.rootdirectory",
+                    socket.as_os_str().len(),
+                    socket.display()
                 )));
             }
         }
@@ -932,6 +984,50 @@ listen = "127.0.0.1:4455"
         let mut config = AppConfig::default();
         config.client.remote_endpoint = Some("http://example.com".to_owned());
         assert!(config.validate().is_err());
+    }
+
+    /// Registry mode may face a network with no token, as the reference does,
+    /// because its public listener carries only /v2/ (ADR 028). No other
+    /// module, and no plugin, rides along.
+    #[test]
+    fn registry_mode_allows_a_public_anonymous_listener_and_nothing_else() {
+        let mut config = AppConfig::default();
+        config.server.listen = "0.0.0.0:5000".to_owned();
+        config.registry_mode = true;
+        config.modules.enabled = vec![
+            "dev.hologram.live.system".to_owned(),
+            "dev.hologram.live.oci".to_owned(),
+        ];
+        if let Err(error) = config.validate() {
+            panic!("the reference's own default is a public anonymous registry: {error}");
+        }
+        config
+            .modules
+            .enabled
+            .push("dev.hologram.live.files".to_owned());
+        let error = config.validate().expect_err("only system and registry");
+        assert!(
+            error.to_string().contains("dev.hologram.live.files"),
+            "{error}"
+        );
+        config.modules.enabled.pop();
+        config.plugins.enabled = true;
+        assert!(config.validate().is_err(), "no plugins in registry mode");
+        config.plugins.enabled = false;
+        // Out of registry mode the loopback rule is exactly as before.
+        config.registry_mode = false;
+        assert!(config.validate().is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn registry_mode_names_a_socket_path_that_is_too_long() {
+        let mut config = AppConfig::default();
+        config.registry_mode = true;
+        config.modules.enabled = vec!["dev.hologram.live.system".to_owned()];
+        config.paths.state_dir = PathBuf::from(format!("/{}", "d".repeat(100)));
+        let error = config.validate().expect_err("sun_path is 108 bytes");
+        assert!(error.to_string().contains("admin.sock"), "{error}");
     }
 
     #[cfg(feature = "oci")]

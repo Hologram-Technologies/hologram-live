@@ -1,3 +1,4 @@
+use crate::admin_socket as admin;
 use crate::app::AppState;
 use crate::auth::Principal;
 use crate::error::{ApiError, LiveError, Result};
@@ -60,30 +61,43 @@ where
         .protected
         .layer(middleware::from_fn_with_state(state.clone(), authenticate));
     let grpc = grpc::router(state.clone());
+    let limit = state.config().server.max_http_body_bytes;
 
-    let http = Router::new()
+    let public = Router::new()
         .route("/", get(index))
         .route("/healthz", get(healthz))
         .route("/openapi.json", get(openapi))
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
-        .merge(protected)
-        .merge(routers.open)
-        .with_state(state.clone());
-    let router = assemble(http, grpc, state.config().server.max_http_body_bytes);
+        .merge(routers.open);
 
     let listener = tokio::net::TcpListener::bind(&state.config().server.listen)
         .await
         .map_err(|error| {
             LiveError::Transport(format!("bind {}: {error}", state.config().server.listen))
         })?;
-    on_ready()?;
-    tracing::info!(listen = %state.config().server.listen, "hologram server ready");
-    let shutdown_state = state.clone();
-    let result = axum::serve(listener, router)
-        .with_graceful_shutdown(async move { shutdown_state.wait_shutdown().await })
-        .await
-        .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")));
+    let result = if state.config().registry_mode {
+        // ADR 028: the public port carries /v2/ and the public pages only;
+        // the module API and gRPC, shutdown included, live on the socket.
+        let public = assemble(public.with_state(state.clone()), Router::new(), limit);
+        let admin = assemble(protected.with_state(state.clone()), grpc, limit);
+        let admin_listener = admin::bind(&state.config().admin_socket())?;
+        on_ready()?;
+        tracing::info!(listen = %state.config().server.listen, "hologram registry ready");
+        let served = serve_registry_mode(&state, (listener, public), (admin_listener, admin)).await;
+        admin::remove(&state.config().admin_socket());
+        served
+    } else {
+        let http = public.merge(protected).with_state(state.clone());
+        let router = assemble(http, grpc, limit);
+        on_ready()?;
+        tracing::info!(listen = %state.config().server.listen, "hologram server ready");
+        let shutdown_state = state.clone();
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async move { shutdown_state.wait_shutdown().await })
+            .await
+            .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
+    };
     state.chat().engine().shutdown().await;
     state.plugins().shutdown().await;
     let audit = state.audit().flush().await;
@@ -91,6 +105,27 @@ where
         (Err(error), _) | (Ok(()), Err(error)) => Err(error),
         (Ok(()), Ok(())) => Ok(()),
     }
+}
+
+/// Both listeners of registry mode, drained by the one shutdown signal. Either
+/// failing ends the process with its error.
+async fn serve_registry_mode(
+    state: &AppState,
+    (public_listener, public): (tokio::net::TcpListener, Router),
+    (admin_listener, admin): (admin::Listener, Router),
+) -> Result<()> {
+    use std::future::IntoFuture;
+    let public_state = state.clone();
+    let public = axum::serve(public_listener, public)
+        .with_graceful_shutdown(async move { public_state.wait_shutdown().await })
+        .into_future();
+    let public = async move {
+        public
+            .await
+            .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
+    };
+    let admin = admin::serve(state.clone(), admin_listener, admin);
+    tokio::try_join!(public, admin).map(|_| ())
 }
 
 /// Join the HTTP routes and the gRPC service into the one router the listener serves.

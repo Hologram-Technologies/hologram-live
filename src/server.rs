@@ -19,6 +19,12 @@ use utoipa::openapi::OpenApi as OpenApiDocument;
 
 static REQUEST_IDS: AtomicU64 = AtomicU64::new(1);
 
+/// The next request id, for a module that builds its own request span
+/// because it is mounted outside `authenticate`.
+pub(crate) fn next_request_id() -> u64 {
+    REQUEST_IDS.fetch_add(1, Ordering::Relaxed)
+}
+
 #[derive(utoipa::OpenApi)]
 #[openapi(
     info(title = "Hologram Live API", version = "1.0.0"),
@@ -45,8 +51,9 @@ pub async fn serve_with_ready<F>(state: AppState, on_ready: F) -> Result<()>
 where
     F: FnOnce() -> Result<()>,
 {
-    let protected = state
-        .module_router()
+    let routers = state.module_routers();
+    let protected = routers
+        .protected
         .layer(middleware::from_fn_with_state(state.clone(), authenticate));
     let grpc = grpc::router(state.clone());
 
@@ -57,6 +64,7 @@ where
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(protected)
+        .merge(routers.open)
         .with_state(state.clone());
     let router = assemble(http, grpc, state.config().server.max_http_body_bytes);
 
@@ -166,7 +174,7 @@ async fn scalar_javascript() -> Response {
 }
 
 async fn authenticate(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
-    let request_id = REQUEST_IDS.fetch_add(1, Ordering::Relaxed);
+    let request_id = next_request_id();
     let span = tracing::info_span!(
         "live.server.request",
         request_id,

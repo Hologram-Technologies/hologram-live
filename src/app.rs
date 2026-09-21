@@ -8,7 +8,7 @@ use crate::history::HistoryService;
 use crate::holo::{HoloCatalog, HoloRuntime};
 use crate::holo_capability::{EffectiveGrant, GrantSource};
 use crate::models::ModelCatalog;
-use crate::module::{ModuleContext, ModuleRegistry};
+use crate::module::{ModuleContext, ModuleRegistry, ModuleRouters};
 use crate::nodes::NodeDirectory;
 use crate::observability::TracingHandle;
 use crate::plugin::PluginRegistry;
@@ -187,6 +187,10 @@ impl AppState {
 
     pub fn module_router(&self) -> Router<AppState> {
         self.inner.modules.router()
+    }
+
+    pub fn module_routers(&self) -> ModuleRouters {
+        self.inner.modules.routers()
     }
 
     pub(crate) fn module_registry(&self) -> &ModuleRegistry {

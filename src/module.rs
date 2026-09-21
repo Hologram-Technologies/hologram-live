@@ -60,9 +60,31 @@ pub trait LiveModule: Send + Sync {
         OpenApiBuilder::new().build()
     }
 
+    /// Whether the module answers for its own authentication.
+    ///
+    /// The server wraps every other module's routes in the bearer layer. A
+    /// module that speaks a protocol with its own challenge (the registry API
+    /// answers `401` with `WWW-Authenticate`, in its own error shape) returns
+    /// `true` and is mounted beside that layer, not under it (ADR 026).
+    ///
+    /// Such a module's requests carry no `Principal` extension and no request
+    /// span: it must give them both, and must refuse what it has not
+    /// authenticated. Keep the default unless the protocol requires otherwise.
+    fn authenticates_itself(&self) -> bool {
+        false
+    }
+
     fn start<'a>(&'a self, _context: &'a ModuleContext) -> ModuleStartFuture<'a> {
         Box::pin(async { Ok(()) })
     }
+}
+
+/// The enabled modules' routes, split by who authenticates them.
+pub struct ModuleRouters {
+    /// Behind the server's bearer layer.
+    pub protected: Router<AppState>,
+    /// Mounted as they are: each module here authenticates itself.
+    pub open: Router<AppState>,
 }
 
 pub struct ModuleRegistry {
@@ -155,9 +177,23 @@ impl ModuleRegistry {
     }
 
     pub fn router(&self) -> Router<AppState> {
-        self.modules.iter().fold(Router::new(), |router, module| {
-            router.merge(module.router())
-        })
+        let routers = self.routers();
+        routers.protected.merge(routers.open)
+    }
+
+    pub fn routers(&self) -> ModuleRouters {
+        let mut routers = ModuleRouters {
+            protected: Router::new(),
+            open: Router::new(),
+        };
+        for module in &self.modules {
+            if module.authenticates_itself() {
+                routers.open = routers.open.merge(module.router());
+            } else {
+                routers.protected = routers.protected.merge(module.router());
+            }
+        }
+        routers
     }
 
     pub async fn start(&self, context: &ModuleContext) -> Result<()> {
@@ -223,6 +259,25 @@ mod tests {
         assert!(registry.supports(crate::protocol::operation::HOLO_INSPECT));
         assert!(registry.supports(crate::protocol::operation::HOLO_PLAN));
         assert!(registry.supports(crate::protocol::operation::HOLO_RUN));
+    }
+
+    /// With nothing opt-in enabled, every route sits behind the bearer layer,
+    /// exactly as before this seam existed.
+    #[test]
+    fn the_default_modules_all_sit_behind_the_bearer_layer() {
+        let config = crate::config::ModulesConfig::default();
+        let registry = ModuleRegistry::build(&config.enabled).expect("resolve");
+        let routers = registry.routers();
+        assert!(routers.protected.has_routes());
+        assert!(
+            !routers.open.has_routes(),
+            "no default module authenticates itself"
+        );
+        assert_eq!(
+            crate::modules::builtin_ids(),
+            crate::modules::default_builtin_ids(),
+            "the opt-in list is empty in this build"
+        );
     }
 
     #[test]

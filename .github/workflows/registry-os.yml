@@ -46,6 +46,12 @@ jobs:
         run: cargo test --locked --features oci --lib oci_store -- --test-threads=1 --nocapture
       - name: Integration tests
         run: cargo test --locked --features oci --test oci_store -- --test-threads=1
+      - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)
+        if: runner.os == 'Linux'
+        run: cargo test --release --locked --features oci --test oci_store -- --ignored --nocapture two_gib
+      - name: No layer in memory, no Kappa type outside the adapter
+        if: runner.os == 'Linux'
+        run: ./scripts/check-oci-streaming.sh
       - name: Clippy, registry build
         if: runner.os == 'Linux'
         run: cargo clippy --locked --features oci --all-targets -- -D warnings

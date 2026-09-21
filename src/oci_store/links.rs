@@ -13,7 +13,7 @@
 //! `"<repo>\0".."<repo>\u{1}"` is exactly one repository: `team/app` does not
 //! see `team/app2` or `team/app/sub`.
 
-use super::{now_ms, Digest, OciStore, OciStoreError, RepoName};
+use super::{now_ms, Digest, OciStore, OciStoreError, RepoName, UploadId};
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::ops::Bound;
@@ -101,6 +101,16 @@ pub struct ReferrerDescriptor {
     pub artifact_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+/// One row of `uploads`: what is needed to find a session again after a
+/// restart. The running blake3 state cannot be saved, so it is not here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UploadRow {
+    pub repo: String,
+    pub kappa_id: String,
+    pub created_ms: u64,
+    pub touched_ms: u64,
 }
 
 fn io(error: impl std::fmt::Display) -> OciStoreError {
@@ -445,6 +455,85 @@ impl OciStore {
         }
         txn.commit().map_err(io)
     }
+
+    pub(crate) fn upload_row_put(
+        &self,
+        id: &UploadId,
+        row: &UploadRow,
+    ) -> Result<(), OciStoreError> {
+        let value = serde_json::to_vec(row).map_err(io)?;
+        let txn = self.links.begin_write().map_err(io)?;
+        {
+            let mut uploads = txn.open_table(UPLOADS).map_err(io)?;
+            uploads.insert(id.as_str(), value.as_slice()).map_err(io)?;
+        }
+        txn.commit().map_err(io)
+    }
+
+    pub(crate) fn upload_row_delete(&self, id: &UploadId) -> Result<(), OciStoreError> {
+        let txn = self.links.begin_write().map_err(io)?;
+        {
+            let mut uploads = txn.open_table(UPLOADS).map_err(io)?;
+            uploads.remove(id.as_str()).map_err(io)?;
+        }
+        txn.commit().map_err(io)
+    }
+
+    /// Every recorded session, for resuming at start and for purging.
+    #[expect(dead_code, reason = "used by session resume in P1 T6")]
+    pub(crate) fn upload_rows(&self) -> Result<Vec<(UploadId, UploadRow)>, OciStoreError> {
+        let txn = self.links.begin_read().map_err(io)?;
+        let uploads = txn.open_table(UPLOADS).map_err(io)?;
+        let mut rows = Vec::new();
+        for row in uploads.iter().map_err(io)? {
+            let (key, value) = row.map_err(io)?;
+            rows.push((
+                UploadId::parse(key.value())?,
+                serde_json::from_slice(value.value()).map_err(io)?,
+            ));
+        }
+        Ok(rows)
+    }
+
+    /// The end of an upload, in one transaction: the blob is linked into its
+    /// repository, its alias is recorded, and the session row goes. A crash
+    /// before this leaves an unlinked, unreachable blob that garbage
+    /// collection sweeps (`data-model.md`, crash table).
+    pub(crate) fn commit_finished_upload(
+        &self,
+        id: &UploadId,
+        repo: &RepoName,
+        stored: &Digest,
+        alias: Option<&Digest>,
+    ) -> Result<(), OciStoreError> {
+        let link = Link {
+            kind: LinkKind::Blob,
+            media_type: None,
+        };
+        let txn = self.links.begin_write().map_err(io)?;
+        {
+            let mut links = txn.open_table(LINKS).map_err(io)?;
+            links
+                .insert(link_key(repo, stored).as_str(), link.encode().as_slice())
+                .map_err(io)?;
+            let mut repos = txn.open_table(REPOS).map_err(io)?;
+            if repos.get(repo.as_str()).map_err(io)?.is_none() {
+                repos.insert(repo.as_str(), now_ms()).map_err(io)?;
+            }
+            if let Some(alias) = alias {
+                let mut aliases = txn.open_table(ALIASES).map_err(io)?;
+                aliases
+                    .insert(stored.as_str(), alias.as_str())
+                    .map_err(io)?;
+                aliases
+                    .insert(alias.as_str(), stored.as_str())
+                    .map_err(io)?;
+            }
+            let mut uploads = txn.open_table(UPLOADS).map_err(io)?;
+            uploads.remove(id.as_str()).map_err(io)?;
+        }
+        txn.commit().map_err(io)
+    }
 }
 
 #[cfg(test)]
@@ -457,7 +546,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let options = OpenOptions {
             create: true,
-            upload_max_age: Duration::from_secs(3600),
+            upload_max_age: Duration::from_hours(1),
         };
         let store = OciStore::open(dir.path(), options).expect("open");
         (store, dir)

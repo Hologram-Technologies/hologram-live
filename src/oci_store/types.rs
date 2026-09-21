@@ -75,6 +75,12 @@ impl Digest {
         ))
     }
 
+    /// The digest a finished blake3 hash names.
+    #[must_use]
+    pub fn from_blake3(hash: &blake3::Hash) -> Self {
+        Self(format!("blake3:{}", hash.to_hex()))
+    }
+
     #[must_use]
     pub fn algorithm(&self) -> Algorithm {
         let name = self.0.split(':').next().unwrap_or_default();

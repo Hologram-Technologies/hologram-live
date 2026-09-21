@@ -9,13 +9,17 @@
 //! Every method is synchronous. Callers on the async side wrap them in
 //! `spawn_blocking`.
 
+pub mod blobs;
 pub mod layout;
 pub mod links;
 pub mod types;
+pub mod uploads;
 
+pub use blobs::{AsyncBlob, BlobRead, BlobStat};
 pub use layout::Layout;
 pub use links::{Link, LinkKind, ReferrerDescriptor};
 pub use types::{Algorithm, Digest, Reference, RepoName, Tag, UploadId};
+pub use uploads::{Framer, UploadStatus, FRAME};
 
 use kappa_core::clock::Clock;
 use kappa_store_redb::{PersistentStore, PersistentStoreConfig};
@@ -68,9 +72,8 @@ impl std::fmt::Display for OciStoreError {
             Self::MissingReferences(digests) => {
                 write!(f, "missing references: {}", digests.join(", "))
             }
-            Self::Layout(message) => f.write_str(message),
+            Self::Layout(message) | Self::Io(message) => f.write_str(message),
             Self::Locked => f.write_str("another process holds the registry store"),
-            Self::Io(message) => f.write_str(message),
         }
     }
 }
@@ -92,6 +95,8 @@ pub struct OciStore {
     kappa: Arc<PersistentStore>,
     links: redb::Database,
     layout: Layout,
+    /// Live upload sessions. The `uploads` table is their durable shadow.
+    sessions: uploads::Sessions,
     upload_max_age: Duration,
 }
 
@@ -132,6 +137,7 @@ impl OciStore {
             kappa: Arc::new(kappa),
             links,
             layout,
+            sessions: uploads::Sessions::default(),
             upload_max_age: options.upload_max_age,
         })
     }
@@ -146,9 +152,12 @@ impl OciStore {
         self.upload_max_age
     }
 
-    #[expect(dead_code, reason = "first used by blob reads in P1 T4")]
     pub(crate) fn kappa(&self) -> &Arc<PersistentStore> {
         &self.kappa
+    }
+
+    pub(crate) fn sessions(&self) -> &uploads::Sessions {
+        &self.sessions
     }
 }
 

@@ -7,7 +7,7 @@ use std::time::Duration;
 fn options() -> OpenOptions {
     OpenOptions {
         create: true,
-        upload_max_age: Duration::from_secs(7 * 24 * 3600),
+        upload_max_age: Duration::from_hours(7 * 24),
     }
 }
 
@@ -53,4 +53,203 @@ fn a_second_opener_gets_locked() {
         OciStore::open(dir.path(), options()),
         Err(OciStoreError::Locked)
     ));
+}
+
+// ---- Task 4 and 5: blobs in and out --------------------------------------
+
+use hologram_live::oci_store::{AsyncBlob, Digest, RepoName, FRAME};
+use std::io::{Read, Seek, SeekFrom};
+use tokio::io::AsyncReadExt;
+
+const MIB: usize = 1024 * 1024;
+
+fn repo(name: &str) -> RepoName {
+    RepoName::parse(name).expect("repository name")
+}
+
+/// Deterministic bytes that do not compress, produced a frame at a time.
+fn frame(index: u64) -> Vec<u8> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&index.to_le_bytes());
+    let mut out = vec![0_u8; FRAME];
+    hasher.finalize_xof().fill(&mut out);
+    out
+}
+
+/// Push `frames` frames into `name`; returns the sha256 and blake3 digests.
+fn push_blob(store: &OciStore, name: &str, frames: u64) -> (Digest, Digest) {
+    use sha2::Digest as _;
+    let id = store.upload_begin(&repo(name)).expect("begin");
+    let (mut sha, mut blake, mut offset) = (sha2::Sha256::new(), blake3::Hasher::new(), 0_u64);
+    for index in 0..frames {
+        let bytes = frame(index);
+        sha.update(&bytes);
+        blake.update(&bytes);
+        offset = store.upload_append(&id, offset, &bytes).expect("append");
+    }
+    let mut hex = String::new();
+    for byte in sha.finalize() {
+        use std::fmt::Write as _;
+        write!(hex, "{byte:02x}").expect("write to a string");
+    }
+    let sha256 = Digest::parse(&format!("sha256:{hex}")).expect("digest");
+    assert_eq!(store.upload_finish(&id, &sha256).expect("finish"), sha256);
+    (sha256, Digest::from_blake3(&blake.finalize()))
+}
+
+#[test]
+fn a_blob_is_readable_only_through_a_repository_that_links_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = OciStore::open(dir.path(), options()).expect("open");
+    let (digest, _) = push_blob(&store, "a/x", 1);
+    assert!(matches!(
+        store.blob_stat(&repo("b/y"), &digest),
+        Err(OciStoreError::NotInRepository { .. })
+    ));
+    assert_eq!(
+        store.blob_stat(&repo("a/x"), &digest).expect("stat").size,
+        FRAME as u64
+    );
+}
+
+#[test]
+fn a_blob_pushed_by_sha256_opens_by_its_blake3_alias_and_back() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = OciStore::open(dir.path(), options()).expect("open");
+    let (sha256, blake3) = push_blob(&store, "a/x", 1);
+    let (stat, mut reader) = store
+        .blob_open(&repo("a/x"), &blake3)
+        .expect("open by blake3");
+    assert_eq!(stat.stored_as, sha256);
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).expect("read");
+    assert_eq!(bytes, frame(0));
+    assert!(
+        matches!(
+            store.blob_stat(&repo("b/y"), &blake3),
+            Err(OciStoreError::NotInRepository { .. })
+        ),
+        "an alias does not widen the scope"
+    );
+}
+
+/// Counts what is read, to prove a range does not read the rest.
+struct Counting<R> {
+    inner: R,
+    read: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl<R: Read> Read for Counting<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let count = self.inner.read(buffer)?;
+        self.read
+            .fetch_add(count as u64, std::sync::atomic::Ordering::Relaxed);
+        Ok(count)
+    }
+}
+
+impl<R: Seek> Seek for Counting<R> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(position)
+    }
+}
+
+#[tokio::test]
+async fn a_range_is_served_without_reading_the_rest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = OciStore::open(dir.path(), options()).expect("open");
+    let (digest, _) = push_blob(&store, "a/x", 16); // 64 MiB
+    let (_, reader) = store.blob_open(&repo("a/x"), &digest).expect("open");
+    let read = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let counting = Counting {
+        inner: reader,
+        read: read.clone(),
+    };
+
+    let mut body = AsyncBlob::new(Box::new(counting), 10 * MIB as u64, MIB as u64);
+    let mut got = Vec::new();
+    body.read_to_end(&mut got).await.expect("read");
+
+    // 10 MiB into the stream is 2 MiB into frame 2.
+    assert_eq!(got, &frame(2)[2 * MIB..3 * MIB]);
+    assert!(read.load(std::sync::atomic::Ordering::Relaxed) <= 2 * MIB as u64);
+}
+
+/// Count the files of exactly `size` bytes under `dir`.
+fn count(dir: &std::path::Path, size: u64, found: &mut usize) {
+    for entry in std::fs::read_dir(dir).expect("read_dir").flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            count(&path, size, found);
+        } else if entry.metadata().is_ok_and(|meta| meta.len() == size) {
+            *found += 1;
+        }
+    }
+}
+
+#[test]
+fn the_same_blob_pushed_twice_at_once_ends_as_one_file_and_two_links() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = std::sync::Arc::new(OciStore::open(dir.path(), options()).expect("open"));
+    let handles: Vec<_> = ["a/x", "b/y"]
+        .into_iter()
+        .map(|name| {
+            let store = store.clone();
+            std::thread::spawn(move || push_blob(&store, name, 2).0)
+        })
+        .collect();
+    let digests: Vec<Digest> = handles
+        .into_iter()
+        .map(|h| h.join().expect("thread"))
+        .collect();
+    assert_eq!(digests[0], digests[1]);
+    for name in ["a/x", "b/y"] {
+        assert_eq!(
+            store
+                .blob_stat(&repo(name), &digests[0])
+                .expect("stat")
+                .size,
+            2 * FRAME as u64
+        );
+    }
+    // Exactly one file of that size under the blob root.
+    let mut found = 0;
+    count(&store.layout().blob_root(), 2 * FRAME as u64, &mut found);
+    assert_eq!(found, 1, "deduplicated: one file, two links");
+}
+
+/// SC-007 in small: memory must not grow with the size of a layer.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "2 GiB; run by the registry-os CI job"]
+fn two_gib_stay_under_200_mb() {
+    fn rss_bytes() -> u64 {
+        let statm = std::fs::read_to_string("/proc/self/statm").expect("statm");
+        let pages: u64 = statm
+            .split_whitespace()
+            .nth(1)
+            .expect("rss")
+            .parse()
+            .expect("number");
+        pages * 4096
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = OciStore::open(dir.path(), options()).expect("open");
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let peak = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let sampler = {
+        let (stop, peak) = (stop.clone(), peak.clone());
+        std::thread::spawn(move || {
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                peak.fetch_max(rss_bytes(), std::sync::atomic::Ordering::Relaxed);
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        })
+    };
+    push_blob(&store, "big/layer", 512);
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    sampler.join().expect("sampler");
+    let peak_mb = peak.load(std::sync::atomic::Ordering::Relaxed) / (1024 * 1024);
+    println!("SC-007 measurement: peak RSS {peak_mb} MB while pushing 2 GiB");
+    assert!(peak_mb < 200, "peak RSS was {peak_mb} MB");
 }

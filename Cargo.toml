@@ -28,6 +28,7 @@ path = "src/main.rs"
 [dependencies]
 axum = { version = "0.8", features = ["json", "tokio", "http1", "http2"] }
 blake3 = "1"
+bytes = { version = "1", optional = true }
 kappa-core = { git = "https://github.com/humuhumu33/kappa-registry", rev = "358773a47054a7153dedda69440d219adf64514e", optional = true, default-features = false }
 kappa-store-redb = { git = "https://github.com/humuhumu33/kappa-registry", rev = "358773a47054a7153dedda69440d219adf64514e", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -87,7 +88,7 @@ hologram-client = { path = "crates/hologram-client" }
 [features]
 bdd = []
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
-oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb"]
+oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes"]
 
 [[test]]
 name = "oci_store"

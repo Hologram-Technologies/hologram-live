@@ -67,6 +67,10 @@ file-size:
 kappa-pin:
     KAPPA_PIN_ALLOW_UNOPENED=1 ./scripts/check-kappa-pin.sh
 
+# No layer in memory, and no Kappa type outside src/oci_store/.
+oci-streaming:
+    ./scripts/check-oci-streaming.sh
+
 # The registry (cargo feature `oci`, off by default) keeps compiling and its tests keep passing.
 oci-check:
     cargo check --locked --features oci --all-targets
@@ -93,7 +97,7 @@ desktop-build:
 build: server-build
 
 # Verify code
-verify: fmt file-size product-boundary kappa-pin check oci-check test clippy bdd build
+verify: fmt file-size product-boundary kappa-pin oci-streaming check oci-check test clippy bdd build
     ./scripts/smoke.sh "{{cargo_target_dir}}/release/hologram"
 
 # Run project

@@ -1,0 +1,70 @@
+name = "12-digest-forms"
+summary = "sha512, blake3 and upper-case hex, on read and on finish."
+repo = "gate-b/digests"
+
+[[step]]
+id = "blob-start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upload = "header:location" }
+
+[[step]]
+id = "blob-put"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=3:len=1024}" }
+body = 'bytes:seed=3:len=1024'
+
+[[step]]
+id = "head-sha512"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha512:seed=3:len=1024}"
+
+[[step]]
+id = "head-blake3"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{blake3:seed=3:len=1024}"
+
+[[step]]
+id = "head-upper-hex"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256upper:seed=3:len=1024}"
+
+[[step]]
+id = "start-512"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { up512 = "header:location" }
+
+[[step]]
+id = "finish-sha512"
+method = "PUT"
+url = "{up512}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha512:seed=2:len=512}" }
+body = 'bytes:seed=2:len=512'
+
+[[step]]
+id = "head-after-sha512"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha512:seed=2:len=512}"
+
+[[step]]
+id = "head-after-sha512-by-sha256"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=2:len=512}"
+
+[[step]]
+id = "start-blake3"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upb3 = "header:location" }
+
+[[step]]
+id = "finish-blake3"
+method = "PUT"
+url = "{upb3}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{blake3:seed=5:len=256}" }
+body = 'bytes:seed=5:len=256'

@@ -1,0 +1,88 @@
+name = "03-names"
+summary = "Which repository names the grammar takes, asked through tags/list."
+repo = "gate-b/names"
+
+[[step]]
+id = "name-00"
+method = "GET"
+path = "/v2/a/tags/list"
+
+[[step]]
+id = "name-01"
+method = "GET"
+path = "/v2/a/b/tags/list"
+
+[[step]]
+id = "name-02"
+method = "GET"
+path = "/v2/a__b/tags/list"
+
+[[step]]
+id = "name-03"
+method = "GET"
+path = "/v2/a---b/tags/list"
+
+[[step]]
+id = "name-04"
+method = "GET"
+path = "/v2/a.b/tags/list"
+
+[[step]]
+id = "name-05"
+method = "GET"
+path = "/v2/a_b/tags/list"
+
+[[step]]
+id = "name-06"
+method = "GET"
+path = "/v2/a___b/tags/list"
+
+[[step]]
+id = "name-07"
+method = "GET"
+path = "/v2/a..b/tags/list"
+
+[[step]]
+id = "name-08"
+method = "GET"
+path = "/v2/-a/tags/list"
+
+[[step]]
+id = "name-09"
+method = "GET"
+path = "/v2/a-/tags/list"
+
+[[step]]
+id = "name-10"
+method = "GET"
+path = "/v2/Foo/tags/list"
+
+[[step]]
+id = "name-11"
+method = "GET"
+path = "/v2/_catalog/tags/list"
+
+[[step]]
+id = "name-12"
+method = "GET"
+path = "/v2/a/b/c/d/e/tags/list"
+
+[[step]]
+id = "name-13"
+method = "GET"
+path = "/v2/{repeat:a:255}/tags/list"
+
+[[step]]
+id = "name-14"
+method = "GET"
+path = "/v2/{repeat:a:256}/tags/list"
+
+[[step]]
+id = "name-15"
+method = "GET"
+path = "/v2/{repeat:abcdefgh/:31}abcdefg/tags/list"
+
+[[step]]
+id = "name-16"
+method = "GET"
+path = "/v2/{repeat:abcdefgh/:31}abcdefgh/tags/list"

@@ -16,6 +16,8 @@ members = [
     "crates/hologram-view-surface",
 ]
 resolver = "2"
+# The gate tools judge the binary from outside; cargo must not claim them.
+exclude = ["apps/registry/gates/differential"]
 
 [lib]
 name = "hologram_live"

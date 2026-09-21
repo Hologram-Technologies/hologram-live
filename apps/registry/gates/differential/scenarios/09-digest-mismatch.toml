@@ -1,0 +1,49 @@
+name = "09-digest-mismatch"
+summary = "Finish with a digest the bytes do not hash to: what is left?"
+repo = "gate-b/mismatch"
+
+[[step]]
+id = "start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { upload = "header:location" }
+
+[[step]]
+id = "finish-wrong"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=99:len=8}" }
+body = 'bytes:seed=3:len=1024'
+
+[[step]]
+id = "session-after"
+method = "GET"
+url = "{upload}"
+
+[[step]]
+id = "claimed-blob"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=99:len=8}"
+
+[[step]]
+id = "real-blob"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=3:len=1024}"
+
+[[step]]
+id = "finish-no-digest-start"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+capture = { second = "header:location" }
+
+[[step]]
+id = "finish-no-digest"
+method = "PUT"
+url = "{second}"
+headers = { "content-type" = "application/octet-stream" }
+body = 'bytes:seed=3:len=1024'
+
+[state]
+catalog = true
+tags = ["{repo}"]

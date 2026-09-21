@@ -6,7 +6,8 @@ failed=0
 
 while IFS= read -r file; do
   case "$file" in
-    tests/*|*/tests/*|features/*|*/generated/*|*/gen/*|apps/docs/public/openapi.json|*Cargo.lock|*package-lock.json)
+    # third_party/ is vendored code, audited by checksum (scripts/check-kappa-pin.sh), not written here.
+    tests/*|*/tests/*|features/*|third_party/*|*/generated/*|*/gen/*|apps/docs/public/openapi.json|*Cargo.lock|*package-lock.json)
       continue
       ;;
   esac

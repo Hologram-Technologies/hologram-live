@@ -1,0 +1,18 @@
+# Vendored from usrbinkat/bc-dcbor-rust @ 2e5b901. BSD-2-Clause-Patent, see LICENSE.md.
+
+[package]
+name = "dcbor-derive"
+version = "0.1.0"
+edition = "2024"
+description = "Derive macros for dcbor CBOREncodable/CBORDecodable traits."
+authors = ["Blockchain Commons"]
+repository = "https://github.com/BlockchainCommons/bc-dcbor-rust"
+license = "BSD-2-Clause-Patent"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "extra-traits"] }

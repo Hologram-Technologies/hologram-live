@@ -35,15 +35,16 @@ Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neith
 ## Optional: the registry (`--features oci`)
 
 Off by default. A stock build pulls none of these; `scripts/check-product-boundaries.sh` holds that line. ADR 025 is
-the decision, `third_party/kappa/README.md` the audited record of the pin and its carried patches.
+the decision to use them and ADR 032 the decision to vendor them; `third_party/kappa/README.md` is the audited record
+of the copy and its carried patches.
 
 | Dependency | Purpose |
 | --- | --- |
-| `kappa-core` (git, pinned by `rev`, `default-features = false`) | the `KappaStore` trait: blobs addressed by `sha256:` and `blake3:`, staged uploads, tags |
-| `kappa-store-redb` (same pin) | the store: blob files on disk, an index in one redb file |
+| `kappa-core` (vendored in `third_party/kappa`, `default-features = false`) | the `KappaStore` trait: blobs addressed by `sha256:` and `blake3:`, staged uploads, tags |
+| `kappa-store-redb` (vendored beside it) | the store: blob files on disk, an index in one redb file |
 | `redb` | `links.redb`, the registry's own database: repository links, referrers, aliases, upload records (ADR 027) |
 
 The Kappa Registry provider (ADR 021) still speaks to an external `kappa-server` over HTTP with `reqwest`; it uses none
 of these crates. With `oci` on, the build gains two bundled C libraries (`lzma-sys`, `bzip2-sys`) through `kappa-core`.
-`aws-lc` stays out: the pin carries a patch that turns the store's encryption backend off, and
-`scripts/check-kappa-pin.sh` fails if it returns.
+`kappa-core` needs `dcbor`, vendored in `third_party/dcbor` (BSD-2-Clause-Patent). `aws-lc` stays out: the copy
+carries a patch that turns the store's encryption backend off, and `scripts/check-kappa-pin.sh` fails if it returns.

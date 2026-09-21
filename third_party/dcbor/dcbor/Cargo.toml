@@ -1,0 +1,35 @@
+# Vendored from usrbinkat/bc-dcbor-rust @ 2e5b901 (branch feat/dcbor-derive of
+# BlockchainCommons/bc-dcbor-rust). BSD-2-Clause-Patent, see LICENSE.md.
+
+[package]
+name = "dcbor"
+version = "0.25.2"
+edition = "2024"
+description = "Deterministic CBOR (\"dCBOR\") for Rust."
+authors = ["Blockchain Commons"]
+repository = "https://github.com/BlockchainCommons/bc-dcbor-rust"
+readme = "README.md"
+license = "BSD-2-Clause-Patent"
+documentation = "https://docs.rs/dcbor"
+keywords = ["encoding", "cbor", "binary", "format", "serialization"]
+categories = ["data-structures", "encoding", "no-std"]
+
+[features]
+default = ["std"]
+multithreaded = []
+no_std = ["hashbrown", "thiserror", "spin"]
+num-bigint = ["dep:num-bigint"]
+std = ["half/std", "chrono/std", "hex/std", "thiserror/std"]
+derive = ["dep:dcbor-derive"]
+
+[dependencies]
+chrono = { version = "^0.4.28", default-features = true }
+half = { version = "^2.4.1", default-features = false }
+hashbrown = { version = "^0.16.1", optional = true }
+hex = { version = "^0.4.3", default-features = true }
+num-bigint = { version = "0.4.6", default-features = false, optional = true }
+spin = { version = "0.10.0", optional = true }
+thiserror = { version = "^2.0", default-features = false, optional = true }
+unicode-normalization = { version = "^0.1.22", default-features = false }
+paste = "^1.0.12"
+dcbor-derive = { version = "0.1.0", path = "../dcbor-derive", optional = true }

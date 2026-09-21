@@ -12,6 +12,8 @@ on:
       - "src/registry_compat/**"
       - "apps/registry/**"
       - "third_party/kappa/**"
+      - "third_party/dcbor/**"
+      - "scripts/check-kappa-pin.sh"
       - "tests/oci_*.rs"
       - "Cargo.toml"
       - "Cargo.lock"

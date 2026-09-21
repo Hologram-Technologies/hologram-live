@@ -181,10 +181,15 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
         Err(error) => (error.into_response(), None),
     };
     if let (Some(audit), Some((operation, resource, outcome))) = (audit, record) {
+        // Off the response path: the answer does not wait for the log's one
+        // writer, and a client that goes away cannot drop the record of a
+        // write that has already happened.
         let event = crate::audit::AuditEvent::new(PRINCIPAL, operation, Some(resource), outcome);
-        if let Err(error) = audit.record(event).await {
-            tracing::error!(%error, "failed to record a registry audit event");
-        }
+        tokio::spawn(async move {
+            if let Err(error) = audit.record(event).await {
+                tracing::error!(%error, "failed to record a registry audit event");
+            }
+        });
     }
     absolute_location(&mut response, origin.as_deref());
     // Last, so they are on errors and on `OPTIONS` too. A browser's preflight
@@ -212,19 +217,27 @@ impl Audited {
         if self.only_when_created && !created && outcome == "accepted" {
             return None;
         }
-        // A blob's digest is known only once it is stored: read it from the answer.
-        let resource = match response
+        // What was stored is named by the answer's digest: a blob's is known
+        // only once it is stored, and a tag push records what the tag now names.
+        let stored = response
             .headers()
-            .get(LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|location| location.rsplit_once("/blobs/"))
-        {
-            Some((_, digest)) if created && !digest.starts_with("uploads/") => {
+            .get("docker-content-digest")
+            .and_then(|value| value.to_str().ok());
+        let resource = match stored {
+            Some(digest) if created && !self.resource.contains('@') => {
                 format!("{}@{digest}", self.resource)
             }
             _ => self.resource,
         };
         Some((self.operation, resource, outcome))
+    }
+}
+
+/// `repo:tag` or `repo@digest`, as image references are written.
+fn named(repo: &crate::oci_store::RepoName, reference: &crate::oci_store::Reference) -> String {
+    match reference {
+        crate::oci_store::Reference::Tag(tag) => format!("{repo}:{tag}"),
+        crate::oci_store::Reference::Digest(digest) => format!("{repo}@{digest}"),
     }
 }
 
@@ -236,12 +249,12 @@ fn audited(route: &Route) -> Option<Audited> {
             repo,
             reference,
             verb: ManifestVerb::Put,
-        } => ("oci.manifest.put", format!("{repo}:{reference}"), false),
+        } => ("oci.manifest.put", named(repo, reference), false),
         Route::Manifest {
             repo,
             reference,
             verb: ManifestVerb::Delete,
-        } => ("oci.manifest.delete", format!("{repo}:{reference}"), false),
+        } => ("oci.manifest.delete", named(repo, reference), false),
         Route::Blob {
             repo,
             digest,

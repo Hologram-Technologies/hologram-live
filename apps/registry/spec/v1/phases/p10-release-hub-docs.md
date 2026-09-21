@@ -17,7 +17,7 @@
 - First job: `apps/registry/gates/release/check-gates.sh ${{ github.sha }}` (P9 T6). Red gate, no release.
 - Second job: `./scripts/check-kappa-pin.sh` without allowance, and an extra check that the README records the UOR Foundation agreement (FR-019: merge rights or a maintained fork, agreed before the first release). A missing line fails the release, not the build.
 - Binaries: the existing five targets. A system the P0 verdict dropped is removed here and named in the release notes.
-- Image: `docker buildx` on native runners (`ubuntu-24.04`, `ubuntu-24.04-arm`), one manifest list `ghcr.io/hologram-technologies/registry:<version>` and `:1`; image name until it moves to the organisation: `ghcr.io/humuhumu33/hologram-registry`.
+- Image: `docker buildx` on native runners (`ubuntu-24.04`, `ubuntu-24.04-arm`), one manifest list `ghcr.io/hologram-technologies/registry:<version>` and `:1`; image name until it moves to the organisation: `ghcr.io/a development fork`.
 - Step 2 of the step-level plan tries musl once: `cargo build --target x86_64-unknown-linux-musl`. Adopted only if it links with no patch (decision 6). Otherwise gnu and distroless `cc`, as built since P5.
 - Artefacts: archives, `SHA256SUMS`, the image digest, `apps/registry/DIFFERENCES.md`, `third_party/kappa/README.md`.
 

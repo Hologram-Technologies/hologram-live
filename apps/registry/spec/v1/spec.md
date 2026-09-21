@@ -6,7 +6,7 @@
 
 **Status**: Clarified, planned (see plan.md)
 
-**Input**: User description: "Hologram Server v1 is a drop-in replacement for the Docker Registry image (`registry:3`), built on the Kappa store. Test of drop-in: take the compose file from the registry documentation, change only the image name; clients, commands, ports, settings, TLS, password file and garbage collection behave the same. Data on disk is Kappa's layout, so moving in and out is a copy. Source: HOLOGRAM-SERVER-V1-SCOPE.md revision 4."
+**Input**: the product brief: a drop-in replacement for the Docker Registry image (`registry:3`), built on the Kappa store. Take the compose file from the registry's documentation and change only the image name; clients, commands, ports, settings, TLS and the password file keep working.
 
 Terms: **operator** = person who runs the registry. **Reference registry** = the Docker Registry image `registry:3`, pinned to one version. **Client** = any tool that pushes or pulls images.
 

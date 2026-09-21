@@ -4,7 +4,7 @@
 
 Decided by the maintainer. Revision 2 is kept beside this folder as `001-hologram-registry-v1.rev2-backup`. Everything below this section is revision 2 with paths and targets changed; where the two disagree, this section wins.
 
-**Where it is built.** In `Hologram-Technologies/hologram-live`, not in a long-lived fork. Branches are pushed to `humuhumu33/hologram-registry` (a true GitHub fork of the parent) and every pull request targets the parent's `main`. There is no weekly merge of `upstream/main`: a branch is rebased on the parent's `main` before its pull request, and lives days, not weeks.
+**Where it is built.** In `Hologram-Technologies/hologram-live`, not in a long-lived fork. Branches are pushed to a development fork (a true GitHub fork of the parent) and every pull request targets the parent's `main`. There is no weekly merge of `upstream/main`: a branch is rebased on the parent's `main` before its pull request, and lives days, not weeks.
 
 **The split.** `apps/` holds products built around the `hologram` binary (`apps/desktop`, `apps/model-hub`, `apps/docs`); the server lives in `src/`. The registry follows that line.
 
@@ -184,7 +184,7 @@ Constraints on every commit:
 - **Every kept difference is a line in `apps/registry/DIFFERENCES.md` in the commit that makes it (FR-013).** Gate B fails on an unlisted difference and on a listed one that no longer happens.
 - **The default install does not change.** Outside registry mode the ten modules behave as today; existing routes, keys and tests stay.
 - **No Kappa type outside `src/oci_store/`.** `scripts/check-oci-streaming.sh` also fails on `kappa_core` or `kappa_store_redb` anywhere else under `src/`.
-- Branches `registry/p<N>-<topic>`, pushed to the fork `humuhumu33/hologram-registry`; one pull request per task, squash merge, against **`Hologram-Technologies/hologram-live` main** (section 0). Rebase on the parent's `main` before opening it.
+- Branches `registry/p<N>-<topic>`, pushed to the fork a development fork; one pull request per task, squash merge, against **`Hologram-Technologies/hologram-live` main** (section 0). Rebase on the parent's `main` before opening it.
 - **The `oci` feature is off by default** (section 0, rule 1). Every command in the phase files that builds or tests registry code carries `--features oci`.
 
 ---

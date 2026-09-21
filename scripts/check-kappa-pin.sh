@@ -18,7 +18,7 @@ cd "${root}"
 # (`hash  file`) and to binary on Windows (`hash *file`), which would make the
 # same bytes read as different lines. macOS has shasum instead.
 hash() { if command -v sha256sum > /dev/null; then sha256sum -b "$@"; else shasum -a 256 -b "$@"; fi; }
-current=$(find third_party/kappa/crates third_party/dcbor -type f | LC_ALL=C sort | while IFS= read -r file; do hash "${file}"; done)
+current=$(find third_party/kappa/crates third_party/dcbor \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r file; do hash "${file}"; done)
 if [[ "${1:-}" == "--record" ]]; then
   printf '%s\n' "${current}" > "${record}"
   printf 'recorded %s vendored files\n' "$(wc -l < "${record}")"

@@ -1,2 +1,4 @@
 scripts/*.sh text eol=lf
 tools/componentize-py/*.patch text eol=lf -whitespace
+# Vendored code, audited by checksum (scripts/check-kappa-pin.sh): never convert line endings.
+third_party/** -text

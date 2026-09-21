@@ -41,7 +41,7 @@ jobs:
           key: registry-os-${{ matrix.os }}
       - name: The pin is the documented one; aws-lc is not in the graph
         if: runner.os == 'Linux'
-        run: KAPPA_PIN_ALLOW_UNOPENED=1 ./scripts/check-kappa-pin.sh
+        run: ./scripts/check-kappa-pin.sh
       - name: Unit tests
         run: cargo test --locked --features oci --lib oci_store -- --test-threads=1 --nocapture
       - name: Integration tests

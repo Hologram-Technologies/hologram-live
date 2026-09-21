@@ -63,9 +63,8 @@ file-size:
     ./scripts/check-file-size.sh
 
 # The Kappa store pin is the documented one, and nothing forbidden is in the registry graph.
-# KAPPA_PIN_ALLOW_UNOPENED goes away when the carried patches are opened upstream (P1 T8).
 kappa-pin:
-    KAPPA_PIN_ALLOW_UNOPENED=1 ./scripts/check-kappa-pin.sh
+    ./scripts/check-kappa-pin.sh
 
 # No layer in memory, and no Kappa type outside src/oci_store/.
 oci-streaming:

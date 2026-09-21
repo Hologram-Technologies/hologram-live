@@ -57,6 +57,10 @@ impl AppState {
         let registry = build_registry(&config, store.clone()).await?;
         #[cfg(feature = "oci")]
         let oci_store = open_oci_store(&config).await?;
+        #[cfg(feature = "oci")]
+        if let Some(store) = &oci_store {
+            purge_uploads_periodically(Arc::downgrade(store));
+        }
         let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
         let actor_system = ActorSystem::start();
         let audit = AuditLog::open(
@@ -544,6 +548,29 @@ async fn build_registry(
 ) -> Result<Arc<dyn RegistryProvider>> {
     let config = config.clone();
     blocking(move || crate::registry::provider_from_config(&config, store)).await
+}
+
+/// Abort upload sessions untouched for longer than the store's maximum age,
+/// once a minute after start and then daily: the reference's default
+/// `uploadpurging`. Without it, a client that opens sessions and walks away
+/// fills the disk. The task ends when the store is dropped.
+#[cfg(feature = "oci")]
+fn purge_uploads_periodically(store: std::sync::Weak<crate::oci_store::OciStore>) {
+    let first = tokio::time::Instant::now() + std::time::Duration::from_mins(1);
+    let mut tick = tokio::time::interval_at(first, std::time::Duration::from_hours(24));
+    tokio::spawn(async move {
+        loop {
+            tick.tick().await;
+            let Some(store) = store.upgrade() else { return };
+            let now = crate::oci_store::now_ms();
+            match tokio::task::spawn_blocking(move || store.purge_expired_uploads(now)).await {
+                Ok(Ok(0)) => {}
+                Ok(Ok(purged)) => tracing::info!(purged, "expired upload sessions purged"),
+                Ok(Err(error)) => tracing::warn!(%error, "upload purge failed"),
+                Err(error) => tracing::warn!(%error, "upload purge task failed"),
+            }
+        }
+    });
 }
 
 /// Open the registry volume when the registry module is enabled.

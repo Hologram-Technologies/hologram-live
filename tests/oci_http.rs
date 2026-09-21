@@ -358,6 +358,23 @@ async fn an_oci_manifest_is_served_only_to_a_client_that_asks_for_the_type() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+/// Review of #92: a layer asked for through the manifest route is unknown,
+/// and is never read whole to find that out.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_layer_is_not_a_manifest() {
+    let volume = volume();
+    let (layer, _, _) = seed(&volume.store);
+    let response = send(
+        &volume,
+        "GET",
+        &format!("/v2/team/app/manifests/{layer}"),
+        &[],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(error_code(response).await, "MANIFEST_UNKNOWN");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unknown_manifest_is_manifest_unknown() {
     let volume = volume();
@@ -530,8 +547,18 @@ async fn a_digest_the_bytes_do_not_hash_to_is_refused_and_nothing_is_kept() {
     .await;
     assert_eq!(closed.status(), StatusCode::BAD_REQUEST);
     assert_eq!(error_code(closed).await, "DIGEST_INVALID");
-    let absent = send(&volume, "HEAD", &format!("/v2/team/app/blobs/{wrong}"), &[]).await;
-    assert_eq!(absent.status(), StatusCode::NOT_FOUND);
+    // Nothing is kept: not under the digest claimed, and not under the digest
+    // the bytes really have.
+    for digest in [wrong, Digest::sha256_of(b"the bytes")] {
+        let absent = send(
+            &volume,
+            "HEAD",
+            &format!("/v2/team/app/blobs/{digest}"),
+            &[],
+        )
+        .await;
+        assert_eq!(absent.status(), StatusCode::NOT_FOUND, "{digest}");
+    }
 
     let location = open_upload(&volume, "team/app").await;
     let missing = send(&volume, "PUT", &location, &[]).await;

@@ -17,7 +17,7 @@ pub struct ServeArgs {
     /// Only the system and registry modules run.
     #[cfg(feature = "oci")]
     #[arg(long, env = "HOLOGRAM_REGISTRY_CONFIG")]
-    registry_config: Option<std::path::PathBuf>,
+    pub(crate) registry_config: Option<std::path::PathBuf>,
 }
 
 /// Resolve a serve argument to a catalog kappa, acquiring it if needed.

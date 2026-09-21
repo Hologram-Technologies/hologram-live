@@ -33,7 +33,7 @@ pub struct Entry {
 
 const V11: &str = "arrives in v1.1";
 const V12: &str = "arrives in v1.2";
-const NOT_BUILT: &str =
+pub const NOT_BUILT: &str =
     "is supported in v1.0 and not built yet; the start refuses it rather than ignore it";
 
 macro_rules! table {

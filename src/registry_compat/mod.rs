@@ -8,15 +8,19 @@
 
 pub mod table;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, TracingConfig};
 use crate::error::{LiveError, Result};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use table::{classify, Class};
+use yaml_rust2::{Yaml, YamlLoader};
 
 /// Sections whose children are free-form names, not documented keys.
 const OPEN_SECTIONS: [&str; 2] = ["http.headers", "log.fields"];
+
+/// The reference's own way to name its file when none is given.
+const CONFIGURATION_PATH: &str = "REGISTRY_CONFIGURATION_PATH";
 
 /// The registry's settings as flat key paths, `http.addr` = `:5000`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -24,6 +28,9 @@ pub struct RegistrySettings {
     pub values: BTreeMap<String, String>,
     /// Accepted but not in effect yet: logged once at start.
     pub pending: Vec<String>,
+    /// `REGISTRY_*` variables that are not settings but are expected in a
+    /// pod (Kubernetes service links): skipped, logged once at start.
+    pub skipped: Vec<String>,
 }
 
 impl RegistrySettings {
@@ -31,9 +38,15 @@ impl RegistrySettings {
         self.values.get(key).map(String::as_str)
     }
 
+    /// A boolean as the reference's YAML 1.1 parser reads one: `true`, `yes`
+    /// and `on` are true.
     pub fn flag(&self, key: &str) -> Option<bool> {
-        self.get(key)
-            .map(|value| value.trim().eq_ignore_ascii_case("true"))
+        self.get(key).map(|value| {
+            let value = value.trim();
+            ["true", "yes", "on"]
+                .iter()
+                .any(|word| value.eq_ignore_ascii_case(word))
+        })
     }
 
     /// Every value under a section, keyed by the rest of the path.
@@ -54,7 +67,8 @@ pub fn installed() -> Option<&'static RegistrySettings> {
     INSTALLED.get()
 }
 
-/// Read the file, then the environment over it, and class every key.
+/// Read the file (or the one `REGISTRY_CONFIGURATION_PATH` names), then the
+/// environment over it, and class every key.
 ///
 /// # Errors
 ///
@@ -64,8 +78,14 @@ pub fn load(
     file: Option<&Path>,
     environment: impl IntoIterator<Item = (String, String)>,
 ) -> Result<RegistrySettings> {
+    let environment: Vec<(String, String)> = environment.into_iter().collect();
+    let named = environment
+        .iter()
+        .find(|(name, _)| name == CONFIGURATION_PATH)
+        .map(|(_, value)| PathBuf::from(value));
+    let file = file.map(Path::to_path_buf).or(named);
     let mut values = BTreeMap::new();
-    if let Some(path) = file {
+    if let Some(path) = file.as_deref() {
         let text = std::fs::read_to_string(path).map_err(|error| LiveError::io(path, error))?;
         flatten_yaml(&text, &mut values).map_err(|error| {
             LiveError::Config(format!(
@@ -74,7 +94,15 @@ pub fn load(
             ))
         })?;
     }
+    let mut skipped = Vec::new();
     for (name, value) in environment {
+        if name == CONFIGURATION_PATH {
+            continue;
+        }
+        if is_service_link(&name) {
+            skipped.push(name);
+            continue;
+        }
         if let Some(key) = env_key(&name, &value)? {
             values.insert(key, value);
         }
@@ -83,7 +111,24 @@ pub fn load(
     for (key, value) in &values {
         check(key, value, &mut pending)?;
     }
-    Ok(RegistrySettings { values, pending })
+    Ok(RegistrySettings {
+        values,
+        pending,
+        skipped,
+    })
+}
+
+/// Kubernetes puts `<SERVICE>_PORT`, `<SERVICE>_PORT_<n>_TCP…` and
+/// `<SERVICE>_SERVICE_HOST`, `…_PORT…` into every pod beside a Service: one
+/// named `registry` yields `REGISTRY_PORT` and the rest. They are not settings.
+fn is_service_link(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("REGISTRY_") else {
+        return false;
+    };
+    rest == "PORT"
+        || rest.starts_with("PORT_")
+        || rest.starts_with("SERVICE_HOST")
+        || rest.starts_with("SERVICE_PORT")
 }
 
 fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
@@ -109,8 +154,27 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
         ("storage.cache.blobdescriptor", "redis") => {
             refuse("redis is not supported: v1 is one writer")
         }
-        _ => Ok(()),
+        _ => match key.strip_prefix("http.headers.") {
+            // A header that cannot be sent is refused, not dropped.
+            Some(name) if axum::http::HeaderName::from_bytes(name.as_bytes()).is_err() => {
+                refuse("is not a valid header name")
+            }
+            Some(_) if axum::http::HeaderValue::from_str(header_value(value)).is_err() => {
+                refuse("has a value that is not a valid header value")
+            }
+            _ => Ok(()),
+        },
     }
+}
+
+/// A header value as the reference writes it in YAML: a list, `[nosniff]`,
+/// sent as one comma-joined value.
+pub fn header_value(value: &str) -> &str {
+    value
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim()
 }
 
 /// The key a `REGISTRY_*` variable sets, or `None` for any other variable.
@@ -118,16 +182,14 @@ fn env_key(name: &str, value: &str) -> Result<Option<String>> {
     let Some(rest) = name.strip_prefix("REGISTRY_") else {
         return Ok(None);
     };
-    // Type selectors, as the deployment guide sets them: REGISTRY_AUTH=htpasswd.
+    // Type selectors, as the deployment guide sets them.
     match rest {
         "AUTH" => {
-            return match value.trim() {
-                // The kind is carried by the keys under it (auth.htpasswd.*).
-                "htpasswd" => Ok(None),
-                other => Err(LiveError::Config(format!(
-                    "REGISTRY_AUTH={other}: only htpasswd is supported"
-                ))),
-            };
+            return Err(LiveError::Config(match value.trim() {
+                // The selector alone must not start a registry with no login.
+                "htpasswd" => format!("REGISTRY_AUTH=htpasswd: login {}", table::NOT_BUILT),
+                other => format!("REGISTRY_AUTH={other}: only htpasswd is supported"),
+            }));
         }
         "STORAGE" => {
             return match value.trim() {
@@ -169,10 +231,8 @@ fn documented_keys() -> impl Iterator<Item = &'static str> {
         .filter(|line| !line.is_empty())
 }
 
-/// Flatten a YAML mapping into `a.b.c` = scalar. Lists are kept as their
-/// YAML text; no v1 setting takes one.
-use yaml_rust2::{Yaml, YamlLoader};
-
+/// Flatten a YAML mapping into `a.b.c` = scalar. A list is kept as its items
+/// joined by commas; the only v1 setting that takes one is a header.
 fn flatten_yaml(text: &str, out: &mut BTreeMap<String, String>) -> std::result::Result<(), String> {
     let documents = YamlLoader::load_from_str(text).map_err(|error| error.to_string())?;
     let Some(root) = documents.into_iter().next() else {
@@ -204,10 +264,8 @@ fn walk(
             }
             Ok(())
         }
-        Yaml::Null => {
-            out.insert(prefix.to_owned(), String::new());
-            Ok(())
-        }
+        // A key with no value sets nothing, as in the reference.
+        Yaml::Null => Ok(()),
         Yaml::String(text) | Yaml::Real(text) => {
             out.insert(prefix.to_owned(), text.clone());
             Ok(())
@@ -235,6 +293,25 @@ fn walk(
     }
 }
 
+/// Logging from the registry's settings: `log.level`, and `log.formatter`,
+/// where the reference's `text` is this server's `compact` line format.
+/// Used before the process's logging starts, so registry mode never takes its
+/// logging from a user's configuration file.
+pub fn tracing_config(settings: &RegistrySettings, mut tracing: TracingConfig) -> TracingConfig {
+    let level = settings
+        .get("log.level")
+        .or_else(|| settings.get("loglevel"));
+    if let Some(level) = level {
+        level.trim().clone_into(&mut tracing.filter);
+    }
+    match settings.get("log.formatter").map(str::trim) {
+        Some("json") => "json".clone_into(&mut tracing.format),
+        Some(_) => "compact".clone_into(&mut tracing.format),
+        None => {}
+    }
+    tracing
+}
+
 /// Apply what the server itself owns, and keep the rest for the registry
 /// module. Called once, before the configuration is validated.
 pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
@@ -248,7 +325,7 @@ pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
     // Everything the server keeps lives on the registry's volume, under
     // `live/`, so a container needs no home directory and a developer's home
     // is never written (FR-S07).
-    let root = std::path::PathBuf::from(
+    let root = PathBuf::from(
         settings
             .get("storage.filesystem.rootdirectory")
             .unwrap_or("/var/lib/registry"),
@@ -257,19 +334,17 @@ pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
     config.paths.config_dir = root.join("live/config");
     config.paths.state_dir = root.join("live/state");
     config.paths.cache_dir = root.join("live/cache");
-    let level = settings
-        .get("log.level")
-        .or_else(|| settings.get("loglevel"));
-    if let Some(level) = level {
-        level.trim().clone_into(&mut config.tracing.filter);
-    }
-    if let Some(formatter) = settings.get("log.formatter") {
-        formatter.trim().clone_into(&mut config.tracing.format);
-    }
+    config.tracing = tracing_config(&settings, std::mem::take(&mut config.tracing));
     for key in &settings.pending {
         tracing::warn!(
             setting = key.as_str(),
             "registry setting accepted, not in effect yet"
+        );
+    }
+    for name in &settings.skipped {
+        tracing::info!(
+            variable = name.as_str(),
+            "not a registry setting (a Kubernetes service link); skipped"
         );
     }
     let _ = INSTALLED.set(settings);
@@ -465,6 +540,44 @@ health:
         );
         assert!(load(None, env(&[("REGISTRY_STORAGE", "s3")])).is_err());
         assert!(load(None, env(&[("REGISTRY_AUTH", "token")])).is_err());
+    }
+
+    #[test]
+    fn review_of_99() {
+        // text is the reference's default formatter
+        let settings = load_text("log:\n  level: warn\n  formatter: text\n", &[]).expect("load");
+        let tracing = tracing_config(&settings, crate::config::TracingConfig::default());
+        assert_eq!(
+            (tracing.filter.as_str(), tracing.format.as_str()),
+            ("warn", "compact")
+        );
+        // the selector alone would mean a registry with no login
+        assert!(load(None, env(&[("REGISTRY_AUTH", "htpasswd")])).is_err());
+        // the reference's own file variable, and Kubernetes service links
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "http:\n  addr: :5000\n").expect("write");
+        let settings = load(
+            None,
+            env(&[
+                ("REGISTRY_CONFIGURATION_PATH", path.to_str().expect("utf-8")),
+                ("REGISTRY_PORT", "tcp://10.0.0.1:5000"),
+                ("REGISTRY_PORT_5000_TCP_ADDR", "10.0.0.1"),
+                ("REGISTRY_SERVICE_HOST", "10.0.0.1"),
+            ]),
+        )
+        .expect("load");
+        assert_eq!(settings.get("http.addr"), Some(":5000"));
+        assert_eq!(settings.skipped.len(), 3);
+        // a header that cannot be sent stops the start
+        assert!(load_text("http:\n  headers:\n    \"Bad Name\": [x]\n", &[]).is_err());
+        // an empty section sets nothing, and yes is true
+        let settings = load_text(
+            "storage:\n  filesystem:\n  delete:\n    enabled: yes\n",
+            &[],
+        )
+        .expect("load");
+        assert_eq!(settings.flag("storage.delete.enabled"), Some(true));
     }
 
     #[test]

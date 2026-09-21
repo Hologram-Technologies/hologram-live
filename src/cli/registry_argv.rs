@@ -66,7 +66,20 @@ pub fn rewrite(args: &[OsString]) -> Option<Rewritten> {
         }
         Some("serve") => match &rest[1..] {
             [file] => hologram(&["serve", "--registry-config"], std::slice::from_ref(file)),
-            [] => Rewritten::Refuse("registry serve: give the configuration file, as the reference requires".to_owned()),
+            // As the reference: with no file, REGISTRY_CONFIGURATION_PATH names it.
+            [] => match std::env::var_os("REGISTRY_CONFIGURATION_PATH") {
+                Some(path) => Rewritten::Args(
+                    ["hologram", "serve", "--registry-config"]
+                        .iter()
+                        .map(OsString::from)
+                        .chain(std::iter::once(path))
+                        .collect(),
+                ),
+                None => Rewritten::Refuse(
+                    "registry serve: give the configuration file, or set REGISTRY_CONFIGURATION_PATH"
+                        .to_owned(),
+                ),
+            },
             _ => Rewritten::Refuse("registry serve takes one argument: the configuration file".to_owned()),
         },
         Some("garbage-collect") => {

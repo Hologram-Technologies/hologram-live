@@ -85,8 +85,8 @@ impl Settings {
             .into_iter()
             .filter_map(|(name, value)| {
                 let name = axum::http::HeaderName::from_bytes(name.as_bytes()).ok()?;
-                // A YAML list of values is sent as one comma-joined header.
-                let value = HeaderValue::from_str(value.trim_matches(|c| c == '[' || c == ']')).ok()?;
+                // Checked when the settings were loaded; a list is one comma-joined value.
+                let value = HeaderValue::from_str(crate::registry_compat::header_value(value)).ok()?;
                 Some((name, value))
             })
             .collect();

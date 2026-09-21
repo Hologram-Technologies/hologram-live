@@ -122,11 +122,39 @@ enum Command {
 }
 
 impl Cli {
+    /// The registry configuration `serve` was given, if any.
+    #[cfg_attr(
+        not(feature = "oci"),
+        allow(clippy::unused_self, reason = "only the registry build has one")
+    )]
+    fn registry_config(&self) -> Option<PathBuf> {
+        #[cfg(feature = "oci")]
+        if let Command::Serve(args) = &self.command {
+            return args.registry_config.clone();
+        }
+        None
+    }
+
     pub fn observability_config(&self) -> (TracingConfig, TelemetryConfig) {
-        let bootstrap = AppConfig::load_for_bootstrap(self.config.as_deref())
-            .map(|(config, _)| config)
-            .unwrap_or_default();
+        let registry_config = self.registry_config();
+        let bootstrap = if registry_config.is_some() && self.config.is_none() {
+            // Registry mode: logging never comes from a user's
+            // ~/.config/hologram/live.toml, unless --config names a file.
+            AppConfig::default()
+        } else {
+            AppConfig::load_for_bootstrap(self.config.as_deref())
+                .map(|(config, _)| config)
+                .unwrap_or_default()
+        };
         let mut tracing = bootstrap.tracing;
+        #[cfg(feature = "oci")]
+        if let Some(file) = &registry_config {
+            // A bad file is reported by `serve`, which loads the same settings.
+            if let Ok(settings) = hologram_live::registry_compat::load(Some(file), std::env::vars())
+            {
+                tracing = hologram_live::registry_compat::tracing_config(&settings, tracing);
+            }
+        }
         if self.verbose == 1 {
             tracing.filter = format!("{},hologram_live=debug", tracing.filter);
         } else if self.verbose > 1 {

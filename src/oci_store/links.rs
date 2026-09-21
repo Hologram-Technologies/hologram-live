@@ -395,7 +395,7 @@ impl OciStore {
     /// # Errors
     ///
     /// `Io` when the database refuses the write.
-    pub fn alias_put(&self, a: &Digest, b: &Digest) -> Result<(), OciStoreError> {
+    pub(crate) fn alias_put(&self, a: &Digest, b: &Digest) -> Result<(), OciStoreError> {
         let txn = self.links.begin_write().map_err(io)?;
         {
             let mut aliases = txn.open_table(ALIASES).map_err(io)?;

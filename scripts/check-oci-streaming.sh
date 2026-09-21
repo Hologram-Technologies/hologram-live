@@ -7,8 +7,16 @@ set -euo pipefail
 # store swap touches one directory (ADR 025).
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 fail=0
-if grep -rnE 'blob_get\(|blob_get_range\(|blob_get_verified\(|to_bytes\(' \
-    "${root}/src/oci_store" "${root}/src/modules/oci" 2>/dev/null | grep -v '/manifests.rs:'; then
+# grep exits 2 for a directory that does not exist yet, which under pipefail
+# would make the whole test false and the gate pass. Search what exists, and
+# judge by what was printed.
+dirs=()
+for dir in "${root}/src/oci_store" "${root}/src/modules/oci"; do
+  [[ -d "${dir}" ]] && dirs+=("${dir}")
+done
+found=$(grep -rnE 'blob_get(_range|_verified)?[[:space:]]*\(|to_bytes[[:space:]]*\(' "${dirs[@]}" | grep -v '/manifests.rs:' || true)
+if [[ -n "${found}" ]]; then
+  printf '%s\n' "${found}"
   echo 'error: a whole-buffer call outside manifests.rs' >&2
   fail=1
 fi

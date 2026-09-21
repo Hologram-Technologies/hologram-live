@@ -24,6 +24,10 @@ use sha2::Digest as _;
 /// The store records who owns a namespace; the registry is the only writer.
 const NAMESPACE_OWNER: &str = "hologram-registry";
 
+/// The largest manifest the store reads whole. The HTTP layer refuses a
+/// larger one on the way in; this holds the line on the way out.
+pub const MANIFEST_MAX: u64 = 4 * 1024 * 1024;
+
 /// What a manifest without a recorded media type is served as.
 const DEFAULT_MEDIA_TYPE: &str = "application/vnd.oci.image.manifest.v1+json";
 
@@ -175,8 +179,9 @@ impl OciStore {
     ///
     /// # Errors
     ///
-    /// `UnknownRepository`; `NotInRepository` when the tag does not exist or
-    /// the digest is not linked here; `Io`.
+    /// `UnknownRepository`; `NotInRepository` when the tag does not exist,
+    /// the digest is not linked here, or it is linked as a blob: a layer is
+    /// never read whole through the manifest route; `Io`.
     pub fn manifest_get(
         &self,
         repo: &RepoName,
@@ -197,7 +202,24 @@ impl OciStore {
                 None => None,
             },
         };
+        let not_a_manifest = || OciStoreError::NotInRepository {
+            repo: repo.as_str().to_owned(),
+            digest: digest.as_str().to_owned(),
+        };
+        let link = match link {
+            Some(link) if link.kind != LinkKind::Blob => Some(link),
+            _ => return Err(not_a_manifest()),
+        };
         let stored_as = self.resolve_stored(repo, &digest)?;
+        let size = self
+            .kappa()
+            .blob_size(stored_as.as_str())
+            .map_err(|error| store_io("size the manifest", &error))?;
+        if size > MANIFEST_MAX {
+            return Err(OciStoreError::Io(format!(
+                "{stored_as} is linked as a manifest but holds {size} bytes"
+            )));
+        }
         let bytes = self
             .kappa()
             .blob_get(stored_as.as_str())
@@ -216,15 +238,21 @@ impl OciStore {
     ///
     /// # Errors
     ///
-    /// `NotInRepository` when the manifest is not linked here; `Io`.
+    /// `NotInRepository` when the manifest is not linked here, or the digest
+    /// is linked as a blob; `Io`.
+    ///
+    /// Tags go first and the link last. A kill in between leaves a manifest
+    /// reachable by digest with fewer tags, never a tag that points at nothing.
     pub fn manifest_delete(&self, repo: &RepoName, digest: &Digest) -> Result<(), OciStoreError> {
         let alias = self.alias_of(digest)?;
-        let removed = self.link_remove(repo, digest)?
-            || match &alias {
-                Some(alias) => self.link_remove(repo, alias)?,
-                None => false,
-            };
-        if !removed {
+        let link = match self.link_get(repo, digest)? {
+            Some(link) => Some(link),
+            None => match &alias {
+                Some(alias) => self.link_get(repo, alias)?,
+                None => None,
+            },
+        };
+        if !link.is_some_and(|link| link.kind != LinkKind::Blob) {
             return Err(OciStoreError::NotInRepository {
                 repo: repo.as_str().to_owned(),
                 digest: digest.as_str().to_owned(),
@@ -245,6 +273,10 @@ impl OciStore {
                     .tag_delete(&namespace, &entry.name)
                     .map_err(|error| store_io("delete a tag", &error))?;
             }
+        }
+        self.link_remove(repo, digest)?;
+        if let Some(alias) = &alias {
+            self.link_remove(repo, alias)?;
         }
         Ok(())
     }
@@ -553,6 +585,25 @@ mod tests {
                 "the digest asked by is the digest reported"
             );
         }
+    }
+
+    #[test]
+    fn a_layer_is_never_read_or_deleted_through_the_manifest_route() {
+        let (store, _dir) = test_store();
+        let layer = push_blob(&store, "a/x", &[7_u8; 4096]);
+        let asked = Reference::Digest(layer.clone());
+        assert!(matches!(
+            store.manifest_get(&repo("a/x"), &asked),
+            Err(OciStoreError::NotInRepository { .. })
+        ));
+        assert!(matches!(
+            store.manifest_delete(&repo("a/x"), &layer),
+            Err(OciStoreError::NotInRepository { .. })
+        ));
+        assert!(
+            store.blob_stat(&repo("a/x"), &layer).is_ok(),
+            "the layer is still linked"
+        );
     }
 
     #[test]

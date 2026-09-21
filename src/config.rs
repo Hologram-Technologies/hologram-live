@@ -576,6 +576,22 @@ impl AppConfig {
                 "non-loopback server.listen requires auth.required = true".to_owned(),
             ));
         }
+        // The registry answers /v2/ without the bearer token (ADR 026), and has
+        // no login of its own yet. auth.required does not cover it, so it must
+        // not face a network until it does.
+        #[cfg(feature = "oci")]
+        if !is_loopback(listen.ip())
+            && self
+                .modules
+                .enabled
+                .iter()
+                .any(|id| id == crate::modules::oci::MODULE_ID)
+        {
+            return Err(LiveError::Config(format!(
+                "{} has no login yet and requires a loopback server.listen",
+                crate::modules::oci::MODULE_ID
+            )));
+        }
         if self.holo.development_grant.is_some() && !is_loopback(listen.ip()) {
             return Err(LiveError::Config(
                 "holo.development_grant is development-only and requires a loopback server.listen"
@@ -916,6 +932,30 @@ listen = "127.0.0.1:4455"
         let mut config = AppConfig::default();
         config.client.remote_endpoint = Some("http://example.com".to_owned());
         assert!(config.validate().is_err());
+    }
+
+    #[cfg(feature = "oci")]
+    #[test]
+    fn the_registry_module_is_refused_on_a_public_listener_even_with_auth_required() {
+        let mut config = AppConfig::default();
+        config.server.listen = "0.0.0.0:5000".to_owned();
+        config.auth.required = true;
+        // Any variable that is always set stands in for the token; setting one
+        // from a test would race the other tests.
+        "PATH".clone_into(&mut config.auth.token_env);
+        if let Err(error) = config.validate() {
+            panic!("the rest of the server may face a network: {error}");
+        }
+        config
+            .modules
+            .enabled
+            .push(crate::modules::oci::MODULE_ID.to_owned());
+        let error = config
+            .validate()
+            .expect_err("the registry has no login yet");
+        assert!(error.to_string().contains("loopback"), "{error}");
+        config.server.listen = "127.0.0.1:5000".to_owned();
+        assert!(config.validate().is_ok());
     }
 
     #[test]

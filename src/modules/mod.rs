@@ -60,7 +60,10 @@ builtin_modules! {
         ollama_compat::OllamaCompatModule,
         control_plane::ControlPlaneModule,
     ],
-    opt_in: [],
+    opt_in: [
+        #[cfg(feature = "oci")]
+        oci::OciRegistryModule,
+    ],
 }
 
 pub struct HttpError(pub LiveError);

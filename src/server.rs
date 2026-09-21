@@ -21,6 +21,10 @@ static REQUEST_IDS: AtomicU64 = AtomicU64::new(1);
 
 /// The next request id, for a module that builds its own request span
 /// because it is mounted outside `authenticate`.
+#[cfg_attr(
+    not(feature = "oci"),
+    allow(dead_code, reason = "only the opt-in registry module calls it")
+)]
 pub(crate) fn next_request_id() -> u64 {
     REQUEST_IDS.fetch_add(1, Ordering::Relaxed)
 }

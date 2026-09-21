@@ -66,6 +66,10 @@ pub trait LiveModule: Send + Sync {
     /// module that speaks a protocol with its own challenge (the registry API
     /// answers `401` with `WWW-Authenticate`, in its own error shape) returns
     /// `true` and is mounted beside that layer, not under it (ADR 026).
+    ///
+    /// Such a module's requests carry no `Principal` extension and no request
+    /// span: it must give them both, and must refuse what it has not
+    /// authenticated. Keep the default unless the protocol requires otherwise.
     fn authenticates_itself(&self) -> bool {
         false
     }

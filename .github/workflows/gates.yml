@@ -135,9 +135,9 @@ jobs:
         if: always()
         run: |
           "$GATE/target/debug/differential" record --target reference --out "$RUNNER_TEMP/golden"
-      - name: The reference compared with Hologram Registry (reported, not blocking yet)
-        # Blocks from the day the list of unlisted differences is empty (plan, P9).
-        continue-on-error: true
+      - name: The reference compared with Hologram Registry (blocking)
+        # Every difference is fixed or listed in apps/registry/DIFFERENCES.md with
+        # its reason. An unlisted difference fails, and so does a stale row.
         run: |
           "$GATE/target/debug/differential" run --left reference --right "binary:$PWD/target/debug/hologram"             --allowlist apps/registry/DIFFERENCES.md --report "$RUNNER_TEMP/gate-b.md"
       - name: Verdict

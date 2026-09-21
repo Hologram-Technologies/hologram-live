@@ -31,7 +31,9 @@ oci = ["dep:kappa-core", "dep:kappa-store-redb"]    # not in `default`
 `aws-lc-sys` appears in the default server graph. The registry image, the release binaries and the registry tests
 build with `--features oci`; `just verify` gains `oci-check` so that build cannot rot.
 
-**The pin is auditable.** `third_party/kappa/README.md` records the revision, every carried patch with its upstream
+**The pin is auditable.** The two crates are pinned by revision to the organisation's fork,
+`Hologram-Technologies/kappa-registry`, which carries the fixes below until upstream merges them; after that the pin
+moves back to upstream. `third_party/kappa/README.md` records the revision, every carried patch with its upstream
 link, and the two dependencies upstream names by branch on personal forks. `scripts/check-kappa-pin.sh` fails if the
 locked revision differs from the documented one, if a carried patch has no upstream link, if `topcoat`, `veilid`,
 `openssl-sys` or `aws-lc` is in the registry graph, or if any git dependency is not locked to a commit.

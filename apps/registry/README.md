@@ -6,10 +6,12 @@ Take the compose file from the registry's own documentation and change only the 
 port 5000, the `REGISTRY_*` settings, TLS, htpasswd login, delete-off-by-default and `garbage-collect` behave the same.
 Existing data migrates with one command.
 
-**Status: planned, not built.** Nothing below works yet. A spike has shown that the Kappa store crates can live
-inside the `hologram` binary on Linux, macOS and Windows (see the verdict linked at the end).
+**Status: under construction, not released.** The `/v2/` API is built behind the cargo feature `oci` and passes
+the OCI Distribution conformance suite (74 passed, 0 failed); unmodified `docker` and `skopeo` work through it.
+Login, TLS, the `REGISTRY_*` settings, the image and the operator commands are not built yet, and it is not yet
+equal to `registry:3` everywhere: the differences left are counted by gate B on every change.
 
-## What it will look like
+## What it will look like at 1.0
 
 ```bash
 docker run -d -p 5000:5000 --restart=always --name registry ghcr.io/hologram-technologies/registry:1
@@ -37,7 +39,7 @@ This directory is the product. The registry itself is a server module, like the 
 | The store adapter, the only code that names a Kappa type | `src/oci_store/` |
 | `REGISTRY_*` and `config.yml` compatibility | `src/registry_compat/` |
 | `hologram oci verify`, `import`, `garbage-collect` | `src/cli/oci.rs` |
-| Image, default config, Helm chart, docs, the five gates | here |
+| Image, default config, Helm chart, docs, the gates | here |
 
 ```
 apps/registry/
@@ -56,7 +58,7 @@ release binaries build with `--features oci`.
 
 ## How equivalence is proven
 
-Five gates, in CI. A release is refused unless all are green.
+Eight gates, in CI. A release is refused unless all are green. A to E prove that it is the same registry:
 
 | Gate | Proves |
 |---|---|
@@ -65,6 +67,9 @@ Five gates, in CI. A release is refused unless all are green.
 | C | Unchanged tools: docker, buildx, containerd, a Kubernetes pull, oras, crane, skopeo, helm, cosign, ollama |
 | D | A fixed corpus copied peer → this → peer with identical digests: Zot, Harbor, GitHub, Docker Hub, the clouds |
 | E | Harbor replication and Zot sync pulling from this |
+
+F, G and H hold what any server owes its operator: the image's form factor, operations (health, metrics, a clean
+stop, certificate reload), and a valid OpenAPI document.
 
 ## Not in v1
 

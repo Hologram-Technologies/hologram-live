@@ -95,12 +95,12 @@ pub async fn join_cluster(
     let advertised = config.advertise_endpoint.as_ref().ok_or_else(|| {
         crate::error::LiveError::NotFound("cluster membership is not enabled".to_owned())
     })?;
-    let token = state.config().cluster_token().ok_or_else(|| {
+    let token = state.cluster_token().ok_or_else(|| {
         crate::error::LiveError::Authentication("cluster token is unavailable".to_owned())
     })?;
     let timestamp = header(&headers, crate::cluster::TIMESTAMP_HEADER)?;
     let signature = header(&headers, crate::cluster::SIGNATURE_HEADER)?;
-    crate::cluster::verify(&token, timestamp, signature, &body)?;
+    crate::cluster::verify(token, timestamp, signature, &body)?;
     let request: ClusterJoinRequest = serde_json::from_slice(&body)
         .map_err(crate::error::LiveError::from)
         .map_err(HttpError)?;

@@ -45,6 +45,7 @@ kappa-core = { git = "https://github.com/Hologram-Technologies/kappa-registry", 
 kappa-store-redb = { git = "https://github.com/Hologram-Technologies/kappa-registry", rev = "c7b2ee722cfad39bfe486af0f5f37646bccc68f5", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
 fs4 = "1.1"
+getrandom = "0.3"
 hyper-util = { version = "0.1", features = ["tokio"] }
 kameo = "0.22"
 opentelemetry = { version = "0.32", features = ["metrics", "trace"] }

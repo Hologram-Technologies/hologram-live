@@ -54,18 +54,18 @@ Run the service in the foreground instead with:
 ./target/release/hologram serve
 ```
 
-Servers can form a membership cluster from one or more existing Hologram
-origins. Give every node the same dedicated cluster secret (at least 32 bytes),
-advertise the origin other nodes can reach, and seed a new node with any live
-member:
+Every server advertises `http://127.0.0.1:11435` by default and generates a
+256-bit membership secret in its state directory at `cluster.token`. The file
+is reused across restarts and is owner-only on Unix. To form a multi-host
+cluster, securely give every node the same secret (at least 32 bytes), advertise
+the origin other nodes can reach, and seed a new node with any live member:
 
 ```bash
-# first node
-HOLOGRAM_CLUSTER_TOKEN='replace-with-a-random-32-byte-secret' \
-  hologram serve --advertise https://registry-a.example.com
+# first node; generates <state_dir>/cluster.token
+hologram serve --advertise https://registry-a.example.com
 
-# joining node
-HOLOGRAM_CLUSTER_TOKEN='replace-with-a-random-32-byte-secret' \
+# joining node; use the contents securely copied from the seed
+HOLOGRAM_CLUSTER_TOKEN='<seed cluster.token contents>' \
   hologram serve \
     --advertise https://registry-b.example.com \
     --join https://registry-a.example.com
@@ -1146,8 +1146,9 @@ defaulted, so a file written before `[registry]` existed keeps loading unchanged
 
 The client can route to local or remote authorities after a capability handshake. Non-loopback remote endpoints require HTTPS, and authentication, authorization, TLS, and integrity errors never trigger fallback to another authority.
 
-Cluster membership is off by default. Service installations enable it in the
-same file used by `hologram start`:
+Cluster membership defaults to the local server origin and needs no setup for a
+single node. Service installations set reachable origins and seeds in the same
+file used by `hologram start`:
 
 ```toml
 [cluster]
@@ -1159,6 +1160,12 @@ request_timeout_secs = 5
 node_ttl_secs = 60
 max_peers = 64
 ```
+
+When the environment variable named by `token_env` is absent, Hologram creates
+and reuses `<state_dir>/cluster.token`. A joining host must receive the seed's
+token through a secure channel, either in that environment variable or by
+copying it to the joining host's token file before startup. The token is never
+logged or exchanged by the join protocol.
 
 Hologram membership and Kappa data distribution are intentionally separate
 layers. Joining discovers Hologram frontends and their capabilities; it never

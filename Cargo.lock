@@ -1803,6 +1803,7 @@ dependencies = [
  "clap",
  "cucumber",
  "fs4",
+ "getrandom 0.3.4",
  "hologram-client",
  "hologram-view-surface",
  "hyper-util",

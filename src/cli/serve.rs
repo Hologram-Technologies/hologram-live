@@ -117,8 +117,17 @@ async fn pull_archive_bytes(
 
 pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()> {
     let (mut config, _) = helpers::load(&cli)?;
+    let uses_default_cluster_endpoint = config.cluster.advertise_endpoint.as_deref()
+        == Some(hologram_live::config::DEFAULT_CLUSTER_ENDPOINT);
     if let Some(listen) = args.listen {
         config.server.listen = listen;
+        if args.advertise.is_none() && uses_default_cluster_endpoint {
+            if let Ok(address) = config.server.listen.parse::<std::net::SocketAddr>() {
+                if address.ip().is_loopback() {
+                    config.cluster.advertise_endpoint = Some(format!("http://{address}"));
+                }
+            }
+        }
     }
     if let Some(advertise) = args.advertise {
         config.cluster.advertise_endpoint = Some(advertise);

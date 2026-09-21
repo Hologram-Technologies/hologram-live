@@ -6,6 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const DEFAULT_CLUSTER_ENDPOINT: &str = "http://127.0.0.1:11435";
 /// Oldest `schema_version` this build can read and upgrade in place.
 /// Anything older is refused rather than guessed at.
 const MINIMUM_SUPPORTED_SCHEMA_VERSION: u32 = 1;
@@ -134,7 +135,7 @@ pub struct ClusterConfig {
 impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
-            advertise_endpoint: None,
+            advertise_endpoint: Some(DEFAULT_CLUSTER_ENDPOINT.to_owned()),
             seeds: Vec::new(),
             token_env: "HOLOGRAM_CLUSTER_TOKEN".to_owned(),
             heartbeat_interval_secs: 15,
@@ -717,23 +718,19 @@ impl AppConfig {
         }
         if let Some(endpoint) = &self.cluster.advertise_endpoint {
             validate_cluster_endpoint(endpoint)?;
-            let cluster_token = env::var(&self.cluster.token_env).map_err(|_| {
-                LiveError::Config(format!(
-                    "cluster.advertise_endpoint is set but {} is not set",
-                    self.cluster.token_env
-                ))
-            })?;
-            if cluster_token.len() < 32 {
-                return Err(LiveError::Config(format!(
-                    "{} must contain at least 32 bytes",
-                    self.cluster.token_env
-                )));
-            }
-            if self.auth_token().as_deref() == Some(cluster_token.as_str()) {
-                return Err(LiveError::Config(
-                    "the cluster token must be different from the user authentication token"
-                        .to_owned(),
-                ));
+            if let Ok(cluster_token) = env::var(&self.cluster.token_env) {
+                if cluster_token.len() < 32 {
+                    return Err(LiveError::Config(format!(
+                        "{} must contain at least 32 bytes",
+                        self.cluster.token_env
+                    )));
+                }
+                if self.auth_token().as_deref() == Some(cluster_token.as_str()) {
+                    return Err(LiveError::Config(
+                        "the cluster token must be different from the user authentication token"
+                            .to_owned(),
+                    ));
+                }
             }
         }
         for endpoint in &self.cluster.seeds {
@@ -974,9 +971,12 @@ mod tests {
     }
 
     #[test]
-    fn cluster_defaults_to_disabled() {
+    fn cluster_defaults_to_the_local_server_origin() {
         let config = AppConfig::default();
-        assert!(config.cluster.advertise_endpoint.is_none());
+        assert_eq!(
+            config.cluster.advertise_endpoint.as_deref(),
+            Some("http://127.0.0.1:11435")
+        );
         assert!(config.cluster.seeds.is_empty());
     }
 

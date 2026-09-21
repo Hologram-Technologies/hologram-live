@@ -51,7 +51,13 @@ static DESCRIPTOR: ModuleDescriptor = ModuleDescriptor {
 pub struct Registry {
     pub store: Arc<OciStore>,
     pub settings: Settings,
+    /// The server's audit log. The registry's writes go into it as the
+    /// server's own writes do. `None` in tests that do not look at it.
+    pub audit: Option<crate::audit::AuditLog>,
 }
+
+/// Who a registry write is recorded as, until the registry's own login lands.
+const PRINCIPAL: &str = "anonymous";
 
 /// The reference's settings that change what a route answers. P5 reads them
 /// from `config.yml` too; the environment names are the reference's own.
@@ -138,6 +144,7 @@ async fn dispatch(State(state): State<AppState>, request: Request) -> Response {
             let registry = Registry {
                 store: store.clone(),
                 settings: SETTINGS.get_or_init(Settings::from_environment).clone(),
+                audit: Some(state.audit().clone()),
             };
             handle(registry, request).await
         }
@@ -154,16 +161,31 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
     let (head, body) = request.into_parts();
     let origin = origin(&head.headers);
     let configured = registry.settings.headers.clone();
+    let audit = registry.audit.clone();
     let rest = head.uri.path().strip_prefix("/v2/").unwrap_or_default();
     let route = path::decode(rest)
         .ok_or_else(OciError::unknown_route)
         .and_then(|rest| path::parse(&head.method, &rest));
-    let mut response = match route {
-        Ok(route) => serve(registry, route, &head, body)
-            .await
-            .unwrap_or_else(IntoResponse::into_response),
-        Err(error) => error.into_response(),
+    let (mut response, record) = match route {
+        Ok(route) => {
+            let audited = audited(&route);
+            let result = serve(registry, route, &head, body).await;
+            let outcome = match &result {
+                Ok(_) => "accepted".to_owned(),
+                Err(error) => format!("error:{}", error.code().map_or("NOT_FOUND", ErrorCode::as_str)),
+            };
+            let response = result.unwrap_or_else(IntoResponse::into_response);
+            let record = audited.and_then(|audited| audited.resolve(&response, outcome));
+            (response, record)
+        }
+        Err(error) => (error.into_response(), None),
     };
+    if let (Some(audit), Some((operation, resource, outcome))) = (audit, record) {
+        let event = crate::audit::AuditEvent::new(PRINCIPAL, operation, Some(resource), outcome);
+        if let Err(error) = audit.record(event).await {
+            tracing::error!(%error, "failed to record a registry audit event");
+        }
+    }
     absolute_location(&mut response, origin.as_deref());
     // Last, so they are on errors and on `OPTIONS` too. A browser's preflight
     // carries no credentials: when login lands (P6) `OPTIONS` stays in front
@@ -172,6 +194,72 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
         response.headers_mut().append(name, value);
     }
     response
+}
+
+/// A write the audit log records: the operation, and what it acted on.
+struct Audited {
+    operation: &'static str,
+    resource: String,
+    /// `POST …/uploads/` writes only when it answers 201 (a one-request
+    /// upload, or a mount); a 202 opens a session and changes nothing.
+    only_when_created: bool,
+}
+
+impl Audited {
+    /// The record, or `None` for a request that turned out to change nothing.
+    fn resolve(self, response: &Response, outcome: String) -> Option<(&'static str, String, String)> {
+        let created = response.status() == StatusCode::CREATED;
+        if self.only_when_created && !created && outcome == "accepted" {
+            return None;
+        }
+        // A blob's digest is known only once it is stored: read it from the answer.
+        let resource = match response
+            .headers()
+            .get(LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|location| location.rsplit_once("/blobs/"))
+        {
+            Some((_, digest)) if created && !digest.starts_with("uploads/") => {
+                format!("{}@{digest}", self.resource)
+            }
+            _ => self.resource,
+        };
+        Some((self.operation, resource, outcome))
+    }
+}
+
+/// The routes that write, named as the server names its operations. Reads are
+/// not recorded, as the server records none of its own.
+fn audited(route: &Route) -> Option<Audited> {
+    let (operation, resource, only_when_created) = match route {
+        Route::Manifest {
+            repo,
+            reference,
+            verb: ManifestVerb::Put,
+        } => ("oci.manifest.put", format!("{repo}:{reference}"), false),
+        Route::Manifest {
+            repo,
+            reference,
+            verb: ManifestVerb::Delete,
+        } => ("oci.manifest.delete", format!("{repo}:{reference}"), false),
+        Route::Blob {
+            repo,
+            digest,
+            verb: BlobVerb::Delete,
+        } => ("oci.blob.delete", format!("{repo}@{digest}"), false),
+        Route::Upload {
+            repo,
+            verb: UploadVerb::Put,
+            ..
+        } => ("oci.blob.put", repo.to_string(), false),
+        Route::UploadStart { repo } => ("oci.blob.put", repo.to_string(), true),
+        _ => return None,
+    };
+    Some(Audited {
+        operation,
+        resource,
+        only_when_created,
+    })
 }
 
 /// `scheme://host` as the client addressed us. `None` without a `Host`.
@@ -208,7 +296,9 @@ async fn serve(
     body: Body,
 ) -> Result<Response, OciError> {
     let (headers, query) = (&head.headers, head.uri.query());
-    let Registry { store, settings } = registry;
+    let Registry {
+        store, settings, ..
+    } = registry;
     match route {
         Route::Base => Ok(json(StatusCode::OK, "{}")),
         Route::Options { allow } => {

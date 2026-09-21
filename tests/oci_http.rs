@@ -125,6 +125,7 @@ async fn send_body(
                 })
                 .collect(),
         },
+        audit: None,
     };
     handle(registry, request.body(Body::from(body)).expect("request")).await
 }
@@ -1028,6 +1029,30 @@ mod served {
         pub port: u16,
     }
 
+    impl Server {
+        /// `hologram stop`, the ordinary way, and wait for the process to end.
+        pub fn stop(mut self, root: &Path) {
+            let status = Command::new(env!("CARGO_BIN_EXE_hologram"))
+                .arg("--config")
+                .arg(root.join("config/live.toml"))
+                .arg("stop")
+                .env("HOME", root)
+                .env("USERPROFILE", root)
+                .env("HOLOGRAM_CONFIG_DIR", root.join("config"))
+                .env(TOKEN_ENV, TOKEN)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("hologram stop");
+            assert!(status.success(), "hologram stop failed");
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while self.child.try_wait().expect("wait").is_none() {
+                assert!(Instant::now() < deadline, "the server did not stop");
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
+
     impl Drop for Server {
         fn drop(&mut self) {
             let _ = self.child.kill();
@@ -1144,6 +1169,8 @@ mod served {
         config.paths.state_dir = root.join("state");
         config.paths.cache_dir = root.join("cache");
         config.server.listen = format!("127.0.0.1:{port}");
+        // So `hologram stop` reaches this server, not the default address.
+        config.client.local_endpoint = format!("http://127.0.0.1:{port}");
         config.auth.required = true;
         TOKEN_ENV.clone_into(&mut config.auth.token_env);
         if with_registry {
@@ -1275,6 +1302,40 @@ mod served {
 
         let object = request_expecting(server.port, "POST", "/api/v1/objects", &layer);
         assert_eq!(object.status, 413, "{}", object.head);
+
+        // Finished, the layer is a write the server's audit log records, as
+        // the server's own writes are.
+        let digest = {
+            use sha2::Digest as _;
+            let mut hex = String::new();
+            for byte in sha2::Sha256::digest(&layer) {
+                use std::fmt::Write as _;
+                write!(hex, "{byte:02x}").expect("hex");
+            }
+            format!("sha256:{hex}")
+        };
+        let finished = request_with(
+            server.port,
+            "PUT",
+            &format!("{location}?digest={digest}"),
+            false,
+            "application/octet-stream",
+            &[],
+        );
+        assert_eq!(finished.status, 201, "{}", finished.head);
+        // The server writes its audit log out when it stops, for the registry's
+        // writes as for its own: stop it the ordinary way, then read.
+        server.stop(root.path());
+        let recorded =
+            std::fs::read_to_string(root.path().join("state/audit.jsonl")).unwrap_or_default();
+        let line = recorded
+            .lines()
+            .find(|line| line.contains("oci.blob.put"))
+            .unwrap_or_else(|| panic!("no registry write in the audit log: {recorded}"));
+        let event: serde_json::Value = serde_json::from_str(line).expect("json line");
+        assert_eq!(event["principal"], "anonymous");
+        assert_eq!(event["outcome"], "accepted");
+        assert_eq!(event["resource"], format!("big/layer@{digest}"));
     }
 
     #[test]

@@ -43,6 +43,7 @@ of the copy and its carried patches.
 | `kappa-core` (vendored in `third_party/kappa`, `default-features = false`) | the `KappaStore` trait: blobs addressed by `sha256:` and `blake3:`, staged uploads, tags |
 | `kappa-store-redb` (vendored beside it) | the store: blob files on disk, an index in one redb file |
 | `redb` | `links.redb`, the registry's own database: repository links, referrers, aliases, upload records (ADR 027) |
+| `yaml-rust2` | reads the reference registry's `config.yml` into a flat key table (`src/registry_compat`). Chosen by three checks: a release in the last six months (0.13.0, September 2026), no `-sys` crate, and it parses the reference image's own default file. Rejected: `serde_norway` and `serde_yaml_ng` (no release in six months), `serde-saphyr` (typed deserialisation, which a key table does not need) |
 
 The Kappa Registry provider (ADR 021) still speaks to an external `kappa-server` over HTTP with `reqwest`; it uses none
 of these crates. With `oci` on, the build gains two bundled C libraries (`lzma-sys`, `bzip2-sys`) through `kappa-core`.

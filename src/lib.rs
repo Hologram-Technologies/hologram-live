@@ -44,6 +44,8 @@ pub mod plugin;
 pub mod process;
 pub mod protocol;
 pub mod registry;
+#[cfg(feature = "oci")]
+pub mod registry_compat;
 pub mod repo_manifest;
 pub mod server;
 pub mod store;

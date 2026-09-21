@@ -18,11 +18,15 @@ mod init;
 mod models;
 mod modules;
 mod nodes;
+#[cfg(feature = "oci")]
+mod oci;
 mod openapi;
 mod plugins;
 mod pull;
 mod push;
 mod registry;
+#[cfg(feature = "oci")]
+pub(crate) mod registry_argv;
 mod restart;
 mod route;
 mod run;
@@ -84,6 +88,9 @@ enum Command {
     Route(route::RouteArgs),
     /// Access the first content-addressed registry module.
     Registry(registry::RegistryArgs),
+    /// Operator commands of the Docker-compatible registry (`garbage-collect`, `verify`, `import`).
+    #[cfg(feature = "oci")]
+    Oci(oci::OciArgs),
     /// Store, list, and download file objects.
     Files(files::FilesArgs),
     /// Import, verify, load, and run .holo archives.
@@ -143,6 +150,8 @@ impl Cli {
             Command::Config(args) => config::run(self, args).await,
             Command::Route(args) => route::run(self, args).await,
             Command::Registry(args) => registry::run(self, args).await,
+            #[cfg(feature = "oci")]
+            Command::Oci(args) => oci::run(self, args).await,
             Command::Files(args) => files::run(self, args).await,
             Command::Holo(args) => holo::run(self, args).await,
             Command::Pull(args) => pull::run(self, args).await,

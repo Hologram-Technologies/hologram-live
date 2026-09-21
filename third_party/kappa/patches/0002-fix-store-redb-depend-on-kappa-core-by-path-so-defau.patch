@@ -1,0 +1,28 @@
+From 9793e77210feeb7e5db42177bd3b318ffdf6906e Mon Sep 17 00:00:00 2001
+From: humuhumu33 <68450279+humuhumu33@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 13:01:17 +0100
+Subject: [PATCH 2/3] fix(store-redb): depend on kappa-core by path so default
+ features can be off
+
+---
+ crates/kappa-store-redb/Cargo.toml | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/crates/kappa-store-redb/Cargo.toml b/crates/kappa-store-redb/Cargo.toml
+index c0a210d..2a77d5d 100644
+--- a/crates/kappa-store-redb/Cargo.toml
++++ b/crates/kappa-store-redb/Cargo.toml
+@@ -16,7 +16,9 @@ default = ["encryption"]
+ encryption = ["kappa-core/encryption"]
+ 
+ [dependencies]
+-kappa-core = { workspace = true, default-features = false }
++# Not inherited: the workspace entry keeps default features on for every other
++# member, and a member cannot turn off defaults the workspace entry leaves on.
++kappa-core = { path = "../kappa-core", default-features = false }
+ redb = { workspace = true }
+ blake3 = { workspace = true }
+ hex = { workspace = true }
+-- 
+2.54.0.windows.1
+

@@ -18,9 +18,18 @@ case "$server_tree" in
     ;;
 esac
 
+# The registry (cargo feature `oci`, off by default) brings the Kappa store and
+# its native codecs. A stock build must not carry them.
+case "$server_tree" in
+  *"kappa-core v"*|*"kappa-store-redb v"*|*"lzma-sys v"*|*"bzip2-sys v"*|*"aws-lc-sys v"*)
+    echo "error: default server dependency graph contains registry (oci) dependencies" >&2
+    exit 1
+    ;;
+esac
+
 if ! grep -q '^hologram-application-watch = ' "$ROOT/apps/desktop/src-tauri/Cargo.toml"; then
   echo "error: desktop adapter must consume the external application-watch crate" >&2
   exit 1
 fi
 
-printf 'product boundary gate passed (server graph excludes desktop dependencies)\n'
+printf 'product boundary gate passed (server graph excludes desktop and registry dependencies)\n'

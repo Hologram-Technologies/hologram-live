@@ -1,0 +1,49 @@
+From 358773a47054a7153dedda69440d219adf64514e Mon Sep 17 00:00:00 2001
+From: humuhumu33 <68450279+humuhumu33@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 13:06:15 +0100
+Subject: [PATCH 3/3] test(store-redb): gate the encrypted upload tests on the
+ encryption feature
+
+---
+ crates/kappa-store-redb/src/lib.rs | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/crates/kappa-store-redb/src/lib.rs b/crates/kappa-store-redb/src/lib.rs
+index ffda913..1f8e17f 100644
+--- a/crates/kappa-store-redb/src/lib.rs
++++ b/crates/kappa-store-redb/src/lib.rs
+@@ -1702,7 +1702,6 @@ mod tests {
+         assert!(result.is_err());
+     }
+ 
+-    #[cfg(feature = "encryption")]
+     #[test]
+     fn upload_evict_expired() {
+         let (s, _d) = new_store();
+@@ -1715,6 +1714,7 @@ mod tests {
+ 
+     // -- Encrypted upload lifecycle -------------------------------------------
+ 
++    #[cfg(feature = "encryption")]
+     fn new_encrypted_store() -> (PersistentStore, tempfile::TempDir) {
+         let tmp = tempfile::tempdir().unwrap();
+         let blob_root = tmp.path().join("blobs");
+@@ -1727,6 +1727,7 @@ mod tests {
+         (store, tmp)
+     }
+ 
++    #[cfg(feature = "encryption")]
+     #[test]
+     fn upload_lifecycle_encrypted() {
+         let (s, _d) = new_encrypted_store();
+@@ -1756,6 +1757,7 @@ mod tests {
+         assert!(raw_disk.len() > 16, "ciphertext should include tag overhead");
+     }
+ 
++    #[cfg(feature = "encryption")]
+     #[test]
+     fn upload_encrypted_wrong_digest_rejected() {
+         let (s, _d) = new_encrypted_store();
+-- 
+2.54.0.windows.1
+

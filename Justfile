@@ -62,6 +62,17 @@ kappa-registry:
 file-size:
     ./scripts/check-file-size.sh
 
+# The Kappa store pin is the documented one, and nothing forbidden is in the registry graph.
+# KAPPA_PIN_ALLOW_UNOPENED goes away when the carried patches are opened upstream (P1 T8).
+kappa-pin:
+    KAPPA_PIN_ALLOW_UNOPENED=1 ./scripts/check-kappa-pin.sh
+
+# The registry (cargo feature `oci`, off by default) keeps compiling and its tests keep passing.
+oci-check:
+    cargo check --locked --features oci --all-targets
+    cargo test --locked --features oci --lib oci_store -- --test-threads=1
+    cargo test --locked --features oci --test oci_store -- --test-threads=1
+
 # Keep the standalone server dependency graph free of desktop code.
 product-boundary:
     ./scripts/check-product-boundaries.sh
@@ -82,7 +93,7 @@ desktop-build:
 build: server-build
 
 # Verify code
-verify: fmt file-size product-boundary check test clippy bdd build
+verify: fmt file-size product-boundary kappa-pin check oci-check test clippy bdd build
     ./scripts/smoke.sh "{{cargo_target_dir}}/release/hologram"
 
 # Run project

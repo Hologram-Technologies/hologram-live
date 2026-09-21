@@ -32,4 +32,18 @@ The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plug
 
 Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neither is part of the server's Cargo dependency graph. The small `hologram-application-watch` workspace crate is Tauri-independent and injected into the desktop adapter; the standalone `hologram-live` server package does not depend on it.
 
-Kappa Registry remains an external service/project. Hologram Live now ships an adapter for it behind the registry provider boundary, speaking its OCI blob and manifest surface over HTTP with the `reqwest` client already in this graph. None of its workspace crates enter this dependency graph, and selecting the adapter is opt-in configuration: the default install stays self-contained.
+## Optional: the registry (`--features oci`)
+
+Off by default. A stock build pulls none of these; `scripts/check-product-boundaries.sh` holds that line. ADR 025 is
+the decision, `third_party/kappa/README.md` the audited record of the pin and its carried patches.
+
+| Dependency | Purpose |
+| --- | --- |
+| `kappa-core` (git, pinned by `rev`, `default-features = false`) | the `KappaStore` trait: blobs addressed by `sha256:` and `blake3:`, staged uploads, tags |
+| `kappa-store-redb` (same pin) | the store: blob files on disk, an index in one redb file |
+| `redb` | `links.redb`, the registry's own database: repository links, referrers, aliases, upload records (ADR 027) |
+
+The Kappa Registry provider (ADR 021) still speaks to an external `kappa-server` over HTTP with `reqwest`; it uses none
+of these crates. With `oci` on, the build gains two bundled C libraries (`lzma-sys`, `bzip2-sys`) through `kappa-core`.
+`aws-lc` stays out: the pin carries a patch that turns the store's encryption backend off, and
+`scripts/check-kappa-pin.sh` fails if it returns.

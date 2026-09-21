@@ -705,7 +705,7 @@ impl AppConfig {
     }
 
     fn validate_plugins(&self) -> Result<()> {
-        let builtin_ids = crate::modules::default_builtin_ids();
+        let builtin_ids = crate::modules::builtin_ids();
         let mut seen = std::collections::BTreeSet::new();
         for module in &self.plugins.modules {
             if module.id.trim().is_empty() {

@@ -8,36 +8,59 @@ use std::sync::Arc;
 /// Declares every trusted, statically linked module in one place.
 ///
 /// A module still owns its typed routes, lifecycle, and descriptor. Adding it
-/// to this catalogue makes it available to the registry and enables it in the
-/// default configuration without duplicating its ID in `config.rs`.
+/// to `default` makes it available to the registry and enables it in the
+/// default configuration without duplicating its ID in `config.rs`. A module
+/// under `opt_in` is available but runs only when the configuration names it.
 macro_rules! builtin_modules {
-    ($( $module:ident :: $module_type:ident ),+ $(,)?) => {
+    (
+        default: [ $( $module:ident :: $module_type:ident ),+ $(,)? ],
+        opt_in: [ $( $(#[$gate:meta])* $opt:ident :: $opt_type:ident ),* $(,)? ] $(,)?
+    ) => {
         $(pub mod $module;)+
+        $($(#[$gate])* pub mod $opt;)*
 
-        pub fn builtins() -> Vec<Arc<dyn LiveModule>> {
+        fn default_builtins() -> Vec<Arc<dyn LiveModule>> {
             vec![$(Arc::new($module::$module_type)),+]
         }
 
+        pub fn builtins() -> Vec<Arc<dyn LiveModule>> {
+            #[allow(unused_mut, reason = "every opt-in module may be compiled out")]
+            let mut modules = default_builtins();
+            $($(#[$gate])* modules.push(Arc::new($opt::$opt_type));)*
+            modules
+        }
+
+        pub fn builtin_ids() -> Vec<String> {
+            ids(builtins())
+        }
+
         pub fn default_builtin_ids() -> Vec<String> {
-            builtins()
-                .into_iter()
-                .map(|module| module.descriptor().id.to_owned())
-                .collect()
+            ids(default_builtins())
         }
     };
 }
 
+fn ids(modules: Vec<Arc<dyn LiveModule>>) -> Vec<String> {
+    modules
+        .into_iter()
+        .map(|module| module.descriptor().id.to_owned())
+        .collect()
+}
+
 builtin_modules! {
-    system::SystemModule,
-    registry::KappaRegistryModule,
-    files::FilesModule,
-    holo::HoloModule,
-    history::HistoryModule,
-    chat::ChatModule,
-    inference::InferenceModule,
-    openai_compat::OpenAiCompatModule,
-    ollama_compat::OllamaCompatModule,
-    control_plane::ControlPlaneModule,
+    default: [
+        system::SystemModule,
+        registry::KappaRegistryModule,
+        files::FilesModule,
+        holo::HoloModule,
+        history::HistoryModule,
+        chat::ChatModule,
+        inference::InferenceModule,
+        openai_compat::OpenAiCompatModule,
+        ollama_compat::OllamaCompatModule,
+        control_plane::ControlPlaneModule,
+    ],
+    opt_in: [],
 }
 
 pub struct HttpError(pub LiveError);

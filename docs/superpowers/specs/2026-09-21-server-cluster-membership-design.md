@@ -23,7 +23,12 @@ origins enter the next heartbeat round, bounded by `cluster.max_peers`.
 
 The request has a millisecond timestamp and a keyed BLAKE3 proof over
 `timestamp + newline + exact request bytes`. Every node derives the key from a
-dedicated secret named by `cluster.token_env`. The receiver rejects malformed
+dedicated secret named by `cluster.token_env`. When that environment variable
+is absent, a node generates 256 random bits, stores them at
+`<state_dir>/cluster.token`, and reuses the file across restarts. The file is
+owner-only on Unix. Operators distribute the same secret to joining nodes over
+a separate secure channel; it is never logged or exchanged by this protocol.
+The receiver rejects malformed
 proofs and timestamps outside a 30-second clock window before parsing or
 persisting the node record. The secret itself is never transmitted, and config
 validation rejects reuse of the user authentication token.
@@ -35,11 +40,11 @@ and peer counts receive additional bounds.
 
 ## Lifecycle
 
-`cluster.advertise_endpoint` opts a process into membership. The membership
-task starts after the listener binds, heartbeats immediately, retains failed
-seeds for later retry, and stops with the server. The persisted node directory
-survives restarts. Entries older than `cluster.node_ttl_secs` are pruned, while
-the local node is always retained.
+`cluster.advertise_endpoint` defaults to `http://127.0.0.1:11435`, matching the
+stock listener. The membership task starts after the listener binds, heartbeats
+immediately, retains failed seeds for later retry, and stops with the server.
+The persisted node directory survives restarts. Entries older than
+`cluster.node_ttl_secs` are pruned, while the local node is always retained.
 
 The CLI maps repeatable `hologram serve --join URL` flags and
 `--advertise URL` onto the same configuration used by background/service

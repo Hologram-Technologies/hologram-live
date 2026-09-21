@@ -6,6 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const DEFAULT_CLUSTER_ENDPOINT: &str = "http://127.0.0.1:11435";
 /// Oldest `schema_version` this build can read and upgrade in place.
 /// Anything older is refused rather than guessed at.
 const MINIMUM_SUPPORTED_SCHEMA_VERSION: u32 = 1;
@@ -141,7 +142,7 @@ pub struct ClusterConfig {
 impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
-            advertise_endpoint: None,
+            advertise_endpoint: Some(DEFAULT_CLUSTER_ENDPOINT.to_owned()),
             seeds: Vec::new(),
             token_env: "HOLOGRAM_CLUSTER_TOKEN".to_owned(),
             heartbeat_interval_secs: 15,
@@ -791,6 +792,10 @@ impl AppConfig {
             validate_cluster_endpoint(endpoint)?;
         }
         for endpoint in &self.cluster.seeds { validate_cluster_endpoint(endpoint)?; }
+        if let Ok(token) = env::var(&self.cluster.token_env) {
+            if token.len() < 32 { return Err(LiveError::Config(format!("{} must contain at least 32 bytes", self.cluster.token_env))); }
+            if self.auth_token().as_deref() == Some(token.as_str()) { return Err(LiveError::Config("the cluster token must be different from the user authentication token".to_owned())); }
+        }
         if self.cluster.heartbeat_interval_secs == 0 || self.cluster.request_timeout_secs == 0 || self.cluster.node_ttl_secs == 0 || self.cluster.max_peers == 0 || self.cluster.node_ttl_secs <= self.cluster.heartbeat_interval_secs {
             return Err(LiveError::Config("cluster intervals, timeout, TTL, and max_peers must be valid".to_owned()));
         }

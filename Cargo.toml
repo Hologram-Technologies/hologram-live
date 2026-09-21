@@ -53,6 +53,7 @@ kappa-core = { path = "third_party/kappa/crates/kappa-core", optional = true, de
 kappa-store-redb = { path = "third_party/kappa/crates/kappa-store-redb", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
 fs4 = "1.1"
+getrandom = "0.4"
 hyper-util = { version = "0.1", features = ["tokio"] }
 kameo = "0.22"
 encoding_rs = { version = "0.8", optional = true }

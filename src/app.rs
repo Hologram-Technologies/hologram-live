@@ -45,6 +45,7 @@ struct AppInner {
     shutdown: Notify,
     shutdown_requested: AtomicBool,
     server_id: String,
+    cluster_token: Option<String>,
 }
 
 #[derive(Clone)]
@@ -55,6 +56,20 @@ pub struct AppState {
 impl AppState {
     pub async fn build(config: AppConfig, tracing: TracingHandle) -> Result<Self> {
         config.create_directories()?;
+        let cluster_token = config
+            .cluster
+            .advertise_endpoint
+            .as_ref()
+            .map(|_| crate::cluster::load_or_create_token(&config))
+            .transpose()?;
+        if let Some(cluster_token) = cluster_token.as_deref() {
+            if config.auth_token().as_deref() == Some(cluster_token) {
+                return Err(LiveError::Config(
+                    "the cluster token must be different from the user authentication token"
+                        .to_owned(),
+                ));
+            }
+        }
         let modules = ModuleRegistry::build(&config.modules.enabled)?;
         let store = Arc::new(ObjectStore::open(config.paths.data_dir.join("registry"))?);
         let registry = build_registry(&config, store.clone()).await?;
@@ -149,6 +164,7 @@ impl AppState {
                 shutdown: Notify::new(),
                 shutdown_requested: AtomicBool::new(false),
                 server_id,
+                cluster_token,
             }),
         };
         state.inner.modules.start(&module_context).await?;
@@ -195,6 +211,10 @@ impl AppState {
 
     pub fn nodes(&self) -> &Arc<NodeDirectory> {
         &self.inner.nodes
+    }
+
+    pub(crate) fn cluster_token(&self) -> Option<&str> {
+        self.inner.cluster_token.as_deref()
     }
 
     pub fn plugins(&self) -> &PluginRegistry {

@@ -10,6 +10,9 @@ use crate::error::{LiveError, Result};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse, NodeRecord};
 use crate::util::{constant_time_eq, now_millis};
 use std::collections::BTreeSet;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
 use std::time::Duration;
 use tokio::task::{JoinHandle, JoinSet};
 
@@ -19,6 +22,82 @@ pub const SIGNATURE_HEADER: &str = "x-hologram-cluster-signature";
 const SIGNING_CONTEXT: &str = "dev.hologram.live.cluster-join.v1";
 const MAX_CLOCK_SKEW_MILLIS: u64 = 30_000;
 pub const MAX_JOIN_BYTES: usize = 1024 * 1024;
+pub const TOKEN_FILE: &str = "cluster.token";
+
+pub fn load_or_create_token(config: &crate::config::AppConfig) -> Result<String> {
+    if let Some(token) = config.cluster_token() {
+        validate_token(&token, &config.cluster.token_env)?;
+        return Ok(token);
+    }
+    load_or_create_token_file(&config.paths.state_dir.join(TOKEN_FILE))
+}
+
+fn load_or_create_token_file(path: &Path) -> Result<String> {
+    match std::fs::read_to_string(path) {
+        Ok(token) => {
+            secure_token_file(path)?;
+            let token = token.trim().to_owned();
+            validate_token(&token, &path.display().to_string())?;
+            Ok(token)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => create_token_file(path),
+        Err(error) => Err(LiveError::io(path, error)),
+    }
+}
+
+fn create_token_file(path: &Path) -> Result<String> {
+    let mut random = [0_u8; 32];
+    getrandom::fill(&mut random)
+        .map_err(|error| LiveError::Io(format!("generate cluster token: {error}")))?;
+    let token = crate::util::hex(&random);
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    match options.open(path) {
+        Ok(mut file) => {
+            file.write_all(token.as_bytes())
+                .and_then(|()| file.write_all(b"\n"))
+                .and_then(|()| file.sync_all())
+                .map_err(|error| LiveError::io(path, error))?;
+            Ok(token)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            load_or_create_token_file(path)
+        }
+        Err(error) => Err(LiveError::io(path, error)),
+    }
+}
+
+fn validate_token(token: &str, source: &str) -> Result<()> {
+    if token.len() < 32 {
+        return Err(LiveError::Config(format!(
+            "cluster token from {source} must contain at least 32 bytes"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn secure_token_file(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = std::fs::metadata(path).map_err(|error| LiveError::io(path, error))?;
+    if metadata.permissions().mode() & 0o077 != 0 {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| LiveError::io(path, error))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn secure_token_file(_path: &Path) -> Result<()> {
+    Ok(())
+}
 
 pub fn spawn(state: AppState) -> Option<JoinHandle<()>> {
     state.config().cluster.advertise_endpoint.as_ref()?;
@@ -33,7 +112,7 @@ async fn run(state: AppState) {
         .map(normalize_endpoint)
         .expect("cluster task requires an advertised endpoint");
     let self_node = state.local_node_record(self_endpoint.clone());
-    let Some(token) = state.config().cluster_token() else {
+    let Some(token) = state.cluster_token().map(str::to_owned) else {
         tracing::error!("cluster token disappeared after configuration validation");
         return;
     };
@@ -227,6 +306,53 @@ pub fn validate_node_record(node: &NodeRecord) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_cluster_token_is_private_and_reused() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join(TOKEN_FILE);
+
+        let first = load_or_create_token_file(&path).expect("generate token");
+        let second = load_or_create_token_file(&path).expect("reload token");
+
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 64);
+        assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read token file"),
+            format!("{first}\n")
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path)
+                .expect("token metadata")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o077, 0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_cluster_token_permissions_are_hardened() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join(TOKEN_FILE);
+        let token = "a".repeat(64);
+        std::fs::write(&path, &token).expect("write token");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+            .expect("make token readable");
+
+        assert_eq!(load_or_create_token_file(&path).expect("load token"), token);
+        let mode = std::fs::metadata(&path)
+            .expect("token metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0);
+    }
 
     #[test]
     fn signed_join_proof_covers_timestamp_and_body() {

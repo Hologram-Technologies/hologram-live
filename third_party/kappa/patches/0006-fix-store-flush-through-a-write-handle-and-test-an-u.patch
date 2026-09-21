@@ -1,0 +1,66 @@
+From c7b2ee722cfad39bfe486af0f5f37646bccc68f5 Mon Sep 17 00:00:00 2001
+From: humuhumu33 <68450279+humuhumu33@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 13:40:16 +0100
+Subject: [PATCH 6/6] fix(store): flush through a write handle, and test an
+ upload with fsync on
+
+Windows refuses FlushFileBuffers on a read-only handle (os error 5), so the
+sync before the publishing rename failed every upload_complete there. The
+upload tests all ran with fsync off and could not see it; one now keeps the
+default.
+---
+ crates/kappa-store-redb/src/lib.rs | 24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/crates/kappa-store-redb/src/lib.rs b/crates/kappa-store-redb/src/lib.rs
+index a03e0fb..704402c 100644
+--- a/crates/kappa-store-redb/src/lib.rs
++++ b/crates/kappa-store-redb/src/lib.rs
+@@ -932,7 +932,9 @@ impl KappaStore for PersistentStore {
+                 // Data before name: after a power loss the blob must not
+                 // exist under its address with bytes that never reached disk.
+                 if self.fsync {
+-                    std::fs::File::open(&ct_tmp).and_then(|f| f.sync_all()).map_err(StoreError::Io)?;
++                    // A write handle: Windows refuses to flush a read-only one.
++                    std::fs::OpenOptions::new().write(true).open(&ct_tmp)
++                        .and_then(|f| f.sync_all()).map_err(StoreError::Io)?;
+                 }
+                 std::fs::rename(&ct_tmp, &blob_path).map_err(StoreError::Io)?;
+                 if self.fsync {
+@@ -1015,7 +1017,9 @@ impl KappaStore for PersistentStore {
+                 // Data before name: after a power loss the blob must not
+                 // exist under its address with bytes that never reached disk.
+                 if self.fsync {
+-                    std::fs::File::open(&staging_path).and_then(|f| f.sync_all()).map_err(StoreError::Io)?;
++                    // A write handle: Windows refuses to flush a read-only one.
++                    std::fs::OpenOptions::new().write(true).open(&staging_path)
++                        .and_then(|f| f.sync_all()).map_err(StoreError::Io)?;
+                 }
+                 std::fs::rename(&staging_path, &blob_path).map_err(StoreError::Io)?;
+                 if self.fsync {
+@@ -1768,6 +1772,22 @@ mod tests {
+         assert_eq!(evicted, 1);
+     }
+ 
++    #[test]
++    fn upload_completes_with_fsync_on() {
++        // The other upload tests turn fsync off for speed. This one keeps the
++        // default, so the sync before the publishing rename runs on every
++        // system (Windows refuses to flush a read-only handle).
++        let tmp = tempfile::tempdir().unwrap();
++        let config = PersistentStoreConfig::new(tmp.path().join("blobs"), tmp.path().join("state.redb"));
++        assert!(config.fsync);
++        let s = PersistentStore::new(config, Arc::new(NtpLamportClock::new())).unwrap();
++        let ns = s.namespace_resolve_or_create("fsync", "test", None).unwrap();
++        let id = s.upload_begin(&ns, 0).unwrap();
++        s.upload_put_part(&id, 0, b"durable").unwrap();
++        let digest = kappa_from_bytes(b"durable");
++        assert_eq!(s.upload_complete(&id, Some(digest.as_str())).unwrap().kappa, digest);
++    }
++
+     #[test]
+     fn upload_resumes_after_reopen_when_staging_is_preserved() {
+         let tmp = tempfile::tempdir().unwrap();
+-- 
+2.54.0.windows.1
+

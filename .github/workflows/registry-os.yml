@@ -1,0 +1,57 @@
+name: registry-os
+
+# Hologram Registry (cargo feature `oci`) on the three systems v1 commits to.
+# Path-filtered: it runs only when registry code or its dependencies change.
+on:
+  push:
+    branches: ["registry/**"]
+  pull_request:
+    paths:
+      - "src/oci_store/**"
+      - "src/modules/oci/**"
+      - "src/registry_compat/**"
+      - "apps/registry/**"
+      - "third_party/kappa/**"
+      - "tests/oci_*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/registry-os.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  oci-store:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: registry-os-${{ matrix.os }}
+      - name: The pin is the documented one; aws-lc is not in the graph
+        if: runner.os == 'Linux'
+        run: ./scripts/check-kappa-pin.sh
+      - name: Unit tests
+        run: cargo test --locked --features oci --lib oci_store -- --test-threads=1 --nocapture
+      - name: Integration tests
+        run: cargo test --locked --features oci --test oci_store -- --test-threads=1
+      - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)
+        if: runner.os == 'Linux'
+        run: cargo test --release --locked --features oci --test oci_store -- --ignored --nocapture two_gib
+      - name: No layer in memory, no Kappa type outside the adapter
+        if: runner.os == 'Linux'
+        run: ./scripts/check-oci-streaming.sh
+      - name: Clippy, registry build
+        if: runner.os == 'Linux'
+        run: cargo clippy --locked --features oci --all-targets -- -D warnings

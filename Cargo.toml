@@ -25,9 +25,20 @@ path = "src/lib.rs"
 name = "hologram"
 path = "src/main.rs"
 
+# Test helper for tests/oci_store.rs: a process to kill mid-upload. Never shipped.
+[[bin]]
+name = "oci_child"
+path = "tests/support/oci_child.rs"
+required-features = ["oci"]
+test = false
+doc = false
+
 [dependencies]
 axum = { version = "0.8", features = ["json", "tokio", "http1", "http2"] }
 blake3 = "1"
+bytes = { version = "1", optional = true }
+kappa-core = { git = "https://github.com/Hologram-Technologies/kappa-registry", rev = "c7b2ee722cfad39bfe486af0f5f37646bccc68f5", optional = true, default-features = false }
+kappa-store-redb = { git = "https://github.com/Hologram-Technologies/kappa-registry", rev = "c7b2ee722cfad39bfe486af0f5f37646bccc68f5", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
 fs4 = "1.1"
 hyper-util = { version = "0.1", features = ["tokio"] }
@@ -41,6 +52,7 @@ prost = "0.14"
 # `tls-ring` features on tonic and opentelemetry-otlp), so rustls resolves ring
 # from crate features and the default build stays pure Rust. Roots now come from
 # rustls-platform-verifier, which 0.13 uses in place of the removed roots features.
+redb = { version = "4", optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "query", "blocking", "stream"] }
 scalar_api_reference = { version = "0.2.2", default-features = false }
 # Direct only to choose a crypto provider. reqwest 0.13 requires one to be
@@ -83,6 +95,12 @@ hologram-client = { path = "crates/hologram-client" }
 
 [features]
 bdd = []
+# Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
+oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes"]
+
+[[test]]
+name = "oci_store"
+required-features = ["oci"]
 
 [[test]]
 name = "bdd"

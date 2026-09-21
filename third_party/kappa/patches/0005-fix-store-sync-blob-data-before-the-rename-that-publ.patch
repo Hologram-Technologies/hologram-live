@@ -1,0 +1,45 @@
+From cf2edb48efd625c55d4e5a63baf183649082775b Mon Sep 17 00:00:00 2001
+From: humuhumu33 <68450279+humuhumu33@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 13:35:32 +0100
+Subject: [PATCH 5/6] fix(store): sync blob data before the rename that
+ publishes it
+
+upload_complete renamed the staged file into place and then synced only the
+directory. After a power loss the blob could exist under its address with
+bytes that never reached disk. With fsync on, sync the file first, in both
+the plaintext and the encrypted branch.
+---
+ crates/kappa-store-redb/src/lib.rs | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/crates/kappa-store-redb/src/lib.rs b/crates/kappa-store-redb/src/lib.rs
+index eace7a5..a03e0fb 100644
+--- a/crates/kappa-store-redb/src/lib.rs
++++ b/crates/kappa-store-redb/src/lib.rs
+@@ -929,6 +929,11 @@ impl KappaStore for PersistentStore {
+                 if let Some(parent) = blob_path.parent() {
+                     std::fs::create_dir_all(parent).map_err(StoreError::Io)?;
+                 }
++                // Data before name: after a power loss the blob must not
++                // exist under its address with bytes that never reached disk.
++                if self.fsync {
++                    std::fs::File::open(&ct_tmp).and_then(|f| f.sync_all()).map_err(StoreError::Io)?;
++                }
+                 std::fs::rename(&ct_tmp, &blob_path).map_err(StoreError::Io)?;
+                 if self.fsync {
+                     if let Some(p) = blob_path.parent() {
+@@ -1007,6 +1012,11 @@ impl KappaStore for PersistentStore {
+                 if let Some(parent) = blob_path.parent() {
+                     std::fs::create_dir_all(parent).map_err(StoreError::Io)?;
+                 }
++                // Data before name: after a power loss the blob must not
++                // exist under its address with bytes that never reached disk.
++                if self.fsync {
++                    std::fs::File::open(&staging_path).and_then(|f| f.sync_all()).map_err(StoreError::Io)?;
++                }
+                 std::fs::rename(&staging_path, &blob_path).map_err(StoreError::Io)?;
+                 if self.fsync {
+                     if let Some(p) = blob_path.parent() {
+-- 
+2.54.0.windows.1
+

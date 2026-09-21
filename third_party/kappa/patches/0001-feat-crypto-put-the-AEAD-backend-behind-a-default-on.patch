@@ -1,0 +1,221 @@
+From eae7e2998627da479a613e7fa5496036a1f73707 Mon Sep 17 00:00:00 2001
+From: humuhumu33 <68450279+humuhumu33@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 13:01:00 +0100
+Subject: [PATCH 1/6] feat(crypto): put the AEAD backend behind a default-on
+ encryption feature
+
+rekindle-aead brings aws-lc-rs and aws-lc-sys. An embedder that stores
+plaintext only (the default PersistentStoreConfig) has no use for them, and
+aws-lc-sys needs NASM on Windows, which a clean CI runner does not have.
+
+- kappa-core: feature encryption (default on) owns the optional dependency.
+  crypto::aead_backend re-exports the rekindle types, or, with the feature
+  off, a key type that cannot be constructed, so encryption fails closed when
+  a store is configured with a key.
+- kappa-store-redb: feature encryption forwards to kappa-core; the direct
+  rekindle-aead dependency goes away.
+
+Default builds are unchanged.
+---
+ crates/kappa-core/Cargo.toml                 |  8 ++-
+ crates/kappa-core/src/crypto/aead.rs         |  7 ++-
+ crates/kappa-core/src/crypto/aead_backend.rs | 64 ++++++++++++++++++++
+ crates/kappa-core/src/crypto/mod.rs          |  1 +
+ crates/kappa-store-redb/Cargo.toml           |  7 ++-
+ crates/kappa-store-redb/src/encrypted.rs     |  7 ++-
+ crates/kappa-store-redb/src/lib.rs           |  1 +
+ 7 files changed, 86 insertions(+), 9 deletions(-)
+ create mode 100644 crates/kappa-core/src/crypto/aead_backend.rs
+
+diff --git a/crates/kappa-core/Cargo.toml b/crates/kappa-core/Cargo.toml
+index 8eaad0f..da50ae6 100644
+--- a/crates/kappa-core/Cargo.toml
++++ b/crates/kappa-core/Cargo.toml
+@@ -11,6 +11,12 @@ description = "Content-addressed graph database primitives."
+ name = "kappa_core"
+ path = "src/lib.rs"
+ 
++[features]
++default = ["encryption"]
++# AES-256-GCM at rest, on aws-lc through rekindle-aead. Off: no key can be
++# constructed, encryption paths fail closed, and aws-lc is not linked.
++encryption = ["dep:rekindle-aead"]
++
+ [dependencies]
+ dcbor = { workspace = true }
+ sha2 = { workspace = true }
+@@ -29,7 +35,7 @@ frost-secp256k1 = { workspace = true }
+ rand_core = { workspace = true }
+ rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+ getrandom = { workspace = true }
+-rekindle-aead = { workspace = true }
++rekindle-aead = { workspace = true, optional = true }
+ hmac = "0.13"
+ subtle = "2"
+ md-5 = "0.10"
+diff --git a/crates/kappa-core/src/crypto/aead.rs b/crates/kappa-core/src/crypto/aead.rs
+index bc1fbc6..dd13d09 100644
+--- a/crates/kappa-core/src/crypto/aead.rs
++++ b/crates/kappa-core/src/crypto/aead.rs
+@@ -16,8 +16,9 @@
+ use super::kms::KeyManagementService;
+ use super::CryptoError;
+ 
+-use rekindle_aead::aes_gcm::AesGcmKey;
+-use rekindle_aead::BulkAead;
++use super::aead_backend::AesGcmKey;
++#[cfg(feature = "encryption")]
++use super::aead_backend::BulkAead;
+ 
+ /// Frame size for framed AEAD: 65536 bytes (64KB).
+ /// Matches STREAM_CHUNK_SIZE in the download path.
+@@ -321,7 +322,7 @@ impl BlobEncryptor {
+     }
+ }
+ 
+-#[cfg(test)]
++#[cfg(all(test, feature = "encryption"))]
+ mod tests {
+     use super::*;
+     use crate::crypto::kms::FileKms;
+diff --git a/crates/kappa-core/src/crypto/aead_backend.rs b/crates/kappa-core/src/crypto/aead_backend.rs
+new file mode 100644
+index 0000000..f8efa57
+--- /dev/null
++++ b/crates/kappa-core/src/crypto/aead_backend.rs
+@@ -0,0 +1,64 @@
++//! The AEAD backend behind blob-at-rest and table encryption.
++//!
++//! With the `encryption` feature (on by default) this is `rekindle-aead`:
++//! AES-256-GCM on aws-lc. Without it no key can be constructed, so every
++//! encryption path fails closed when a store is configured with a key, and
++//! nothing links aws-lc. An embedder that stores plaintext only (the default
++//! `PersistentStoreConfig`) loses nothing by turning the feature off.
++
++#[cfg(feature = "encryption")]
++pub use rekindle_aead::{aes_gcm::AesGcmKey, BulkAead};
++
++#[cfg(not(feature = "encryption"))]
++pub use disabled::AesGcmKey;
++
++#[cfg(not(feature = "encryption"))]
++mod disabled {
++    /// Why an AEAD operation did not happen: the backend is not compiled in.
++    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
++    pub struct Unavailable;
++
++    impl std::fmt::Display for Unavailable {
++        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++            write!(f, "encryption is not compiled in (feature `encryption` is off)")
++        }
++    }
++
++    impl std::error::Error for Unavailable {}
++
++    /// Stand-in for the AES-256-GCM key. It cannot be constructed, so the
++    /// methods below are unreachable; they exist so callers compile unchanged.
++    pub struct AesGcmKey(());
++
++    impl AesGcmKey {
++        pub fn new(_key_bytes: &[u8; 32]) -> Result<Self, Unavailable> {
++            Err(Unavailable)
++        }
++
++        pub fn nonce_len(&self) -> usize {
++            12
++        }
++
++        pub fn seal_detached(
++            &self,
++            _nonce: &[u8],
++            _aad: &[u8],
++            _plaintext: &[u8],
++            _ciphertext_out: &mut [u8],
++            _tag_out: &mut [u8],
++        ) -> Result<(), Unavailable> {
++            Err(Unavailable)
++        }
++
++        pub fn open_detached(
++            &self,
++            _nonce: &[u8],
++            _aad: &[u8],
++            _ciphertext: &[u8],
++            _tag: &[u8],
++            _plaintext_out: &mut [u8],
++        ) -> Result<(), Unavailable> {
++            Err(Unavailable)
++        }
++    }
++}
+diff --git a/crates/kappa-core/src/crypto/mod.rs b/crates/kappa-core/src/crypto/mod.rs
+index 8e00ed4..a101f3f 100644
+--- a/crates/kappa-core/src/crypto/mod.rs
++++ b/crates/kappa-core/src/crypto/mod.rs
+@@ -1,6 +1,7 @@
+ //! Cryptographic signing, verification, and threshold co-signing.
+ 
+ pub mod aead;
++pub mod aead_backend;
+ pub mod anchor;
+ pub mod ecdsa;
+ pub mod ed25519;
+diff --git a/crates/kappa-store-redb/Cargo.toml b/crates/kappa-store-redb/Cargo.toml
+index a17b233..c0a210d 100644
+--- a/crates/kappa-store-redb/Cargo.toml
++++ b/crates/kappa-store-redb/Cargo.toml
+@@ -11,9 +11,12 @@ description = "Optional redb query accelerator for kappa-registry."
+ name = "kappa_store_redb"
+ path = "src/lib.rs"
+ 
++[features]
++default = ["encryption"]
++encryption = ["kappa-core/encryption"]
++
+ [dependencies]
+-kappa-core = { workspace = true }
+-rekindle-aead = { workspace = true }
++kappa-core = { workspace = true, default-features = false }
+ redb = { workspace = true }
+ blake3 = { workspace = true }
+ hex = { workspace = true }
+diff --git a/crates/kappa-store-redb/src/encrypted.rs b/crates/kappa-store-redb/src/encrypted.rs
+index bdf471b..01cf423 100644
+--- a/crates/kappa-store-redb/src/encrypted.rs
++++ b/crates/kappa-store-redb/src/encrypted.rs
+@@ -20,8 +20,9 @@
+ //! and filter in memory. This is O(n) per namespace but acceptable for
+ //! single-node deployments with thousands to millions of tags.
+ 
+-use rekindle_aead::aes_gcm::AesGcmKey;
+-use rekindle_aead::BulkAead;
++use kappa_core::crypto::aead_backend::AesGcmKey;
++#[cfg(feature = "encryption")]
++use kappa_core::crypto::aead_backend::BulkAead;
+ 
+ /// Encrypted table key/value operations.
+ ///
+@@ -143,7 +144,7 @@ impl std::fmt::Display for EncryptionError {
+ 
+ impl std::error::Error for EncryptionError {}
+ 
+-#[cfg(test)]
++#[cfg(all(test, feature = "encryption"))]
+ mod tests {
+     use super::*;
+ 
+diff --git a/crates/kappa-store-redb/src/lib.rs b/crates/kappa-store-redb/src/lib.rs
+index ca2a986..ffda913 100644
+--- a/crates/kappa-store-redb/src/lib.rs
++++ b/crates/kappa-store-redb/src/lib.rs
+@@ -1702,6 +1702,7 @@ mod tests {
+         assert!(result.is_err());
+     }
+ 
++    #[cfg(feature = "encryption")]
+     #[test]
+     fn upload_evict_expired() {
+         let (s, _d) = new_store();
+-- 
+2.54.0.windows.1
+

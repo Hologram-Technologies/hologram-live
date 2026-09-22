@@ -18,11 +18,15 @@ mod init;
 mod models;
 mod modules;
 mod nodes;
+#[cfg(feature = "oci")]
+mod oci;
 mod openapi;
 mod plugins;
 mod pull;
 mod push;
 mod registry;
+#[cfg(feature = "oci")]
+pub(crate) mod registry_argv;
 mod restart;
 mod route;
 mod run;
@@ -84,6 +88,9 @@ enum Command {
     Route(route::RouteArgs),
     /// Access the first content-addressed registry module.
     Registry(registry::RegistryArgs),
+    /// Operator commands of the Docker-compatible registry (`garbage-collect`, `verify`, `import`).
+    #[cfg(feature = "oci")]
+    Oci(oci::OciArgs),
     /// Store, list, and download file objects.
     Files(files::FilesArgs),
     /// Import, verify, load, and run .holo archives.
@@ -115,11 +122,39 @@ enum Command {
 }
 
 impl Cli {
+    /// The registry configuration `serve` was given, if any.
+    #[cfg_attr(
+        not(feature = "oci"),
+        allow(clippy::unused_self, reason = "only the registry build has one")
+    )]
+    fn registry_config(&self) -> Option<PathBuf> {
+        #[cfg(feature = "oci")]
+        if let Command::Serve(args) = &self.command {
+            return args.registry_config.clone();
+        }
+        None
+    }
+
     pub fn observability_config(&self) -> (TracingConfig, TelemetryConfig) {
-        let bootstrap = AppConfig::load_for_bootstrap(self.config.as_deref())
-            .map(|(config, _)| config)
-            .unwrap_or_default();
+        let registry_config = self.registry_config();
+        let bootstrap = if registry_config.is_some() && self.config.is_none() {
+            // Registry mode: logging never comes from a user's
+            // ~/.config/hologram/live.toml, unless --config names a file.
+            AppConfig::default()
+        } else {
+            AppConfig::load_for_bootstrap(self.config.as_deref())
+                .map(|(config, _)| config)
+                .unwrap_or_default()
+        };
         let mut tracing = bootstrap.tracing;
+        #[cfg(feature = "oci")]
+        if let Some(file) = &registry_config {
+            // A bad file is reported by `serve`, which loads the same settings.
+            if let Ok(settings) = hologram_live::registry_compat::load(Some(file), std::env::vars())
+            {
+                tracing = hologram_live::registry_compat::tracing_config(&settings, tracing);
+            }
+        }
         if self.verbose == 1 {
             tracing.filter = format!("{},hologram_live=debug", tracing.filter);
         } else if self.verbose > 1 {
@@ -143,6 +178,8 @@ impl Cli {
             Command::Config(args) => config::run(self, args).await,
             Command::Route(args) => route::run(self, args).await,
             Command::Registry(args) => registry::run(self, args).await,
+            #[cfg(feature = "oci")]
+            Command::Oci(args) => oci::run(self, args).await,
             Command::Files(args) => files::run(self, args).await,
             Command::Holo(args) => holo::run(self, args).await,
             Command::Pull(args) => pull::run(self, args).await,

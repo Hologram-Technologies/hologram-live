@@ -12,6 +12,12 @@ pub struct ServeArgs {
     reference: Option<String>,
     #[arg(long)]
     listen: Option<String>,
+    /// Serve the Docker-compatible registry from the reference registry's
+    /// configuration file (`config.yml`), with `REGISTRY_*` variables over it.
+    /// Only the system and registry modules run.
+    #[cfg(feature = "oci")]
+    #[arg(long, env = "HOLOGRAM_REGISTRY_CONFIG")]
+    pub(crate) registry_config: Option<std::path::PathBuf>,
 }
 
 /// Resolve a serve argument to a catalog kappa, acquiring it if needed.
@@ -110,6 +116,29 @@ async fn pull_archive_bytes(
 }
 
 pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()> {
+    #[cfg(feature = "oci")]
+    let mut config = match &args.registry_config {
+        // Registry mode reads the registry's configuration, never the user's
+        // `~/.config/hologram/live.toml`: a container has no such file, and a
+        // developer's must not change what the registry does. `--config`
+        // still layers an explicit server file underneath.
+        Some(file) => {
+            let settings = hologram_live::registry_compat::load(Some(file), std::env::vars())?;
+            let mut config = match cli.config.as_deref() {
+                Some(_) => helpers::load(&cli)?.0,
+                None => hologram_live::config::AppConfig::default(),
+            };
+            hologram_live::registry_compat::apply(settings, &mut config);
+            config.modules.enabled = vec![
+                "dev.hologram.live.system".to_owned(),
+                hologram_live::modules::oci::MODULE_ID.to_owned(),
+            ];
+            config.create_directories()?;
+            config
+        }
+        None => helpers::load(&cli)?.0,
+    };
+    #[cfg(not(feature = "oci"))]
     let (mut config, _) = helpers::load(&cli)?;
     if let Some(listen) = args.listen {
         config.server.listen = listen;

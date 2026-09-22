@@ -40,6 +40,8 @@ doc = false
 axum = { version = "0.8", features = ["json", "tokio", "http1", "http2"] }
 blake3 = "1"
 bytes = { version = "1", optional = true }
+# The reference registry's config.yml, read into a flat key table (src/registry_compat).
+yaml-rust2 = { version = "0.13", optional = true, default-features = false }
 # Already locked through tonic and reqwest; the registry streams blob bodies with `ReaderStream`.
 tokio-util = { version = "0.7", features = ["io"], optional = true }
 kappa-core = { path = "third_party/kappa/crates/kappa-core", optional = true, default-features = false }
@@ -101,7 +103,7 @@ hologram-client = { path = "crates/hologram-client" }
 [features]
 bdd = []
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
-oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util"]
+oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2"]
 
 [[test]]
 name = "oci_store"

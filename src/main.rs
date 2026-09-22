@@ -8,6 +8,25 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
+    #[cfg(feature = "oci")]
+    let cli = {
+        // The reference image's command names, when this binary is linked as
+        // `registry` or `entrypoint.sh`.
+        let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+        match cli::registry_argv::rewrite(&args) {
+            None => cli::Cli::parse(),
+            Some(cli::registry_argv::Rewritten::Args(rewritten)) => cli::Cli::parse_from(rewritten),
+            Some(cli::registry_argv::Rewritten::Print(text)) => {
+                println!("{text}");
+                std::process::exit(0);
+            }
+            Some(cli::registry_argv::Rewritten::Refuse(text)) => {
+                eprintln!("{text}");
+                std::process::exit(2);
+            }
+        }
+    };
+    #[cfg(not(feature = "oci"))]
     let cli = cli::Cli::parse();
     let json = cli.json;
     let (tracing_config, telemetry_config) = cli.observability_config();

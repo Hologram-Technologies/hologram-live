@@ -74,6 +74,28 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// From the registry configuration the server started with, or else from
+    /// the reference's environment variables.
+    pub fn current() -> Self {
+        let Some(settings) = crate::registry_compat::installed() else {
+            return Self::from_environment();
+        };
+        let headers = settings
+            .section("http.headers")
+            .into_iter()
+            .filter_map(|(name, value)| {
+                let name = axum::http::HeaderName::from_bytes(name.as_bytes()).ok()?;
+                // Checked when the settings were loaded; a list is one comma-joined value.
+                let value = HeaderValue::from_str(crate::registry_compat::header_value(value)).ok()?;
+                Some((name, value))
+            })
+            .collect();
+        Self {
+            delete_enabled: settings.flag("storage.delete.enabled").unwrap_or(false),
+            headers,
+        }
+    }
+
     pub fn from_environment() -> Self {
         let on = |name: &str| {
             std::env::var(name).is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"))
@@ -143,7 +165,7 @@ async fn dispatch(State(state): State<AppState>, request: Request) -> Response {
             static SETTINGS: std::sync::OnceLock<Settings> = std::sync::OnceLock::new();
             let registry = Registry {
                 store: store.clone(),
-                settings: SETTINGS.get_or_init(Settings::from_environment).clone(),
+                settings: SETTINGS.get_or_init(Settings::current).clone(),
                 audit: Some(state.audit().clone()),
             };
             handle(registry, request).await

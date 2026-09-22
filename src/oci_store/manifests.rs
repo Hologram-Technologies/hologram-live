@@ -328,7 +328,7 @@ impl OciStore {
             .collect()
     }
 
-    fn tag_resolve(&self, repo: &RepoName, tag: &Tag) -> Result<Digest, OciStoreError> {
+    pub(crate) fn tag_resolve(&self, repo: &RepoName, tag: &Tag) -> Result<Digest, OciStoreError> {
         let namespace = self.namespace(repo)?;
         match self.kappa().tag_get(&namespace, tag.as_str()) {
             Ok(entry) => Digest::parse(&entry.kappa),

@@ -57,6 +57,13 @@ A key without a certificate stops the start, where the reference quietly serves 
 at start; replacing the files takes a restart (reload without one is planned). `letsencrypt`
 and client certificates (`clientcas`) are refused by name.
 
+**Garbage collection.** `registry garbage-collect [--dry-run] [--delete-untagged] [--quiet] <config>` marks and sweeps
+as the reference does and prints the reference's lines. Two rules are this registry's: it removes only objects it
+stored itself (the store keeps small records of its own beside the blobs, which are never garbage), and a signature
+or SBOM whose subject is kept is kept too, so `--delete-untagged` never strips an image of its signatures, where the
+reference would delete them as untagged manifests. It runs on a stopped registry: beside a running one it refuses
+and exits 5.
+
 ## The table the gate reads
 
 Keep its two markers and its seven columns. `*` in step, field, reference or product matches anything there; a row

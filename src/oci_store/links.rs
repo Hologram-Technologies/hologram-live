@@ -28,8 +28,14 @@ const REFERRERS: TableDefinition<&str, &[u8]> = TableDefinition::new("referrers"
 const ALIASES: TableDefinition<&str, &str> = TableDefinition::new("aliases");
 /// Upload session records, so a session survives a restart.
 const UPLOADS: TableDefinition<&str, &[u8]> = TableDefinition::new("uploads");
-/// `"layout"` → the layout version, cross-checked with the marker file.
+/// `"layout"` → the layout version, cross-checked with the marker file;
+/// `"objects"` → 1 once `OBJECTS` has been backfilled from `LINKS`.
 const META: TableDefinition<&str, u64> = TableDefinition::new("meta");
+/// Every object the registry itself put in the store, by the digest it is
+/// stored under: 0 a blob, 1 a manifest. Garbage collection sweeps from this
+/// table only: the Kappa store keeps records of its own beside the blobs
+/// (errata E12), and those are never the registry's to delete.
+pub(crate) const OBJECTS: TableDefinition<&str, u8> = TableDefinition::new("objects");
 
 /// What a link points at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +149,7 @@ pub(crate) fn create_tables(database: &redb::Database) -> Result<(), OciStoreErr
         txn.open_table(REFERRERS).map_err(io)?;
         txn.open_table(ALIASES).map_err(io)?;
         txn.open_table(UPLOADS).map_err(io)?;
+        txn.open_table(OBJECTS).map_err(io)?;
         let mut meta = txn.open_table(META).map_err(io)?;
         if meta.get("layout").map_err(io)?.is_none() {
             meta.insert("layout", 1).map_err(io)?;
@@ -442,6 +449,10 @@ impl OciStore {
             links
                 .insert(link_key(repo, digest).as_str(), link.encode().as_slice())
                 .map_err(io)?;
+            txn.open_table(OBJECTS)
+                .map_err(io)?
+                .insert(digest.as_str(), 1)
+                .map_err(io)?;
             if let Some((key, value)) = &referrer_row {
                 let mut referrers = txn.open_table(REFERRERS).map_err(io)?;
                 referrers
@@ -515,6 +526,10 @@ impl OciStore {
             links
                 .insert(link_key(repo, stored).as_str(), link.encode().as_slice())
                 .map_err(io)?;
+            txn.open_table(OBJECTS)
+                .map_err(io)?
+                .insert(stored.as_str(), 0)
+                .map_err(io)?;
             let mut repos = txn.open_table(REPOS).map_err(io)?;
             if repos.get(repo.as_str()).map_err(io)?.is_none() {
                 repos.insert(repo.as_str(), now_ms()).map_err(io)?;
@@ -535,11 +550,145 @@ impl OciStore {
     }
 }
 
+impl OciStore {
+    /// Fill `OBJECTS` from the links of a volume written before it existed:
+    /// every linked digest is an object the registry put there. Once.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database refuses.
+    pub(crate) fn objects_backfill(&self) -> Result<(), OciStoreError> {
+        let txn = self.links.begin_write().map_err(io)?;
+        {
+            let mut meta = txn.open_table(META).map_err(io)?;
+            if meta.get("objects").map_err(io)?.is_some() {
+                return Ok(());
+            }
+            let links = txn.open_table(LINKS).map_err(io)?;
+            let mut objects = txn.open_table(OBJECTS).map_err(io)?;
+            for row in links.iter().map_err(io)? {
+                let (key, value) = row.map_err(io)?;
+                let Some((_, digest)) = key.value().split_once('\0') else {
+                    continue;
+                };
+                let kind = u8::from(
+                    Link::decode(value.value()).is_ok_and(|link| link.kind != LinkKind::Blob),
+                );
+                if objects.get(digest).map_err(io)?.is_none() {
+                    objects.insert(digest, kind).map_err(io)?;
+                }
+            }
+            meta.insert("objects", 1).map_err(io)?;
+        }
+        txn.commit().map_err(io)
+    }
+
+    /// Every object the registry put in the store, and whether it is a manifest.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database cannot be read.
+    pub(crate) fn objects(&self) -> Result<Vec<(Digest, bool)>, OciStoreError> {
+        let txn = self.links.begin_read().map_err(io)?;
+        let objects = txn.open_table(OBJECTS).map_err(io)?;
+        let mut out = Vec::new();
+        for row in objects.iter().map_err(io)? {
+            let (key, value) = row.map_err(io)?;
+            out.push((Digest::parse(key.value())?, value.value() == 1));
+        }
+        Ok(out)
+    }
+
+    /// Forget a swept object: its row in `OBJECTS`, every link to it, every
+    /// referrer row naming it, and its alias pair. One transaction.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database refuses.
+    pub(crate) fn object_forget(&self, digest: &Digest) -> Result<usize, OciStoreError> {
+        let txn = self.links.begin_write().map_err(io)?;
+        let removed;
+        {
+            txn.open_table(OBJECTS)
+                .map_err(io)?
+                .remove(digest.as_str())
+                .map_err(io)?;
+            let mut links = txn.open_table(LINKS).map_err(io)?;
+            let suffix = format!("\0{}", digest.as_str());
+            let keys: Vec<String> = links
+                .iter()
+                .map_err(io)?
+                .filter_map(std::result::Result::ok)
+                .map(|(key, _)| key.value().to_owned())
+                .filter(|key| key.ends_with(&suffix))
+                .collect();
+            removed = keys.len();
+            for key in &keys {
+                links.remove(key.as_str()).map_err(io)?;
+            }
+            let mut referrers = txn.open_table(REFERRERS).map_err(io)?;
+            let named: Vec<String> = referrers
+                .iter()
+                .map_err(io)?
+                .filter_map(std::result::Result::ok)
+                .map(|(key, _)| key.value().to_owned())
+                .filter(|key| key.split('\0').skip(1).any(|part| part == digest.as_str()))
+                .collect();
+            for key in &named {
+                referrers.remove(key.as_str()).map_err(io)?;
+            }
+            let mut aliases = txn.open_table(ALIASES).map_err(io)?;
+            let other = aliases
+                .remove(digest.as_str())
+                .map_err(io)?
+                .map(|value| value.value().to_owned());
+            if let Some(other) = other {
+                aliases.remove(other.as_str()).map_err(io)?;
+            }
+        }
+        txn.commit().map_err(io)?;
+        Ok(removed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::oci_store::OpenOptions;
     use std::time::{Duration, Instant};
+
+    /// A volume written before `OBJECTS` existed: its links are the record.
+    #[test]
+    fn a_volume_from_before_the_object_table_is_backfilled_from_its_links() {
+        let (store, _dir) = test_store();
+        let repo = RepoName::parse("old/volume").expect("repo");
+        let blob = Digest::sha256_of(b"an old blob");
+        let manifest = Digest::sha256_of(b"an old manifest");
+        store
+            .link_add(&repo, &blob, LinkKind::Blob, None)
+            .expect("link");
+        store
+            .link_add(&repo, &manifest, LinkKind::Manifest, Some("m"))
+            .expect("link");
+        // What an older binary left: no rows, no flag.
+        let txn = store.links.begin_write().expect("txn");
+        txn.delete_table(OBJECTS).expect("drop");
+        txn.open_table(META)
+            .expect("meta")
+            .remove("objects")
+            .expect("flag");
+        txn.commit().expect("commit");
+        store.objects_backfill().expect("backfill");
+        let mut objects = store.objects().expect("objects");
+        objects.sort();
+        let mut expected = vec![(blob, false), (manifest, true)];
+        expected.sort();
+        assert_eq!(objects, expected);
+        // Once: a second call does not add again what the sweep forgot.
+        store.object_forget(&expected[0].0).expect("forget");
+        store.objects_backfill().expect("again");
+        assert_eq!(store.objects().expect("objects").len(), 1);
+    }
 
     fn test_store() -> (OciStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");

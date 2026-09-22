@@ -70,6 +70,8 @@ jobs:
         run: cargo test --locked --features oci --test oci_verify
       - name: The debug listener (health, metrics)
         run: cargo test --locked --features oci --test oci_debug
+      - name: garbage-collect, 256 property cases (P8 T1)
+        run: cargo test --locked --features oci --test oci_gc
       - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)
         if: runner.os == 'Linux'
         run: cargo test --release --locked --features oci --test oci_store -- --ignored --nocapture two_gib

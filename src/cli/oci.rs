@@ -1,14 +1,13 @@
 //! `hologram oci …`: the registry's operator commands.
 //!
 //! Declared so the reference's command names reach them (`registry
-//! garbage-collect` becomes `hologram oci garbage-collect`). `verify` is
-//! built; the others are built in the operator-commands work (plan, P8) and
-//! until then say so.
+//! garbage-collect` becomes `hologram oci garbage-collect`). `verify` and
+//! `garbage-collect` are built; `import` says it is not yet (plan P8).
 
 use super::Cli;
 use clap::{Args, Subcommand};
 use hologram_live::error::{LiveError, Result};
-use hologram_live::oci_store::{OciStore, OciStoreError, OpenOptions, VerifyReport};
+use hologram_live::oci_store::{GcOptions, OciStore, OciStoreError, OpenOptions, VerifyReport};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -20,7 +19,12 @@ pub struct OciArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum OciCommand {
-    /// Remove blobs no manifest references, as the reference's garbage-collect.
+    /// Remove blobs no manifest references, as the reference's garbage-collect,
+    /// printing what it marks and removes in the reference's words.
+    ///
+    /// Only objects the registry itself stored are ever removed. A manifest
+    /// that cannot be read stops the run before anything is removed. The
+    /// registry must be stopped.
     GarbageCollect {
         /// Report what would be removed, and remove nothing.
         #[arg(long, short = 'd')]
@@ -32,7 +36,7 @@ enum OciCommand {
         #[arg(long, short = 'q')]
         quiet: bool,
         /// The reference registry's configuration file.
-        #[arg(long)]
+        #[arg(long, env = "HOLOGRAM_REGISTRY_CONFIG")]
         registry_config: Option<PathBuf>,
     },
     /// Re-hash every blob with the algorithm of its own address, and name any
@@ -63,7 +67,18 @@ enum OciCommand {
 pub async fn run(cli: Cli, args: OciArgs) -> Result<()> {
     match args.command {
         OciCommand::Verify { registry_config } => verify(&cli, registry_config).await,
-        OciCommand::GarbageCollect { .. } => not_built("garbage-collect"),
+        OciCommand::GarbageCollect {
+            dry_run,
+            delete_untagged,
+            quiet,
+            registry_config,
+        } => {
+            let options = GcOptions {
+                dry_run,
+                delete_untagged,
+            };
+            garbage_collect(options, quiet, registry_config).await
+        }
         OciCommand::Import { .. } => not_built("import"),
     }
 }
@@ -103,25 +118,67 @@ fn volume(file: &Path) -> Result<PathBuf> {
     ))
 }
 
+/// Open the volume of a stopped registry, never expiring an upload session.
+fn open_stopped(root: &Path, command: &str) -> Result<OciStore> {
+    let options = OpenOptions {
+        create: false,
+        upload_max_age: std::time::Duration::MAX,
+    };
+    OciStore::open(root, options).map_err(|error| match error {
+        OciStoreError::Locked => LiveError::Capability(format!(
+            "the registry is running on {}: stop it first ({command} beside a running server is not built yet)",
+            root.display()
+        )),
+        other => LiveError::Config(format!("registry volume {}: {other}", root.display())),
+    })
+}
+
+async fn garbage_collect(
+    options: GcOptions,
+    quiet: bool,
+    registry_config: Option<PathBuf>,
+) -> Result<()> {
+    let root = volume(&registry_file(registry_config)?)?;
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        // A volume nothing was ever pushed to: the reference's empty answer,
+        // and nothing created.
+        let empty = std::fs::read_dir(&root).map_or(true, |mut entries| entries.next().is_none());
+        if empty {
+            if !quiet {
+                println!("\n0 blobs marked, 0 blobs and 0 manifests eligible for deletion");
+            }
+            return Ok(());
+        }
+        let store = open_stopped(&root, "garbage-collect")?;
+        let mut out = std::io::stdout().lock();
+        let mut failed = None;
+        store
+            .collect(options, &mut |line| {
+                if !quiet && failed.is_none() {
+                    if let Err(error) = writeln!(out, "{line}") {
+                        failed = Some(error);
+                    }
+                }
+            })
+            .map_err(|error| LiveError::Config(format!("garbage-collect: {error}")))?;
+        match failed {
+            Some(error) => Err(LiveError::Config(format!("print: {error}"))),
+            None => out
+                .flush()
+                .map_err(|error| LiveError::Config(format!("print: {error}"))),
+        }
+    })
+    .await
+    .map_err(|error| LiveError::Config(format!("join garbage-collect: {error}")))?
+}
+
 async fn verify(cli: &Cli, registry_config: Option<PathBuf>) -> Result<()> {
     let root = volume(&registry_file(registry_config)?)?;
     let json = cli.json;
     let report = tokio::task::spawn_blocking(move || -> Result<VerifyReport> {
-        // No age: verify must never expire an upload session the server
-        // would have kept.
-        let options = OpenOptions {
-            create: false,
-            upload_max_age: std::time::Duration::MAX,
-        };
         // Exit 1 is kept for damage: a locked volume is a missing capability
         // (5), a volume that cannot be read a configuration fault (2).
-        let store = OciStore::open(&root, options).map_err(|error| match error {
-            OciStoreError::Locked => LiveError::Capability(format!(
-                "the registry is running on {}: stop it first (verify beside a running server is not built yet)",
-                root.display()
-            )),
-            other => LiveError::Config(format!("registry volume {}: {other}", root.display())),
-        })?;
+        let store = open_stopped(&root, "verify")?;
         let terminal = std::io::IsTerminal::is_terminal(&std::io::stderr());
         let mut last = std::time::Instant::now();
         store

@@ -10,6 +10,7 @@
 //! `spawn_blocking`.
 
 pub mod blobs;
+pub mod gc;
 pub mod layout;
 pub mod links;
 pub mod manifests;
@@ -18,6 +19,7 @@ pub mod uploads;
 pub mod verify;
 
 pub use blobs::{AsyncBlob, BlobRead, BlobStat};
+pub use gc::{GcOptions, GcReport};
 pub use layout::Layout;
 pub use links::{Link, LinkKind, ReferrerDescriptor};
 pub use manifests::{ManifestPlan, StoredManifest, SubjectPlan};

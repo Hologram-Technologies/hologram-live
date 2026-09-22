@@ -53,10 +53,10 @@ grep -q "the registry is running on /var/lib/registry" <<<"$out" || fail "hologr
 # The other way operators reach the binary: /bin/registry, as in the reference.
 version=$(docker run --rm --entrypoint /bin/registry "$ours" --version) || fail "/bin/registry --version"
 grep -q "^registry " <<<"$version" || fail "/bin/registry --version: $version"
-if gc=$(docker run --rm "$ours" garbage-collect --dry-run /etc/distribution/config.yml 2>&1); then
-  fail "garbage-collect should say it is not built yet"
-fi
-grep -q "not built yet" <<<"$gc" || fail "garbage-collect through the entry point: $gc"
+# The reference's own command line, through the entry point, on a fresh volume.
+gc=$(docker run --rm "$ours" garbage-collect --dry-run /etc/distribution/config.yml 2>&1) \
+  || fail "garbage-collect through the entry point: $gc"
+grep -q "blobs marked, 0 blobs and 0 manifests eligible for deletion" <<<"$gc" || fail "garbage-collect: $gc"
 echo "surface: /v2/ in public, the module API is not, only 5000 published, hologram on the path"
 
 # The image's own default file turns on the debug listener (:5001) with

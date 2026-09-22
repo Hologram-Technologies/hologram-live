@@ -260,6 +260,14 @@ pub fn parse(method: &Method, rest: &str) -> Result<Route, OciError> {
     Err(OciError::unknown_route())
 }
 
+/// A route's methods in read-only mode: the reads.
+pub fn read_only_allow(allow: &'static str) -> &'static str {
+    match allow {
+        ALLOW_MANIFEST | ALLOW_BLOB | ALLOW_UPLOAD | ALLOW_POST => "GET, HEAD",
+        other => other,
+    }
+}
+
 /// The route for `method`, or `OPTIONS`' answer, or 405 naming what is allowed.
 fn pick(
     method: &Method,

@@ -51,6 +51,16 @@ While any health check fails, `/v2/` answers 503 `UNAVAILABLE`, as the reference
 does: that is what `POST /debug/health/down` drains. The storage check writes, reads back and deletes a small file on
 the volume; the reference only stats its root, so a volume that has turned read-only shows here and not there.
 
+**Maintenance.** `storage.maintenance.readonly.enabled` turns writes off as the reference does: each write method
+answers 405 with `Allow: GET, HEAD`, reads go on, and a write to an unknown upload is `BLOB_UPLOAD_UNKNOWN` first.
+`storage.maintenance.uploadpurging` is read as the reference reads it: a section replaces the default (168 h, every
+24 h) whole, so `age`, `interval` and `dryrun` must all be there unless `enabled` is false. The first purge runs a
+minute after start, where the reference waits a random 0 to 59 minutes.
+
+**Behind a proxy.** `http.host` is what an absolute `Location` is built on, in place of the request's host;
+`http.relativeurls` sends the path alone. Without either, `Location` is built from the request's host and
+`X-Forwarded-Proto`, as the reference's is.
+
 **Stopping.** `http.draintimeout` is read as the reference reads it: on `SIGTERM` open requests get that long, then
 the process stops without them; without it, the stop is immediate. Where the reference, with no drain set, is killed
 by the signal (exit 143), this registry stops cleanly and exits 0 either way.

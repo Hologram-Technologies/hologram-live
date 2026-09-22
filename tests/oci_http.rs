@@ -74,6 +74,11 @@ struct Volume {
     delete_enabled: bool,
     /// `http.headers`.
     headers: Vec<(&'static str, &'static str)>,
+    /// `storage.maintenance.readonly.enabled`.
+    read_only: bool,
+    /// `http.relativeurls` and `http.host`.
+    relative_urls: bool,
+    host: Option<&'static str>,
 }
 
 fn volume() -> Volume {
@@ -84,6 +89,9 @@ fn volume() -> Volume {
         store,
         delete_enabled: false,
         headers: Vec::new(),
+        read_only: false,
+        relative_urls: false,
+        host: None,
     }
 }
 
@@ -124,6 +132,9 @@ async fn send_body(
                     )
                 })
                 .collect(),
+            read_only: volume.read_only,
+            relative_urls: volume.relative_urls,
+            host: volume.host.map(str::to_owned),
         },
         audit: None,
         login: None,
@@ -1518,4 +1529,96 @@ fn header_of<'a>(head: &'a str, name: &str) -> Option<&'a str> {
         let (key, value) = line.split_once(':')?;
         key.trim().eq_ignore_ascii_case(name).then(|| value.trim())
     })
+}
+
+// ---- Maintenance and URL settings ----------------------------------------------
+
+/// `storage.maintenance.readonly`: the reference's dispatchers leave their
+/// write methods unregistered, so a write is 405 naming the reads, reads go
+/// on, and a write to an unknown upload is `BLOB_UPLOAD_UNKNOWN` first
+/// (`blobupload.go` resumes before the method is checked).
+#[tokio::test(flavor = "multi_thread")]
+async fn read_only_mode_refuses_writes_as_the_reference_does() {
+    let mut volume = volume();
+    volume.delete_enabled = true;
+    let (layer_digest, _, manifest) = seed(&volume.store);
+    let open = open_upload(&volume, "team/app").await;
+    volume.read_only = true;
+
+    let read = send(&volume, "GET", "/v2/team/app/manifests/v1", &[]).await;
+    assert_eq!(read.status(), StatusCode::OK);
+    let blob = format!("/v2/team/app/blobs/{layer_digest}");
+    assert_eq!(
+        send(&volume, "GET", &blob, &[]).await.status(),
+        StatusCode::OK
+    );
+    for (method, path) in [
+        ("PUT", "/v2/team/app/manifests/v2"),
+        ("DELETE", "/v2/team/app/manifests/v1"),
+        ("DELETE", blob.as_str()),
+        ("POST", "/v2/team/app/blobs/uploads/"),
+        ("PATCH", open.as_str()),
+        ("PUT", open.as_str()),
+        ("DELETE", open.as_str()),
+    ] {
+        let response = send_body(
+            &volume,
+            method,
+            path,
+            &[("content-type", MANIFEST_TYPE)],
+            manifest.clone(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method} {path}"
+        );
+        assert_eq!(header(&response, "allow"), "GET, HEAD", "{method} {path}");
+    }
+    let unknown = send(
+        &volume,
+        "PATCH",
+        "/v2/team/app/blobs/uploads/6b3c1f0e-8f4a-4b7e-9d2a-0c1e2f3a4b5c",
+        &[],
+    )
+    .await;
+    assert_eq!(error_code(unknown).await, "BLOB_UPLOAD_UNKNOWN");
+    let status = send(&volume, "GET", &open, &[]).await;
+    assert_eq!(
+        status.status(),
+        StatusCode::NO_CONTENT,
+        "an upload's status is a read"
+    );
+    let options = send(&volume, "OPTIONS", "/v2/team/app/manifests/v1", &[]).await;
+    assert_eq!(header(&options, "allow"), "GET, HEAD");
+    // Nothing was written.
+    assert!(volume
+        .store
+        .manifest_get(&repo("team/app"), &Reference::parse("v1").expect("tag"))
+        .is_ok());
+}
+
+/// `http.relativeurls` and `http.host`: what `Location` is built on.
+#[tokio::test(flavor = "multi_thread")]
+async fn location_follows_http_host_and_relativeurls() {
+    let host = [("host", "internal:5000")];
+    let mut volume = volume();
+    let plain = send(&volume, "POST", "/v2/team/app/blobs/uploads/", &host).await;
+    assert!(
+        header(&plain, "location").starts_with("http://internal:5000/v2/team/app/blobs/uploads/")
+    );
+
+    volume.host = Some("https://registry.example.com:8443");
+    let hosted = send(&volume, "POST", "/v2/team/app/blobs/uploads/", &host).await;
+    assert!(
+        header(&hosted, "location")
+            .starts_with("https://registry.example.com:8443/v2/team/app/blobs/uploads/"),
+        "{}",
+        header(&hosted, "location")
+    );
+
+    volume.relative_urls = true;
+    let relative = send(&volume, "POST", "/v2/team/app/blobs/uploads/", &host).await;
+    assert!(header(&relative, "location").starts_with("/v2/team/app/blobs/uploads/"));
 }

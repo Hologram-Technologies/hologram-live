@@ -112,7 +112,9 @@ pub async fn put(
     let subject = plan.subject.as_ref().map(|plan| plan.subject.clone());
     let target = repo.clone();
     let digest = tokio::task::spawn_blocking(move || {
-        store.manifest_put(&target, &reference, &media_type, &bytes, &plan)
+        store
+            .manifest_put(&target, &reference, &media_type, &bytes, &plan)
+            .inspect_err(super::metrics::count_mismatch)
     })
     .await
     .map_err(|error| OciError::internal(&error))?

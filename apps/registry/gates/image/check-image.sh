@@ -73,6 +73,31 @@ curl -fsS "http://127.0.0.1:$debug_port/metrics" | grep -q '^# TYPE registry_htt
 docker rm -f "$debug_name" > /dev/null
 echo "debug listener: /debug/health {} and /metrics on :5001, from the image's own file"
 
+# http.draintimeout: an upload that hangs open is waited on for the drain,
+# and no longer (the reference's `server.Shutdown` with that deadline).
+drain_name=gate-image-drain
+docker rm -f "$drain_name" > /dev/null 2>&1 || true
+docker run -d --name "$drain_name" -e REGISTRY_HTTP_DRAINTIMEOUT=3s -p 127.0.0.1::5000 "$ours" > /dev/null
+drain_port=$(docker port "$drain_name" 5000/tcp | head -n1 | awk -F: '{print $NF}')
+for _ in $(seq 1 60); do curl -fsS "http://127.0.0.1:$drain_port/v2/" > /dev/null 2>&1 && break; sleep 1; done
+location=$(curl -fsS -o /dev/null -D - -X POST "http://127.0.0.1:$drain_port/v2/gate/drain/blobs/uploads/" |
+  tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }')
+location=${location#/}
+# A PATCH that promises a megabyte and sends three bytes, left open.
+exec 3<> "/dev/tcp/127.0.0.1/$drain_port"
+printf 'PATCH %s HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/octet-stream\r\nContent-Length: 1048576\r\n\r\nabc' \
+  "/${location#http*://*/}" >&3
+sleep 1
+started=$(date +%s)
+docker stop -t 30 "$drain_name" > /dev/null
+took=$(( $(date +%s) - started ))
+exec 3>&-
+code=$(docker inspect --format '{{.State.ExitCode}}' "$drain_name")
+docker rm -f "$drain_name" > /dev/null
+[ "$took" -ge 2 ] && [ "$took" -le 7 ] || fail "docker stop with a 3 s drain and a hung upload took ${took}s"
+[ "$code" = 0 ] || fail "exit code $code after the drain"
+echo "drain: a hung upload was waited on for http.draintimeout (${took}s), then the stop was clean"
+
 dir=$(mktemp -d)
 printf 'gate image\n' > "$dir/hello.txt"
 printf 'FROM scratch\nCOPY hello.txt /hello.txt\n' > "$dir/Dockerfile"

@@ -112,6 +112,12 @@ where
     #[cfg(feature = "oci")]
     if registry_mode {
         crate::modules::oci::debug::start_checks(&state.config().paths.state_dir);
+        if let Some(store) = state.oci_store() {
+            crate::modules::oci::metrics::watch_store(
+                std::sync::Arc::downgrade(store),
+                state.config().paths.data_dir.clone(),
+            );
+        }
     }
     let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
@@ -184,6 +190,8 @@ async fn serve_registry_mode(
     let public_state = state.clone();
     #[cfg(feature = "oci")]
     let public_state_drain = state.config().server.graceful_shutdown_secs;
+    #[cfg(feature = "oci")]
+    let public_state_limit = state.clone();
     let public = async move {
         let shutdown = async move { public_state.wait_shutdown().await };
         #[cfg(feature = "oci")]
@@ -193,8 +201,36 @@ async fn serve_registry_mode(
         }
         #[cfg(not(feature = "oci"))]
         let _ = tls;
-        axum::serve(public_listener, public)
-            .with_graceful_shutdown(shutdown)
+        #[cfg(feature = "oci")]
+        let (limit_state, limit) = (
+            public_state_limit,
+            std::time::Duration::from_secs(public_state_drain),
+        );
+        let served = axum::serve(public_listener, public).with_graceful_shutdown(shutdown);
+        let served = std::future::IntoFuture::into_future(served);
+        // The drain is bounded as the TLS listener's is: open requests get
+        // `http.draintimeout`, then the process stops without them.
+        #[cfg(feature = "oci")]
+        {
+            tokio::pin!(served);
+            let deadline = async move {
+                limit_state.wait_shutdown().await;
+                tokio::time::sleep(limit).await;
+            };
+            tokio::select! {
+                result = &mut served => {
+                    return result.map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")));
+                }
+                () = deadline => {
+                    if !limit.is_zero() {
+                        tracing::warn!(seconds = limit.as_secs(), "requests still open after the drain; stopping without them");
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        #[cfg(not(feature = "oci"))]
+        served
             .await
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };

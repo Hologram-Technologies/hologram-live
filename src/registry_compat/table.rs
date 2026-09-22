@@ -82,7 +82,7 @@ table! {
     "http.prefix" => Refused(V11),
     "http.secret" => Ignored("upload state is kept by the server, not in the client's URL"),
     "http.relativeurls" => Refused(NOT_BUILT),
-    "http.draintimeout" => Refused(NOT_BUILT),
+    "http.draintimeout" => Supported,
     "http.tls.certificate" => Supported,
     "http.tls.key" => Supported,
     "http.tls.minimumtls" => Supported,

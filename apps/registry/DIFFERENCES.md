@@ -42,13 +42,18 @@ administration socket live under `<rootdirectory>/live/state/`, so a second cont
 start, where the reference would run beside it. A volume must hold a Unix socket and honour file locks; a local
 disk or a Docker named volume does. The debug listener (`http.debug.addr`, `:5001` in the default file)
 serves `/debug/health` (with `/down` and `/up`) and `/metrics`; `/debug/vars` and pprof are Go internals and answer
-404. `/metrics` holds the `registry_http_*` request metrics and `hologram_build_info`; the storage and upload gauges of
-the operations list are not there yet. When `http.debug.addr` is the registry's own port (the image's default file puts the debug listener on
+404. `/metrics` holds the `registry_http_*` request metrics and `hologram_build_info`, and ours beside them: bytes
+uploaded and served, digest mismatches, uploads open now, and, read once a minute, the registry's objects, the bytes
+under the blob root, the repositories, and the volume's free space (`hologram_disk_free_bytes`). When `http.debug.addr` is the registry's own port (the image's default file puts the debug listener on
 `:5001`, and the deployment guide moves the registry there with `REGISTRY_HTTP_ADDR=0.0.0.0:5001`), the debug
 listener is not started and the start logs why; the reference starts both and one of the two exits the process.
 While any health check fails, `/v2/` answers 503 `UNAVAILABLE`, as the reference's
 does: that is what `POST /debug/health/down` drains. The storage check writes, reads back and deletes a small file on
 the volume; the reference only stats its root, so a volume that has turned read-only shows here and not there.
+
+**Stopping.** `http.draintimeout` is read as the reference reads it: on `SIGTERM` open requests get that long, then
+the process stops without them; without it, the stop is immediate. Where the reference, with no drain set, is killed
+by the signal (exit 143), this registry stops cleanly and exits 0 either way.
 
 **TLS.** `http.tls.certificate` and `.key` are read as the reference reads them: a certificate file may hold the whole
 chain, and all of it is sent; the key may be PKCS#8, PKCS#1 or SEC1. HTTP/2 is offered. `minimumtls` takes `tls1.2`

@@ -16,7 +16,7 @@ pub mod error;
 mod listing;
 mod manifests;
 mod media;
-mod metrics;
+pub mod metrics;
 mod openapi;
 pub mod path;
 mod respond;

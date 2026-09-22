@@ -49,9 +49,11 @@ async fn append(
     frame: bytes::Bytes,
 ) -> Result<u64, OciError> {
     let (store, id) = (store.clone(), id.clone());
-    tokio::task::spawn_blocking(move || store.upload_append(&id, offset, &frame))
+    let total = tokio::task::spawn_blocking(move || store.upload_append(&id, offset, &frame))
         .await
         // A panic in the store is a 500, not a hung connection.
         .map_err(|error| OciError::internal(&error))?
-        .map_err(|error| OciError::from_store(error, Context::Upload))
+        .map_err(|error| OciError::from_store(error, Context::Upload))?;
+    super::metrics::uploaded(total.saturating_sub(offset));
+    Ok(total)
 }

@@ -108,7 +108,7 @@ impl DebugSettings {
 
 /// A Go duration as the reference's configuration writes one: `10s`, `500ms`,
 /// `1m30s`, or a bare number of nanoseconds.
-fn go_duration(text: &str) -> Option<Duration> {
+pub(crate) fn go_duration(text: &str) -> Option<Duration> {
     let text = text.trim();
     if let Ok(nanos) = text.parse::<u64>() {
         return Some(Duration::from_nanos(nanos));

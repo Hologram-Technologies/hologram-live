@@ -201,13 +201,42 @@ jobs:
             done
             cat "$RUNNER_TEMP/server.log"; exit 1
           done
+      - name: A second Hologram Registry on 5003, behind the gate's password file
+        env:
+          REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+        run: |
+          mkdir -p "$RUNNER_TEMP/login/config"
+          cat > "$RUNNER_TEMP/login/config/live.toml" <<EOF
+          schema_version = 2
+
+          [paths]
+          config_dir = "$RUNNER_TEMP/login/config"
+          data_dir = "$RUNNER_TEMP/login/data"
+          state_dir = "$RUNNER_TEMP/login/state"
+          cache_dir = "$RUNNER_TEMP/login/cache"
+
+          [server]
+          listen = "127.0.0.1:5003"
+
+          [modules]
+          enabled = ["dev.hologram.live.system", "dev.hologram.live.oci"]
+          EOF
+          export REGISTRY_AUTH_HTPASSWD_PATH="$PWD/apps/registry/gates/differential/fixtures/htpasswd"
+          ./target/debug/hologram --config "$RUNNER_TEMP/login/config/live.toml" serve > "$RUNNER_TEMP/login.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -s -o /dev/null "http://127.0.0.1:5003/v2/" && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/login.log"; exit 1
       - name: docker
         run: apps/registry/gates/clients/docker.sh
       - name: skopeo
         run: apps/registry/gates/clients/skopeo.sh
+      - name: docker login (auth.htpasswd, P6 T1)
+        run: apps/registry/gates/clients/login.sh
       - name: The server's log, when a client failed
         if: failure()
-        run: tail -n 80 "$RUNNER_TEMP/server.log"
+        run: tail -n 80 "$RUNNER_TEMP/server.log" "$RUNNER_TEMP/login.log"
 
   image:
     name: Image · the registry image, from outside (P5 T4)

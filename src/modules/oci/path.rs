@@ -70,6 +70,43 @@ pub enum Route {
     },
 }
 
+/// What a path asks for, read as the reference's router reads it: by shape,
+/// before any part of it is checked. The reference authorizes this before it
+/// checks the method, the digest or the upload id (`app.go`, `dispatcher`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Scope {
+    Base,
+    Catalog,
+    /// A repository route, with the name as written.
+    Repository(String),
+}
+
+impl Scope {
+    /// `rest` is the path after `/v2/`, already decoded. `None` for a path
+    /// with no route shape at all.
+    pub fn of(rest: &str) -> Option<Self> {
+        if rest.is_empty() {
+            return Some(Self::Base);
+        }
+        if rest == "_catalog" {
+            return Some(Self::Catalog);
+        }
+        let name = rest
+            .strip_suffix("/tags/list")
+            .or_else(|| rest.strip_suffix("/blobs/uploads/"))
+            .or_else(|| {
+                let (head, tail) = rest.rsplit_once('/')?;
+                if tail.is_empty() {
+                    return None;
+                }
+                ["/blobs/uploads", "/manifests", "/blobs", "/referrers"]
+                    .iter()
+                    .find_map(|keyword| head.strip_suffix(keyword))
+            })?;
+        (!name.is_empty()).then(|| Self::Repository(name.to_owned()))
+    }
+}
+
 // The reference's method handler lists them sorted.
 const ALLOW_GET: &str = "GET";
 const ALLOW_POST: &str = "POST";

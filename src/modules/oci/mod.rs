@@ -7,6 +7,7 @@
 //!
 //! No Kappa type is named here. Storage is `crate::oci_store`.
 
+pub mod auth;
 mod blobs;
 mod body;
 mod delete;
@@ -54,10 +55,55 @@ pub struct Registry {
     /// The server's audit log. The registry's writes go into it as the
     /// server's own writes do. `None` in tests that do not look at it.
     pub audit: Option<crate::audit::AuditLog>,
+    /// `auth.htpasswd`; `None` is an anonymous registry, as the reference
+    /// is with no `auth` section.
+    pub login: Option<Arc<auth::Htpasswd>>,
 }
 
-/// Who a registry write is recorded as, until the registry's own login lands.
-const PRINCIPAL: &str = "anonymous";
+/// Who a registry write is recorded as when no login is configured.
+const ANONYMOUS: &str = "anonymous";
+
+/// The login the module started with (see [`OciRegistryModule::start`]).
+static LOGIN: std::sync::OnceLock<Option<Arc<auth::Htpasswd>>> = std::sync::OnceLock::new();
+
+/// `auth.htpasswd.path` and `.realm`, from the registry configuration or else
+/// the reference's environment names. `Ok(None)`: no login configured.
+///
+/// # Errors
+///
+/// A login is asked for without its path or realm, as the reference refuses
+/// it, or the file cannot be created.
+pub fn login_from_settings() -> crate::error::Result<Option<auth::Htpasswd>> {
+    let (asked, path, realm) = if let Some(settings) = crate::registry_compat::installed() {
+        (
+            settings
+                .values
+                .keys()
+                .any(|key| key == "auth.htpasswd" || key.starts_with("auth.htpasswd.")),
+            settings.get("auth.htpasswd.path").map(str::to_owned),
+            settings.get("auth.htpasswd.realm").map(str::to_owned),
+        )
+    } else {
+        let path = std::env::var("REGISTRY_AUTH_HTPASSWD_PATH").ok();
+        let realm = std::env::var("REGISTRY_AUTH_HTPASSWD_REALM").ok();
+        let selector =
+            std::env::var("REGISTRY_AUTH").is_ok_and(|value| value.trim() == "htpasswd");
+        (selector || path.is_some() || realm.is_some(), path, realm)
+    };
+    if !asked {
+        return Ok(None);
+    }
+    let refuse = |what: &str| {
+        crate::error::LiveError::Config(format!(
+            "auth.htpasswd: \"{what}\" must be set for htpasswd access controller"
+        ))
+    };
+    let realm = realm.ok_or_else(|| refuse("realm"))?;
+    let path = path.ok_or_else(|| refuse("path"))?;
+    auth::Htpasswd::open(std::path::PathBuf::from(&path), realm)
+        .map(Some)
+        .map_err(|error| crate::error::LiveError::Config(format!("auth.htpasswd.path {path}: {error}")))
+}
 
 /// The reference's settings that change what a route answers. P5 reads them
 /// from `config.yml` too; the environment names are the reference's own.
@@ -128,6 +174,18 @@ impl LiveModule for OciRegistryModule {
         true
     }
 
+    /// Open the login before the listener binds: a login that cannot work
+    /// stops the start, as the reference's does.
+    fn start<'a>(&'a self, _context: &'a crate::module::ModuleContext) -> crate::module::ModuleStartFuture<'a> {
+        Box::pin(async {
+            if LOGIN.get().is_none() {
+                let login = login_from_settings()?.map(Arc::new);
+                let _ = LOGIN.set(login);
+            }
+            Ok(())
+        })
+    }
+
     /// Into the server's one document: `/openapi.json` and `/docs` exist already.
     fn openapi(&self) -> utoipa::openapi::OpenApi {
         openapi::document()
@@ -163,10 +221,16 @@ async fn dispatch(State(state): State<AppState>, request: Request) -> Response {
     match state.oci_store() {
         Some(store) => {
             static SETTINGS: std::sync::OnceLock<Settings> = std::sync::OnceLock::new();
+            // Set by the module's start. Unset would be a registry serving
+            // before it knows whether it has a login: fail closed.
+            let Some(login) = LOGIN.get() else {
+                return OciError::internal(&"the registry module was not started").into_response();
+            };
             let registry = Registry {
                 store: store.clone(),
                 settings: SETTINGS.get_or_init(Settings::current).clone(),
                 audit: Some(state.audit().clone()),
+                login: login.clone(),
             };
             handle(registry, request).await
         }
@@ -185,11 +249,35 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
     let configured = registry.settings.headers.clone();
     let audit = registry.audit.clone();
     let rest = head.uri.path().strip_prefix("/v2/").unwrap_or_default();
-    let route = path::decode(rest)
+    let decoded = path::decode(rest);
+    let route = decoded
+        .as_deref()
         .ok_or_else(OciError::unknown_route)
-        .and_then(|rest| path::parse(&head.method, &rest));
-    let (mut response, record) = match route {
-        Ok(route) => {
+        .and_then(|rest| path::parse(&head.method, rest));
+    // As the reference: whatever its router matches is authorized before
+    // anything else about it (method, digest, upload id). Only a path with
+    // no route, the plain 404, is answered without a login.
+    // A 405 carries no code either (the router's plain text), so the test is
+    // the status: only the plain 404 means no route matched.
+    let routed = match &route {
+        Ok(_) => true,
+        Err(error) => error.code().is_some() || error.status() != StatusCode::NOT_FOUND,
+    };
+    let scope = decoded.as_deref().and_then(path::Scope::of).filter(|_| routed);
+    let mut principal = ANONYMOUS.to_owned();
+    let denied = match (&registry.login, &scope) {
+        (Some(login), Some(scope)) => match login.authenticate(&head.headers).await {
+            Ok(user) => {
+                principal = user;
+                None
+            }
+            Err(denied) => Some(login.refuse(&denied, &head.method, scope, head.uri.query())),
+        },
+        _ => None,
+    };
+    let (mut response, record) = match (denied, route) {
+        (Some(refused), _) => (refused, None),
+        (None, Ok(route)) => {
             let audited = audited(&route);
             let result = serve(registry, route, &head, body).await;
             let outcome = match &result {
@@ -200,13 +288,13 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
             let record = audited.and_then(|audited| audited.resolve(&response, outcome));
             (response, record)
         }
-        Err(error) => (error.into_response(), None),
+        (None, Err(error)) => (error.into_response(), None),
     };
     if let (Some(audit), Some((operation, resource, outcome))) = (audit, record) {
         // Off the response path: the answer does not wait for the log's one
         // writer, and a client that goes away cannot drop the record of a
         // write that has already happened.
-        let event = crate::audit::AuditEvent::new(PRINCIPAL, operation, Some(resource), outcome);
+        let event = crate::audit::AuditEvent::new(&principal, operation, Some(resource), outcome);
         tokio::spawn(async move {
             if let Err(error) = audit.record(event).await {
                 tracing::error!(%error, "failed to record a registry audit event");

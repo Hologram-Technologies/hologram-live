@@ -153,6 +153,9 @@ struct Refusal {
     status: Option<StatusCode>,
     message: Cow<'static, str>,
     detail: Value,
+    /// Send `"detail": null` rather than leave it out, as the reference does
+    /// where Go encodes a nil slice (the login challenge on the base route).
+    null_detail: bool,
     headers: HeaderMap,
 }
 
@@ -163,6 +166,7 @@ impl OciError {
             status: None,
             message: Cow::Borrowed(code.default_message()),
             detail: Value::Null,
+            null_detail: false,
             headers: HeaderMap::new(),
         }))
     }
@@ -170,6 +174,14 @@ impl OciError {
     #[must_use]
     pub fn with_detail(mut self, detail: Value) -> Self {
         self.0.detail = detail;
+        self
+    }
+
+    /// As [`OciError::with_detail`], and a null detail is sent as `null`.
+    #[must_use]
+    pub fn with_detail_even_null(mut self, detail: Value) -> Self {
+        self.0.detail = detail;
+        self.0.null_detail = true;
         self
     }
 
@@ -194,6 +206,7 @@ impl OciError {
             status: None,
             message: Cow::Borrowed("404 page not found\n"),
             detail: Value::Null,
+            null_detail: false,
             headers: HeaderMap::new(),
         }))
     }
@@ -207,6 +220,7 @@ impl OciError {
             status: Some(StatusCode::METHOD_NOT_ALLOWED),
             message: Cow::Borrowed("Method not allowed\n"),
             detail: Value::Null,
+            null_detail: false,
             headers: HeaderMap::new(),
         }))
         .with_header(ALLOW, HeaderValue::from_static(allow))
@@ -310,6 +324,7 @@ impl IntoResponse for OciError {
             code,
             message,
             detail,
+            null_detail,
             headers,
             status: _,
         } = *self.0;
@@ -330,7 +345,7 @@ impl IntoResponse for OciError {
             Some(code) => {
                 let entry = |detail: Value| {
                     let mut entry = json!({ "code": code.as_str(), "message": message });
-                    if !detail.is_null() {
+                    if null_detail || !detail.is_null() {
                         entry["detail"] = detail;
                     }
                     entry

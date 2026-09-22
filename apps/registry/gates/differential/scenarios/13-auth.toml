@@ -1,0 +1,182 @@
+name = "13-auth"
+summary = "Login from a password file (auth.htpasswd): the challenge, what it names, good and bad logins, a push behind it."
+repo = "gate-b/auth"
+# REGISTRY_AUTH=htpasswd, realm "Registry Realm", fixtures/htpasswd: gate / gate-password,
+# and md5user in the MD5 form. Credentials: base64 of user:password.
+needs = ["auth"]
+
+[[step]]
+id = "base-no-login"
+method = "GET"
+path = "/v2/"
+expect_status = 401
+
+[[step]]
+id = "base-good"
+method = "GET"
+path = "/v2/"
+headers = { authorization = "Basic Z2F0ZTpnYXRlLXBhc3N3b3Jk" }
+expect_status = 200
+
+[[step]]
+id = "base-bad-password"
+method = "GET"
+path = "/v2/"
+headers = { authorization = "Basic Z2F0ZTp3cm9uZw==" }
+expect_status = 401
+
+[[step]]
+id = "base-unknown-user"
+method = "GET"
+path = "/v2/"
+headers = { authorization = "Basic bm9ib2R5OmdhdGUtcGFzc3dvcmQ=" }
+expect_status = 401
+
+[[step]]
+id = "base-md5-entry"
+method = "GET"
+path = "/v2/"
+headers = { authorization = "Basic bWQ1dXNlcjpnYXRlLXBhc3N3b3Jk" }
+expect_status = 401
+
+[[step]]
+id = "base-not-basic"
+method = "GET"
+path = "/v2/"
+headers = { authorization = "Bearer Z2F0ZTpnYXRlLXBhc3N3b3Jk" }
+expect_status = 401
+
+[[step]]
+id = "base-lowercase-scheme"
+method = "GET"
+path = "/v2/"
+headers = { authorization = "basic Z2F0ZTpnYXRlLXBhc3N3b3Jk" }
+
+[[step]]
+id = "catalog-no-login"
+method = "GET"
+path = "/v2/_catalog"
+expect_status = 401
+
+[[step]]
+id = "tags-no-login"
+method = "GET"
+path = "/v2/{repo}/tags/list"
+expect_status = 401
+
+[[step]]
+id = "manifest-no-login"
+method = "GET"
+path = "/v2/{repo}/manifests/v1"
+expect_status = 401
+
+[[step]]
+id = "blob-head-no-login"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=13:len=64}"
+expect_status = 401
+
+[[step]]
+id = "upload-no-login"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+expect_status = 401
+
+[[step]]
+id = "mount-no-login"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+query = { mount = "{sha256:seed=13:len=64}", from = "gate-b/auth-source" }
+expect_status = 401
+
+[[step]]
+id = "delete-no-login"
+method = "DELETE"
+path = "/v2/{repo}/manifests/{sha256:seed=13:len=64}"
+expect_status = 401
+
+[[step]]
+id = "options-no-login"
+method = "OPTIONS"
+path = "/v2/{repo}/manifests/v1"
+
+[[step]]
+id = "invalid-name-no-login"
+method = "GET"
+path = "/v2/Gate-B/Upper/manifests/v1"
+
+[[step]]
+id = "manifest-good"
+method = "GET"
+path = "/v2/{repo}/manifests/v1"
+headers = { authorization = "Basic Z2F0ZTpnYXRlLXBhc3N3b3Jk" }
+expect_status = 404
+
+[[step]]
+id = "upload-good"
+method = "POST"
+path = "/v2/{repo}/blobs/uploads/"
+headers = { authorization = "Basic Z2F0ZTpnYXRlLXBhc3N3b3Jk" }
+capture = { upload = "header:location" }
+expect_status = 202
+
+[[step]]
+id = "upload-put-no-login"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream" }
+query = { digest = "{sha256:seed=13:len=64}" }
+body = 'bytes:seed=13:len=64'
+expect_status = 401
+
+[[step]]
+id = "upload-put-good"
+method = "PUT"
+url = "{upload}"
+headers = { "content-type" = "application/octet-stream", authorization = "Basic Z2F0ZTpnYXRlLXBhc3N3b3Jk" }
+query = { digest = "{sha256:seed=13:len=64}" }
+body = 'bytes:seed=13:len=64'
+expect_status = 201
+
+[[step]]
+id = "blob-head-good"
+method = "HEAD"
+path = "/v2/{repo}/blobs/{sha256:seed=13:len=64}"
+headers = { authorization = "Basic Z2F0ZTpnYXRlLXBhc3N3b3Jk" }
+expect_status = 200
+
+[[step]]
+id = "wrong-method-no-login"
+method = "PATCH"
+path = "/v2/{repo}/manifests/v1"
+
+[[step]]
+id = "upload-empty-id-no-login"
+method = "GET"
+path = "/v2/{repo}/blobs/uploads/"
+
+[[step]]
+id = "upload-bad-id-no-login"
+method = "GET"
+path = "/v2/{repo}/blobs/uploads/not-an-id"
+
+[[step]]
+id = "bad-digest-no-login"
+method = "GET"
+path = "/v2/{repo}/blobs/sha256:abc"
+
+[[step]]
+id = "catalog-post-no-login"
+method = "POST"
+path = "/v2/_catalog"
+
+[[step]]
+id = "catalog-options-no-login"
+method = "OPTIONS"
+path = "/v2/_catalog"
+
+[[step]]
+id = "options-from-no-login"
+method = "OPTIONS"
+path = "/v2/{repo}/blobs/uploads/"
+query = { from = "gate-b/auth-source" }

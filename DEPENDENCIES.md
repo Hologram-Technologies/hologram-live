@@ -44,6 +44,9 @@ of the copy and its carried patches.
 | `kappa-store-redb` (vendored beside it) | the store: blob files on disk, an index in one redb file |
 | `redb` | `links.redb`, the registry's own database: repository links, referrers, aliases, upload records (ADR 027) |
 | `yaml-rust2` | reads the reference registry's `config.yml` into a flat key table (`src/registry_compat`). Chosen by three checks: a release in the last six months (0.13.0, September 2026), no `-sys` crate, and it parses the reference image's own default file. Rejected: `serde_norway` and `serde_yaml_ng` (no release in six months), `serde-saphyr` (typed deserialisation, which a key table does not need) |
+| `bcrypt` | checks and writes `auth.htpasswd` entries (`src/modules/oci/auth.rs`), as the reference's `golang.org/x/crypto/bcrypt` does. Pure Rust (`blowfish`, `cipher`, `inout` come with it, no `-sys` crate); reads `$2y$`, what `htpasswd -B` writes, and `$2a$`, `$2b$` |
+| `getrandom` | the random password of a provisioned password file, and the per-process key of the login cache. Already in the graph through `bcrypt` |
+| `base64` | HTTP Basic credentials, and the provisioned password in the reference's URL-safe form. Already in the graph through `bcrypt` |
 
 The Kappa Registry provider (ADR 021) still speaks to an external `kappa-server` over HTTP with `reqwest`; it uses none
 of these crates. With `oci` on, the build gains two bundled C libraries (`lzma-sys`, `bzip2-sys`) through `kappa-core`.

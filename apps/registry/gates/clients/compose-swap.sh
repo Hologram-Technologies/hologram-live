@@ -85,11 +85,24 @@ docker compose -f "$compose" -p swap up -d > /dev/null 2>&1
 serving=1
 for _ in $(seq 1 60); do
   # The self-signed test certificate is trusted through certs.d by the
-  # docker daemon; curl here only waits, so it does not verify.
-  curl -kfsS "https://127.0.0.1:5000/v2/" > /dev/null 2>&1 && { serving=0; break; }
+  # docker daemon; curl here only waits. The registry behind the guide's
+  # file answers 401 until login: any HTTP status is a serving registry,
+  # 000 is no answer.
+  code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "https://127.0.0.1:5000/v2/" 2>/dev/null || printf 000)
+  [ "$code" != "000" ] && { serving=0; break; }
   sleep 1
 done
-[ "$serving" = 0 ] || { docker compose -f "$compose" -p swap logs 2>&1 | tail -n 20 >&2; fail "the TLS compose file never answered /v2/ over HTTPS"; }
+if [ "$serving" != 0 ]; then
+  printf 'diagnostics: the TLS compose file never answered /v2/ over HTTPS\n' >&2
+  printf '--- curl, verbose, h2 (the default curl offers) ---\n'
+  curl -kv --max-time 5 "https://127.0.0.1:5000/v2/" 2>&1 | tail -n 25 >&2 || true
+  printf '--- curl, forced HTTP/1.1 ---\n'
+  curl -k --http1.1 -v --max-time 5 "https://127.0.0.1:5000/v2/" 2>&1 | tail -n 25 >&2 || true
+  printf '--- openssl, the raw handshake ---\n'
+  openssl s_client -connect 127.0.0.1:5000 -servername localhost </dev/null 2>&1 | head -n 25 >&2 || true
+  docker compose -f "$compose" -p swap logs 2>&1 | tail -n 20 >&2
+  fail "the TLS compose file never answered /v2/ over HTTPS"
+fi
 # While it is up: nothing may answer over plain HTTP.
 if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then
   docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true

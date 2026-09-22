@@ -70,6 +70,21 @@ pub enum Route {
     },
 }
 
+impl Route {
+    /// The repository the route acts on, if any.
+    pub fn repo(&self) -> Option<&RepoName> {
+        match self {
+            Self::TagsList { repo }
+            | Self::Manifest { repo, .. }
+            | Self::Blob { repo, .. }
+            | Self::UploadStart { repo }
+            | Self::Upload { repo, .. }
+            | Self::Referrers { repo, .. } => Some(repo),
+            Self::Base | Self::Catalog | Self::Options { .. } => None,
+        }
+    }
+}
+
 // The reference's method handler lists them sorted.
 const ALLOW_GET: &str = "GET";
 const ALLOW_POST: &str = "POST";

@@ -61,6 +61,8 @@ jobs:
         run: cargo test --locked --features oci --bin hologram -- registry_argv
       - name: Registry over HTTP, through the handler and through the binary
         run: cargo test --locked --features oci --test oci_http
+      - name: Login from a password file (auth.htpasswd)
+        run: cargo test --locked --features oci --test oci_login
       - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)
         if: runner.os == 'Linux'
         run: cargo test --release --locked --features oci --test oci_store -- --ignored --nocapture two_gib

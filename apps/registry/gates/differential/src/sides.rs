@@ -57,13 +57,27 @@ enum Kind {
     External,
 }
 
+/// The gate's password file (`fixtures/htpasswd`): `gate` / `gate-password`
+/// in bcrypt, and `md5user` in the MD5 form the reference does not accept.
+const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures");
+const REALM: &str = "Registry Realm";
+
 /// The reference's own environment names; the product reads the same ones.
-fn environment(needs: &[String]) -> Result<Vec<(&'static str, &'static str)>, String> {
+/// `container` is true for an image, which sees the fixtures at `/auth`.
+fn environment(needs: &[String], container: bool) -> Result<Vec<(String, String)>, String> {
     let mut out = Vec::new();
+    let mut set = |name: &str, value: &str| out.push((name.to_owned(), value.to_owned()));
     for need in needs {
         match need.as_str() {
-            "delete" => out.push(("REGISTRY_STORAGE_DELETE_ENABLED", "true")),
-            "readonly" => out.push(("REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED", "true")),
+            "delete" => set("REGISTRY_STORAGE_DELETE_ENABLED", "true"),
+            "readonly" => set("REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED", "true"),
+            // As the deployment guide sets it up.
+            "auth" => {
+                let file = if container { "/auth/htpasswd".to_owned() } else { format!("{FIXTURES}/htpasswd") };
+                set("REGISTRY_AUTH", "htpasswd");
+                set("REGISTRY_AUTH_HTPASSWD_REALM", REALM);
+                set("REGISTRY_AUTH_HTPASSWD_PATH", &file);
+            }
             other => return Err(format!("no settings variant for need {other:?} yet")),
         }
     }
@@ -71,12 +85,15 @@ fn environment(needs: &[String]) -> Result<Vec<(&'static str, &'static str)>, St
 }
 
 pub fn start(target: &Target, needs: &[String]) -> Result<Running, String> {
-    let environment = environment(needs)?;
     let running = match target {
         Target::Url(base) => Running { base: base.clone(), kind: Kind::External },
         Target::Image(image) => {
+            let environment = environment(needs, true)?;
             let mut command = Command::new("docker");
             command.args(["run", "-d", "--rm", "-p", "127.0.0.1::5000", "--tmpfs", "/var/lib/registry"]);
+            if needs.iter().any(|need| need == "auth") {
+                command.args(["-v", &format!("{FIXTURES}:/auth:ro")]);
+            }
             for (name, value) in &environment {
                 command.args(["-e", &format!("{name}={value}")]);
             }
@@ -86,6 +103,7 @@ pub fn start(target: &Target, needs: &[String]) -> Result<Running, String> {
             Running { base: format!("http://127.0.0.1:{port}"), kind: Kind::Container(id) }
         }
         Target::Binary(binary) => {
+            let environment = environment(needs, false)?;
             static COUNTER: AtomicU32 = AtomicU32::new(0);
             let root = std::env::temp_dir().join(format!("gate-b-{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed)));
             std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
@@ -103,7 +121,7 @@ pub fn start(target: &Target, needs: &[String]) -> Result<Running, String> {
                 .arg("--config")
                 .arg(&path)
                 .arg("serve")
-                .envs(environment.iter().copied())
+                .envs(environment.iter().map(|(name, value)| (name.as_str(), value.as_str())))
                 .env("HOME", &root)
                 .env("USERPROFILE", &root)
                 .env("HOLOGRAM_CONFIG_DIR", root.join("config"))

@@ -185,11 +185,15 @@ fn env_key(name: &str, value: &str) -> Result<Option<String>> {
     // Type selectors, as the deployment guide sets them.
     match rest {
         "AUTH" => {
-            return Err(LiveError::Config(match value.trim() {
-                // The selector alone must not start a registry with no login.
-                "htpasswd" => format!("REGISTRY_AUTH=htpasswd: login {}", table::NOT_BUILT),
-                other => format!("REGISTRY_AUTH={other}: only htpasswd is supported"),
-            }));
+            return match value.trim() {
+                // Recorded as the section itself: the selector alone asks for a
+                // login, and the start refuses it without a path and a realm,
+                // as the reference does.
+                "htpasswd" => Ok(Some("auth.htpasswd".to_owned())),
+                other => Err(LiveError::Config(format!(
+                    "REGISTRY_AUTH={other}: only htpasswd is supported"
+                ))),
+            };
         }
         "STORAGE" => {
             return match value.trim() {
@@ -511,11 +515,6 @@ health:
                 "http.tls.certificate",
             ),
             (
-                "REGISTRY_AUTH_HTPASSWD_PATH",
-                "/auth/htpasswd",
-                "auth.htpasswd.path",
-            ),
-            (
                 "REGISTRY_PROXY_REMOTEURL",
                 "https://registry-1.docker.io",
                 "proxy.remoteurl",
@@ -570,8 +569,11 @@ health:
             (tracing.filter.as_str(), tracing.format.as_str()),
             ("warn", "compact")
         );
-        // the selector alone would mean a registry with no login
-        assert!(load(None, env(&[("REGISTRY_AUTH", "htpasswd")])).is_err());
+        // the selector is the section: the module's start then asks for a
+        // path and a realm (modules::oci::login_from_settings)
+        let settings =
+            load(None, env(&[("REGISTRY_AUTH", "htpasswd")])).expect("the guide's selector");
+        assert_eq!(settings.get("auth.htpasswd"), Some("htpasswd"));
         // the reference's own file variable, and Kubernetes service links
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("config.yml");

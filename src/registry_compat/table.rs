@@ -68,7 +68,7 @@ table! {
     "storage.redirect" => Refused(V12),
     "storage.tag.concurrencylimit" => Ignored("tunes the reference's tag lookup"),
 
-    "auth.htpasswd" => Refused(NOT_BUILT),
+    "auth.htpasswd" => Supported,
     "auth.token" => Refused(V11),
     "auth.silly" => Refused("is for tests only"),
 

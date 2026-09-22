@@ -161,7 +161,28 @@ printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > 
 tag="127.0.0.1:5000/swap/hello:v1"
 docker build -q -t "$tag" "$work" > /dev/null
 docker push -q "$tag" > /dev/null 2>"$work/push.err" \
-  || { cat "$work/push.err" >&2; docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker push through the TLS compose file"; }
+  || {
+    cat "$work/push.err" >&2
+    echo '--- the same push against a host-network container on 5008 ---' >&2
+    docker run -d --name swap-diag2 --network host \
+      -e REGISTRY_HTTP_ADDR=0.0.0.0:5008 \
+      -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
+      -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
+      -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+      -e REGISTRY_AUTH_HTPASSWD_REALM="Registry Realm" \
+      -e REGISTRY_LOG_LEVEL=debug \
+      -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
+      "$image" > /dev/null 2>&1 || true
+    sleep 2
+    printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5008 > /dev/null 2>&1 || true
+    tag8="127.0.0.1:5008/swap/hello:v1"
+    docker build -q -t "$tag8" "$work" > /dev/null 2>&1 || true
+    docker push -q "$tag8" 2>&1 | head -n 3 >&2 || true
+    docker logs swap-diag2 2>&1 | tail -n 25 >&2
+    docker rm -f swap-diag2 > /dev/null 2>&1 || true
+    docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
+    fail "docker push through the TLS compose file"
+  }
 pushed=$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")
 docker image rm "$tag" > /dev/null
 docker pull -q "$tag" > /dev/null || fail "docker pull through the TLS compose file"

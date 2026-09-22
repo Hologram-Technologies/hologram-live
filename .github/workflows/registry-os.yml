@@ -11,6 +11,7 @@ on:
       - "src/modules/oci/**"
       - "src/registry_compat/**"
       - "src/admin_socket.rs"
+      - "src/tls.rs"
       - "src/server.rs"
       - "src/config.rs"
       - "src/app.rs"
@@ -63,6 +64,8 @@ jobs:
         run: cargo test --locked --features oci --test oci_http
       - name: Login from a password file (auth.htpasswd)
         run: cargo test --locked --features oci --test oci_login
+      - name: TLS on the listener (http.tls)
+        run: cargo test --locked --features oci --test oci_tls
       - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)
         if: runner.os == 'Linux'
         run: cargo test --release --locked --features oci --test oci_store -- --ignored --nocapture two_gib

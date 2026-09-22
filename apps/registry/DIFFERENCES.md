@@ -43,6 +43,13 @@ start, where the reference would run beside it. A volume must hold a Unix socket
 disk or a Docker named volume does. The debug listener (`http.debug.addr`, `:5001` in the default file)
 and `health.storagedriver` are accepted and not in effect yet; the start logs each.
 
+**TLS.** `http.tls.certificate` and `.key` are read as the reference reads them: a certificate file may hold the whole
+chain, and all of it is sent; the key may be PKCS#8, PKCS#1 or SEC1. HTTP/2 is offered. `minimumtls` takes `tls1.2`
+(the default) and `tls1.3`; `tls1.0` and `tls1.1` stop the start by name, because this listener does not speak them.
+A key without a certificate stops the start, where the reference quietly serves plain HTTP. A certificate is read
+at start; replacing the files takes a restart (reload without one is planned). `letsencrypt`
+and client certificates (`clientcas`) are refused by name.
+
 ## The table the gate reads
 
 Keep its two markers and its seven columns. `*` in step, field, reference or product matches anything there; a row

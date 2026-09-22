@@ -76,6 +76,16 @@ where
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(routers.open);
 
+    // A certificate that cannot be read stops the start before anything binds.
+    #[cfg(feature = "oci")]
+    let tls: PublicTls = state
+        .config()
+        .tls
+        .as_ref()
+        .map(crate::tls::acceptor)
+        .transpose()?;
+    #[cfg(not(feature = "oci"))]
+    let tls: PublicTls = None;
     // Registry mode binds its socket first: once the public port accepts,
     // administration is up and owner-only.
     let admin_listener = if registry_mode {
@@ -96,7 +106,7 @@ where
         let served = match listener.and_then(|listener| on_ready().map(|()| listener)) {
             Ok(listener) => {
                 tracing::info!(listen = %state.config().server.listen, "hologram registry ready");
-                serve_registry_mode(&state, (listener, public), (admin_listener, admin)).await
+                serve_registry_mode(&state, (listener, public, tls), (admin_listener, admin)).await
             }
             Err(error) => Err(error),
         };
@@ -123,20 +133,33 @@ where
     }
 }
 
+/// The public listener's TLS, when `http.tls` is set.
+#[cfg(feature = "oci")]
+type PublicTls = Option<tokio_rustls::TlsAcceptor>;
+#[cfg(not(feature = "oci"))]
+type PublicTls = Option<std::convert::Infallible>;
+
 /// Both listeners of registry mode, drained by the one shutdown signal. Either
 /// failing ends the process with its error.
 async fn serve_registry_mode(
     state: &AppState,
-    (public_listener, public): (tokio::net::TcpListener, Router),
+    (public_listener, public, tls): (tokio::net::TcpListener, Router, PublicTls),
     (admin_listener, admin): (admin::Listener, Router),
 ) -> Result<()> {
-    use std::future::IntoFuture;
     let public_state = state.clone();
-    let public = axum::serve(public_listener, public)
-        .with_graceful_shutdown(async move { public_state.wait_shutdown().await })
-        .into_future();
+    #[cfg(feature = "oci")]
+    let public_state_drain = state.config().server.graceful_shutdown_secs;
     let public = async move {
-        public
+        let shutdown = async move { public_state.wait_shutdown().await };
+        #[cfg(feature = "oci")]
+        if let Some(acceptor) = tls {
+            let drain = std::time::Duration::from_secs(public_state_drain);
+            return crate::tls::serve(public_listener, acceptor, public, shutdown, drain).await;
+        }
+        #[cfg(not(feature = "oci"))]
+        let _ = tls;
+        axum::serve(public_listener, public)
+            .with_graceful_shutdown(shutdown)
             .await
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };

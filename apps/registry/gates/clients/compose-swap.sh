@@ -74,7 +74,12 @@ sudo systemctl restart docker
 for _ in $(seq 1 30); do docker info > /dev/null 2>&1 && break; sleep 1; done
 docker info > /dev/null 2>&1 || fail "the docker daemon did not come back"
 # A certificate the way the guide's operator has one: a test CA signs a
-# server certificate, and the daemon trusts the CA through certs.d.
+# server certificate, and the daemon trusts the CA through certs.d. The
+# name the daemon uses is registry.local - a DNS name, not 127.0.0.1:
+# docker treats a loopback registry as insecure, retries it over plain
+# HTTP, and dockerd 28's push pipeline degrades to http:// - the same
+# TLS-only port that refuses it. An operator's registry has a name in
+# its certificate; the test borrows that shape.
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -keyout "$work/path/ca.key" -out "$work/path/ca.crt" \
   -days 2 -nodes -subj "//CN=registry-test-ca" \
@@ -82,24 +87,24 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   || fail "openssl could not make the test CA"
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -keyout "$work/path/certs/domain.key" -out "$work/path/domain.csr" \
-  -nodes -subj "//CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" > /dev/null 2>&1 \
+  -nodes -subj "//CN=registry.local" \
+  -addext "subjectAltName=DNS:registry.local,DNS:localhost,IP:127.0.0.1" > /dev/null 2>&1 \
   || fail "openssl could not make the test key"
 openssl x509 -req -in "$work/path/domain.csr" \
   -CA "$work/path/ca.crt" -CAkey "$work/path/ca.key" -CAcreateserial \
   -days 2 -out "$work/path/certs/domain.crt" \
-  -extfile <(printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\n') > /dev/null 2>&1 \
+  -extfile <(printf 'subjectAltName=DNS:registry.local,DNS:localhost,IP:127.0.0.1\n') > /dev/null 2>&1 \
   || fail "openssl could not sign the test certificate"
-# The guide's operator has a CA the daemon trusts; the test's self-signed
-# certificate is trusted the one way docker supports: certs.d.
-sudo mkdir -p /etc/docker/certs.d/127.0.0.1:5000
-sudo cp "$work/path/ca.crt" /etc/docker/certs.d/127.0.0.1:5000/ca.crt
+echo "127.0.0.1 registry.local" | sudo tee -a /etc/hosts > /dev/null
+# The daemon trusts the test CA the one way docker supports: certs.d.
+sudo mkdir -p /etc/docker/certs.d/registry.local:5000
+sudo cp "$work/path/ca.crt" /etc/docker/certs.d/registry.local:5000/ca.crt
 cp "$here/../differential/fixtures/htpasswd" "$work/path/auth/htpasswd"
 sed -e "s|image: registry:3|image: $image|" -e "s|/path/|$work/path/|" "$here/../compose/deploying-tls-htpasswd.yml" > "$compose"
 extra=$(diff <(grep -v '^#' "$here/../compose/deploying-tls-htpasswd.yml") <(grep -v '^#' "$compose") \
   | grep '^[<>]' | grep -vE 'image:|/path/|'"$work" || true)
 [ -z "$extra" ] || fail "compose-swap changed more than the image and /path: $extra"
-cleanup() { sudo rm -rf /etc/docker/certs.d/127.0.0.1:5000; }
+cleanup() { sudo sed -i '/registry\.local/d' /etc/hosts; sudo rm -rf /etc/docker/certs.d/registry.local:5000; }
 trap cleanup EXIT
 started=$(date +%s)
 docker compose -f "$compose" -p swap up -d > /dev/null 2>&1
@@ -132,7 +137,7 @@ if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then
   fail "the TLS compose file answered over plain HTTP"
 fi
 # The login and the round trip, through the TLS port, within SC-001's 300 s.
-printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > /dev/null 2>"$work/login.err" \
+printf 'gate-password' | docker login -u gate --password-stdin registry.local:5000 > /dev/null 2>"$work/login.err" \
   || {
     cat "$work/login.err" >&2
     echo '--- the docker daemon on the HTTPS attempt ---' >&2
@@ -148,8 +153,8 @@ printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > 
       -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
       "$image" > /dev/null 2>&1 || true
     sleep 2
-    curl -k -s -o /dev/null -w 'curl over TLS on 5007: %{http_code}\n' "https://127.0.0.1:5007/v2/" 2>&1 | tail -n 1 >&2 || true
-    printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5007 2>&1 | head -n 3 >&2 || true
+    curl -k -s -o /dev/null -w 'curl over TLS on 5007: %{http_code}\n' "https://registry.local:5007/v2/" 2>&1 | tail -n 1 >&2 || true
+    printf 'gate-password' | docker login -u gate --password-stdin registry.local:5007 2>&1 | head -n 3 >&2 || true
     docker logs swap-diag 2>&1 | tail -n 30 >&2
     docker rm -f swap-diag > /dev/null 2>&1 || true
     echo '--- the compose registry itself, after the failed login ---' >&2
@@ -158,7 +163,7 @@ printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > 
     docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
     fail "docker login through TLS"
   }
-tag="127.0.0.1:5000/swap/hello:v1"
+tag="registry.local:5000/swap/hello:v1"
 docker build -q -t "$tag" "$work" > /dev/null
 docker push -q "$tag" > /dev/null 2>"$work/push.err" \
   || {
@@ -174,8 +179,8 @@ docker push -q "$tag" > /dev/null 2>"$work/push.err" \
       -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
       "$image" > /dev/null 2>&1 || true
     sleep 2
-    printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5008 > /dev/null 2>&1 || true
-    tag8="127.0.0.1:5008/swap/hello:v1"
+    printf 'gate-password' | docker login -u gate --password-stdin registry.local:5008 > /dev/null 2>&1 || true
+    tag8="registry.local:5008/swap/hello:v1"
     docker build -q -t "$tag8" "$work" > /dev/null 2>&1 || true
     docker push -q "$tag8" 2>&1 | head -n 3 >&2 || true
     docker logs swap-diag2 2>&1 | tail -n 25 >&2
@@ -187,7 +192,7 @@ pushed=$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")
 docker image rm "$tag" > /dev/null
 docker pull -q "$tag" > /dev/null || fail "docker pull through the TLS compose file"
 [ "$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")" = "$pushed" ] || fail "the digest pulled differs from the one pushed"
-docker logout 127.0.0.1:5000 > /dev/null
+docker logout registry.local:5000 > /dev/null
 docker image rm "$tag" > /dev/null
 took=$(( $(date +%s) - started ))
 [ "$took" -le 300 ] || fail "${took}s from start to a pushed image behind TLS, over 300 s"

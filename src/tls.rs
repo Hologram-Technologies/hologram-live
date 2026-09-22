@@ -484,8 +484,8 @@ mod tests {
             .to_vec()
     }
 
-    /// Checked against `openssl x509 -enddate`: GeneralizedTime after 2049,
-    /// UTCTime before.
+    /// Checked against `openssl x509 -enddate`: a `GeneralizedTime` after
+    /// 2049, a `UTCTime` before.
     #[test]
     fn not_after_is_read_from_both_time_forms() {
         assert_eq!(not_after(&end_entity("server.crt")), Some(4_943_677_792));
@@ -502,7 +502,7 @@ mod tests {
             key: fixture("renewed.key"),
             minimum: MinimumTls::Tls12,
         };
-        let error = load(&settings).err().expect("refused");
+        let error = load(&settings).expect_err("refused");
         assert!(error.to_string().contains("renewed.key"), "{error}");
     }
 }

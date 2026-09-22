@@ -991,9 +991,11 @@ listen = "127.0.0.1:4455"
     /// module, and no plugin, rides along.
     #[test]
     fn registry_mode_allows_a_public_anonymous_listener_and_nothing_else() {
-        let mut config = AppConfig::default();
+        let mut config = AppConfig {
+            registry_mode: true,
+            ..AppConfig::default()
+        };
         config.server.listen = "0.0.0.0:5000".to_owned();
-        config.registry_mode = true;
         config.modules.enabled = vec![
             "dev.hologram.live.system".to_owned(),
             "dev.hologram.live.oci".to_owned(),
@@ -1022,8 +1024,10 @@ listen = "127.0.0.1:4455"
     #[cfg(unix)]
     #[test]
     fn registry_mode_names_a_socket_path_that_is_too_long() {
-        let mut config = AppConfig::default();
-        config.registry_mode = true;
+        let mut config = AppConfig {
+            registry_mode: true,
+            ..AppConfig::default()
+        };
         config.modules.enabled = vec!["dev.hologram.live.system".to_owned()];
         config.paths.state_dir = PathBuf::from(format!("/{}", "d".repeat(100)));
         let error = config.validate().expect_err("sun_path is 108 bytes");

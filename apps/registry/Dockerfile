@@ -18,7 +18,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && ln /out/usr/local/bin/hologram /out/entrypoint.sh \
  && install -m 0644 apps/registry/config.yml /out/etc/distribution/config.yml
 
-# Root, as the reference: a volume the reference created opens unchanged.
+# Root, as the reference, so a volume's ownership is the same. The data inside
+# is not: a reference volume is imported, not opened (README, `oci import`).
 FROM gcr.io/distroless/cc-debian12
 COPY --from=build /out/ /
 ENV OTEL_TRACES_EXPORTER=none

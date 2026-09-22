@@ -45,7 +45,14 @@ published=$(docker port "$name")
   || fail "only 5000 is published, got: $published"
 docker exec "$name" hologram --version > /dev/null || fail "hologram is not on the path"
 if out=$(docker exec "$name" hologram oci verify 2>&1); then fail "oci verify should say it is not built yet"; fi
-printf '%s' "$out" | grep -q "not built yet" || fail "hologram oci verify: $out"
+grep -q "not built yet" <<<"$out" || fail "hologram oci verify: $out"
+# The other way operators reach the binary: /bin/registry, as in the reference.
+version=$(docker run --rm --entrypoint /bin/registry "$ours" --version) || fail "/bin/registry --version"
+grep -q "^registry " <<<"$version" || fail "/bin/registry --version: $version"
+if gc=$(docker run --rm "$ours" garbage-collect --dry-run /etc/distribution/config.yml 2>&1); then
+  fail "garbage-collect should say it is not built yet"
+fi
+grep -q "not built yet" <<<"$gc" || fail "garbage-collect through the entry point: $gc"
 echo "surface: /v2/ in public, the module API is not, only 5000 published, hologram on the path"
 
 dir=$(mktemp -d)

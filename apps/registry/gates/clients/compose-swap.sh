@@ -44,8 +44,7 @@ run() {
   printf 'guide: docker run %s\n' "$*"
   local started
   started=$(date +%s)
-  docker run "${@/#registry:3/$image}" > /dev/null
-  name=$(docker ps -lq)
+  name=$(docker run "${@/#registry:3/$image}")
   round_trip "$port" "$started"
   docker rm -f "$name" > /dev/null
 }
@@ -66,10 +65,17 @@ extra=$(diff <(grep -v '^#' "$here/../compose/deploying-tls-htpasswd.yml") <(gre
 [ -z "$extra" ] || fail "compose-swap changed more than the image and /path: $extra"
 docker compose -f "$compose" -p swap up -d > /dev/null 2>&1
 sleep 5
+# While it would be up: nothing may answer over plain HTTP.
+if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then
+  docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
+  fail "the TLS compose file came up over plain HTTP"
+fi
 logs=$(docker compose -f "$compose" -p swap logs 2>&1 || true)
 docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
-if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then fail "the TLS compose file came up over plain HTTP"; fi
-printf '%s' "$logs" | grep -q "not built yet" || { printf '%s\n' "$logs" | tail -n 20; fail "the TLS compose file did not refuse by name"; }
-printf '%s\n' "$logs" | grep -m1 "not built yet" | sed 's/^/  refused: /'
+# The refusal must name what this file needs and is not built: TLS (P6 T2),
+# or, until login lands (P6 T1), REGISTRY_AUTH, which is refused first.
+refused=$(grep -m1 -E 'http\.tls|REGISTRY_AUTH' <<<"$logs" || true)
+[ -n "$refused" ] && grep -q "not built yet" <<<"$refused" || { tail -n 20 <<<"$logs"; fail "the TLS compose file did not refuse by name"; }
+printf '  refused: %s\n' "$refused"
 echo "the guide's compose file: refused by name until P6 (TLS, htpasswd)"
 echo "compose swap: ok"

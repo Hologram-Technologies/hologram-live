@@ -234,9 +234,12 @@ async fn a_tls13_minimum_refuses_a_tls12_client() {
     let server = server(TlsVersion::Tls13).await;
     // A refused handshake is either an alert or the five-second timeout;
     // both are the same failure here.
-    let handshake = tokio::time::timeout(Duration::from_secs(5), connect(&server, TLS12_ONLY, None))
-        .await
-        .unwrap_or_else(|elapsed| Err(std::io::Error::new(std::io::ErrorKind::TimedOut, elapsed)));
+    let handshake =
+        tokio::time::timeout(Duration::from_secs(5), connect(&server, TLS12_ONLY, None))
+            .await
+            .unwrap_or_else(|elapsed| {
+                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, elapsed))
+            });
     assert!(
         handshake.is_err(),
         "a TLS 1.2 client connected to a TLS 1.3 minimum"

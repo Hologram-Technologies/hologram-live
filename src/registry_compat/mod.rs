@@ -469,6 +469,25 @@ health:
         assert_eq!(config.tracing.filter, "debug");
     }
 
+    /// The image's `config.yml` is the reference's key for key, but for the
+    /// one change DIFFERENCES.md lists (gate F item 2, in small).
+    #[test]
+    fn the_images_file_differs_from_the_references_only_in_log_level() {
+        let ours = load_text(include_str!("../../apps/registry/config.yml"), &[])
+            .expect("the image's file loads");
+        let reference = load_text(IMAGE_DEFAULT, &[]).expect("the reference's file");
+        let mut differs: Vec<&str> = ours
+            .values
+            .keys()
+            .chain(reference.values.keys())
+            .filter(|key| ours.get(key) != reference.get(key))
+            .map(String::as_str)
+            .collect();
+        differs.dedup();
+        assert_eq!(differs, ["log.level"]);
+        assert_eq!(ours.get("log.level"), Some("info"));
+    }
+
     #[test]
     fn the_environment_wins_over_the_file() {
         let settings = load_text(

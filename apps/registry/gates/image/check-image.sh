@@ -56,6 +56,19 @@ fi
 grep -q "not built yet" <<<"$gc" || fail "garbage-collect through the entry point: $gc"
 echo "surface: /v2/ in public, the module API is not, only 5000 published, hologram on the path"
 
+# The image's own default file turns on the debug listener (:5001) with
+# Prometheus and the storage check, as the reference's does. Published here
+# only to look at it; the reference does not publish it either.
+debug_name=gate-image-debug
+docker rm -f "$debug_name" > /dev/null 2>&1 || true
+docker run -d --name "$debug_name" -p 127.0.0.1:5004:5001 "$ours" > /dev/null
+for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:5004/debug/health > /dev/null 2>&1 && break; sleep 1; done
+health=$(curl -s http://127.0.0.1:5004/debug/health)
+[ "$health" = "{}" ] || { docker logs "$debug_name" | tail -n 20; fail "/debug/health: $health"; }
+curl -fsS http://127.0.0.1:5004/metrics | grep -q '^# TYPE registry_http_requests_total counter' || fail "/metrics"
+docker rm -f "$debug_name" > /dev/null
+echo "debug listener: /debug/health {} and /metrics on :5001, from the image's own file"
+
 dir=$(mktemp -d)
 printf 'gate image\n' > "$dir/hello.txt"
 printf 'FROM scratch\nCOPY hello.txt /hello.txt\n' > "$dir/Dockerfile"

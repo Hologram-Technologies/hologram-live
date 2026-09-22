@@ -41,7 +41,9 @@ registry's own commands (`serve`, `garbage-collect`, `--version`), where the ref
 administration socket live under `<rootdirectory>/live/state/`, so a second container on the same volume refuses to
 start, where the reference would run beside it. A volume must hold a Unix socket and honour file locks; a local
 disk or a Docker named volume does. The debug listener (`http.debug.addr`, `:5001` in the default file)
-and `health.storagedriver` are accepted and not in effect yet; the start logs each.
+serves `/debug/health` (with `/down` and `/up`) and `/metrics`; `/debug/vars` and pprof are Go internals and answer
+404. `/metrics` holds the `registry_http_*` request metrics and `hologram_build_info`; the storage and upload gauges of
+the operations list are not there yet.
 
 **TLS.** `http.tls.certificate` and `.key` are read as the reference reads them: a certificate file may hold the whole
 chain, and all of it is sent; the key may be PKCS#8, PKCS#1 or SEC1. HTTP/2 is offered. `minimumtls` takes `tls1.2`

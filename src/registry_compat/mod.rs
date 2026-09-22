@@ -488,11 +488,15 @@ health:
         let settings = load_text(IMAGE_DEFAULT, &[]).expect("the image's default file");
         assert_eq!(settings.get("http.addr"), Some(":5000"));
         assert_eq!(settings.flag("storage.delete.enabled"), Some(true));
-        assert!(settings.pending.iter().any(|key| key == "http.debug.addr"));
-        assert!(settings
+        // The debug listener and the storage check are built (FR-S09).
+        assert!(!settings
             .pending
             .iter()
-            .any(|key| key.starts_with("health.storagedriver")));
+            .any(|key| key.starts_with("http.debug")));
+        assert!(!settings
+            .pending
+            .iter()
+            .any(|key| key.starts_with("health.")));
         let mut config = AppConfig::default();
         apply(settings, &mut config);
         assert_eq!(config.server.listen, "0.0.0.0:5000");

@@ -161,11 +161,8 @@ impl OciStore {
             referrer
                 .as_ref()
                 .map(|(subject, descriptor)| (*subject, descriptor)),
+            newly_stored,
         )?;
-        // Only bytes this push stored are the registry's to sweep later.
-        if newly_stored {
-            self.object_note(&digest)?;
-        }
 
         // 3. The tag moves last, and only now.
         if let Reference::Tag(tag) = reference {

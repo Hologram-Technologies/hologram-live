@@ -737,29 +737,79 @@ fn an_image_kept_by_another_repository_keeps_its_links_and_signatures_here() {
     every_tag_pulls(&store, "b/second");
 }
 
-/// Collecting a blob pushed by blake3 frees its bytes: the sha256 name the
-/// store hard-linked to the same file goes too (review of #106, 4).
+/// A swept blob pushed by blake3 loses the name it was recorded under and is
+/// no longer served. The store's sha256 link to the same file stays: that
+/// path may have held one of the store's own records, so the registry never
+/// deletes by a second name (review of #106).
 #[test]
-fn a_swept_blake3_blob_frees_its_file() {
+fn a_swept_blake3_blob_is_removed_by_its_recorded_name() {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = open(dir.path());
     let bytes = b"an orphan pushed by blake3".to_vec();
     let id = store.upload_begin(&repo("a/b")).expect("begin");
     store.upload_append(&id, 0, &bytes).expect("append");
-    store
-        .upload_finish(&id, &Digest::from_blake3(&blake3::hash(&bytes)))
-        .expect("finish");
-    let before = files(&dir.path().join("kappa/blobs"));
-    let holding = |tree: &BTreeMap<String, Vec<u8>>| {
-        tree.values()
-            .filter(|content| content.as_slice() == bytes.as_slice())
-            .count()
-    };
-    assert!(holding(&before) >= 1);
+    let blake3 = Digest::from_blake3(&blake3::hash(&bytes));
+    store.upload_finish(&id, &blake3).expect("finish");
+    let (algorithm, hex) = blake3.as_str().split_once(':').expect("digest");
+    let path = dir
+        .path()
+        .join("kappa/blobs")
+        .join(algorithm)
+        .join(&hex[..2])
+        .join(&hex[2..4])
+        .join(hex);
+    assert!(path.exists());
     collect(&store, GcOptions::default());
-    assert_eq!(
-        holding(&files(&dir.path().join("kappa/blobs"))),
-        0,
-        "no name of the bytes is left"
+    assert!(!path.exists(), "the recorded name is gone");
+    assert!(
+        store.blob_stat(&repo("a/b"), &blake3).is_err(),
+        "and nothing serves it"
     );
+}
+
+/// The store keeps records of its own beside the blobs. Pushing one's exact
+/// bytes, by sha256 or by blake3, and leaving them in no manifest must never
+/// get the record swept (errata E12; review of #106).
+#[test]
+fn the_stores_own_records_survive_a_push_of_their_bytes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let layer = blob(&store, "a/b", b"a layer with records beside it");
+    manifest(&store, "a/b", Some("v1"), &[&layer], None);
+    let blobs = dir.path().join("kappa/blobs");
+    let records: Vec<(String, Vec<u8>)> = files(&blobs)
+        .into_iter()
+        .filter(|(_, content)| {
+            content.as_slice() != b"a layer with records beside it"
+                && !content.starts_with(b"{\"schemaVersion\"")
+        })
+        .collect();
+    assert!(!records.is_empty(), "the store wrote records of its own");
+    for (index, (_, content)) in records.iter().enumerate() {
+        // Half by sha256, half by blake3; none put in a manifest.
+        let id = store.upload_begin(&repo("x/pusher")).expect("begin");
+        store.upload_append(&id, 0, content).expect("append");
+        let claimed = if index % 2 == 0 {
+            Digest::sha256_of(content)
+        } else {
+            Digest::from_blake3(&blake3::hash(content))
+        };
+        store.upload_finish(&id, &claimed).expect("finish");
+    }
+    collect(
+        &store,
+        GcOptions {
+            dry_run: false,
+            delete_untagged: true,
+        },
+    );
+    let after = files(&blobs);
+    for (path, content) in &records {
+        assert_eq!(
+            after.get(path),
+            Some(content),
+            "the store's record {path} survives"
+        );
+    }
+    every_tag_pulls(&store, "a/b");
 }

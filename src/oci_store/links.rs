@@ -29,7 +29,8 @@ const ALIASES: TableDefinition<&str, &str> = TableDefinition::new("aliases");
 /// Upload session records, so a session survives a restart.
 const UPLOADS: TableDefinition<&str, &[u8]> = TableDefinition::new("uploads");
 /// `"layout"` → the layout version, cross-checked with the marker file;
-/// `"objects"` → 1 once `OBJECTS` has been backfilled from `LINKS`.
+/// `"objects"` → 1 once `OBJECTS` has been backfilled from `LINKS`, or from
+/// the start on a volume this binary created.
 const META: TableDefinition<&str, u64> = TableDefinition::new("meta");
 /// Every object the registry itself put in the store, by the digest it is
 /// stored under: 0 a blob, 1 a manifest. Garbage collection sweeps from this
@@ -153,6 +154,10 @@ pub(crate) fn create_tables(database: &redb::Database) -> Result<(), OciStoreErr
         let mut meta = txn.open_table(META).map_err(io)?;
         if meta.get("layout").map_err(io)?.is_none() {
             meta.insert("layout", 1).map_err(io)?;
+            // A new volume records each object as it is stored, so it has
+            // nothing to backfill. A backfill from links would take a link to
+            // one of the store's own records for the registry's (errata E12).
+            meta.insert("objects", 1).map_err(io)?;
         }
     }
     txn.commit().map_err(io)
@@ -435,6 +440,7 @@ impl OciStore {
         digest: &Digest,
         link: &Link,
         referrer: Option<(&Digest, &ReferrerDescriptor)>,
+        newly_stored: bool,
     ) -> Result<(), OciStoreError> {
         let referrer_row = referrer
             .map(|(subject, descriptor)| {
@@ -449,6 +455,14 @@ impl OciStore {
             links
                 .insert(link_key(repo, digest).as_str(), link.encode().as_slice())
                 .map_err(io)?;
+            // Bytes this push stored are the registry's to sweep; in the same
+            // transaction as the link, so a crash cannot leave one without the other.
+            if newly_stored {
+                txn.open_table(OBJECTS)
+                    .map_err(io)?
+                    .insert(digest.as_str(), 1)
+                    .map_err(io)?;
+            }
             if let Some((key, value)) = &referrer_row {
                 let mut referrers = txn.open_table(REFERRERS).map_err(io)?;
                 referrers
@@ -502,9 +516,10 @@ impl OciStore {
     }
 
     /// The end of an upload, in one transaction: the blob is linked into its
-    /// repository, its alias is recorded, and the session row goes. A crash
-    /// before this leaves an unlinked, unreachable blob that garbage
-    /// collection sweeps (`data-model.md`, crash table).
+    /// repository, its alias is recorded, its `OBJECTS` row is written if the
+    /// push stored it, and the session row goes. A crash before this leaves
+    /// stored bytes with no row: garbage collection never sees them, so they
+    /// leak (accepted; errata E15).
     pub(crate) fn commit_finished_upload(
         &self,
         id: &UploadId,
@@ -558,20 +573,6 @@ impl OciStore {
     /// # Errors
     ///
     /// `Io` when the database refuses.
-    /// Note a manifest the registry stored, when its bytes were new.
-    ///
-    /// # Errors
-    ///
-    /// `Io` when the database refuses.
-    pub(crate) fn object_note(&self, digest: &Digest) -> Result<(), OciStoreError> {
-        let txn = self.links.begin_write().map_err(io)?;
-        txn.open_table(OBJECTS)
-            .map_err(io)?
-            .insert(digest.as_str(), 1)
-            .map_err(io)?;
-        txn.commit().map_err(io)
-    }
-
     /// What [`OciStore::objects_backfill`] would add, without writing: every
     /// linked digest not yet recorded, when the backfill has not run.
     ///
@@ -629,6 +630,33 @@ impl OciStore {
         txn.commit().map_err(io)
     }
 
+    /// Make the volume look as an older binary left it: no `OBJECTS` rows
+    /// and no backfill flag. Tests only.
+    #[cfg(test)]
+    pub(crate) fn forget_the_object_table(&self) {
+        let txn = self.links.begin_write().expect("txn");
+        // `open` creates the table on every volume, an older one included:
+        // what an older binary leaves is an empty table and no flag.
+        txn.delete_table(OBJECTS).expect("drop");
+        txn.open_table(OBJECTS).expect("recreate");
+        txn.open_table(META)
+            .expect("meta")
+            .remove("objects")
+            .expect("flag");
+        txn.commit().expect("commit");
+    }
+
+    /// Whether the backfill has run on this volume. Tests only.
+    #[cfg(test)]
+    pub(crate) fn objects_backfilled(&self) -> bool {
+        let txn = self.links.begin_read().expect("txn");
+        txn.open_table(META)
+            .expect("meta")
+            .get("objects")
+            .expect("read")
+            .is_some()
+    }
+
     /// Every object the registry put in the store, and whether it is a manifest.
     ///
     /// # Errors
@@ -673,12 +701,22 @@ impl OciStore {
                 links.remove(key.as_str()).map_err(io)?;
             }
             let mut referrers = txn.open_table(REFERRERS).map_err(io)?;
+            let other = txn
+                .open_table(ALIASES)
+                .map_err(io)?
+                .get(digest.as_str())
+                .map_err(io)?
+                .map(|value| value.value().to_owned());
             let named: Vec<String> = referrers
                 .iter()
                 .map_err(io)?
                 .filter_map(std::result::Result::ok)
                 .map(|(key, _)| key.value().to_owned())
-                .filter(|key| key.split('\0').skip(1).any(|part| part == digest.as_str()))
+                .filter(|key| {
+                    key.split('\0')
+                        .skip(1)
+                        .any(|part| part == digest.as_str() || other.as_deref() == Some(part))
+                })
                 .collect();
             for key in &named {
                 referrers.remove(key.as_str()).map_err(io)?;
@@ -881,6 +919,7 @@ mod tests {
                     media_type: None,
                 },
                 Some((&subject, &descriptor(&signature))),
+                true,
             )
             .expect("commit");
         assert_eq!(store.referrers_of(&name, &subject).expect("list").len(), 1);

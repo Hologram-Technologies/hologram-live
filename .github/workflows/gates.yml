@@ -227,6 +227,8 @@ jobs:
           cache-to: type=gha,scope=registry-image,mode=max
       - name: Metadata, surface, push and pull, clean stop, restart
         run: apps/registry/gates/image/check-image.sh hologram-registry:ci
+      - name: The deployment guide, with only the image changed (P5 T5)
+        run: apps/registry/gates/clients/compose-swap.sh hologram-registry:ci
       - name: The image's size
         if: always()
         run: docker image ls hologram-registry:ci --format '{{.Size}}'

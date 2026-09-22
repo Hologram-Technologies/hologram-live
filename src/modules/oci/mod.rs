@@ -10,11 +10,13 @@
 pub mod auth;
 mod blobs;
 mod body;
+pub mod debug;
 mod delete;
 pub mod error;
 mod listing;
 mod manifests;
 mod media;
+mod metrics;
 mod openapi;
 pub mod path;
 mod respond;
@@ -254,6 +256,20 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
         .as_deref()
         .ok_or_else(OciError::unknown_route)
         .and_then(|rest| path::parse(&head.method, rest));
+    let in_flight = metrics::start(handler_name(route.as_ref().ok()), &head.method);
+    // While a health check fails, every request is 503 UNAVAILABLE, as the
+    // reference's health.Handler answers: that is what `/debug/health/down`
+    // drains.
+    if debug::failing() {
+        let mut response = OciError::new(ErrorCode::Unavailable)
+            .with_detail(serde_json::json!("health check failed: please see /debug/health"))
+            .into_response();
+        in_flight.done(response.status().as_u16());
+        for (name, value) in configured {
+            response.headers_mut().append(name, value);
+        }
+        return response;
+    }
     // As the reference: whatever its router matches is authorized before
     // anything else about it (method, digest, upload id). Only a path with
     // no route, the plain 404, is answered without a login.
@@ -302,6 +318,7 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
         });
     }
     absolute_location(&mut response, origin.as_deref());
+    in_flight.done(response.status().as_u16());
     // Last, so they are on errors and on `OPTIONS` too. A browser's preflight
     // carries no credentials: when login lands (P6) `OPTIONS` stays in front
     // of it, or no web UI on another origin can reach the registry.
@@ -309,6 +326,24 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
         response.headers_mut().append(name, value);
     }
     response
+}
+
+/// The route's name for `/metrics` (`contracts/registry-api.md`): never the
+/// raw path, so no repository name becomes a label value.
+fn handler_name(route: Option<&Route>) -> &'static str {
+    match route {
+        Some(Route::Base) => "base",
+        Some(Route::Catalog) => "catalog",
+        Some(Route::TagsList { .. }) => "tags",
+        Some(Route::Manifest { .. }) => "manifest",
+        Some(Route::Blob { .. }) => "blob",
+        // The reference's route names (`routes.go`), so its dashboards draw.
+        Some(Route::UploadStart { .. }) => "blob-upload",
+        Some(Route::Upload { .. }) => "blob-upload-chunk",
+        Some(Route::Referrers { .. }) => "referrers",
+        Some(Route::Options { .. }) => "options",
+        None => "none",
+    }
 }
 
 /// A write the audit log records: the operation, and what it acted on.

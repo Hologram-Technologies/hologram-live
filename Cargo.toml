@@ -131,6 +131,10 @@ name = "oci_verify"
 required-features = ["oci"]
 
 [[test]]
+name = "oci_debug"
+required-features = ["oci"]
+
+[[test]]
 name = "bdd"
 harness = false
 required-features = ["bdd"]

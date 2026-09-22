@@ -86,6 +86,15 @@ where
         .transpose()?;
     #[cfg(not(feature = "oci"))]
     let tls: PublicTls = None;
+    // The debug listener (`http.debug.addr`) before the public port, too.
+    #[cfg(feature = "oci")]
+    let debug: DebugListener = if registry_mode {
+        crate::modules::oci::debug::bind(&state.config().server.listen).await?
+    } else {
+        None
+    };
+    #[cfg(not(feature = "oci"))]
+    let debug: DebugListener = None;
     // Registry mode binds its socket first: once the public port accepts,
     // administration is up and owner-only.
     let admin_listener = if registry_mode {
@@ -98,6 +107,12 @@ where
         .map_err(|error| {
             LiveError::Transport(format!("bind {}: {error}", state.config().server.listen))
         });
+    // The volume's lock is held by now (the store opened when the state was
+    // built): the storage check may probe it.
+    #[cfg(feature = "oci")]
+    if registry_mode {
+        crate::modules::oci::debug::start_checks(&state.config().paths.state_dir);
+    }
     let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
         // the module API and gRPC, shutdown included, live on the socket.
@@ -106,7 +121,13 @@ where
         let served = match listener.and_then(|listener| on_ready().map(|()| listener)) {
             Ok(listener) => {
                 tracing::info!(listen = %state.config().server.listen, "hologram registry ready");
-                serve_registry_mode(&state, (listener, public, tls), (admin_listener, admin)).await
+                serve_registry_mode(
+                    &state,
+                    (listener, public, tls),
+                    (admin_listener, admin),
+                    debug,
+                )
+                .await
             }
             Err(error) => Err(error),
         };
@@ -133,6 +154,9 @@ where
     }
 }
 
+/// The debug listener and its routes, when `http.debug.addr` is set.
+type DebugListener = Option<(tokio::net::TcpListener, Router)>;
+
 /// The public listener's TLS, when `http.tls` is set.
 #[cfg(feature = "oci")]
 type PublicTls = Option<tokio_rustls::TlsAcceptor>;
@@ -145,7 +169,18 @@ async fn serve_registry_mode(
     state: &AppState,
     (public_listener, public, tls): (tokio::net::TcpListener, Router, PublicTls),
     (admin_listener, admin): (admin::Listener, Router),
+    debug: DebugListener,
 ) -> Result<()> {
+    let debug_state = state.clone();
+    let debug = async move {
+        let Some((listener, router)) = debug else {
+            return Ok(());
+        };
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async move { debug_state.wait_shutdown().await })
+            .await
+            .map_err(|error| LiveError::Transport(format!("serve the debug listener: {error}")))
+    };
     let public_state = state.clone();
     #[cfg(feature = "oci")]
     let public_state_drain = state.config().server.graceful_shutdown_secs;
@@ -164,7 +199,7 @@ async fn serve_registry_mode(
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };
     let admin = admin::serve(state.clone(), admin_listener, admin);
-    tokio::try_join!(public, admin).map(|_| ())
+    tokio::try_join!(public, admin, debug).map(|_| ())
 }
 
 /// Join the HTTP routes and the gRPC service into the one router the listener serves.

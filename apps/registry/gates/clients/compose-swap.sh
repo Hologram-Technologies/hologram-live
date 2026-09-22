@@ -129,7 +129,28 @@ if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then
 fi
 # The login and the round trip, through the TLS port, within SC-001's 300 s.
 printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > /dev/null 2>"$work/login.err" \
-  || { cat "$work/login.err" >&2; echo '--- the docker daemon on the HTTPS attempt ---' >&2; sudo journalctl -u docker --no-pager 2>/dev/null | tail -n 15 >&2 || true; docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker login through TLS"; }
+  || {
+    cat "$work/login.err" >&2
+    echo '--- the docker daemon on the HTTPS attempt ---' >&2
+    sudo journalctl -u docker --no-pager 2>/dev/null | tail -n 8 >&2 || true
+    echo '--- the same registry on 5007, debug logs, daemon against it ---' >&2
+    docker run -d --name swap-diag --network host \
+      -e REGISTRY_HTTP_ADDR=0.0.0.0:5007 \
+      -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
+      -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
+      -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+      -e REGISTRY_AUTH_HTPASSWD_REALM="Registry Realm" \
+      -e REGISTRY_LOG_LEVEL=debug \
+      -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
+      "$image" > /dev/null 2>&1 || true
+    sleep 2
+    curl -k -s -o /dev/null -w 'curl over TLS on 5007: %{http_code}\n' "https://127.0.0.1:5007/v2/" 2>&1 | tail -n 1 >&2 || true
+    printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5007 2>&1 | head -n 3 >&2 || true
+    docker logs swap-diag 2>&1 | tail -n 30 >&2
+    docker rm -f swap-diag > /dev/null 2>&1 || true
+    docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
+    fail "docker login through TLS"
+  }
 tag="127.0.0.1:5000/swap/hello:v1"
 docker build -q -t "$tag" "$work" > /dev/null
 docker push -q "$tag" > /dev/null 2>"$work/push.err" \

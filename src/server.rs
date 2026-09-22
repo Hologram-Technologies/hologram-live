@@ -201,41 +201,44 @@ async fn serve_registry_mode(
         }
         #[cfg(not(feature = "oci"))]
         let _ = tls;
+        let served = axum::serve(public_listener, public).with_graceful_shutdown(shutdown);
+        let served = std::future::IntoFuture::into_future(served);
         #[cfg(feature = "oci")]
-        let (limit_state, limit) = (
+        let served = bounded_drain(
+            served,
             public_state_limit,
             std::time::Duration::from_secs(public_state_drain),
         );
-        let served = axum::serve(public_listener, public).with_graceful_shutdown(shutdown);
-        let served = std::future::IntoFuture::into_future(served);
-        // The drain is bounded as the TLS listener's is: open requests get
-        // `http.draintimeout`, then the process stops without them.
-        #[cfg(feature = "oci")]
-        {
-            tokio::pin!(served);
-            let deadline = async move {
-                limit_state.wait_shutdown().await;
-                tokio::time::sleep(limit).await;
-            };
-            tokio::select! {
-                result = &mut served => {
-                    return result.map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")));
-                }
-                () = deadline => {
-                    if !limit.is_zero() {
-                        tracing::warn!(seconds = limit.as_secs(), "requests still open after the drain; stopping without them");
-                    }
-                    return Ok(());
-                }
-            }
-        }
-        #[cfg(not(feature = "oci"))]
         served
             .await
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };
     let admin = admin::serve(state.clone(), admin_listener, admin);
     tokio::try_join!(public, admin, debug).map(|_| ())
+}
+
+/// The plain listener's drain, bounded as the TLS listener's is: once the
+/// stop is asked for, open requests get `limit` (`http.draintimeout`), then
+/// the process stops without them.
+#[cfg(feature = "oci")]
+async fn bounded_drain(
+    served: impl std::future::Future<Output = std::io::Result<()>>,
+    state: AppState,
+    limit: std::time::Duration,
+) -> std::io::Result<()> {
+    let deadline = async move {
+        state.wait_shutdown().await;
+        tokio::time::sleep(limit).await;
+    };
+    tokio::select! {
+        result = served => result,
+        () = deadline => {
+            if !limit.is_zero() {
+                tracing::warn!(seconds = limit.as_secs(), "requests still open after the drain; stopping without them");
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Join the HTTP routes and the gRPC service into the one router the listener serves.

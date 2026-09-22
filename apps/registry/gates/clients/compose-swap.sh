@@ -61,8 +61,18 @@ echo "the guide's four docker run deployments: ok"
 # The compose file, as the guide intends since P6: the operator brings a
 # certificate and a password file, and only `image:` changes. The test
 # brings its own the same way.
+#
+# One wrinkle an operator does not have: the four plain deployments above
+# taught this daemon that 127.0.0.1:5000 speaks plain HTTP, and docker
+# keeps that verdict for a while - the login ping then goes straight to
+# http:// and meets a TLS listener that refuses it. A daemon restart
+# clears the memory, the way a machine that only ever ran TLS would see
+# the registry.
 compose="$work/docker-compose.yml"
 mkdir -p "$work/path/data" "$work/path/certs" "$work/path/auth"
+sudo systemctl restart docker
+for _ in $(seq 1 30); do docker info > /dev/null 2>&1 && break; sleep 1; done
+docker info > /dev/null 2>&1 || fail "the docker daemon did not come back"
 # A certificate the way the guide's operator has one: a test CA signs a
 # server certificate, and the daemon trusts the CA through certs.d.
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
@@ -83,7 +93,7 @@ openssl x509 -req -in "$work/path/domain.csr" \
 # The guide's operator has a CA the daemon trusts; the test's self-signed
 # certificate is trusted the one way docker supports: certs.d.
 sudo mkdir -p /etc/docker/certs.d/127.0.0.1:5000
-sudo cp "$work/path/certs/domain.crt" /etc/docker/certs.d/127.0.0.1:5000/ca.crt
+sudo cp "$work/path/ca.crt" /etc/docker/certs.d/127.0.0.1:5000/ca.crt
 cp "$here/../differential/fixtures/htpasswd" "$work/path/auth/htpasswd"
 sed -e "s|image: registry:3|image: $image|" -e "s|/path/|$work/path/|" "$here/../compose/deploying-tls-htpasswd.yml" > "$compose"
 extra=$(diff <(grep -v '^#' "$here/../compose/deploying-tls-htpasswd.yml") <(grep -v '^#' "$compose") \
@@ -104,10 +114,10 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 if [ "$serving" != 0 ]; then
-  printf 'diagnostics: the TLS compose file never answered /v2/ over HTTPS\n' >&2
-  printf '--- curl, verbose ---\n'
+  printf '%s\n' 'diagnostics: the TLS compose file never answered /v2/ over HTTPS' >&2
+  printf '%s\n' '--- curl, verbose ---' >&2
   curl -kv --max-time 5 "https://127.0.0.1:5000/v2/" 2>&1 | tail -n 25 >&2 || true
-  printf '--- openssl, the raw handshake ---\n'
+  printf '%s\n' '--- openssl, the raw handshake ---' >&2
   openssl s_client -connect 127.0.0.1:5000 -servername localhost </dev/null 2>&1 | head -n 25 >&2 || true
   docker compose -f "$compose" -p swap logs 2>&1 | tail -n 20 >&2
   fail "the TLS compose file never answered /v2/ over HTTPS"
@@ -119,7 +129,7 @@ if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then
 fi
 # The login and the round trip, through the TLS port, within SC-001's 300 s.
 printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > /dev/null 2>"$work/login.err" \
-  || { cat "$work/login.err" >&2; printf '--- the docker daemon on the HTTPS attempt ---\n'; sudo journalctl -u docker --no-pager 2>/dev/null | tail -n 15 >&2 || true; docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker login through TLS"; }
+  || { cat "$work/login.err" >&2; echo '--- the docker daemon on the HTTPS attempt ---' >&2; sudo journalctl -u docker --no-pager 2>/dev/null | tail -n 15 >&2 || true; docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker login through TLS"; }
 tag="127.0.0.1:5000/swap/hello:v1"
 docker build -q -t "$tag" "$work" > /dev/null
 docker push -q "$tag" > /dev/null 2>"$work/push.err" \

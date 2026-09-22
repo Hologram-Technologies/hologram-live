@@ -27,3 +27,21 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --release --locked --package hologram-live --bin hologram
       - run: ./scripts/smoke.sh ./target/release/hologram
+
+  llamacpp:
+    name: llama.cpp feature
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: clippy
+      - run: sudo apt-get update
+      - run: sudo apt-get install --yes clang cmake libclang-dev
+      # No weights are downloaded in CI. This exercises native compilation,
+      # backend initialization, feature-only configuration, and error paths;
+      # scripts/check-inference-engine.sh is the real-weight acceptance gate.
+      - run: cargo test --locked --package hologram-live --features llamacpp --lib inference::llamacpp::tests
+      - run: cargo test --locked --package hologram-live --features llamacpp --lib config::tests::llamacpp_requires_the_feature_and_a_model_source
+      - run: cargo clippy --locked --package hologram-live --features llamacpp --all-targets -- -D warnings

@@ -320,11 +320,9 @@ async fn dispatch_chat_completions(
 )]
 pub async fn list_models(State(state): State<AppState>) -> Result<Json<ModelList>, OpenAiError> {
     let catalog = state.models().clone();
-    let models = tokio::task::spawn_blocking(move || catalog.list())
+    let engine = state.chat().engine().clone();
+    let models = super::model_inventory::list(catalog, engine)
         .await
-        .map_err(|error| {
-            OpenAiError::server(&LiveError::Conflict(format!("join model listing: {error}")))
-        })?
         .map_err(OpenAiError::from)?;
     Ok(Json(model_list(models)))
 }

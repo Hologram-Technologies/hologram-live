@@ -5,6 +5,8 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use std::sync::Arc;
 
+mod model_inventory;
+
 /// Declares every trusted, statically linked module in one place.
 ///
 /// A module still owns its typed routes, lifecycle, and descriptor. Adding it

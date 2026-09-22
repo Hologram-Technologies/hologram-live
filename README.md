@@ -122,6 +122,15 @@ The default `echo` engine repeats the user message; it needs no model and no ext
 
 `llamacpp` loads a local GGUF model in-process and streams decoded pieces with exact token counts. Set `model_path` directly, or import a GGUF file and put its returned `blake3:...` id in `default_model`. It is off by default because it builds native C++ code and gives model execution the daemon's crash boundary. Build it with `cargo build --release --features llamacpp`; use `llamacpp-metal` or `llamacpp-cuda` for the corresponding GPU backend. These builds require CMake, Clang, and a C++ compiler.
 
+Run the live acceptance gate against real engines before releasing an inference build. It starts an isolated Hologram server and checks model discovery, buffered and native-streaming OpenAI/Ollama requests, usage, cancellation, and llama.cpp context overflow:
+
+```bash
+./scripts/check-inference-engine.sh llamacpp /models/tiny.gguf
+VLLM_ENDPOINT=http://127.0.0.1:8000 ./scripts/check-inference-engine.sh vllm org/model
+```
+
+`VLLM_API_KEY` is forwarded when set. Set `HOLOGRAM_BIN` to test an existing binary, or let the script build the required feature set.
+
 With `resident_sessions = true`, the weightc engine instead keeps a supervised `weightc enter --jsonl` process per conversation, so turns reuse the live KV context instead of replaying a transcript, and only the new message crosses the wire each turn. Sessions are LRU-capped by `max_resident_sessions`; a crashed session is reported as a typed error and lazily respawned (starting fresh context) on the next turn. This mode needs a weightc build with `enter --jsonl` support. Models are managed with:
 
 ```bash

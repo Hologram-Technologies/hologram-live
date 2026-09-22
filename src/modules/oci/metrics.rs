@@ -151,6 +151,7 @@ pub fn render() -> String {
             let _ = writeln!(out, "registry_http_request_duration_seconds_count{{{labels}}} {}", histogram.count);
         }
     });
+    out.push_str(&crate::tls::metrics_text());
     out
 }
 

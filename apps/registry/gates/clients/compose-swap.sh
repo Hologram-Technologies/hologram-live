@@ -113,6 +113,10 @@ for _ in $(seq 1 60); do
   [ "$code" != "000" ] && { serving=0; break; }
   sleep 1
 done
+state=$(docker compose -f "$compose" -p swap ps --format '{{.Name}} {{.State}}' 2>/dev/null || true)
+printf '  registry container: %s\n' "$state"
+logs_before_login=$(docker compose -f "$compose" -p swap logs --tail 5 2>/dev/null || true)
+printf '%s\n' "$logs_before_login" | tail -n 5
 if [ "$serving" != 0 ]; then
   printf '%s\n' 'diagnostics: the TLS compose file never answered /v2/ over HTTPS' >&2
   printf '%s\n' '--- curl, verbose ---' >&2
@@ -148,6 +152,9 @@ printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > 
     printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5007 2>&1 | head -n 3 >&2 || true
     docker logs swap-diag 2>&1 | tail -n 30 >&2
     docker rm -f swap-diag > /dev/null 2>&1 || true
+    echo '--- the compose registry itself, after the failed login ---' >&2
+    docker compose -f "$compose" -p swap ps -a --format '{{.Name}} {{.State}} restarts?{{.Health}}' 2>&1 | tail -n 5 >&2 || true
+    docker compose -f "$compose" -p swap logs --tail 30 registry 2>&1 | tail -n 30 >&2 || true
     docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
     fail "docker login through TLS"
   }

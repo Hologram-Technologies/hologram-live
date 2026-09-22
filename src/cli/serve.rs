@@ -162,7 +162,11 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
         declared.push(resolve_resident(&cli, &config, reference).await?);
     }
     let _guard = process::DaemonGuard::acquire(&config)?;
+    let registry_mode = config.registry_mode;
     let state = AppState::build(config, tracing.clone()).await?;
+    if registry_mode {
+        hologram_live::stop_signal::stop_on_signal(state.clone());
+    }
     // Load operator-declared resident applications before binding the
     // listener, so the daemon does not report ready until they are
     // invocable. Load time delays readiness probes; keep declarations

@@ -1,0 +1,31 @@
+# The image's default configuration: the reference image's own file
+# (distribution/distribution-library-image, config-example.yml, for v3.1.1),
+# key for key, with one change: log.level info, not debug (DIFFERENCES.md,
+# "The image"). Indentation kept as the reference writes it.
+version: 0.1
+log:
+  level: info
+  fields:
+    service: registry
+    environment: development
+storage:
+    delete:
+      enabled: true
+    cache:
+        blobdescriptor: inmemory
+    filesystem:
+        rootdirectory: /var/lib/registry
+    tag:
+      concurrencylimit: 5
+http:
+    addr: :5000
+    debug:
+        addr: :5001
+        prometheus:
+            enabled: true
+            path: /metrics
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3

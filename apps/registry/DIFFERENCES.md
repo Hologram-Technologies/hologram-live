@@ -32,6 +32,14 @@ not Go's.
 reference rewrites it to the blob's `sha256:` digest and serves it only by that. This one is a debt, not a choice: it
 is to be fixed before 1.0.0, and then its rows go.
 
+**The image.** Entry point, command, port, volume and `OTEL_TRACES_EXPORTER=none` equal the reference image's, and
+its default `/etc/distribution/config.yml` is the reference's key for key, with one change: `log.level` is `info`,
+not `debug`, because debug logging is a development setting. Set `REGISTRY_LOG_LEVEL=debug` for the reference's
+behaviour. The image has no shell: `docker exec <c> sh` fails, and `docker run <image> <command>` runs only the
+registry's own commands (`serve`, `garbage-collect`, `--version`), where the reference's entry point runs anything.
+`hologram` is on the path for operator commands. The debug listener (`http.debug.addr`, `:5001` in the default file)
+and `health.storagedriver` are accepted and not in effect yet; the start logs each.
+
 ## The table the gate reads
 
 Keep its two markers and its seven columns. `*` in step, field, reference or product matches anything there; a row

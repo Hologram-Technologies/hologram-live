@@ -49,6 +49,7 @@ pub mod registry;
 pub mod registry_compat;
 pub mod repo_manifest;
 pub mod server;
+pub mod stop_signal;
 pub mod store;
 pub mod update;
 pub mod util;

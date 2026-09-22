@@ -44,8 +44,9 @@ published=$(docker port "$name")
 [ "$(printf '%s\n' "$published" | wc -l)" = 1 ] && printf '%s' "$published" | grep -q '^5000/tcp' \
   || fail "only 5000 is published, got: $published"
 docker exec "$name" hologram --version > /dev/null || fail "hologram is not on the path"
-if out=$(docker exec "$name" hologram oci verify 2>&1); then fail "oci verify should say it is not built yet"; fi
-grep -q "not built yet" <<<"$out" || fail "hologram oci verify: $out"
+# verify reads the image's own config.yml; beside the running server it says so.
+if out=$(docker exec "$name" hologram oci verify 2>&1); then fail "oci verify ran beside the live server"; fi
+grep -q "the registry is running on /var/lib/registry" <<<"$out" || fail "hologram oci verify: $out"
 # The other way operators reach the binary: /bin/registry, as in the reference.
 version=$(docker run --rm --entrypoint /bin/registry "$ours" --version) || fail "/bin/registry --version"
 grep -q "^registry " <<<"$version" || fail "/bin/registry --version: $version"

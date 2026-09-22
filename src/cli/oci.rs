@@ -1,13 +1,16 @@
 //! `hologram oci …`: the registry's operator commands.
 //!
-//! Declared now so the reference's command names reach them (`registry
-//! garbage-collect` becomes `hologram oci garbage-collect`); each is built in
-//! the operator-commands work (plan, P8) and until then says so.
+//! Declared so the reference's command names reach them (`registry
+//! garbage-collect` becomes `hologram oci garbage-collect`). `verify` is
+//! built; the others are built in the operator-commands work (plan, P8) and
+//! until then say so.
 
 use super::Cli;
 use clap::{Args, Subcommand};
 use hologram_live::error::{LiveError, Result};
-use std::path::PathBuf;
+use hologram_live::oci_store::{OciStore, OciStoreError, OpenOptions, VerifyReport};
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Args)]
 pub struct OciArgs {
@@ -32,9 +35,18 @@ enum OciCommand {
         #[arg(long)]
         registry_config: Option<PathBuf>,
     },
-    /// Re-hash every blob and report any that do not match their digest.
+    /// Re-hash every blob with the algorithm of its own address, and name any
+    /// that does not match, with the repositories and tags that reach it.
+    ///
+    /// Reports and changes nothing: no blob is deleted or moved. Opening the
+    /// volume does what a start does (interrupted uploads are resumed or
+    /// dropped). Exits 1 when a blob is damaged. The registry must be stopped:
+    /// verify beside a running server, through its administration socket, is
+    /// not built yet.
     Verify {
-        #[arg(long)]
+        /// The registry's configuration file; else `REGISTRY_CONFIGURATION_PATH`,
+        /// else the image's `/etc/distribution/config.yml`.
+        #[arg(long, env = "HOLOGRAM_REGISTRY_CONFIG")]
         registry_config: Option<PathBuf>,
     },
     /// Copy a Docker Registry volume into this registry's layout.
@@ -47,13 +59,124 @@ enum OciCommand {
     },
 }
 
-pub async fn run(_cli: Cli, args: OciArgs) -> Result<()> {
-    let name = match args.command {
-        OciCommand::GarbageCollect { .. } => "garbage-collect",
-        OciCommand::Verify { .. } => "verify",
-        OciCommand::Import { .. } => "import",
-    };
+pub async fn run(cli: Cli, args: OciArgs) -> Result<()> {
+    match args.command {
+        OciCommand::Verify { registry_config } => verify(&cli, registry_config).await,
+        OciCommand::GarbageCollect { .. } => not_built("garbage-collect"),
+        OciCommand::Import { .. } => not_built("import"),
+    }
+}
+
+fn not_built(name: &str) -> Result<()> {
     Err(LiveError::Capability(format!(
         "hologram oci {name} is not built yet (plan P8)"
     )))
+}
+
+/// The configuration file operator commands read, as `registry serve` finds it.
+fn registry_file(given: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(file) = given {
+        return Ok(file);
+    }
+    if let Some(file) = std::env::var_os("REGISTRY_CONFIGURATION_PATH") {
+        return Ok(PathBuf::from(file));
+    }
+    let image = PathBuf::from("/etc/distribution/config.yml");
+    if image.is_file() {
+        return Ok(image);
+    }
+    Err(LiveError::Config(
+        "give the registry's configuration file: --registry-config <file>, or REGISTRY_CONFIGURATION_PATH"
+            .to_owned(),
+    ))
+}
+
+/// The registry's volume: `storage.filesystem.rootdirectory`, as `serve` reads it.
+fn volume(file: &Path) -> Result<PathBuf> {
+    let settings = hologram_live::registry_compat::load(Some(file), std::env::vars())?;
+    Ok(PathBuf::from(
+        settings
+            .get("storage.filesystem.rootdirectory")
+            .unwrap_or("/var/lib/registry")
+            .trim(),
+    ))
+}
+
+async fn verify(cli: &Cli, registry_config: Option<PathBuf>) -> Result<()> {
+    let root = volume(&registry_file(registry_config)?)?;
+    let json = cli.json;
+    let report = tokio::task::spawn_blocking(move || -> Result<VerifyReport> {
+        let options = OpenOptions {
+            create: false,
+            upload_max_age: std::time::Duration::from_hours(168),
+        };
+        let store = OciStore::open(&root, options).map_err(|error| match error {
+            OciStoreError::Locked => LiveError::Conflict(format!(
+                "the registry is running on {}: stop it first (verify beside a running server is not built yet)",
+                root.display()
+            )),
+            other => LiveError::Config(format!("registry volume {}: {other}", root.display())),
+        })?;
+        let mut last = std::time::Instant::now();
+        store
+            .verify(&mut |checked, total| {
+                if !json && (checked == total || last.elapsed().as_secs() >= 1) {
+                    eprint!("\rchecked {checked} of {total} blobs");
+                    if checked == total {
+                        eprintln!();
+                    }
+                    last = std::time::Instant::now();
+                }
+            })
+            .map_err(|error| LiveError::Conflict(format!("verify: {error}")))
+    })
+    .await
+    .map_err(|error| LiveError::Conflict(format!("join verify: {error}")))??;
+    print_report(&report, json)?;
+    if !report.damaged.is_empty() {
+        // Damage is the answer, not a failure of the command: the report is
+        // out, and the exit code is for the operator's own automation.
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn print_report(report: &VerifyReport, json: bool) -> Result<()> {
+    let mut out = std::io::stdout().lock();
+    let written = if json {
+        serde_json::to_writer_pretty(&mut out, report)
+            .map_err(std::io::Error::other)
+            .and_then(|()| writeln!(out))
+    } else if report.damaged.is_empty() {
+        writeln!(
+            out,
+            "{} blobs, {} bytes: every blob matches its digest",
+            report.checked, report.bytes
+        )
+    } else {
+        let mut result = writeln!(
+            out,
+            "{} of {} blobs damaged ({} bytes read); nothing was changed. Push the tags below again, or restore the blobs:",
+            report.damaged.len(),
+            report.checked,
+            report.bytes
+        );
+        for damaged in &report.damaged {
+            result =
+                result.and_then(|()| writeln!(out, "  {} ({})", damaged.digest, damaged.reason));
+            if damaged.repositories.is_empty() {
+                result = result.and_then(|()| writeln!(out, "    no repository links it"));
+            }
+            for reach in &damaged.repositories {
+                let tags = if reach.tags.is_empty() {
+                    "no tag reaches it".to_owned()
+                } else {
+                    reach.tags.join(", ")
+                };
+                result = result.and_then(|()| writeln!(out, "    {}: {tags}", reach.name));
+            }
+        }
+        result
+    };
+    written.map_err(|error| LiveError::Conflict(format!("print the report: {error}")))
 }

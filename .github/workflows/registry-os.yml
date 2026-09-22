@@ -66,6 +66,8 @@ jobs:
         run: cargo test --locked --features oci --test oci_login
       - name: TLS on the listener (http.tls)
         run: cargo test --locked --features oci --test oci_tls
+      - name: hologram oci verify (P8 T3)
+        run: cargo test --locked --features oci --test oci_verify
       - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)
         if: runner.os == 'Linux'
         run: cargo test --release --locked --features oci --test oci_store -- --ignored --nocapture two_gib

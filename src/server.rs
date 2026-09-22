@@ -30,19 +30,21 @@ type RegistryTls = Option<()>;
 
 /// Build the TLS acceptor, before anything binds: the operator's certificate
 /// must be good before the registry says it is coming up.
+#[cfg(feature = "oci")]
 fn build_tls(state: &AppState) -> Result<RegistryTls> {
-    #[cfg(feature = "oci")]
-    return state
+    state
         .config()
         .server
         .tls
         .as_ref()
         .map(crate::tls::build)
-        .transpose();
-    #[cfg(not(feature = "oci"))]
+        .transpose()
+}
+
+#[cfg(not(feature = "oci"))]
+fn build_tls(state: &AppState) -> RegistryTls {
     let _ = state;
-    #[cfg(not(feature = "oci"))]
-    Ok(None)
+    None
 }
 
 /// The next request id, for a module that builds its own request span
@@ -103,7 +105,10 @@ where
 
     // Registry mode binds its socket first: once the public port accepts,
     // administration is up and owner-only.
+    #[cfg(feature = "oci")]
     let tls_acceptor = build_tls(&state)?;
+    #[cfg(not(feature = "oci"))]
+    let tls_acceptor = build_tls(&state);
     let admin_listener = if registry_mode {
         Some(admin::bind(&state.config().admin_socket())?)
     } else {

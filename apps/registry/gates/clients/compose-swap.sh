@@ -82,21 +82,26 @@ cleanup() { sudo rm -rf /etc/docker/certs.d/127.0.0.1:5000; }
 trap cleanup EXIT
 started=$(date +%s)
 docker compose -f "$compose" -p swap up -d > /dev/null 2>&1
+serving=1
 for _ in $(seq 1 60); do
-  curl -fsS "https://127.0.0.1:5000/v2/" > /dev/null 2>&1 && break
+  # The self-signed test certificate is trusted through certs.d by the
+  # docker daemon; curl here only waits, so it does not verify.
+  curl -kfsS "https://127.0.0.1:5000/v2/" > /dev/null 2>&1 && { serving=0; break; }
   sleep 1
 done
+[ "$serving" = 0 ] || { docker compose -f "$compose" -p swap logs 2>&1 | tail -n 20 >&2; fail "the TLS compose file never answered /v2/ over HTTPS"; }
 # While it is up: nothing may answer over plain HTTP.
 if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then
   docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
   fail "the TLS compose file answered over plain HTTP"
 fi
 # The login and the round trip, through the TLS port, within SC-001's 300 s.
-printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > /dev/null \
-  || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker login through TLS"; }
+printf 'gate-password' | docker login -u gate --password-stdin 127.0.0.1:5000 > /dev/null 2>"$work/login.err" \
+  || { cat "$work/login.err" >&2; docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker login through TLS"; }
 tag="127.0.0.1:5000/swap/hello:v1"
 docker build -q -t "$tag" "$work" > /dev/null
-docker push -q "$tag" > /dev/null || fail "docker push through the TLS compose file"
+docker push -q "$tag" > /dev/null 2>"$work/push.err" \
+  || { cat "$work/push.err" >&2; docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker push through the TLS compose file"; }
 pushed=$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")
 docker image rm "$tag" > /dev/null
 docker pull -q "$tag" > /dev/null || fail "docker pull through the TLS compose file"

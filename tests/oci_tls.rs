@@ -7,10 +7,10 @@
 use hologram_live::config::{TlsConfig, TlsVersion};
 use hologram_live::tls;
 use rustls::pki_types::{CertificateDer, ServerName};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
-const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+const TLS12_ONLY: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS12];
 
 /// A self-signed pair for `localhost` and `127.0.0.1`, written where the
 /// configuration points, with the DER kept for the clients' root of trust.
@@ -212,7 +212,7 @@ async fn two_hundred_stalled_handshakes_do_not_delay_the_next_client() {
         stalled
     };
     let started = std::time::Instant::now();
-    let served = tokio::time::timeout(Duration::from_secs(1), async {
+    let under_deadline = tokio::time::timeout(Duration::from_secs(1), async {
         let mut stream = connect(&server, rustls::ALL_VERSIONS, None)
             .await
             .expect("TLS handshake");
@@ -221,7 +221,7 @@ async fn two_hundred_stalled_handshakes_do_not_delay_the_next_client() {
         assert!(body.contains("{}"), "{body}");
     })
     .await;
-    served.expect("the 201st connection is served within one second");
+    under_deadline.expect("the 201st connection is served within one second");
     assert!(
         started.elapsed() < Duration::from_secs(1),
         "the deadline is the assertion"
@@ -232,14 +232,15 @@ async fn two_hundred_stalled_handshakes_do_not_delay_the_next_client() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_tls13_minimum_refuses_a_tls12_client() {
     let server = server(TlsVersion::Tls13).await;
-    const TLS12_ONLY: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS12];
-    let result =
-        tokio::time::timeout(Duration::from_secs(5), connect(&server, TLS12_ONLY, None)).await;
-    match result {
-        Err(_) => panic!("the refused handshake did not fail within five seconds"),
-        Ok(Err(_)) => {}
-        Ok(Ok(_)) => panic!("a TLS 1.2 client connected to a TLS 1.3 minimum"),
-    }
+    // A refused handshake is either an alert or the five-second timeout;
+    // both are the same failure here.
+    let handshake = tokio::time::timeout(Duration::from_secs(5), connect(&server, TLS12_ONLY, None))
+        .await
+        .unwrap_or_else(|elapsed| Err(std::io::Error::new(std::io::ErrorKind::TimedOut, elapsed)));
+    assert!(
+        handshake.is_err(),
+        "a TLS 1.2 client connected to a TLS 1.3 minimum"
+    );
     // A TLS 1.3 client still works against the same server.
     let mut stream = connect(&server, rustls::ALL_VERSIONS, None)
         .await
@@ -275,9 +276,8 @@ fn a_missing_certificate_stops_the_start_naming_the_file() {
         key: std::path::PathBuf::from("/nowhere/domain.key"),
         minimum: TlsVersion::Tls12,
     };
-    let error = match tls::build(&config) {
-        Ok(_) => panic!("a missing certificate started"),
-        Err(error) => error,
+    let Err(error) = tls::build(&config) else {
+        panic!("a missing certificate started");
     };
     assert!(error.to_string().contains("/nowhere/domain.crt"));
 }
@@ -291,9 +291,8 @@ fn a_mismatched_pair_is_refused_at_start() {
         key: second.key.clone(),
         minimum: TlsVersion::Tls12,
     };
-    let error = match tls::build(&config) {
-        Ok(_) => panic!("a mismatched pair started"),
-        Err(error) => error,
+    let Err(error) = tls::build(&config) else {
+        panic!("a mismatched pair started");
     };
     assert!(
         error.to_string().contains("do not match") || error.to_string().contains("registry TLS")

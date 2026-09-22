@@ -34,11 +34,14 @@ pub enum ErrorCode {
     Denied,
     Unsupported,
     TooManyRequests,
+    /// While a health check fails (`/debug/health`), as the reference's
+    /// `health.Handler` answers every request.
+    Unavailable,
     Unknown,
 }
 
 impl ErrorCode {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::BlobUnknown,
         Self::BlobUploadInvalid,
         Self::BlobUploadUnknown,
@@ -57,6 +60,7 @@ impl ErrorCode {
         Self::Denied,
         Self::Unsupported,
         Self::TooManyRequests,
+        Self::Unavailable,
         Self::Unknown,
     ];
 
@@ -80,6 +84,7 @@ impl ErrorCode {
             Self::Denied => "DENIED",
             Self::Unsupported => "UNSUPPORTED",
             Self::TooManyRequests => "TOOMANYREQUESTS",
+            Self::Unavailable => "UNAVAILABLE",
             Self::Unknown => "UNKNOWN",
         }
     }
@@ -104,6 +109,7 @@ impl ErrorCode {
             Self::Denied => StatusCode::FORBIDDEN,
             Self::Unsupported => StatusCode::METHOD_NOT_ALLOWED,
             Self::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+            Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::Unknown => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -127,6 +133,7 @@ impl ErrorCode {
             Self::Denied => "requested access to the resource is denied",
             Self::Unsupported => "The operation is unsupported.",
             Self::TooManyRequests => "too many requests",
+            Self::Unavailable => "service unavailable",
             Self::Unknown => "unknown error",
         }
     }
@@ -431,6 +438,7 @@ mod tests {
             ("DENIED", 403),
             ("UNSUPPORTED", 405),
             ("TOOMANYREQUESTS", 429),
+            ("UNAVAILABLE", 503),
             ("UNKNOWN", 500),
         ];
         for (code, (name, status)) in ErrorCode::ALL.iter().zip(expected) {

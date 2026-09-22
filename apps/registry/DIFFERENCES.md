@@ -43,7 +43,9 @@ start, where the reference would run beside it. A volume must hold a Unix socket
 disk or a Docker named volume does. The debug listener (`http.debug.addr`, `:5001` in the default file)
 serves `/debug/health` (with `/down` and `/up`) and `/metrics`; `/debug/vars` and pprof are Go internals and answer
 404. `/metrics` holds the `registry_http_*` request metrics and `hologram_build_info`; the storage and upload gauges of
-the operations list are not there yet.
+the operations list are not there yet. While any health check fails, `/v2/` answers 503 `UNAVAILABLE`, as the reference's
+does: that is what `POST /debug/health/down` drains. The storage check writes, reads back and deletes a small file on
+the volume; the reference only stats its root, so a volume that has turned read-only shows here and not there.
 
 **TLS.** `http.tls.certificate` and `.key` are read as the reference reads them: a certificate file may hold the whole
 chain, and all of it is sent; the key may be PKCS#8, PKCS#1 or SEC1. HTTP/2 is offered. `minimumtls` takes `tls1.2`

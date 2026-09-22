@@ -90,19 +90,27 @@ fn health_answers_as_the_reference_and_the_manual_drain_flips_it() {
     let server = start();
     assert_eq!(
         request(server.debug, "GET", "/debug/health"),
-        (200, "{}\n".to_owned())
+        (200, "{}".to_owned())
     );
     assert_eq!(request(server.debug, "POST", "/debug/health/down").0, 200);
     let (status, body) = request(server.debug, "GET", "/debug/health");
     assert_eq!(status, 503);
-    assert_eq!(body, "{\"manual_http_status\":\"Manual Check\"}\n");
+    assert_eq!(body, "{\"manual_http_status\":\"Manual Check\"}");
+    // The drain: the public port answers 503 UNAVAILABLE while a check fails.
+    let (status, body) = request(server.public, "GET", "/v2/");
+    assert_eq!(status, 503);
+    assert!(
+        body.contains("UNAVAILABLE") && body.contains("please see /debug/health"),
+        "{body}"
+    );
     assert_eq!(request(server.debug, "POST", "/debug/health/up").0, 200);
     assert_eq!(request(server.debug, "GET", "/debug/health").0, 200);
+    assert_eq!(request(server.public, "GET", "/v2/").0, 200, "undrained");
     // The storage check runs every second and passes on a writable volume.
     std::thread::sleep(Duration::from_millis(2500));
     assert_eq!(
         request(server.debug, "GET", "/debug/health"),
-        (200, "{}\n".to_owned())
+        (200, "{}".to_owned())
     );
     // Go's internals are not served.
     assert_eq!(request(server.debug, "GET", "/debug/vars").0, 404);

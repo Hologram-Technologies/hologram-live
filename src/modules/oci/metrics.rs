@@ -23,9 +23,9 @@ struct Histogram {
 #[derive(Default)]
 struct Metrics {
     /// (handler, method, code) → requests.
-    requests: BTreeMap<(&'static str, String, u16), u64>,
+    requests: BTreeMap<(&'static str, &'static str, u16), u64>,
     /// (handler, method) → durations.
-    durations: BTreeMap<(&'static str, String), Histogram>,
+    durations: BTreeMap<(&'static str, &'static str), Histogram>,
     /// handler → requests being answered now.
     in_flight: BTreeMap<&'static str, i64>,
 }
@@ -37,11 +37,36 @@ fn with<T>(f: impl FnOnce(&mut Metrics) -> T) -> T {
     f(guard.get_or_insert_with(Metrics::default))
 }
 
-/// A request under way: counted in flight until [`InFlight::done`].
+/// A request under way: counted in flight until [`InFlight::done`], or until
+/// it is dropped (the client went away): the gauge never leaks.
 pub struct InFlight {
     handler: &'static str,
-    method: String,
+    method: &'static str,
     started: std::time::Instant,
+    open: bool,
+}
+
+/// A method label from a fixed set: an unauthenticated client must not be
+/// able to grow the label space.
+fn method_label(method: &axum::http::Method) -> &'static str {
+    match *method {
+        axum::http::Method::GET => "get",
+        axum::http::Method::HEAD => "head",
+        axum::http::Method::POST => "post",
+        axum::http::Method::PUT => "put",
+        axum::http::Method::PATCH => "patch",
+        axum::http::Method::DELETE => "delete",
+        axum::http::Method::OPTIONS => "options",
+        _ => "other",
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        if self.open {
+            with(|metrics| *metrics.in_flight.entry(self.handler).or_default() -= 1);
+        }
+    }
 }
 
 /// Start counting a request to `handler`.
@@ -49,21 +74,22 @@ pub fn start(handler: &'static str, method: &axum::http::Method) -> InFlight {
     with(|metrics| *metrics.in_flight.entry(handler).or_default() += 1);
     InFlight {
         handler,
-        // The reference's labels are lower case.
-        method: method.as_str().to_ascii_lowercase(),
+        method: method_label(method),
         started: std::time::Instant::now(),
+        open: true,
     }
 }
 
 impl InFlight {
     /// The request was answered with `status`.
-    pub fn done(self, status: u16) {
+    pub fn done(mut self, status: u16) {
         let elapsed = self.started.elapsed();
+        self.open = false;
         with(|metrics| {
             *metrics.in_flight.entry(self.handler).or_default() -= 1;
             *metrics
                 .requests
-                .entry((self.handler, self.method.clone(), status))
+                .entry((self.handler, self.method, status))
                 .or_default() += 1;
             let histogram = metrics.durations.entry((self.handler, self.method)).or_default();
             observe(histogram, elapsed);

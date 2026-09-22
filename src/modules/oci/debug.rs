@@ -30,6 +30,12 @@ const MANUAL_DOWN: &str = "Manual Check";
 /// Failing checks: name → why.
 static FAILING: Mutex<BTreeMap<&'static str, String>> = Mutex::new(BTreeMap::new());
 
+/// Whether any check fails: the public port then answers 503 UNAVAILABLE,
+/// as the reference's `health.Handler` does, which is what drains it.
+pub fn failing() -> bool {
+    !FAILING.lock().unwrap_or_else(PoisonError::into_inner).is_empty()
+}
+
 fn set(check: &'static str, failure: Option<String>) {
     let mut failing = FAILING.lock().unwrap_or_else(PoisonError::into_inner);
     match failure {
@@ -73,6 +79,7 @@ impl DebugSettings {
             .then(|| settings.get("http.debug.prometheus.path").unwrap_or("/metrics").trim().to_owned());
         let storage = if settings.flag("health.storagedriver.enabled").unwrap_or(false) {
             let interval = match settings.get("health.storagedriver.interval") {
+                Some(text) if text.trim() == "0" || text.trim() == "0s" => Duration::from_secs(10),
                 Some(text) => go_duration(text).ok_or_else(|| {
                     LiveError::Config(format!("registry setting health.storagedriver.interval {text:?} is not a duration"))
                 })?,
@@ -88,6 +95,13 @@ impl DebugSettings {
         } else {
             None
         };
+        if let Some(path) = &metrics {
+            if !path.starts_with('/') || path.starts_with("/debug/health") {
+                return Err(LiveError::Config(format!(
+                    "registry setting http.debug.prometheus.path {path:?} must be a path of its own, starting with /"
+                )));
+            }
+        }
         Ok(Some(Self { addr, metrics, storage }))
     }
 }
@@ -134,7 +148,8 @@ async fn health() -> Response {
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
-    let body = serde_json::to_string(&failing).unwrap_or_else(|_| "{}".to_owned()) + "\n";
+    // As the reference's statusResponse: json.Marshal, with no newline.
+    let body = serde_json::to_string(&failing).unwrap_or_else(|_| "{}".to_owned());
     (status, [(header::CONTENT_TYPE, "application/json; charset=utf-8")], body).into_response()
 }
 
@@ -158,10 +173,19 @@ async fn metrics() -> Response {
 
 /// The storage check: write, read back and delete a file on the volume.
 fn probe(state_dir: &Path) -> std::result::Result<(), String> {
-    let path = state_dir.join(format!("health-probe-{}", std::process::id()));
+    use std::io::Write as _;
+    // Every container's pid is 1: the name carries random bytes too.
+    let mut nonce = [0_u8; 8];
+    getrandom::fill(&mut nonce).map_err(|error| error.to_string())?;
+    let path = state_dir.join(format!("health-probe-{}-{}", std::process::id(), crate::util::hex(&nonce)));
     let written = b"hologram registry health probe";
     std::fs::create_dir_all(state_dir).map_err(|error| error.to_string())?;
-    std::fs::write(&path, written).map_err(|error| format!("write: {error}"))?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .and_then(|mut file| file.write_all(written))
+        .map_err(|error| format!("write: {error}"))?;
     let read = std::fs::read(&path).map_err(|error| format!("read: {error}"));
     let removed = std::fs::remove_file(&path).map_err(|error| format!("delete: {error}"));
     match (read, removed) {
@@ -175,13 +199,17 @@ fn probe(state_dir: &Path) -> std::result::Result<(), String> {
 pub fn watch_storage(state_dir: PathBuf, interval: Duration, threshold: u32) {
     tokio::spawn(async move {
         let mut failures = 0_u32;
-        let mut ticker = tokio::time::interval(interval);
+        // The reference's ticker fires first after one interval.
+        let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
             let dir = state_dir.clone();
-            let result = tokio::task::spawn_blocking(move || probe(&dir))
-                .await
-                .unwrap_or_else(|error| Err(error.to_string()));
+            // A disk that hangs is a failing disk, not a healthy one.
+            let result = match tokio::time::timeout(interval, tokio::task::spawn_blocking(move || probe(&dir))).await {
+                Ok(joined) => joined.unwrap_or_else(|error| Err(error.to_string())),
+                Err(_) => Err(format!("no answer within {} s", interval.as_secs())),
+            };
             match result {
                 Ok(()) => {
                     failures = 0;
@@ -199,13 +227,25 @@ pub fn watch_storage(state_dir: PathBuf, interval: Duration, threshold: u32) {
     });
 }
 
+/// Start the storage check the installed settings ask for. Called once the
+/// volume's lock is held, so a second container refused the volume never
+/// probes it.
+pub fn start_checks(state_dir: &Path) {
+    let Some(settings) = crate::registry_compat::installed() else {
+        return;
+    };
+    if let Ok(Some(DebugSettings { storage: Some((interval, threshold)), .. })) = DebugSettings::from(settings) {
+        watch_storage(state_dir.to_path_buf(), interval, threshold);
+    }
+}
+
 /// Bind the debug listener the installed registry settings ask for, before
 /// the public port: a port that cannot be bound stops the start.
 ///
 /// # Errors
 ///
 /// The settings are wrong, or the address cannot be bound.
-pub async fn bind(state_dir: &Path) -> Result<Option<(tokio::net::TcpListener, Router)>> {
+pub async fn bind() -> Result<Option<(tokio::net::TcpListener, Router)>> {
     let Some(settings) = crate::registry_compat::installed() else {
         return Ok(None);
     };
@@ -215,9 +255,6 @@ pub async fn bind(state_dir: &Path) -> Result<Option<(tokio::net::TcpListener, R
     let listener = tokio::net::TcpListener::bind(&wanted.addr)
         .await
         .map_err(|error| LiveError::Transport(format!("bind http.debug.addr {}: {error}", wanted.addr)))?;
-    if let Some((interval, threshold)) = wanted.storage {
-        watch_storage(state_dir.to_path_buf(), interval, threshold);
-    }
     tracing::info!(listen = %wanted.addr, metrics = wanted.metrics.as_deref().unwrap_or("off"), "debug listener ready");
     Ok(Some((listener, router(&wanted))))
 }

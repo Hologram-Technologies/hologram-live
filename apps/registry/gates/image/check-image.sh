@@ -22,7 +22,10 @@ done
 field "$ours" Env | grep -q '"OTEL_TRACES_EXPORTER=none"' || fail "Env lacks OTEL_TRACES_EXPORTER=none"
 echo "metadata: entry point, command, port, volume and environment equal the reference's"
 
-cleanup() { docker rm -f "$name" > /dev/null 2>&1 || true; docker volume rm -f gate-image-data > /dev/null 2>&1 || true; }
+cleanup() {
+  docker rm -f "$name" gate-image-debug > /dev/null 2>&1 || true
+  docker volume rm -f gate-image-data > /dev/null 2>&1 || true
+}
 trap cleanup EXIT
 cleanup
 # As the reference is run: the image's own default file, a named volume.
@@ -61,11 +64,12 @@ echo "surface: /v2/ in public, the module API is not, only 5000 published, holog
 # only to look at it; the reference does not publish it either.
 debug_name=gate-image-debug
 docker rm -f "$debug_name" > /dev/null 2>&1 || true
-docker run -d --name "$debug_name" -p 127.0.0.1:5004:5001 "$ours" > /dev/null
-for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:5004/debug/health > /dev/null 2>&1 && break; sleep 1; done
-health=$(curl -s http://127.0.0.1:5004/debug/health)
+docker run -d --name "$debug_name" -p 127.0.0.1::5001 "$ours" > /dev/null
+debug_port=$(docker port "$debug_name" 5001/tcp | head -n1 | awk -F: '{print $NF}')
+for _ in $(seq 1 60); do curl -fsS "http://127.0.0.1:$debug_port/debug/health" > /dev/null 2>&1 && break; sleep 1; done
+health=$(curl -s "http://127.0.0.1:$debug_port/debug/health")
 [ "$health" = "{}" ] || { docker logs "$debug_name" | tail -n 20; fail "/debug/health: $health"; }
-curl -fsS http://127.0.0.1:5004/metrics | grep -q '^# TYPE registry_http_requests_total counter' || fail "/metrics"
+curl -fsS "http://127.0.0.1:$debug_port/metrics" | grep -q '^# TYPE registry_http_requests_total counter' || fail "/metrics"
 docker rm -f "$debug_name" > /dev/null
 echo "debug listener: /debug/health {} and /metrics on :5001, from the image's own file"
 

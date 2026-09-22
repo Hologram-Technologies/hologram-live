@@ -89,7 +89,7 @@ where
     // The debug listener (`http.debug.addr`) before the public port, too.
     #[cfg(feature = "oci")]
     let debug: DebugListener = if registry_mode {
-        crate::modules::oci::debug::bind(&state.config().paths.state_dir).await?
+        crate::modules::oci::debug::bind().await?
     } else {
         None
     };
@@ -107,6 +107,12 @@ where
         .map_err(|error| {
             LiveError::Transport(format!("bind {}: {error}", state.config().server.listen))
         });
+    // The volume's lock is held by now (the store opened when the state was
+    // built): the storage check may probe it.
+    #[cfg(feature = "oci")]
+    if registry_mode {
+        crate::modules::oci::debug::start_checks(&state.config().paths.state_dir);
+    }
     let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
         // the module API and gRPC, shutdown included, live on the socket.

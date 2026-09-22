@@ -257,6 +257,19 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
         .ok_or_else(OciError::unknown_route)
         .and_then(|rest| path::parse(&head.method, rest));
     let in_flight = metrics::start(handler_name(route.as_ref().ok()), &head.method);
+    // While a health check fails, every request is 503 UNAVAILABLE, as the
+    // reference's health.Handler answers: that is what `/debug/health/down`
+    // drains.
+    if debug::failing() {
+        let mut response = OciError::new(ErrorCode::Unavailable)
+            .with_detail(serde_json::json!("health check failed: please see /debug/health"))
+            .into_response();
+        in_flight.done(response.status().as_u16());
+        for (name, value) in configured {
+            response.headers_mut().append(name, value);
+        }
+        return response;
+    }
     // As the reference: whatever its router matches is authorized before
     // anything else about it (method, digest, upload id). Only a path with
     // no route, the plain 404, is answered without a login.
@@ -324,7 +337,9 @@ fn handler_name(route: Option<&Route>) -> &'static str {
         Some(Route::TagsList { .. }) => "tags",
         Some(Route::Manifest { .. }) => "manifest",
         Some(Route::Blob { .. }) => "blob",
-        Some(Route::UploadStart { .. } | Route::Upload { .. }) => "upload",
+        // The reference's route names (`routes.go`), so its dashboards draw.
+        Some(Route::UploadStart { .. }) => "blob-upload",
+        Some(Route::Upload { .. }) => "blob-upload-chunk",
         Some(Route::Referrers { .. }) => "referrers",
         Some(Route::Options { .. }) => "options",
         None => "none",

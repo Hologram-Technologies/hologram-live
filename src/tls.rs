@@ -23,11 +23,15 @@ use tower::ServiceExt;
 
 /// How long a client may take to finish the handshake.
 const HANDSHAKE: Duration = Duration::from_secs(10);
+/// How long a client may take to send a request's headers.
+const HEADERS: Duration = Duration::from_secs(30);
 
 /// What Go's `net/http` answers a plain HTTP request on a TLS port, byte for
-/// byte (`server.go`, `serve`).
+/// byte (`server.go`, `serve`), when the first five bytes are one of
+/// [`LOOKS_LIKE_HTTP`] (`tlsRecordHeaderLooksLikeHTTP`).
 const PLAIN_ON_TLS: &[u8] =
     b"HTTP/1.0 400 Bad Request\r\n\r\nClient sent an HTTP request to an HTTPS server.\n";
+const LOOKS_LIKE_HTTP: [&[u8; 5]; 5] = [b"GET /", b"HEAD ", b"POST ", b"PUT /", b"OPTIO"];
 
 /// The oldest protocol version the listener accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +50,7 @@ impl MinimumTls {
         match value.trim() {
             "" | "tls1.2" => Ok(Self::Tls12),
             "tls1.3" => Ok(Self::Tls13),
+            // The reference knows only these two as well ("unknown minimum TLS level").
             "tls1.0" | "tls1.1" => Err(format!(
                 "{value} is not offered: this registry speaks TLS 1.2 and 1.3 only"
             )),
@@ -97,17 +102,13 @@ pub fn acceptor(settings: &TlsSettings) -> Result<TlsAcceptor> {
     let mut config = rustls::ServerConfig::builder_with_protocol_versions(versions)
         .with_no_client_auth()
         .with_single_cert(chain, key)
-        .map_err(|error| {
-            bad(
-                &settings.key,
-                &format!("does not match the certificate: {error}"),
-            )
-        })?;
+        .map_err(|error| bad(&settings.key, &error.to_string()))?;
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-/// Serve `router` over TLS until `shutdown`, then drain open connections.
+/// Serve `router` over TLS until `shutdown`, then drain open connections for
+/// at most `drain` (`server.graceful_shutdown_secs`).
 ///
 /// # Errors
 ///
@@ -117,6 +118,7 @@ pub async fn serve(
     acceptor: TlsAcceptor,
     router: Router,
     shutdown: impl Future<Output = ()> + Send,
+    drain: Duration,
 ) -> Result<()> {
     let graceful = hyper_util::server::graceful::GracefulShutdown::new();
     tokio::pin!(shutdown);
@@ -125,10 +127,12 @@ pub async fn serve(
             accepted = listener.accept() => {
                 let (stream, peer) = match accepted {
                     Ok(accepted) => accepted,
+                    // As axum's loop: a client that went away is nothing; anything
+                    // else (a full file table) is waited out, not fatal.
+                    Err(error) if is_connection_error(&error) => continue,
                     Err(error) => {
-                        // As axum's loop: a full file table is not fatal.
                         tracing::warn!(%error, "accept failed");
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
                 };
@@ -144,8 +148,25 @@ pub async fn serve(
         }
     }
     drop(listener);
-    graceful.shutdown().await;
+    if tokio::time::timeout(drain, graceful.shutdown())
+        .await
+        .is_err()
+    {
+        tracing::warn!(
+            seconds = drain.as_secs(),
+            "connections still open after the drain; closing them"
+        );
+    }
     Ok(())
+}
+
+fn is_connection_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::ConnectionReset
+    )
 }
 
 async fn connection(
@@ -156,12 +177,20 @@ async fn connection(
 ) -> std::result::Result<(), String> {
     let work = async {
         // A client speaking plain HTTP gets Go's answer, not a TLS alert.
-        let mut first = [0_u8; 1];
-        let seen = stream
-            .peek(&mut first)
-            .await
-            .map_err(|error| error.to_string())?;
-        if seen == 1 && first[0].is_ascii_uppercase() {
+        // A TLS record starts with 0x14 to 0x17, SSLv2 with 0x80 or above.
+        let mut first = [0_u8; 5];
+        let mut seen = 0;
+        while seen < first.len() {
+            let n = stream
+                .peek(&mut first)
+                .await
+                .map_err(|error| error.to_string())?;
+            if n == seen || !first[0].is_ascii_uppercase() {
+                break;
+            }
+            seen = n;
+        }
+        if LOOKS_LIKE_HTTP.contains(&&first) {
             return Ok(Err(stream));
         }
         acceptor
@@ -176,6 +205,16 @@ async fn connection(
         Ok(Ok(Err(mut plain))) => {
             let _ = plain.write_all(PLAIN_ON_TLS).await;
             let _ = plain.shutdown().await;
+            // Read what the client sent before closing: closing with unread
+            // bytes sends a reset, and on Windows a reset throws away the
+            // answer the client has not read yet.
+            let mut sink = [0_u8; 4096];
+            let drain = async {
+                while matches!(tokio::io::AsyncReadExt::read(&mut plain, &mut sink).await, Ok(n) if n > 0)
+                {
+                }
+            };
+            let _ = tokio::time::timeout(Duration::from_secs(1), drain).await;
             return Err("a plain HTTP request on the TLS port".to_owned());
         }
         Ok(Ok(Ok(tls))) => tls,
@@ -185,8 +224,14 @@ async fn connection(
         request
     });
     let service = hyper_util::service::TowerToHyperService::new(service);
-    let builder =
+    let mut builder =
         hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+    // Once the handshake is done, the headers still have a limit: a client
+    // that sends a byte and waits holds nothing for long.
+    builder
+        .http1()
+        .timer(hyper_util::rt::TokioTimer::new())
+        .header_read_timeout(HEADERS);
     let served = builder.serve_connection_with_upgrades(hyper_util::rt::TokioIo::new(tls), service);
     watcher
         .watch(served.into_owned())

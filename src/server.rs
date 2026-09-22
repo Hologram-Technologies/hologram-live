@@ -76,8 +76,6 @@ where
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(routers.open);
 
-    // Registry mode binds its socket first: once the public port accepts,
-    // administration is up and owner-only.
     // A certificate that cannot be read stops the start before anything binds.
     #[cfg(feature = "oci")]
     let tls: PublicTls = state
@@ -88,6 +86,8 @@ where
         .transpose()?;
     #[cfg(not(feature = "oci"))]
     let tls: PublicTls = None;
+    // Registry mode binds its socket first: once the public port accepts,
+    // administration is up and owner-only.
     let admin_listener = if registry_mode {
         Some(admin::bind(&state.config().admin_socket())?)
     } else {
@@ -133,25 +133,28 @@ where
     }
 }
 
-/// Both listeners of registry mode, drained by the one shutdown signal. Either
-/// failing ends the process with its error.
 /// The public listener's TLS, when `http.tls` is set.
 #[cfg(feature = "oci")]
 type PublicTls = Option<tokio_rustls::TlsAcceptor>;
 #[cfg(not(feature = "oci"))]
 type PublicTls = Option<std::convert::Infallible>;
 
+/// Both listeners of registry mode, drained by the one shutdown signal. Either
+/// failing ends the process with its error.
 async fn serve_registry_mode(
     state: &AppState,
     (public_listener, public, tls): (tokio::net::TcpListener, Router, PublicTls),
     (admin_listener, admin): (admin::Listener, Router),
 ) -> Result<()> {
     let public_state = state.clone();
+    #[cfg(feature = "oci")]
+    let public_state_drain = state.config().server.graceful_shutdown_secs;
     let public = async move {
         let shutdown = async move { public_state.wait_shutdown().await };
         #[cfg(feature = "oci")]
         if let Some(acceptor) = tls {
-            return crate::tls::serve(public_listener, acceptor, public, shutdown).await;
+            let drain = std::time::Duration::from_secs(public_state_drain);
+            return crate::tls::serve(public_listener, acceptor, public, shutdown, drain).await;
         }
         #[cfg(not(feature = "oci"))]
         let _ = tls;

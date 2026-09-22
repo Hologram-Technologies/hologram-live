@@ -18,8 +18,12 @@ image=$1
 here=$(cd "$(dirname "$0")" && pwd)
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 work=$(mktemp -d)
-printf 'compose swap\n' > "$work/hello.txt"
-printf 'FROM scratch\nCOPY hello.txt /hello.txt\n' > "$work/Dockerfile"
+# The build context is a folder of its own: the compose leg mounts the
+# registry's volume under $work, and its state directory is root-only.
+ctx="$work/ctx"
+mkdir -p "$ctx"
+printf 'compose swap\n' > "$ctx/hello.txt"
+printf 'FROM scratch\nCOPY hello.txt /hello.txt\n' > "$ctx/Dockerfile"
 
 # Push and pull through host port $1, timed from $2 (seconds since the epoch).
 round_trip() {
@@ -28,7 +32,7 @@ round_trip() {
     curl -fsS "http://127.0.0.1:$port/v2/" > /dev/null 2>&1 && break
     sleep 1
   done
-  docker build -q -t "$tag" "$work" > /dev/null
+  docker build -q -t "$tag" "$ctx" > /dev/null
   docker push -q "$tag" > /dev/null || fail "docker push to $port"
   local pushed took
   pushed=$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")
@@ -81,38 +85,40 @@ cp "$tls/server.key" "$work/path/certs/domain.key"
 docker run --rm --entrypoint htpasswd httpd:2 -Bbn gate gate-password > "$work/path/auth/htpasswd"
 # The client trusts the CA by name, as the guide's "use a certificate" section
 # says; a non-loopback address, so Docker's default insecure range does not apply.
-address=$(hostname -I | awk '{print $1}')
+address=$(ip route get 1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 grep -q ' registry.gate$' /etc/hosts || printf '%s registry.gate\n' "$address" | sudo tee -a /etc/hosts > /dev/null
 sudo mkdir -p /etc/docker/certs.d/registry.gate:5000
 sudo cp "$tls/ca.crt" /etc/docker/certs.d/registry.gate:5000/ca.crt
 
 printf 'guide: docker compose up -d (TLS, htpasswd)\n'
 started=$(date +%s)
-docker compose -f "$compose" -p swap up -d > /dev/null 2>&1
 down() { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; }
+trap down EXIT
+docker compose -f "$compose" -p swap up -d > /dev/null
 for _ in $(seq 1 60); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' --cacert "$tls/ca.crt" https://registry.gate:5000/v2/)" = 401 ] && break
   sleep 1
 done
 challenge=$(curl -s -o /dev/null -w '%{http_code} %header{www-authenticate}' --cacert "$tls/ca.crt" https://registry.gate:5000/v2/)
-[ "$challenge" = '401 Basic realm="Registry Realm"' ] || { docker compose -f "$compose" -p swap logs | tail -n 20; down; fail "the TLS compose file: $challenge"; }
+[ "$challenge" = '401 Basic realm="Registry Realm"' ] || { docker compose -f "$compose" -p swap logs 2>&1 | tail -n 20 || true; fail "the TLS compose file: $challenge"; }
 # Plain HTTP on the TLS port gets Go's 400, never the registry.
 plain=$(curl -s "http://registry.gate:5000/v2/" || true)
-grep -q "Client sent an HTTP request to an HTTPS server" <<<"$plain" || { down; fail "plain HTTP on the TLS port: $plain"; }
+grep -q "Client sent an HTTP request to an HTTPS server" <<<"$plain" || fail "plain HTTP on the TLS port: $plain"
 
 tag="registry.gate:5000/swap/hello:v1"
-docker build -q -t "$tag" "$work" > /dev/null
+docker build -q -t "$tag" "$ctx" > /dev/null
 docker logout registry.gate:5000 > /dev/null 2>&1 || true
-if docker push -q "$tag" > /dev/null 2>&1; then down; fail "an anonymous push went through"; fi
-printf 'gate-password' | docker login -u gate --password-stdin registry.gate:5000 > /dev/null || { down; fail "docker login over TLS"; }
-docker push -q "$tag" > /dev/null || { down; fail "docker push over TLS"; }
+# Refused for the right reason: the login, not TLS or the network.
+if refused=$(docker push -q "$tag" 2>&1); then fail "an anonymous push went through"; fi
+grep -qiE "no basic auth credentials|unauthorized" <<<"$refused" || fail "the anonymous push failed, but not for the login: $refused"
+printf 'gate-password' | docker login -u gate --password-stdin registry.gate:5000 > /dev/null || fail "docker login over TLS"
+docker push -q "$tag" > /dev/null || fail "docker push over TLS"
 pushed=$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")
 took=$(( $(date +%s) - started ))
 docker image rm "$tag" > /dev/null
-docker pull -q "$tag" > /dev/null || { down; fail "docker pull over TLS"; }
-[ "$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")" = "$pushed" ] || { down; fail "pull differs from push over TLS"; }
+docker pull -q "$tag" > /dev/null || fail "docker pull over TLS"
+[ "$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")" = "$pushed" ] || fail "pull differs from push over TLS"
 docker logout registry.gate:5000 > /dev/null
-down
 [ "$took" -le 300 ] || fail "${took}s from compose up to a pushed image, over 300 s"
 printf '  start to pushed: %ss (%s)\n' "$took" "$pushed"
 echo "the guide's compose file: TLS by name, login, push and pull: ok"

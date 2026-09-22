@@ -388,7 +388,11 @@ fn audited(route: &Route) -> Option<Audited> {
 /// `scheme://host` as the client addressed us. `None` without a `Host`.
 fn origin(head: &axum::http::request::Parts) -> Option<String> {
     let headers = &head.headers;
-    let host = headers.get(axum::http::header::HOST)?.to_str().ok()?;
+    // HTTP/2 carries the host in `:authority`, which Go reads as `r.Host` too.
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| head.uri.authority().map(axum::http::uri::Authority::as_str))?;
     // As Go's URL builder: https when the request came over TLS, and a
     // proxy's X-Forwarded-Proto over either.
     let direct = if head.extensions.get::<crate::tls::ServedOverTls>().is_some() {
@@ -482,4 +486,35 @@ fn json(status: StatusCode, body: &'static str) -> Response {
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(CONTENT_LENGTH, HeaderValue::from(body.len()));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::origin;
+
+    fn head(uri: &str, host: Option<&str>, tls: bool, forwarded: Option<&str>) -> axum::http::request::Parts {
+        let mut builder = axum::http::Request::builder().uri(uri);
+        if let Some(host) = host {
+            builder = builder.header("host", host);
+        }
+        if let Some(scheme) = forwarded {
+            builder = builder.header("x-forwarded-proto", scheme);
+        }
+        let (mut parts, ()) = builder.body(()).expect("request").into_parts();
+        if tls {
+            parts.extensions.insert(crate::tls::ServedOverTls);
+        }
+        parts
+    }
+
+    /// As Go's URL builder: the host from `Host`, or from HTTP/2's
+    /// `:authority`; https over TLS; a proxy's `X-Forwarded-Proto` over both.
+    #[test]
+    fn location_origin_follows_the_connection_as_the_reference_does() {
+        assert_eq!(origin(&head("/v2/", Some("r:5000"), false, None)).as_deref(), Some("http://r:5000"));
+        assert_eq!(origin(&head("/v2/", Some("r:5000"), true, None)).as_deref(), Some("https://r:5000"));
+        assert_eq!(origin(&head("https://r:5000/v2/", None, true, None)).as_deref(), Some("https://r:5000"), "HTTP/2");
+        assert_eq!(origin(&head("/v2/", Some("r"), true, Some("http"))).as_deref(), Some("http://r"));
+        assert_eq!(origin(&head("/v2/", None, false, None)), None);
+    }
 }

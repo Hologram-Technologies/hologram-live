@@ -144,7 +144,27 @@ printf 'gate-password' | skopeo login registry.local:5000 -u gate --password-std
   || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo login through TLS"; }
 docker build -q -t swap/hello:v1 "$work" > /dev/null
 skopeo copy -q --dest-tls-verify docker-daemon:swap/hello:v1 docker://registry.local:5000/swap/hello:v1 \
-  || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo push through the TLS compose file"; }
+  || {
+    echo '--- the same skopeo push against a debug-logged twin on 5008 ---' >&2
+    docker run -d --name push-diag --network host \
+      -e REGISTRY_HTTP_ADDR=0.0.0.0:5008 \
+      -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
+      -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
+      -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+      -e REGISTRY_AUTH_HTPASSWD_REALM="Registry Realm" \
+      -e REGISTRY_LOG_LEVEL=debug \
+      -e RUST_BACKTRACE=1 \
+      -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
+      "$image" > /dev/null 2>&1 || true
+    sleep 2
+    skopeo login registry.local:5008 -u gate --password-stdin --tls-verify < /dev/null > /dev/null 2>&1 || true
+    printf 'gate-password' | skopeo login registry.local:5008 -u gate --password-stdin --tls-verify > /dev/null 2>&1 || true
+    skopeo copy --dest-tls-verify docker-daemon:swap/hello:v1 docker://registry.local:5008/swap/hello:v1 2>&1 | head -n 5 >&2 || true
+    docker logs push-diag 2>&1 | tail -n 40 >&2
+    docker rm -f push-diag > /dev/null 2>&1 || true
+    docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
+    fail "skopeo push through the TLS compose file"
+  }
 pushed=$(skopeo inspect --tls-verify --format '{{.Digest}}' docker://registry.local:5000/swap/hello:v1)
 skopeo copy -q --src-tls-verify docker://registry.local:5000/swap/hello:v1 docker-daemon:swap/hello:v2 \
   || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo pull through the TLS compose file"; }

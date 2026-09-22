@@ -25,7 +25,7 @@ for its debug and metrics listener, so that plan would have collided with the fi
 
 | Listener | Carries |
 |---|---|
-| `http.addr`, default `:5000` | `/v2/`, `/`, `/healthz`, `/openapi.json`, `/docs`. Nothing else: any other path is a 404, and gRPC is answered `UNIMPLEMENTED` |
+| `http.addr`, default `:5000` | `/v2`, `/v2/…`, `/`, `/healthz`, `/openapi.json`, `/docs`, `/docs/scalar.js`. Nothing else: any other path is a 404, and gRPC is answered `UNIMPLEMENTED`. `/` names only these, and `/openapi.json` describes only `/v2/` and `/healthz` |
 | `<root>/live/state/admin.sock`, a Unix socket, mode 0600, in a directory of mode 0700 | the module API and gRPC, `shutdown` included |
 
 Only the system and registry modules run, plugins are off, and the inference engine is `echo`. `validate()`
@@ -34,7 +34,8 @@ checks these instead of the loopback rules, which stay exactly as they were in e
 No token guards the socket: its file mode does, as FR-S06 says. `docker exec` reaches it; the network cannot.
 A socket left by a stopped server is replaced (the process lock proves no server owns it); anything else at the
 path stops the start. A path too long for a Unix socket stops the start and names the path. The socket is
-removed when the server stops. Both listeners drain on the one shutdown signal, and either failing ends the
+bound before the public port, so a public port that accepts means administration is up, and it is removed when the
+server stops or fails to start. Both listeners drain on the one shutdown signal, and either failing ends the
 process with its error.
 
 ## Consequences

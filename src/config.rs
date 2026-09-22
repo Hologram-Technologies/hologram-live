@@ -1030,7 +1030,10 @@ listen = "127.0.0.1:4455"
         };
         config.modules.enabled = vec!["dev.hologram.live.system".to_owned()];
         config.paths.state_dir = PathBuf::from(format!("/{}", "d".repeat(100)));
-        let error = config.validate().expect_err("sun_path is 108 bytes");
+        // 104 bytes, macOS's sun_path, is the limit on every Unix.
+        let error = config
+            .validate()
+            .expect_err("the path does not fit sun_path");
         assert!(error.to_string().contains("admin.sock"), "{error}");
     }
 

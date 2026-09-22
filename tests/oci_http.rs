@@ -1348,6 +1348,14 @@ mod served {
                 "{page}"
             );
         }
+        // The public pages name only what the public port serves.
+        for page in ["/", "/openapi.json"] {
+            let body = request(server.port, "GET", page, false).body;
+            assert!(
+                !String::from_utf8_lossy(&body).contains("/api/v1"),
+                "{page} names the module API"
+            );
+        }
         for token in [false, true] {
             for path in ["/api/v1/modules", "/api/v1/capabilities", "/api/v1/objects"] {
                 let answer = request(server.port, "GET", path, token);

@@ -63,31 +63,47 @@ where
     let grpc = grpc::router(state.clone());
     let limit = state.config().server.max_http_body_bytes;
 
-    let public = Router::new()
-        .route("/", get(index))
+    let registry_mode = state.config().registry_mode;
+    let front = if registry_mode {
+        Router::new().route("/", get(registry_index))
+    } else {
+        Router::new().route("/", get(index))
+    };
+    let public = front
         .route("/healthz", get(healthz))
         .route("/openapi.json", get(openapi))
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(routers.open);
 
+    // Registry mode binds its socket first: once the public port accepts,
+    // administration is up and owner-only.
+    let admin_listener = if registry_mode {
+        Some(admin::bind(&state.config().admin_socket())?)
+    } else {
+        None
+    };
     let listener = tokio::net::TcpListener::bind(&state.config().server.listen)
         .await
         .map_err(|error| {
             LiveError::Transport(format!("bind {}: {error}", state.config().server.listen))
-        })?;
-    let result = if state.config().registry_mode {
+        });
+    let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
         // the module API and gRPC, shutdown included, live on the socket.
         let public = assemble(public.with_state(state.clone()), Router::new(), limit);
         let admin = assemble(protected.with_state(state.clone()), grpc, limit);
-        let admin_listener = admin::bind(&state.config().admin_socket())?;
-        on_ready()?;
-        tracing::info!(listen = %state.config().server.listen, "hologram registry ready");
-        let served = serve_registry_mode(&state, (listener, public), (admin_listener, admin)).await;
+        let served = match listener.and_then(|listener| on_ready().map(|()| listener)) {
+            Ok(listener) => {
+                tracing::info!(listen = %state.config().server.listen, "hologram registry ready");
+                serve_registry_mode(&state, (listener, public), (admin_listener, admin)).await
+            }
+            Err(error) => Err(error),
+        };
         admin::remove(&state.config().admin_socket());
         served
     } else {
+        let listener = listener?;
         let http = public.merge(protected).with_state(state.clone());
         let router = assemble(http, grpc, limit);
         on_ready()?;
@@ -184,7 +200,29 @@ pub async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
 }
 
 async fn openapi(State(state): State<AppState>) -> Json<OpenApiDocument> {
+    if state.config().registry_mode {
+        // Only what the public port serves: the module API is on the socket.
+        let mut document = <ApiDoc as utoipa::OpenApi>::openapi();
+        document.merge(state.module_registry().open_openapi());
+        return Json(document);
+    }
     Json(openapi_document(state.module_registry()))
+}
+
+/// Registry mode's `/`: what this port serves, and nothing it does not.
+async fn registry_index() -> Html<&'static str> {
+    Html(
+        r#"<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Hologram Registry</title></head>
+<body>
+<h1>Hologram Registry</h1>
+<p>A Docker Registry: the distribution API is at <a href="/v2/">/v2/</a>.
+The API reference is at <a href="/docs">/docs</a>; health at <a href="/healthz">/healthz</a>.</p>
+</body>
+</html>
+"#,
+    )
 }
 
 async fn scalar_reference() -> Html<String> {

@@ -255,6 +255,14 @@ impl OciError {
         self.0.code
     }
 
+    /// The reason in words: the detail when it is a string, else the message.
+    pub fn reason(&self) -> String {
+        self.0
+            .detail
+            .as_str()
+            .map_or_else(|| self.0.message.clone().into_owned(), str::to_owned)
+    }
+
     pub fn status(&self) -> StatusCode {
         self.0
             .status

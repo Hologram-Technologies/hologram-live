@@ -159,7 +159,7 @@ type DebugListener = Option<(tokio::net::TcpListener, Router)>;
 
 /// The public listener's TLS, when `http.tls` is set.
 #[cfg(feature = "oci")]
-type PublicTls = Option<tokio_rustls::TlsAcceptor>;
+type PublicTls = Option<crate::tls::Tls>;
 #[cfg(not(feature = "oci"))]
 type PublicTls = Option<std::convert::Infallible>;
 

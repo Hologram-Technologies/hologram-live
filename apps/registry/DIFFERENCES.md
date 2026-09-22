@@ -53,8 +53,11 @@ the volume; the reference only stats its root, so a volume that has turned read-
 **TLS.** `http.tls.certificate` and `.key` are read as the reference reads them: a certificate file may hold the whole
 chain, and all of it is sent; the key may be PKCS#8, PKCS#1 or SEC1. HTTP/2 is offered. `minimumtls` takes `tls1.2`
 (the default) and `tls1.3`; `tls1.0` and `tls1.1` stop the start by name, because this listener does not speak them.
-A key without a certificate stops the start, where the reference quietly serves plain HTTP. A certificate is read
-at start; replacing the files takes a restart (reload without one is planned). `letsencrypt`
+A key without a certificate stops the start, where the reference quietly serves plain HTTP. Where the reference
+reads the certificate once, at start, this listener reads it again when either file changes: new handshakes get the
+renewed pair within 5 s, with no restart. A pair that does not load (a half-written renewal, a key that is not the
+certificate's) leaves the last good one serving, logs one error, and adds to `hologram_tls_reload_failures_total`;
+`hologram_tls_certificate_not_after_seconds` on `/metrics` is when the served certificate expires. `letsencrypt`
 and client certificates (`clientcas`) are refused by name.
 
 **Garbage collection.** `registry garbage-collect [--dry-run] [--delete-untagged] [--quiet] <config>` marks and sweeps

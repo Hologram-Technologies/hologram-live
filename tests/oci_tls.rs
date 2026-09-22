@@ -25,6 +25,9 @@ fn slash(path: &Path) -> String {
 struct Server {
     child: Child,
     port: u16,
+    /// The pair the server reads, copies a test may replace.
+    certificate: PathBuf,
+    key: PathBuf,
     _root: tempfile::TempDir,
 }
 
@@ -44,13 +47,17 @@ fn start(extra: &str) -> Server {
         .expect("address")
         .port();
     let file = root.path().join("config.yml");
+    let certificate = root.path().join("tls.crt");
+    let key = root.path().join("tls.key");
+    std::fs::copy(fixture("chain.crt"), &certificate).expect("copy the certificate");
+    std::fs::copy(fixture("server.key"), &key).expect("copy the key");
     std::fs::write(
         &file,
         format!(
             "version: 0.1\nlog:\n  level: warn\nstorage:\n  filesystem:\n    rootdirectory: {}\nhttp:\n  addr: 127.0.0.1:{port}\n  tls:\n    certificate: {}\n    key: {}\n{extra}",
             slash(&root.path().join("volume")),
-            slash(&fixture("chain.crt")),
-            slash(&fixture("server.key")),
+            slash(&certificate),
+            slash(&key),
         ),
     )
     .expect("config.yml");
@@ -69,6 +76,8 @@ fn start(extra: &str) -> Server {
     let server = Server {
         child,
         port,
+        certificate,
+        key,
         _root: root,
     };
     let deadline = Instant::now() + Duration::from_mins(1);
@@ -216,4 +225,113 @@ fn minimumtls_13_refuses_a_tls_12_client() {
     assert!(failed, "a TLS 1.2 client was accepted");
     let (status, _) = exchange(server.port, "GET", "/v2/");
     assert_eq!(status, 200, "a TLS 1.3 client still is");
+}
+
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .expect("bind")
+        .local_addr()
+        .expect("address")
+        .port()
+}
+
+/// The end-entity certificate a new handshake is given.
+fn served(port: u16) -> Vec<u8> {
+    let mut stream = connect(port, client(&[&rustls::version::TLS13], &[]));
+    while stream.conn.is_handshaking() {
+        stream
+            .conn
+            .complete_io(&mut stream.sock)
+            .expect("handshake");
+    }
+    stream.conn.peer_certificates().expect("certificates")[0]
+        .as_ref()
+        .to_vec()
+}
+
+fn leaf(name: &str) -> Vec<u8> {
+    CertificateDer::pem_file_iter(fixture(name))
+        .expect("pem")
+        .next()
+        .expect("a certificate")
+        .expect("parse")
+        .as_ref()
+        .to_vec()
+}
+
+/// One `hologram_tls_*` value from the debug listener's `/metrics`.
+fn tls_metric(port: u16, name: &str) -> i64 {
+    let mut tcp = TcpStream::connect(("127.0.0.1", port)).expect("connect the debug listener");
+    tcp.set_read_timeout(Some(Duration::from_secs(20)))
+        .expect("timeout");
+    write!(
+        tcp,
+        "GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    )
+    .expect("send");
+    let mut raw = String::new();
+    let _ = tcp.read_to_string(&mut raw);
+    raw.lines()
+        .find_map(|line| line.strip_prefix(&format!("{name} ")))
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or_else(|| panic!("{name} is not on /metrics:\n{raw}"))
+}
+
+/// Within `limit`, `check` holds.
+fn within(limit: Duration, what: &str, mut check: impl FnMut() -> bool) {
+    let deadline = Instant::now() + limit;
+    while !check() {
+        assert!(Instant::now() < deadline, "{what} within {limit:?}");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// FR-S05: replace the files and new handshakes get the new certificate
+/// within 5 s, with no restart. A pair that does not load leaves the last
+/// good one serving and counts a failure.
+#[test]
+fn a_renewed_certificate_is_served_within_5_s_and_a_broken_one_is_not() {
+    let debug = free_port();
+    let server = start(&format!(
+        "  debug:\n    addr: 127.0.0.1:{debug}\n    prometheus:\n      enabled: true\n"
+    ));
+    assert_eq!(served(server.port), leaf("server.crt"));
+    assert_eq!(
+        tls_metric(debug, "hologram_tls_certificate_not_after_seconds"),
+        4_943_677_792
+    );
+
+    std::fs::write(
+        &server.key,
+        std::fs::read(fixture("renewed.key")).expect("key"),
+    )
+    .expect("renew the key");
+    std::fs::write(
+        &server.certificate,
+        std::fs::read(fixture("renewed.crt")).expect("certificate"),
+    )
+    .expect("renew the certificate");
+    let renewed = leaf("renewed.crt");
+    within(
+        Duration::from_secs(5),
+        "the renewed certificate is served",
+        || served(server.port) == renewed,
+    );
+    assert_eq!(
+        tls_metric(debug, "hologram_tls_certificate_not_after_seconds"),
+        2_420_813_701
+    );
+
+    let failures = tls_metric(debug, "hologram_tls_reload_failures_total");
+    std::fs::write(&server.key, b"not a key").expect("break the key");
+    within(Duration::from_secs(5), "the failure is counted", || {
+        tls_metric(debug, "hologram_tls_reload_failures_total") > failures
+    });
+    assert_eq!(
+        served(server.port),
+        renewed,
+        "the last good pair still serves"
+    );
+    let (status, _) = exchange(server.port, "GET", "/v2/");
+    assert_eq!(status, 200);
 }

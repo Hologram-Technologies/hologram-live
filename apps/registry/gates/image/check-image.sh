@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# The image, judged from outside: its metadata equals the reference image's,
+# it serves /v2/ with its own default file, nothing else faces the network,
+# docker push and pull work, `docker stop` is clean, and a restart on the same
+# volume keeps what was pushed.
+# Usage: check-image.sh <our image>   (the reference is gates/reference.env)
+set -euo pipefail
+ours=$1
+here=$(cd "$(dirname "$0")" && pwd)
+source "$here/../reference.env"
+reference="${REGISTRY_REF/:3@/@}"
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+port=5002
+name=gate-image
+
+docker pull -q "$reference" > /dev/null
+field() { docker image inspect --format "{{json .Config.$2}}" "$1"; }
+for key in Entrypoint Cmd ExposedPorts Volumes; do
+  [ "$(field "$ours" "$key")" = "$(field "$reference" "$key")" ] \
+    || fail "$key: ours $(field "$ours" "$key"), the reference's $(field "$reference" "$key")"
+done
+field "$ours" Env | grep -q '"OTEL_TRACES_EXPORTER=none"' || fail "Env lacks OTEL_TRACES_EXPORTER=none"
+echo "metadata: entry point, command, port, volume and environment equal the reference's"
+
+cleanup() { docker rm -f "$name" > /dev/null 2>&1 || true; docker volume rm -f gate-image-data > /dev/null 2>&1 || true; }
+trap cleanup EXIT
+cleanup
+# As the reference is run: the image's own default file, a named volume.
+docker run -d --name "$name" -p "127.0.0.1:$port:5000" -v gate-image-data:/var/lib/registry "$ours" > /dev/null
+wait_up() {
+  for _ in $(seq 1 60); do
+    curl -fsS "http://127.0.0.1:$port/v2/" > /dev/null 2>&1 && return 0
+    sleep 1
+  done
+  docker logs "$name" | tail -n 40; fail "the image did not answer /v2/"
+}
+wait_up
+status() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port$1"; }
+[ "$(status /v2/)" = 200 ] || fail "/v2/ is not 200"
+for path in /api/v1/modules /api/v1/capabilities /api/v1/objects; do
+  [ "$(status "$path")" = 404 ] || fail "$path faces the network (ADR 028)"
+done
+published=$(docker port "$name")
+[ "$(printf '%s\n' "$published" | wc -l)" = 1 ] && printf '%s' "$published" | grep -q '^5000/tcp' \
+  || fail "only 5000 is published, got: $published"
+docker exec "$name" hologram --version > /dev/null || fail "hologram is not on the path"
+if out=$(docker exec "$name" hologram oci verify 2>&1); then fail "oci verify should say it is not built yet"; fi
+grep -q "not built yet" <<<"$out" || fail "hologram oci verify: $out"
+# The other way operators reach the binary: /bin/registry, as in the reference.
+version=$(docker run --rm --entrypoint /bin/registry "$ours" --version) || fail "/bin/registry --version"
+grep -q "^registry " <<<"$version" || fail "/bin/registry --version: $version"
+if gc=$(docker run --rm "$ours" garbage-collect --dry-run /etc/distribution/config.yml 2>&1); then
+  fail "garbage-collect should say it is not built yet"
+fi
+grep -q "not built yet" <<<"$gc" || fail "garbage-collect through the entry point: $gc"
+echo "surface: /v2/ in public, the module API is not, only 5000 published, hologram on the path"
+
+dir=$(mktemp -d)
+printf 'gate image\n' > "$dir/hello.txt"
+printf 'FROM scratch\nCOPY hello.txt /hello.txt\n' > "$dir/Dockerfile"
+tag="127.0.0.1:$port/gate/image:v1"
+docker build -q -t "$tag" "$dir" > /dev/null
+docker push -q "$tag" > /dev/null
+pushed=$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")
+echo "push: $pushed"
+
+started=$(date +%s)
+docker stop "$name" > /dev/null
+took=$(( $(date +%s) - started ))
+code=$(docker inspect --format '{{.State.ExitCode}}' "$name")
+[ "$took" -lt 8 ] || fail "docker stop took ${took}s: SIGTERM was not a clean stop"
+[ "$code" = 0 ] || { docker logs "$name" | tail -n 20; fail "exit code $code after docker stop"; }
+echo "stop: clean, ${took}s, exit 0"
+
+docker start "$name" > /dev/null
+wait_up
+docker image rm "$tag" > /dev/null
+docker pull -q "$tag" > /dev/null
+[ "$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")" = "$pushed" ] || fail "the pull after a restart differs"
+echo "restart: the volume kept the push; the stale lock did not stop the start"
+echo "image gate: ok"

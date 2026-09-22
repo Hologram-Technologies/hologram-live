@@ -116,6 +116,13 @@ async fn pull_archive_bytes(
 }
 
 pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()> {
+    // First, before anything slow: as process 1 a signal with no handler is
+    // ignored, so `docker stop` during startup would wait out its grace period.
+    #[cfg(feature = "oci")]
+    let stop = args
+        .registry_config
+        .is_some()
+        .then(hologram_live::stop_signal::StopSignal::register);
     #[cfg(feature = "oci")]
     let mut config = match &args.registry_config {
         // Registry mode reads the registry's configuration, never the user's
@@ -163,6 +170,10 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
     }
     let _guard = process::DaemonGuard::acquire(&config)?;
     let state = AppState::build(config, tracing.clone()).await?;
+    #[cfg(feature = "oci")]
+    if let Some(stop) = stop {
+        stop.forward_to(state.clone());
+    }
     // Load operator-declared resident applications before binding the
     // listener, so the daemon does not report ready until they are
     // invocable. Load time delays readiness probes; keep declarations

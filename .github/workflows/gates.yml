@@ -208,3 +208,27 @@ jobs:
       - name: The server's log, when a client failed
         if: failure()
         run: tail -n 80 "$RUNNER_TEMP/server.log"
+
+  image:
+    name: Image · the registry image, from outside (P5 T4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/registry/Dockerfile
+          tags: hologram-registry:ci
+          load: true
+          cache-from: type=gha,scope=registry-image
+          cache-to: type=gha,scope=registry-image,mode=max
+      - name: Metadata, surface, push and pull, clean stop, restart
+        run: apps/registry/gates/image/check-image.sh hologram-registry:ci
+      - name: The deployment guide, with only the image changed (P5 T5)
+        run: apps/registry/gates/clients/compose-swap.sh hologram-registry:ci
+      - name: The image's size
+        if: always()
+        run: docker image ls hologram-registry:ci --format '{{.Size}}'

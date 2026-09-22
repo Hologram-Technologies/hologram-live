@@ -1,0 +1,9 @@
+# Only what the build needs: the sources, the vendored crates, the lock file.
+target
+**/target
+.git
+apps/desktop
+apps/model-hub
+apps/docs
+apps/registry/gates
+**/node_modules

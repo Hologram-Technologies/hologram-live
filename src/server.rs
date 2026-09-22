@@ -20,6 +20,31 @@ use utoipa::openapi::OpenApi as OpenApiDocument;
 
 static REQUEST_IDS: AtomicU64 = AtomicU64::new(1);
 
+/// The registry's TLS acceptor, when the reference's `http.tls.*` settings
+/// are present. Without the registry's feature there is no TLS and no
+/// setting that could ask for one (`server.tls` is never read from a file).
+#[cfg(feature = "oci")]
+type RegistryTls = Option<tokio_rustls::TlsAcceptor>;
+#[cfg(not(feature = "oci"))]
+type RegistryTls = Option<()>;
+
+/// Build the TLS acceptor, before anything binds: the operator's certificate
+/// must be good before the registry says it is coming up.
+fn build_tls(state: &AppState) -> Result<RegistryTls> {
+    #[cfg(feature = "oci")]
+    return state
+        .config()
+        .server
+        .tls
+        .as_ref()
+        .map(crate::tls::build)
+        .transpose();
+    #[cfg(not(feature = "oci"))]
+    let _ = state;
+    #[cfg(not(feature = "oci"))]
+    Ok(None)
+}
+
 /// The next request id, for a module that builds its own request span
 /// because it is mounted outside `authenticate`.
 #[cfg_attr(
@@ -78,6 +103,7 @@ where
 
     // Registry mode binds its socket first: once the public port accepts,
     // administration is up and owner-only.
+    let tls_acceptor = build_tls(&state)?;
     let admin_listener = if registry_mode {
         Some(admin::bind(&state.config().admin_socket())?)
     } else {
@@ -96,7 +122,13 @@ where
         let served = match listener.and_then(|listener| on_ready().map(|()| listener)) {
             Ok(listener) => {
                 tracing::info!(listen = %state.config().server.listen, "hologram registry ready");
-                serve_registry_mode(&state, (listener, public), (admin_listener, admin)).await
+                serve_registry_mode(
+                    &state,
+                    (listener, public),
+                    (admin_listener, admin),
+                    tls_acceptor,
+                )
+                .await
             }
             Err(error) => Err(error),
         };
@@ -124,22 +156,37 @@ where
 }
 
 /// Both listeners of registry mode, drained by the one shutdown signal. Either
-/// failing ends the process with its error.
+/// failing ends the process with its error. The public listener serves TLS
+/// when the operator's configuration asked for it (P6 T2); the socket never
+/// carries TLS (ADR 028, errata E5).
 async fn serve_registry_mode(
     state: &AppState,
     (public_listener, public): (tokio::net::TcpListener, Router),
     (admin_listener, admin): (admin::Listener, Router),
+    tls_acceptor: RegistryTls,
 ) -> Result<()> {
-    use std::future::IntoFuture;
-    let public_state = state.clone();
-    let public = axum::serve(public_listener, public)
-        .with_graceful_shutdown(async move { public_state.wait_shutdown().await })
-        .into_future();
-    let public = async move {
-        public
-            .await
-            .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
-    };
+    let public: std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> =
+        match tls_acceptor {
+            #[cfg(feature = "oci")]
+            Some(acceptor) => {
+                let public_state = state.clone();
+                Box::pin(crate::tls::serve(
+                    public_listener,
+                    acceptor,
+                    public,
+                    async move { public_state.wait_shutdown().await },
+                ))
+            }
+            _ => {
+                let public_state = state.clone();
+                Box::pin(async move {
+                    axum::serve(public_listener, public)
+                        .with_graceful_shutdown(async move { public_state.wait_shutdown().await })
+                        .await
+                        .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
+                })
+            }
+        };
     let admin = admin::serve(state.clone(), admin_listener, admin);
     tokio::try_join!(public, admin).map(|_| ())
 }

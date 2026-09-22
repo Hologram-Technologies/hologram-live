@@ -169,6 +169,54 @@ pub struct ServerConfig {
     pub max_http_body_bytes: usize,
     pub graceful_shutdown_secs: u64,
     pub actor_mailbox_capacity: usize,
+    /// TLS on the registry's public listener, from the reference's
+    /// `http.tls.*` settings. Only registry mode serves it; set by
+    /// `registry_compat::apply`, never by a `live.toml` section.
+    #[serde(skip)]
+    pub tls: Option<TlsConfig>,
+}
+
+/// The certificate and key the registry serves TLS with, and the oldest
+/// protocol it accepts. `minimum` is `tls1.2` or `tls1.3`, as the
+/// reference's `http.tls.minimumtls` reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TlsConfig {
+    pub certificate: PathBuf,
+    pub key: PathBuf,
+    pub minimum: TlsVersion,
+}
+
+/// The oldest TLS protocol version the registry accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TlsVersion {
+    Tls12,
+    Tls13,
+}
+
+impl TlsVersion {
+    /// The name the reference's settings use.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TlsVersion::Tls12 => "tls1.2",
+            TlsVersion::Tls13 => "tls1.3",
+        }
+    }
+
+    /// A version from the reference's `http.tls.minimumtls` value.
+    ///
+    /// # Errors
+    ///
+    /// Anything but `tls1.2` and `tls1.3`: the reference accepts older
+    /// versions; this registry refuses them rather than serve them.
+    pub fn parse(value: &str) -> Result<Self> {
+        match value.trim() {
+            "tls1.2" => Ok(TlsVersion::Tls12),
+            "tls1.3" => Ok(TlsVersion::Tls13),
+            other => Err(LiveError::Config(format!(
+                "registry setting http.tls.minimumtls must be tls1.2 or tls1.3, not {other}"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -325,6 +373,7 @@ impl Default for ServerConfig {
             max_http_body_bytes: 32 * 1024 * 1024,
             graceful_shutdown_secs: 30,
             actor_mailbox_capacity: 128,
+            tls: None,
         }
     }
 }
@@ -586,6 +635,12 @@ impl AppConfig {
         } else if !is_loopback(listen.ip()) && !self.auth.required {
             return Err(LiveError::Config(
                 "non-loopback server.listen requires auth.required = true".to_owned(),
+            ));
+        } else if self.server.tls.is_some() {
+            return Err(LiveError::Config(
+                "server.tls is only served by the registry; run the registry with its own \
+                 configuration (hologram serve --registry-config) to serve TLS"
+                    .to_owned(),
             ));
         }
         // The registry answers /v2/ without the bearer token (ADR 026), and has

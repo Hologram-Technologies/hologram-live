@@ -154,6 +154,7 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
         ("storage.cache.blobdescriptor", "redis") => {
             refuse("redis is not supported: v1 is one writer")
         }
+        ("http.tls.minimumtls", _) => crate::config::TlsVersion::parse(value.trim()).map(|_| ()),
         _ => match key.strip_prefix("http.headers.") {
             // A header that cannot be sent is refused, not dropped.
             Some(name) if axum::http::HeaderName::from_bytes(name.as_bytes()).is_err() => {
@@ -318,7 +319,13 @@ pub fn tracing_config(settings: &RegistrySettings, mut tracing: TracingConfig) -
 
 /// Apply what the server itself owns, and keep the rest for the registry
 /// module. Called once, before the configuration is validated.
-pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
+///
+/// # Errors
+///
+/// `LiveError::Config` naming the key, for a TLS pair with one half missing:
+/// a certificate without a key would start a server that fails its first
+/// handshake, and the operator deserves the reason at start, not at connect.
+pub fn apply(settings: RegistrySettings, config: &mut AppConfig) -> Result<()> {
     // `:5000` means every interface, as in Go. With no `http.addr`, the
     // image's port (plan D1).
     let addr = settings.get("http.addr").unwrap_or(":5000");
@@ -326,6 +333,7 @@ pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
         Some(port) => format!("0.0.0.0:{port}"),
         None => addr.to_owned(),
     };
+    config.server.tls = tls_settings(&settings)?;
     // Everything the server keeps lives on the registry's volume, under
     // `live/`, so a container needs no home directory and a developer's home
     // is never written (FR-S07).
@@ -352,6 +360,51 @@ pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
         );
     }
     let _ = INSTALLED.set(settings);
+    Ok(())
+}
+
+/// The reference's `http.tls.*` settings as the server's TLS configuration.
+/// A pair half present is a start failure naming the missing key; an absent
+/// section is plain HTTP, as the reference serves by default.
+fn tls_settings(settings: &RegistrySettings) -> Result<Option<crate::config::TlsConfig>> {
+    use crate::config::{TlsConfig, TlsVersion};
+    let certificate = settings
+        .get("http.tls.certificate")
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let key = settings
+        .get("http.tls.key")
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let tls = match (certificate, key) {
+        (Some(certificate), Some(key)) => {
+            let minimum = match settings.get("http.tls.minimumtls") {
+                Some(value) => TlsVersion::parse(value)?,
+                None => TlsVersion::Tls12,
+            };
+            Some(TlsConfig {
+                certificate: PathBuf::from(certificate),
+                key: PathBuf::from(key),
+                minimum,
+            })
+        }
+        (Some(_), None) => {
+            return Err(LiveError::Config(
+                "registry setting http.tls.certificate requires http.tls.key: TLS is not \
+                 served with half a pair"
+                    .to_owned(),
+            ))
+        }
+        (None, Some(_)) => {
+            return Err(LiveError::Config(
+                "registry setting http.tls.key requires http.tls.certificate: TLS is not \
+                 served with half a pair"
+                    .to_owned(),
+            ))
+        }
+        (None, None) => None,
+    };
+    Ok(tls)
 }
 
 #[cfg(test)]
@@ -413,6 +466,7 @@ mod tests {
         match key {
             "log.formatter" => "json",
             "storage.cache.blobdescriptor" => "inmemory",
+            "http.tls.minimumtls" => "tls1.2",
             _ => "x",
         }
     }
@@ -459,7 +513,7 @@ health:
             .iter()
             .any(|key| key.starts_with("health.storagedriver")));
         let mut config = AppConfig::default();
-        apply(settings, &mut config);
+        apply(settings, &mut config).expect("the image's default file applies");
         assert_eq!(config.server.listen, "0.0.0.0:5000");
         assert_eq!(
             config.paths.data_dir,
@@ -510,9 +564,9 @@ health:
         for (name, value, key) in [
             ("REGISTRY_STORAGE_S3_BUCKET", "x", "storage.s3.bucket"),
             (
-                "REGISTRY_HTTP_TLS_CERTIFICATE",
-                "/certs/c.crt",
-                "http.tls.certificate",
+                "REGISTRY_HTTP_TLS_CLIENTCAS",
+                "/certs/ca.crt",
+                "http.tls.clientcas",
             ),
             (
                 "REGISTRY_PROXY_REMOTEURL",
@@ -606,5 +660,65 @@ health:
         assert!(load_text("log:\n  formatter: logstash\n", &[]).is_err());
         assert!(load_text("storage:\n  cache:\n    blobdescriptor: redis\n", &[]).is_err());
         assert!(load_text("log:\n  formatter: json\n", &[]).is_ok());
+    }
+
+    #[test]
+    fn tls_settings_reach_the_server_configuration() {
+        let settings = load_text(
+            "http:\n  tls:\n    certificate: /certs/domain.crt\n    key: /certs/domain.key\n",
+            &[],
+        )
+        .expect("load");
+        let mut config = AppConfig::default();
+        apply(settings, &mut config).expect("apply");
+        let tls = config.server.tls.as_ref().expect("TLS configured");
+        assert_eq!(
+            (tls.certificate.as_os_str(), tls.key.as_os_str()),
+            (
+                std::path::Path::new("/certs/domain.crt").as_os_str(),
+                std::path::Path::new("/certs/domain.key").as_os_str()
+            )
+        );
+        assert_eq!(tls.minimum, crate::config::TlsVersion::Tls12, "default");
+
+        let settings = load_text(
+            "http:\n  tls:\n    certificate: /certs/domain.crt\n    key: /certs/domain.key\n    minimumtls: tls1.3\n",
+            &[],
+        )
+        .expect("load");
+        let mut config = AppConfig::default();
+        apply(settings, &mut config).expect("apply");
+        assert_eq!(
+            config.server.tls.as_ref().expect("TLS").minimum,
+            crate::config::TlsVersion::Tls13
+        );
+    }
+
+    #[test]
+    fn tls_half_a_pair_stops_the_start_naming_the_missing_key() {
+        let settings =
+            load_text("http:\n  tls:\n    certificate: /certs/domain.crt\n", &[]).expect("load");
+        let mut config = AppConfig::default();
+        let error = apply(settings, &mut config)
+            .expect_err("certificate alone")
+            .to_string();
+        assert!(error.contains("http.tls.key"), "{error}");
+
+        let settings = load_text("http:\n  tls:\n    key: /certs/domain.key\n", &[]).expect("load");
+        let mut config = AppConfig::default();
+        let error = apply(settings, &mut config)
+            .expect_err("key alone")
+            .to_string();
+        assert!(error.contains("http.tls.certificate"), "{error}");
+    }
+
+    #[test]
+    fn minimumtls_below_12_is_refused_at_load() {
+        for version in ["tls1.0", "tls1.1", "ssl3", ""] {
+            let text = format!("http:\n  tls:\n    minimumtls: \"{version}\"\n");
+            let error = load_text(&text, &[]).expect_err(version).to_string();
+            assert!(error.contains("http.tls.minimumtls"), "{version}: {error}");
+        }
+        assert!(load_text("http:\n  tls:\n    minimumtls: tls1.2\n", &[]).is_ok());
     }
 }

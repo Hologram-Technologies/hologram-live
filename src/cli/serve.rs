@@ -135,7 +135,7 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
                 Some(_) => helpers::load(&cli)?.0,
                 None => hologram_live::config::AppConfig::default(),
             };
-            hologram_live::registry_compat::apply(settings, &mut config);
+            hologram_live::registry_compat::apply(settings, &mut config)?;
             config.modules.enabled = vec![
                 "dev.hologram.live.system".to_owned(),
                 hologram_live::modules::oci::MODULE_ID.to_owned(),

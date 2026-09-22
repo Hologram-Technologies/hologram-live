@@ -68,9 +68,9 @@ Each task's steps, test code and traps are in its phase file. Owner A = protocol
 
 ## Phase 6: Login and TLS (B, days 12 to 16)
 
-- [ ] T035 [US2] P6.T1 (1.25) htpasswd, challenge, cache, reload → `src/modules/oci/auth.rs`. Closes: FR-007
-- [ ] T036 [US2] P6.T2 (1.25) TLS accept loop on `hyper-util` → `src/tls.rs`, `src/server.rs`. Closes: FR-008
-- [ ] T037 [US2] P6.T3 (0.5) Admin listener stays plain on loopback under TLS → `src/server.rs`, `src/cli/oci.rs`. Closes: FR-021
+- [x] T035 [US2] P6.T1 (1.25) htpasswd, challenge, cache, reload → `src/modules/oci/auth.rs`. Closes: FR-007 (#102)
+- [x] T036 [US2] P6.T2 (1.25) TLS accept loop on `hyper-util` → `src/tls.rs`, `src/server.rs`. Closes: FR-008
+- [x] T037 [US2] P6.T3 (0.5) Admin listener stays plain on loopback under TLS → `src/server.rs`, `src/cli/oci.rs`. Closes: FR-021 (#100; errata E5: the token dial became the Unix socket)
 - [ ] T038 [US2] P6.T4 (0.5) TLS and htpasswd compose files turned on → `apps/registry/gates/compose/`. Closes: FR-001, SC-001
 
 ## Phase 7: Discovery and management (A, days 17 to 20) — T039 to T042 and T044 DONE 2026-09-21 (6d23904, bb576a2): gate A, every category, 74 passed, 0 failed, 5 skipped, and blocking. T043 (read-only mode, upload purging) NOT started. Files differ from the plan: tags, catalogue and referrers share `listing.rs`. Delete switch is read from `REGISTRY_STORAGE_DELETE_ENABLED` until P5's key table lands

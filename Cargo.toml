@@ -47,6 +47,10 @@ getrandom = { version = "0.4", optional = true }
 base64 = { version = "0.23", optional = true }
 # Already locked through tonic and reqwest; the registry streams blob bodies with `ReaderStream`.
 tokio-util = { version = "0.7", features = ["io"], optional = true }
+# TLS on the registry's public listener (registry mode, P6 T2). Locked through
+# hyper-rustls; `ring` keeps the crypto provider choice with the rest of the
+# tree, and `tls12` serves `http.tls.minimumtls: tls1.2` (the default).
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"], optional = true }
 kappa-core = { path = "third_party/kappa/crates/kappa-core", optional = true, default-features = false }
 kappa-store-redb = { path = "third_party/kappa/crates/kappa-store-redb", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -97,6 +101,12 @@ hologram-view-surface = { path = "crates/hologram-view-surface" }
 
 [dev-dependencies]
 cucumber = "0.23"
+# Test-only certificate generation for the TLS suite (tests/oci_tls.rs).
+# `ring` keeps the registry's no-aws-lc boundary (P0's one condition).
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+# Tests only: h2 over TLS needs reqwest's own http2 feature, which the
+# server's build does not turn on (axum serves h2 itself).
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2"] }
 # Dev-only: the client SDK mirrors the wire shapes rather than importing them,
 # so a contract test asserts the two still agree. A dev-dependency keeps it out
 # of the server's normal dependency graph, which the product-boundary gate
@@ -106,7 +116,7 @@ hologram-client = { path = "crates/hologram-client" }
 [features]
 bdd = []
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
-oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:getrandom", "dep:base64"]
+oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:getrandom", "dep:base64", "dep:tokio-rustls"]
 
 [[test]]
 name = "oci_store"
@@ -118,6 +128,10 @@ required-features = ["oci"]
 
 [[test]]
 name = "oci_login"
+required-features = ["oci"]
+
+[[test]]
+name = "oci_tls"
 required-features = ["oci"]
 
 [[test]]

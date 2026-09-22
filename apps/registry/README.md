@@ -8,8 +8,10 @@ Existing data migrates with one command.
 
 **Status: under construction, not released.** The `/v2/` API is built behind the cargo feature `oci` and passes
 the OCI Distribution conformance suite (74 passed, 0 failed); unmodified `docker` and `skopeo` work through it.
-Login, TLS, the `REGISTRY_*` settings, the image and the operator commands are not built yet, and it is not yet
-equal to `registry:3` everywhere: the differences left are counted by gate B on every change.
+The `REGISTRY_*` settings, the reference's `config.yml`, TLS (`http.tls.*`), htpasswd login, the registry mode
+with its admin socket, the image and a graceful stop are built. The operator commands (`garbage-collect`,
+`verify`, `import`) and the release are not yet, and it is not yet equal to `registry:3` everywhere: the
+differences left are counted by gate B on every change.
 
 ## What it will look like at 1.0
 

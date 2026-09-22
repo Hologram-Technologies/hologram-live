@@ -89,7 +89,7 @@ where
     // The debug listener (`http.debug.addr`) before the public port, too.
     #[cfg(feature = "oci")]
     let debug: DebugListener = if registry_mode {
-        crate::modules::oci::debug::bind().await?
+        crate::modules::oci::debug::bind(&state.config().server.listen).await?
     } else {
         None
     };

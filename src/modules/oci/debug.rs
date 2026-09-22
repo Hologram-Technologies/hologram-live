@@ -245,13 +245,25 @@ pub fn start_checks(state_dir: &Path) {
 /// # Errors
 ///
 /// The settings are wrong, or the address cannot be bound.
-pub async fn bind() -> Result<Option<(tokio::net::TcpListener, Router)>> {
+pub async fn bind(public: &str) -> Result<Option<(tokio::net::TcpListener, Router)>> {
     let Some(settings) = crate::registry_compat::installed() else {
         return Ok(None);
     };
     let Some(wanted) = DebugSettings::from(settings)? else {
         return Ok(None);
     };
+    // The image's default file puts the debug listener on :5001, and the
+    // deployment guide moves the registry itself there with
+    // REGISTRY_HTTP_ADDR=0.0.0.0:5001. The reference races its two binds and
+    // one of them exits the process; here the registry keeps the port.
+    if same_port(&wanted.addr, public) {
+        tracing::warn!(
+            debug = %wanted.addr,
+            listen = public,
+            "http.debug.addr is the registry's own port; the debug listener is not started"
+        );
+        return Ok(None);
+    }
     let listener = tokio::net::TcpListener::bind(&wanted.addr)
         .await
         .map_err(|error| LiveError::Transport(format!("bind http.debug.addr {}: {error}", wanted.addr)))?;
@@ -259,9 +271,28 @@ pub async fn bind() -> Result<Option<(tokio::net::TcpListener, Router)>> {
     Ok(Some((listener, router(&wanted))))
 }
 
+/// Whether two listen addresses would take the same port on this host.
+fn same_port(a: &str, b: &str) -> bool {
+    let port = |addr: &str| addr.rsplit_once(':').and_then(|(_, port)| port.parse::<u16>().ok());
+    let host = |addr: &str| addr.rsplit_once(':').map(|(host, _)| host.trim_matches(['[', ']']).to_owned());
+    let any = |host: &str| matches!(host, "" | "0.0.0.0" | "::");
+    match (port(a), port(b), host(a), host(b)) {
+        (Some(x), Some(y), Some(ha), Some(hb)) => x == y && (ha == hb || any(&ha) || any(&hb)),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_debug_port_is_given_up_to_the_registry_itself() {
+        assert!(same_port("0.0.0.0:5001", "0.0.0.0:5001"));
+        assert!(same_port("0.0.0.0:5001", "127.0.0.1:5001"), "every interface includes loopback");
+        assert!(!same_port("0.0.0.0:5001", "0.0.0.0:5000"));
+        assert!(!same_port("127.0.0.1:5001", "10.0.0.2:5001"), "two hosts, two sockets");
+    }
 
     #[test]
     fn go_durations_as_the_reference_writes_them() {

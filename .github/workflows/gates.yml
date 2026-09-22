@@ -228,10 +228,20 @@ jobs:
             sleep 1
           done
           cat "$RUNNER_TEMP/login.log"; exit 1
+      - name: Install crane, oras and helm, pinned by sha256
+        run: |
+          apps/registry/gates/clients/install.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: docker
         run: apps/registry/gates/clients/docker.sh
       - name: skopeo
         run: apps/registry/gates/clients/skopeo.sh
+      - name: crane
+        run: apps/registry/gates/clients/crane.sh
+      - name: oras (artifacts and referrers)
+        run: apps/registry/gates/clients/oras.sh
+      - name: helm (charts over oci://)
+        run: apps/registry/gates/clients/helm.sh
       - name: docker login (auth.htpasswd, P6 T1)
         run: apps/registry/gates/clients/login.sh
       - name: import a volume the reference wrote (P8 T2)

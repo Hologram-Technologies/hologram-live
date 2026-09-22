@@ -240,3 +240,186 @@ fn the_command_reports_damage_and_exits_1_changing_nothing() {
     );
     assert!(String::from_utf8_lossy(&ok.stdout).contains("every blob matches its digest"));
 }
+
+/// The paths the first test does not take: blobs stored under sha512 and
+/// pushed by blake3, an index whose child is damaged, a damaged manifest, and
+/// stray files in the tree that must not stop the run.
+#[test]
+fn every_address_kind_an_index_and_stray_files() {
+    use sha2::Digest as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (sha512_blob, blake3_stored, child_layer, child_manifest) = {
+        let store = OciStore::open(dir.path(), options()).expect("open");
+        // sha512, kept as pushed.
+        let bytes = b"a blob pushed by its sha512".to_vec();
+        let id = store.upload_begin(&repo("odd/one")).expect("begin");
+        store.upload_append(&id, 0, &bytes).expect("append");
+        let claimed = Digest::parse(&format!("sha512:{}", hex(&sha2::Sha512::digest(&bytes))))
+            .expect("sha512");
+        let sha512_blob = store.upload_finish(&id, &claimed).expect("finish");
+        // blake3: the store keeps it under sha256, with the blake3 alias.
+        let bytes = b"a blob pushed by its blake3".to_vec();
+        let id = store.upload_begin(&repo("odd/one")).expect("begin");
+        store.upload_append(&id, 0, &bytes).expect("append");
+        let blake3 = Digest::from_blake3(&blake3::hash(&bytes));
+        store.upload_finish(&id, &blake3).expect("finish");
+        let blake3_stored = store
+            .blob_stat(&repo("odd/one"), &blake3)
+            .expect("stat")
+            .stored_as;
+        // An index over two manifests, tagged; the second's layer is damaged.
+        let a = push_blob(&store, "odd/multi", b"layer a");
+        let b = push_blob(&store, "odd/multi", b"layer b");
+        let mut children = Vec::new();
+        for (tag, layer) in [("child-a", &a), ("child-b", &b)] {
+            let body = format!(
+                r#"{{"schemaVersion":2,"mediaType":"{MANIFEST_TYPE}","layers":[{{"digest":"{layer}"}}]}}"#
+            );
+            let plan = ManifestPlan {
+                kind: LinkKind::Manifest,
+                must_exist: vec![layer.clone()],
+                subject: None,
+            };
+            let digest = store
+                .manifest_put(
+                    &repo("odd/multi"),
+                    &Reference::parse(tag).expect("tag"),
+                    MANIFEST_TYPE,
+                    body.as_bytes(),
+                    &plan,
+                )
+                .expect("manifest");
+            children.push((digest, body.len()));
+        }
+        let index_type = "application/vnd.oci.image.index.v1+json";
+        let entries: Vec<String> = children
+            .iter()
+            .map(|(digest, size)| {
+                format!(r#"{{"mediaType":"{MANIFEST_TYPE}","digest":"{digest}","size":{size}}}"#)
+            })
+            .collect();
+        let index = format!(
+            r#"{{"schemaVersion":2,"mediaType":"{index_type}","manifests":[{}]}}"#,
+            entries.join(",")
+        );
+        let plan = ManifestPlan {
+            kind: LinkKind::Manifest,
+            must_exist: children.iter().map(|(digest, _)| digest.clone()).collect(),
+            subject: None,
+        };
+        store
+            .manifest_put(
+                &repo("odd/multi"),
+                &Reference::parse("multi").expect("tag"),
+                index_type,
+                index.as_bytes(),
+                &plan,
+            )
+            .expect("index");
+        (sha512_blob, blake3_stored, b, children[0].0.clone())
+    };
+    for digest in [&sha512_blob, &blake3_stored, &child_layer, &child_manifest] {
+        flip_one_byte_at(&blob_file(dir.path(), digest), 3);
+    }
+    // Stray files at the upper levels and in a leaf.
+    let blobs = dir.path().join("kappa/blobs");
+    std::fs::write(blobs.join("sha256/README.txt"), "notes").expect("stray");
+    std::fs::write(blobs.join("sha256/ab-notes"), "notes").expect("stray");
+    let leaf = blob_file(dir.path(), &child_layer);
+    std::fs::write(leaf.with_file_name("not-an-address"), "junk").expect("stray");
+
+    let store = OciStore::open(dir.path(), options()).expect("reopen");
+    let report = store
+        .verify(&mut |_, _| {})
+        .expect("stray files do not stop the run");
+    let by_digest = |digest: &Digest| {
+        report
+            .damaged
+            .iter()
+            .find(|damaged| damaged.digest == digest.as_str())
+            .unwrap_or_else(|| panic!("{digest} not reported: {:?}", report.damaged))
+    };
+    assert_eq!(by_digest(&sha512_blob).kind, "mismatch", "the sha512 arm");
+    assert_eq!(
+        by_digest(&blake3_stored).kind,
+        "mismatch",
+        "a blake3 push, stored under sha256"
+    );
+    let layer = by_digest(&child_layer);
+    assert_eq!(layer.repositories[0].name, "odd/multi");
+    assert!(
+        layer.repositories[0].tags.contains(&"multi".to_owned()),
+        "reached through the index: {layer:?}"
+    );
+    assert!(
+        layer.repositories[0].tags.contains(&"child-b".to_owned()),
+        "{layer:?}"
+    );
+    let manifest = by_digest(&child_manifest);
+    assert!(
+        manifest.repositories[0]
+            .tags
+            .contains(&"child-a".to_owned()),
+        "a damaged manifest is named: {manifest:?}"
+    );
+    assert!(
+        manifest.repositories[0].tags.contains(&"multi".to_owned()),
+        "{manifest:?}"
+    );
+    let junk = report
+        .damaged
+        .iter()
+        .find(|damaged| damaged.digest.ends_with(":not-an-address"))
+        .expect("the stray file in a leaf is reported");
+    assert_eq!(junk.kind, "not-a-blob");
+}
+
+fn hex(bytes: &[u8]) -> String {
+    hologram_live::util::hex(bytes)
+}
+
+fn flip_one_byte_at(file: &Path, at: usize) {
+    let mut permissions = std::fs::metadata(file).expect("blob").permissions();
+    #[allow(
+        clippy::permissions_set_readonly_false,
+        reason = "the test damages the file on purpose"
+    )]
+    permissions.set_readonly(false);
+    std::fs::set_permissions(file, permissions).expect("writable");
+    let mut bytes = std::fs::read(file).expect("read");
+    bytes[at] ^= 0x01;
+    std::fs::write(file, bytes).expect("write");
+}
+
+/// Beside a running server the volume is locked: the command says so, and
+/// exits 5, not 1, so an operator's "exit 1 means damage" stays true.
+#[test]
+fn a_locked_volume_is_not_reported_as_damage() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let volume = dir.path().join("volume");
+    let _held = OciStore::open(&volume, options()).expect("the running server's hold");
+    let config = dir.path().join("config.yml");
+    std::fs::write(
+        &config,
+        format!(
+            "version: 0.1\nstorage:\n  filesystem:\n    rootdirectory: {}\n",
+            volume.display().to_string().replace('\\', "/")
+        ),
+    )
+    .expect("config.yml");
+    let output = Command::new(env!("CARGO_BIN_EXE_hologram"))
+        .args(["oci", "verify", "--registry-config"])
+        .arg(&config)
+        .env("HOME", dir.path())
+        .env("USERPROFILE", dir.path())
+        .env("HOLOGRAM_CONFIG_DIR", dir.path().join("config"))
+        .output()
+        .expect("hologram oci verify");
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("the registry is running on"));
+}

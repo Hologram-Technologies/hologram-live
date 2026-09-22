@@ -1,17 +1,21 @@
 //! `hologram oci verify` (plan P8 T3, FR-014): every blob read again and
 //! hashed with the algorithm of its own address.
 //!
-//! Verify reports and changes nothing: it never deletes, never quarantines,
-//! and a server beside it keeps serving. A damaged blob is named with the
-//! repositories that link it and the tags that reach it, so the repair is
-//! plain: push those tags again, or restore those files.
+//! Verify reports and changes nothing: it never deletes and never
+//! quarantines. It runs on a stopped registry (the server holds the volume's
+//! lock). A damaged blob is named with the repositories that link it and the
+//! tags that reach it, so the repair is plain: push those tags again, or
+//! restore those files.
+//!
+//! The blob tree is walked one leaf directory at a time, so memory does not
+//! grow with the number of blobs.
 
 use super::{Algorithm, Digest, OciStore, OciStoreError, Reference, RepoName};
 use kappa_core::store::KappaStore as _;
 use sha2::Digest as _;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Read size while hashing.
 const CHUNK: usize = 1 << 20;
@@ -32,6 +36,9 @@ pub struct VerifyReport {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Damaged {
     pub digest: String,
+    /// `mismatch` (the bytes hash to something else), `unreadable`, or
+    /// `not-a-blob` (a symlink or a name that is not an address): for automation.
+    pub kind: &'static str,
     /// Bytes read before the fault was found; the whole blob for a mismatch.
     pub size: u64,
     /// `hash mismatch: <what the bytes hash to>`, or why it could not be read.
@@ -58,25 +65,64 @@ impl OciStore {
         &self,
         progress: &mut dyn FnMut(u64, u64),
     ) -> Result<VerifyReport, OciStoreError> {
-        let blobs = list_blobs(&self.layout().blob_root())?;
-        let total = blobs.len() as u64;
+        let leaves = leaf_directories(&self.layout().blob_root())?;
+        // A first pass that keeps no names, for the progress total.
+        let total: u64 = leaves
+            .iter()
+            .map(|(_, dir)| std::fs::read_dir(dir).map_or(0, Iterator::count) as u64)
+            .sum();
         let mut report = VerifyReport::default();
-        for digest in blobs {
-            match self.check_blob(&digest) {
-                Check::Whole(size) => report.bytes += size,
-                Check::Gone => {}
-                Check::Damaged { size, reason } => {
-                    report.bytes += size;
-                    report.damaged.push(Damaged {
-                        digest: digest.as_str().to_owned(),
-                        size,
-                        reason,
-                        repositories: Vec::new(),
-                    });
+        for (algorithm, dir) in leaves {
+            let mut files: Vec<std::fs::DirEntry> = match std::fs::read_dir(&dir) {
+                Ok(entries) => entries.filter_map(std::result::Result::ok).collect(),
+                // Removed since it was listed.
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    return Err(OciStoreError::Io(format!(
+                        "read {}: {error}",
+                        dir.display()
+                    )))
                 }
+            };
+            files.sort_by_key(std::fs::DirEntry::file_name);
+            for file in files {
+                let name = file.file_name().to_string_lossy().into_owned();
+                let label = format!("{algorithm}:{name}");
+                let check = match (file.file_type(), Digest::parse(&label)) {
+                    (Ok(kind), Ok(digest)) if kind.is_file() => self.check_blob(&digest),
+                    (Ok(kind), _) if kind.is_symlink() => Check::Damaged {
+                        kind: "not-a-blob",
+                        size: 0,
+                        reason: "a symlink where a blob should be".to_owned(),
+                    },
+                    (Ok(kind), _) if kind.is_dir() => Check::Damaged {
+                        kind: "not-a-blob",
+                        size: 0,
+                        reason: "a directory where a blob should be".to_owned(),
+                    },
+                    _ => Check::Damaged {
+                        kind: "not-a-blob",
+                        size: 0,
+                        reason: "a file whose name is not a blob address".to_owned(),
+                    },
+                };
+                match check {
+                    Check::Gone => continue,
+                    Check::Whole(size) => report.bytes += size,
+                    Check::Damaged { kind, size, reason } => {
+                        report.bytes += size;
+                        report.damaged.push(Damaged {
+                            digest: label,
+                            kind,
+                            size,
+                            reason,
+                            repositories: Vec::new(),
+                        });
+                    }
+                }
+                report.checked += 1;
+                progress(report.checked, total.max(report.checked));
             }
-            report.checked += 1;
-            progress(report.checked, total);
         }
         if !report.damaged.is_empty() {
             let reach = self.reach_of(&report.damaged)?;
@@ -94,6 +140,7 @@ impl OciStore {
             Err(kappa_core::types::StoreError::NotFound(_)) => return Check::Gone,
             Err(error) => {
                 return Check::Damaged {
+                    kind: "unreadable",
                     size: 0,
                     reason: format!("cannot open: {error}"),
                 }
@@ -111,6 +158,7 @@ impl OciStore {
                 }
                 Err(error) => {
                     return Check::Damaged {
+                        kind: "unreadable",
                         size,
                         reason: format!("cannot read: {error}"),
                     }
@@ -124,6 +172,7 @@ impl OciStore {
         } else {
             let algorithm = digest.as_str().split_once(':').map_or("", |(name, _)| name);
             Check::Damaged {
+                kind: "mismatch",
                 size,
                 reason: format!("hash mismatch: the bytes are {algorithm}:{found}"),
             }
@@ -280,7 +329,11 @@ impl OciStore {
 enum Check {
     Whole(u64),
     Gone,
-    Damaged { size: u64, reason: String },
+    Damaged {
+        kind: &'static str,
+        size: u64,
+        reason: String,
+    },
 }
 
 enum Hasher {
@@ -317,46 +370,44 @@ impl Hasher {
     }
 }
 
-/// Every blob address under the blob root: `<algorithm>/<hh>/<hh>/<hex>`
-/// (kappa-core's `blob_path_for`). Anything else there is not a blob: an
-/// upload's staging file lives outside it.
-fn list_blobs(root: &Path) -> Result<Vec<Digest>, OciStoreError> {
+/// Every leaf directory of the blob tree, `<algorithm>/<hh>/<hh>`
+/// (kappa-core's `blob_path_for`), sorted. Anything that is not a directory
+/// at the upper levels (a stray file, an operator's note) is passed over: it
+/// holds no blob, and must not stop the run. An upload's staging file lives
+/// outside this tree.
+fn leaf_directories(root: &Path) -> Result<Vec<(String, PathBuf)>, OciStoreError> {
     let io = |path: &Path, error: std::io::Error| {
         OciStoreError::Io(format!("read {}: {error}", path.display()))
     };
-    let entries = |path: &Path| -> Result<Vec<std::fs::DirEntry>, OciStoreError> {
-        match std::fs::read_dir(path) {
-            Ok(entries) => entries
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| io(path, error)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(error) => Err(io(path, error)),
-        }
+    let directories = |path: &Path| -> Result<Vec<(String, PathBuf)>, OciStoreError> {
+        let entries = match std::fs::read_dir(path) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(io(path, error)),
+        };
+        let mut out: Vec<(String, PathBuf)> = entries
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| {
+                (
+                    entry.file_name().to_string_lossy().into_owned(),
+                    entry.path(),
+                )
+            })
+            .collect();
+        out.sort();
+        Ok(out)
     };
-    let mut out = Vec::new();
-    for algorithm in entries(root)? {
-        let name = algorithm.file_name().to_string_lossy().into_owned();
-        if !matches!(name.as_str(), "sha256" | "sha512" | "blake3") {
+    let mut leaves = Vec::new();
+    for (algorithm, top) in directories(root)? {
+        if !matches!(algorithm.as_str(), "sha256" | "sha512" | "blake3") {
             continue;
         }
-        for first in entries(&algorithm.path())? {
-            for second in entries(&first.path())? {
-                for file in entries(&second.path())? {
-                    if !file
-                        .file_type()
-                        .map_err(|error| io(&file.path(), error))?
-                        .is_file()
-                    {
-                        continue;
-                    }
-                    let hex = file.file_name().to_string_lossy().into_owned();
-                    if let Ok(digest) = Digest::parse(&format!("{name}:{hex}")) {
-                        out.push(digest);
-                    }
-                }
+        for (_, first) in directories(&top)? {
+            for (_, second) in directories(&first)? {
+                leaves.push((algorithm.clone(), second));
             }
         }
     }
-    out.sort();
-    Ok(out)
+    Ok(leaves)
 }

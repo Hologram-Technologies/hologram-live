@@ -40,12 +40,13 @@ enum OciCommand {
     ///
     /// Reports and changes nothing: no blob is deleted or moved. Opening the
     /// volume does what a start does (interrupted uploads are resumed or
-    /// dropped). Exits 1 when a blob is damaged. The registry must be stopped:
+    /// dropped). Exits 1 when a blob is damaged, and only then. The registry must be stopped:
     /// verify beside a running server, through its administration socket, is
     /// not built yet.
     Verify {
-        /// The registry's configuration file; else `REGISTRY_CONFIGURATION_PATH`,
-        /// else the image's `/etc/distribution/config.yml`.
+        /// The registry's configuration file (or `HOLOGRAM_REGISTRY_CONFIG`, as
+        /// for `serve`); else `REGISTRY_CONFIGURATION_PATH`, else the image's
+        /// `/etc/distribution/config.yml`.
         #[arg(long, env = "HOLOGRAM_REGISTRY_CONFIG")]
         registry_config: Option<PathBuf>,
     },
@@ -106,21 +107,26 @@ async fn verify(cli: &Cli, registry_config: Option<PathBuf>) -> Result<()> {
     let root = volume(&registry_file(registry_config)?)?;
     let json = cli.json;
     let report = tokio::task::spawn_blocking(move || -> Result<VerifyReport> {
+        // No age: verify must never expire an upload session the server
+        // would have kept.
         let options = OpenOptions {
             create: false,
-            upload_max_age: std::time::Duration::from_hours(168),
+            upload_max_age: std::time::Duration::MAX,
         };
+        // Exit 1 is kept for damage: a locked volume is a missing capability
+        // (5), a volume that cannot be read a configuration fault (2).
         let store = OciStore::open(&root, options).map_err(|error| match error {
-            OciStoreError::Locked => LiveError::Conflict(format!(
+            OciStoreError::Locked => LiveError::Capability(format!(
                 "the registry is running on {}: stop it first (verify beside a running server is not built yet)",
                 root.display()
             )),
             other => LiveError::Config(format!("registry volume {}: {other}", root.display())),
         })?;
+        let terminal = std::io::IsTerminal::is_terminal(&std::io::stderr());
         let mut last = std::time::Instant::now();
         store
             .verify(&mut |checked, total| {
-                if !json && (checked == total || last.elapsed().as_secs() >= 1) {
+                if terminal && (checked == total || last.elapsed().as_secs() >= 1) {
                     eprint!("\rchecked {checked} of {total} blobs");
                     if checked == total {
                         eprintln!();
@@ -128,10 +134,10 @@ async fn verify(cli: &Cli, registry_config: Option<PathBuf>) -> Result<()> {
                     last = std::time::Instant::now();
                 }
             })
-            .map_err(|error| LiveError::Conflict(format!("verify: {error}")))
+            .map_err(|error| LiveError::Config(format!("verify: {error}")))
     })
     .await
-    .map_err(|error| LiveError::Conflict(format!("join verify: {error}")))??;
+    .map_err(|error| LiveError::Config(format!("join verify: {error}")))??;
     print_report(&report, json)?;
     if !report.damaged.is_empty() {
         // Damage is the answer, not a failure of the command: the report is
@@ -143,8 +149,17 @@ async fn verify(cli: &Cli, registry_config: Option<PathBuf>) -> Result<()> {
 
 fn print_report(report: &VerifyReport, json: bool) -> Result<()> {
     let mut out = std::io::stdout().lock();
+    let written = print_to(&mut out, report, json).and_then(|()| out.flush());
+    written.map_err(|error| LiveError::Config(format!("print the report: {error}")))
+}
+
+fn print_to(
+    out: &mut impl std::io::Write,
+    report: &VerifyReport,
+    json: bool,
+) -> std::io::Result<()> {
     let written = if json {
-        serde_json::to_writer_pretty(&mut out, report)
+        serde_json::to_writer_pretty(&mut *out, report)
             .map_err(std::io::Error::other)
             .and_then(|()| writeln!(out))
     } else if report.damaged.is_empty() {
@@ -165,7 +180,12 @@ fn print_report(report: &VerifyReport, json: bool) -> Result<()> {
             result =
                 result.and_then(|()| writeln!(out, "  {} ({})", damaged.digest, damaged.reason));
             if damaged.repositories.is_empty() {
-                result = result.and_then(|()| writeln!(out, "    no repository links it"));
+                result = result.and_then(|()| {
+                    writeln!(
+                        out,
+                        "    no repository links it (it may be one of the store's own records)"
+                    )
+                });
             }
             for reach in &damaged.repositories {
                 let tags = if reach.tags.is_empty() {
@@ -178,5 +198,5 @@ fn print_report(report: &VerifyReport, json: bool) -> Result<()> {
         }
         result
     };
-    written.map_err(|error| LiveError::Conflict(format!("print the report: {error}")))
+    written
 }

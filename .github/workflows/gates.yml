@@ -256,7 +256,11 @@ jobs:
           cache-to: type=gha,scope=registry-image,mode=max
       - name: Metadata, surface, push and pull, clean stop, restart
         run: apps/registry/gates/image/check-image.sh hologram-registry:ci
-      - name: The deployment guide, with only the image changed (P5 T5)
+      - name: The deployment guide, with only the image changed (P5 T5, P6 T4)
+        env:
+          # The runner is throwaway: the script may add registry.gate to
+          # /etc/hosts and the test CA to /etc/docker/certs.d.
+          SWAP_TRUST: sudo
         run: apps/registry/gates/clients/compose-swap.sh hologram-registry:ci
       - name: The image's size
         if: always()

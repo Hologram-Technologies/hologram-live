@@ -116,6 +116,11 @@ pub struct AppConfig {
     /// Never read from a file: only `serve --registry-config` sets it.
     #[serde(skip)]
     pub registry_mode: bool,
+    /// `http.tls` of a registry configuration: the public listener serves
+    /// TLS. Never read from a file: only `serve --registry-config` sets it.
+    #[cfg(feature = "oci")]
+    #[serde(skip)]
+    pub tls: Option<crate::tls::TlsSettings>,
 }
 
 /// Selects which `RegistryProvider` backs object storage.
@@ -301,6 +306,8 @@ impl Default for AppConfig {
             plugins: PluginsConfig::default(),
             registry: RegistryConfig::default(),
             registry_mode: false,
+            #[cfg(feature = "oci")]
+            tls: None,
         }
     }
 }

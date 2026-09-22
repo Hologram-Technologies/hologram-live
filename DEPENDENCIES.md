@@ -47,6 +47,7 @@ of the copy and its carried patches.
 | `bcrypt` | checks and writes `auth.htpasswd` entries (`src/modules/oci/auth.rs`), as the reference's `golang.org/x/crypto/bcrypt` does. Pure Rust (`blowfish`, `cipher`, `inout` come with it, no `-sys` crate); reads `$2y$`, what `htpasswd -B` writes, and `$2a$`, `$2b$` |
 | `getrandom` | the random password of a provisioned password file, and the per-process key of the login cache. Already in the graph through `bcrypt` |
 | `base64` | HTTP Basic credentials, and the provisioned password in the reference's URL-safe form. Already in the graph through `bcrypt` |
+| `tokio-rustls` | TLS on the registry's listener (`http.tls`, `src/tls.rs`), over the `rustls` this server already uses, with ring only (`default-features = false`), so aws-lc stays out of the graph. Already in the graph through `reqwest`. PEM is read with `rustls::pki_types`, so `rustls-pemfile` (deprecated) is not needed |
 
 The Kappa Registry provider (ADR 021) still speaks to an external `kappa-server` over HTTP with `reqwest`; it uses none
 of these crates. With `oci` on, the build gains two bundled C libraries (`lzma-sys`, `bzip2-sys`) through `kappa-core`.

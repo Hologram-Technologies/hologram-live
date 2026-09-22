@@ -51,6 +51,8 @@ pub mod repo_manifest;
 pub mod server;
 pub mod stop_signal;
 pub mod store;
+#[cfg(feature = "oci")]
+pub mod tls;
 pub mod update;
 pub mod util;
 

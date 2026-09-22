@@ -111,6 +111,23 @@ pub fn load(
     for (key, value) in &values {
         check(key, value, &mut pending)?;
     }
+    // The reference's TLS listener needs both files.
+    match (
+        values.contains_key("http.tls.certificate"),
+        values.contains_key("http.tls.key"),
+    ) {
+        (true, false) => {
+            return Err(LiveError::Config(
+                "registry setting http.tls.certificate is set without http.tls.key".to_owned(),
+            ))
+        }
+        (false, true) => {
+            return Err(LiveError::Config(
+                "registry setting http.tls.key is set without http.tls.certificate".to_owned(),
+            ))
+        }
+        _ => {}
+    }
     Ok(RegistrySettings {
         values,
         pending,
@@ -151,6 +168,10 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
         ("log.formatter", other) if !matches!(other, "text" | "json") => {
             refuse("must be text or json")
         }
+        ("http.tls.minimumtls", version) => match crate::tls::MinimumTls::parse(version) {
+            Ok(_) => Ok(()),
+            Err(reason) => refuse(&reason),
+        },
         ("storage.cache.blobdescriptor", "redis") => {
             refuse("redis is not supported: v1 is one writer")
         }
@@ -339,6 +360,20 @@ pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
     config.paths.state_dir = root.join("live/state");
     config.paths.cache_dir = root.join("live/cache");
     config.tracing = tracing_config(&settings, std::mem::take(&mut config.tracing));
+    if let (Some(certificate), Some(key)) = (
+        settings.get("http.tls.certificate"),
+        settings.get("http.tls.key"),
+    ) {
+        config.tls = Some(crate::tls::TlsSettings {
+            certificate: PathBuf::from(certificate.trim()),
+            key: PathBuf::from(key.trim()),
+            // Checked when the settings were loaded.
+            minimum: crate::tls::MinimumTls::parse(
+                settings.get("http.tls.minimumtls").unwrap_or(""),
+            )
+            .unwrap_or(crate::tls::MinimumTls::Tls12),
+        });
+    }
     for key in &settings.pending {
         tracing::warn!(
             setting = key.as_str(),
@@ -510,9 +545,9 @@ health:
         for (name, value, key) in [
             ("REGISTRY_STORAGE_S3_BUCKET", "x", "storage.s3.bucket"),
             (
-                "REGISTRY_HTTP_TLS_CERTIFICATE",
-                "/certs/c.crt",
-                "http.tls.certificate",
+                "REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED",
+                "true",
+                "storage.maintenance.readonly",
             ),
             (
                 "REGISTRY_PROXY_REMOTEURL",
@@ -536,6 +571,59 @@ health:
         .expect_err("unknown key")
         .to_string();
         assert!(error.contains("storage.mystery"), "{error}");
+    }
+
+    /// `http.tls` as the deployment guide sets it: both files, or neither;
+    /// `minimumtls` 1.2 or 1.3, and the older versions refused by name.
+    #[test]
+    fn tls_takes_both_files_and_a_version_this_listener_offers() {
+        let settings = load(
+            None,
+            env(&[
+                ("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt"),
+                ("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key"),
+            ]),
+        )
+        .expect("the guide's two variables");
+        let mut config = AppConfig::default();
+        apply(settings, &mut config);
+        let tls = config.tls.expect("TLS on");
+        assert_eq!(tls.certificate, PathBuf::from("/certs/domain.crt"));
+        assert_eq!(
+            tls.minimum,
+            crate::tls::MinimumTls::Tls12,
+            "the reference's default"
+        );
+
+        for (alone, missing) in [
+            ("REGISTRY_HTTP_TLS_CERTIFICATE", "http.tls.key"),
+            ("REGISTRY_HTTP_TLS_KEY", "http.tls.certificate"),
+        ] {
+            let error = load(None, env(&[(alone, "/x")]))
+                .expect_err(alone)
+                .to_string();
+            assert!(error.contains(missing), "{error}");
+        }
+        let settings = load_text(
+            "http:\n  tls:\n    certificate: /c\n    key: /k\n    minimumtls: tls1.3\n",
+            &[],
+        )
+        .expect("tls1.3");
+        let mut config = AppConfig::default();
+        apply(settings, &mut config);
+        assert_eq!(
+            config.tls.expect("on").minimum,
+            crate::tls::MinimumTls::Tls13
+        );
+        for old in ["tls1.0", "tls1.1", "ssl3"] {
+            let text =
+                format!("http:\n  tls:\n    certificate: /c\n    key: /k\n    minimumtls: {old}\n");
+            let error = load_text(&text, &[]).expect_err(old).to_string();
+            assert!(error.contains("http.tls.minimumtls"), "{error}");
+        }
+        let mut config = AppConfig::default();
+        apply(load(None, env(&[])).expect("none"), &mut config);
+        assert!(config.tls.is_none(), "no http.tls, no TLS");
     }
 
     #[test]

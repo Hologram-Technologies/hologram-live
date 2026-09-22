@@ -245,7 +245,7 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
     // The body is not `Sync`, so nothing borrowed from the whole request may
     // live across an await: the head is borrowed, the body is moved.
     let (head, body) = request.into_parts();
-    let origin = origin(&head.headers);
+    let origin = origin(&head);
     let configured = registry.settings.headers.clone();
     let audit = registry.audit.clone();
     let rest = head.uri.path().strip_prefix("/v2/").unwrap_or_default();
@@ -386,13 +386,21 @@ fn audited(route: &Route) -> Option<Audited> {
 }
 
 /// `scheme://host` as the client addressed us. `None` without a `Host`.
-fn origin(headers: &axum::http::HeaderMap) -> Option<String> {
+fn origin(head: &axum::http::request::Parts) -> Option<String> {
+    let headers = &head.headers;
     let host = headers.get(axum::http::header::HOST)?.to_str().ok()?;
+    // As Go's URL builder: https when the request came over TLS, and a
+    // proxy's X-Forwarded-Proto over either.
+    let direct = if head.extensions.get::<crate::tls::ServedOverTls>().is_some() {
+        "https"
+    } else {
+        "http"
+    };
     let scheme = headers
         .get("x-forwarded-proto")
         .and_then(|value| value.to_str().ok())
         .filter(|scheme| *scheme == "https" || *scheme == "http")
-        .unwrap_or("http");
+        .unwrap_or(direct);
     Some(format!("{scheme}://{host}"))
 }
 

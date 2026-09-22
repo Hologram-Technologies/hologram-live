@@ -85,6 +85,10 @@ pub fn rewrite(args: &[OsString]) -> Option<Rewritten> {
         Some("garbage-collect") => {
             let (flags, files): (Vec<String>, Vec<String>) =
                 rest[1..].iter().cloned().partition(|arg| arg.starts_with('-'));
+            let flags = match go_bool_flags(flags) {
+                Ok(flags) => flags,
+                Err(refusal) => return Some(Rewritten::Refuse(refusal)),
+            };
             match files.as_slice() {
                 [file] => {
                     let mut tail = flags;
@@ -99,6 +103,43 @@ pub fn rewrite(args: &[OsString]) -> Option<Rewritten> {
             "registry: unknown command {other:?}; this image runs the registry only (serve, garbage-collect, --version)"
         )),
     })
+}
+
+/// The reference's boolean flags as cobra reads them: `--delete-untagged`,
+/// or with a value, `--delete-untagged=true` or `=false` in any form Go's
+/// `strconv.ParseBool` takes. The Helm chart most deployments use writes
+/// `--delete-untagged=true`. A true value becomes the bare flag, a false
+/// one is dropped; anything else is refused as cobra refuses it.
+fn go_bool_flags(flags: Vec<String>) -> Result<Vec<String>, String> {
+    const BOOLEANS: [&str; 6] = [
+        "--dry-run",
+        "-d",
+        "--delete-untagged",
+        "-m",
+        "--quiet",
+        "-q",
+    ];
+    let mut out = Vec::with_capacity(flags.len());
+    for flag in flags {
+        let Some((name, value)) = flag.split_once('=') else {
+            out.push(flag);
+            continue;
+        };
+        if !BOOLEANS.contains(&name) {
+            out.push(flag);
+            continue;
+        }
+        match value {
+            "1" | "t" | "T" | "true" | "TRUE" | "True" => out.push(name.to_owned()),
+            "0" | "f" | "F" | "false" | "FALSE" | "False" => {}
+            other => {
+                return Err(format!(
+                    "registry garbage-collect: invalid argument {other:?} for {name}: use true or false"
+                ))
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn is_yaml(argument: &str) -> bool {
@@ -169,6 +210,48 @@ mod tests {
         assert!(matches!(
             run(&["/usr/bin/REGISTRY", "--version"]),
             Some(Rewritten::Print(_))
+        ));
+    }
+
+    /// The Helm chart's garbage-collect job, and cobra's other boolean forms.
+    #[test]
+    fn boolean_flags_take_a_value_as_cobra_reads_them() {
+        assert_eq!(
+            run(&[
+                "/bin/registry",
+                "garbage-collect",
+                "--delete-untagged=true",
+                "/etc/docker/registry/config.yml"
+            ]),
+            Some(args(&[
+                "hologram",
+                "oci",
+                "garbage-collect",
+                "--delete-untagged",
+                "--registry-config",
+                "/etc/docker/registry/config.yml"
+            ]))
+        );
+        assert_eq!(
+            run(&[
+                "registry",
+                "garbage-collect",
+                "--delete-untagged=false",
+                "-d=1",
+                "c.yml"
+            ]),
+            Some(args(&[
+                "hologram",
+                "oci",
+                "garbage-collect",
+                "-d",
+                "--registry-config",
+                "c.yml"
+            ]))
+        );
+        assert!(matches!(
+            run(&["registry", "garbage-collect", "--quiet=maybe", "c.yml"]),
+            Some(Rewritten::Refuse(text)) if text.contains("--quiet")
         ));
     }
 

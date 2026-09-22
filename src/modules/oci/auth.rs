@@ -11,32 +11,38 @@
 //! failures are never remembered.
 
 use super::error::{ErrorCode, OciError};
-use super::path::Route;
+use super::path::Scope;
 use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
-/// The reference's own, for users the file does not name.
-const DUMMY_HASH: &str = "$2a$05$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 /// How long a good login is remembered.
 const REMEMBER: Duration = Duration::from_mins(1);
 /// The cost the reference provisions a missing file with (Go's default).
 const PROVISION_COST: u32 = 10;
 
+/// (user, keyed hash of the password) → when bcrypt last said yes, and for
+/// which version of the file.
+type Remembered = HashMap<(String, [u8; 32]), (Instant, SystemTime)>;
+
 pub struct Htpasswd {
     path: PathBuf,
     realm: String,
     loaded: Mutex<Option<Loaded>>,
-    /// (user, keyed hash of the password) → when bcrypt last said yes.
-    remembered: Mutex<HashMap<(String, [u8; 32]), Instant>>,
+    remembered: Mutex<Remembered>,
     /// Random per process: the hash cannot be computed outside it.
     key: [u8; 32],
+    /// Checked for users the file does not name. The reference's dummy costs
+    /// 5, cheaper than a real entry, so the time of an answer tells whether a
+    /// user exists; this one costs what a provisioned entry costs.
+    dummy: String,
 }
 
 struct Loaded {
@@ -64,12 +70,14 @@ impl Htpasswd {
         provision(&path)?;
         let mut key = [0_u8; 32];
         getrandom::fill(&mut key).map_err(std::io::Error::other)?;
+        let dummy = bcrypt::hash(crate::util::hex(&key), PROVISION_COST).map_err(std::io::Error::other)?;
         Ok(Self {
             path,
             realm,
             loaded: Mutex::new(None),
             remembered: Mutex::new(HashMap::new()),
             key,
+            dummy,
         })
     }
 
@@ -81,37 +89,42 @@ impl Htpasswd {
     /// when the file cannot be read.
     pub async fn authenticate(self: &Arc<Self>, headers: &HeaderMap) -> Result<String, Denied> {
         let (user, password) = basic(headers).ok_or(Denied::Challenge)?;
-        let entries = self.entries()?;
+        let (entries, version) = self.entries()?;
         let remembered = (user.clone(), *blake3::keyed_hash(&self.key, password.as_bytes()).as_bytes());
         {
             let seen = self.remembered.lock().unwrap_or_else(PoisonError::into_inner);
-            if seen.get(&remembered).is_some_and(|at| at.elapsed() < REMEMBER) && entries.contains_key(&user) {
+            // Only for the file it was checked against: a changed file drops it.
+            if seen
+                .get(&remembered)
+                .is_some_and(|(at, checked)| at.elapsed() < REMEMBER && *checked == version)
+            {
                 return Ok(user);
             }
         }
         let known = entries.get(&user).cloned();
-        let hash = known.clone().unwrap_or_else(|| DUMMY_HASH.to_owned());
+        let hash = known.clone().unwrap_or_else(|| self.dummy.clone());
         // bcrypt is slow on purpose: off the async threads.
         let matches = tokio::task::spawn_blocking(move || bcrypt::verify(password, &hash).unwrap_or(false))
             .await
             .unwrap_or(false);
         if matches && known.is_some() {
             let mut seen = self.remembered.lock().unwrap_or_else(PoisonError::into_inner);
-            seen.retain(|_, at| at.elapsed() < REMEMBER);
-            seen.insert(remembered, Instant::now());
+            seen.retain(|_, (at, _)| at.elapsed() < REMEMBER);
+            seen.insert(remembered, (Instant::now(), version));
             return Ok(user);
         }
         tracing::info!(user = user.as_str(), "user failed to authenticate");
         Err(Denied::Challenge)
     }
 
-    /// The file's entries, read again when it has changed since.
-    fn entries(&self) -> Result<Arc<HashMap<String, String>>, Denied> {
+    /// The file's entries and the version they are from, read again when the
+    /// file has changed since.
+    fn entries(&self) -> Result<(Arc<HashMap<String, String>>, SystemTime), Denied> {
         let broken = |error: std::io::Error| Denied::Broken(format!("{}: {error}", self.path.display()));
         let modified = std::fs::metadata(&self.path).and_then(|meta| meta.modified()).map_err(broken)?;
         let mut loaded = self.loaded.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(current) = loaded.as_ref().filter(|current| current.modified == modified) {
-            return Ok(current.entries.clone());
+            return Ok((current.entries.clone(), modified));
         }
         let text = std::fs::read_to_string(&self.path).map_err(broken)?;
         let entries = Arc::new(parse(&text).map_err(Denied::Broken)?);
@@ -119,18 +132,18 @@ impl Htpasswd {
         drop(loaded);
         // A changed file may have removed or changed a user.
         self.remembered.lock().unwrap_or_else(PoisonError::into_inner).clear();
-        Ok(entries)
+        Ok((entries, modified))
     }
 
     /// The answer for a request that is not let in.
-    pub fn refuse(&self, denied: &Denied, method: &Method, route: &Route, query: Option<&str>) -> Response {
+    pub fn refuse(&self, denied: &Denied, method: &Method, scope: &Scope, query: Option<&str>) -> Response {
         match denied {
             Denied::Challenge => {
                 let challenge = format!("Basic realm={}", go_quote(&self.realm));
                 let mut response = OciError::new(ErrorCode::Unauthorized)
-                    .with_detail_even_null(access_records(method, route, query))
+                    .with_detail_even_null(access_records(method, scope, query))
                     .into_response();
-                if let Ok(value) = HeaderValue::from_str(&challenge) {
+                if let Ok(value) = HeaderValue::from_bytes(challenge.as_bytes()) {
                     response.headers_mut().insert(WWW_AUTHENTICATE, value);
                 }
                 response
@@ -182,13 +195,17 @@ fn provision(path: &Path) -> std::io::Result<()> {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
         Err(_) => {}
     }
+    // As Go's MkdirAll(dir, 0o700): the missing directories are made 0700,
+    // and a directory that is already there is left as it is.
     if let Some(directory) = path.parent().filter(|directory| !directory.as_os_str().is_empty()) {
-        std::fs::create_dir_all(directory)?;
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))?;
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
         }
+        builder.create(directory)?;
     }
     let mut secret = [0_u8; 32];
     getrandom::fill(&mut secret).map_err(std::io::Error::other)?;
@@ -201,7 +218,12 @@ fn provision(path: &Path) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path)?;
+    let mut file = match options.open(path) {
+        Ok(file) => file,
+        // Another process provisioned it first: theirs stands.
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+        Err(error) => return Err(error),
+    };
     std::io::Write::write_all(&mut file, format!("docker:{hash}").as_bytes())?;
     tracing::warn!(user = "docker", password = password.as_str(), "htpasswd is missing, provisioning with default user");
     Ok(())
@@ -211,18 +233,16 @@ fn provision(path: &Path) -> std::io::Result<()> {
 /// `detail`: pull for reads, pull and push for writes, delete; pull on the
 /// source of a mount; `registry:catalog:*` for the catalogue; nothing for the
 /// base route.
-fn access_records(method: &Method, route: &Route, query: Option<&str>) -> Value {
+fn access_records(method: &Method, scope: &Scope, query: Option<&str>) -> Value {
     let record = |kind: &str, name: &str, action: &str| {
         json!({ "Type": kind, "Class": "", "Name": name, "Action": action })
     };
-    let Some(repo) = route.repo() else {
-        return match route {
-            Route::Catalog => json!([record("registry", "catalog", "*")]),
-            // Go encodes the nil slice as `"detail": null` (gate B, `13-auth`).
-            _ => Value::Null,
-        };
+    let repo = match scope {
+        Scope::Catalog => return json!([record("registry", "catalog", "*")]),
+        // Go encodes the nil slice as `"detail": null` (gate B, `13-auth`).
+        Scope::Base => return Value::Null,
+        Scope::Repository(name) => name.as_str(),
     };
-    let repo = repo.as_str();
     let for_method = |method: &Method| -> Vec<Value> {
         match *method {
             Method::GET | Method::HEAD => vec![record("repository", repo, "pull")],
@@ -234,9 +254,8 @@ fn access_records(method: &Method, route: &Route, query: Option<&str>) -> Value 
         }
     };
     let mut records = for_method(method);
-    let from = query.into_iter().flat_map(|query| query.split('&')).find_map(|pair| pair.strip_prefix("from="));
-    if let Some(from) = from.filter(|from| !from.is_empty()) {
-        let from = percent_decoded(from);
+    // As Go's `FormValue("from")`: decoded, and an empty value is no mount.
+    if let Some(from) = super::path::query_param(query, "from").filter(|from| !from.is_empty()) {
         records.push(record("repository", &from, "pull"));
     }
     if records.is_empty() {
@@ -246,33 +265,8 @@ fn access_records(method: &Method, route: &Route, query: Option<&str>) -> Value 
     }
 }
 
-/// A query value, `%2F` and `+` decoded as Go's `FormValue` decodes them.
-fn percent_decoded(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'+' => out.push(b' '),
-            b'%' => match value
-                .get(index + 1..index + 3)
-                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-            {
-                Some(byte) => {
-                    out.push(byte);
-                    index += 2;
-                }
-                None => out.push(b'%'),
-            },
-            byte => out.push(byte),
-        }
-        index += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Go's `%q`, for the realm in the challenge: a quoted string with `"` and
-/// `\` escaped.
+/// Go's `%q` (`strconv.Quote`), for the realm in the challenge: `"` and `\`
+/// escaped, control characters written as escapes, printable text as it is.
 fn go_quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
@@ -280,6 +274,15 @@ fn go_quote(text: &str) -> String {
         match character {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            control if control.is_control() && u32::from(control) < 0x80 => {
+                let _ = write!(out, "\\x{:02x}", u32::from(control));
+            }
+            control if control.is_control() => {
+                let _ = write!(out, "\\u{:04x}", u32::from(control));
+            }
             other => out.push(other),
         }
     }

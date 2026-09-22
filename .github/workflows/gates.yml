@@ -221,7 +221,8 @@ jobs:
           [modules]
           enabled = ["dev.hologram.live.system", "dev.hologram.live.oci"]
           EOF
-          REGISTRY_AUTH_HTPASSWD_PATH="$PWD/apps/registry/gates/differential/fixtures/htpasswd"             ./target/debug/hologram --config "$RUNNER_TEMP/login/config/live.toml" serve > "$RUNNER_TEMP/login.log" 2>&1 &
+          export REGISTRY_AUTH_HTPASSWD_PATH="$PWD/apps/registry/gates/differential/fixtures/htpasswd"
+          ./target/debug/hologram --config "$RUNNER_TEMP/login/config/live.toml" serve > "$RUNNER_TEMP/login.log" 2>&1 &
           for _ in $(seq 1 60); do
             curl -s -o /dev/null "http://127.0.0.1:5003/v2/" && exit 0
             sleep 1
@@ -235,7 +236,7 @@ jobs:
         run: apps/registry/gates/clients/login.sh
       - name: The server's log, when a client failed
         if: failure()
-        run: tail -n 80 "$RUNNER_TEMP/server.log"
+        run: tail -n 80 "$RUNNER_TEMP/server.log" "$RUNNER_TEMP/login.log"
 
   image:
     name: Image · the registry image, from outside (P5 T4)

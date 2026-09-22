@@ -149,3 +149,34 @@ expect_status = 200
 id = "wrong-method-no-login"
 method = "PATCH"
 path = "/v2/{repo}/manifests/v1"
+
+[[step]]
+id = "upload-empty-id-no-login"
+method = "GET"
+path = "/v2/{repo}/blobs/uploads/"
+
+[[step]]
+id = "upload-bad-id-no-login"
+method = "GET"
+path = "/v2/{repo}/blobs/uploads/not-an-id"
+
+[[step]]
+id = "bad-digest-no-login"
+method = "GET"
+path = "/v2/{repo}/blobs/sha256:abc"
+
+[[step]]
+id = "catalog-post-no-login"
+method = "POST"
+path = "/v2/_catalog"
+
+[[step]]
+id = "catalog-options-no-login"
+method = "OPTIONS"
+path = "/v2/_catalog"
+
+[[step]]
+id = "options-from-no-login"
+method = "OPTIONS"
+path = "/v2/{repo}/blobs/uploads/"
+query = { from = "gate-b/auth-source" }

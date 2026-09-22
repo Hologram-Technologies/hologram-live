@@ -86,7 +86,9 @@ pub fn login_from_settings() -> crate::error::Result<Option<auth::Htpasswd>> {
     } else {
         let path = std::env::var("REGISTRY_AUTH_HTPASSWD_PATH").ok();
         let realm = std::env::var("REGISTRY_AUTH_HTPASSWD_REALM").ok();
-        (path.is_some() || realm.is_some(), path, realm)
+        let selector =
+            std::env::var("REGISTRY_AUTH").is_ok_and(|value| value.trim() == "htpasswd");
+        (selector || path.is_some() || realm.is_some(), path, realm)
     };
     if !asked {
         return Ok(None);
@@ -219,11 +221,16 @@ async fn dispatch(State(state): State<AppState>, request: Request) -> Response {
     match state.oci_store() {
         Some(store) => {
             static SETTINGS: std::sync::OnceLock<Settings> = std::sync::OnceLock::new();
+            // Set by the module's start. Unset would be a registry serving
+            // before it knows whether it has a login: fail closed.
+            let Some(login) = LOGIN.get() else {
+                return OciError::internal(&"the registry module was not started").into_response();
+            };
             let registry = Registry {
                 store: store.clone(),
                 settings: SETTINGS.get_or_init(Settings::current).clone(),
                 audit: Some(state.audit().clone()),
-                login: LOGIN.get().cloned().flatten(),
+                login: login.clone(),
             };
             handle(registry, request).await
         }
@@ -242,18 +249,29 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
     let configured = registry.settings.headers.clone();
     let audit = registry.audit.clone();
     let rest = head.uri.path().strip_prefix("/v2/").unwrap_or_default();
-    let route = path::decode(rest)
+    let decoded = path::decode(rest);
+    let route = decoded
+        .as_deref()
         .ok_or_else(OciError::unknown_route)
-        .and_then(|rest| path::parse(&head.method, &rest));
-    // As the reference: a route is authorized before anything else about it.
+        .and_then(|rest| path::parse(&head.method, rest));
+    // As the reference: whatever its router matches is authorized before
+    // anything else about it (method, digest, upload id). Only a path with
+    // no route, the plain 404, is answered without a login.
+    // A 405 carries no code either (the router's plain text), so the test is
+    // the status: only the plain 404 means no route matched.
+    let routed = match &route {
+        Ok(_) => true,
+        Err(error) => error.code().is_some() || error.status() != StatusCode::NOT_FOUND,
+    };
+    let scope = decoded.as_deref().and_then(path::Scope::of).filter(|_| routed);
     let mut principal = ANONYMOUS.to_owned();
-    let denied = match (&registry.login, &route) {
-        (Some(login), Ok(route)) => match login.authenticate(&head.headers).await {
+    let denied = match (&registry.login, &scope) {
+        (Some(login), Some(scope)) => match login.authenticate(&head.headers).await {
             Ok(user) => {
                 principal = user;
                 None
             }
-            Err(denied) => Some(login.refuse(&denied, &head.method, route, head.uri.query())),
+            Err(denied) => Some(login.refuse(&denied, &head.method, scope, head.uri.query())),
         },
         _ => None,
     };

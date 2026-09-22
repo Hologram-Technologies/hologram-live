@@ -222,3 +222,135 @@ fn a_missing_file_is_created_with_one_user_as_the_reference() {
     Htpasswd::open(file.clone(), REALM.to_owned()).expect("open");
     assert_eq!(std::fs::read_to_string(&file).expect("read"), "kept");
 }
+
+/// The reference's router matches by path; its dispatcher authorizes before
+/// the handler checks the method, the upload id or the digest. So these are
+/// challenged, not answered with 405 or an upload error.
+#[tokio::test]
+async fn what_the_references_router_matches_is_challenged_before_anything_else() {
+    let fixture = fixture(&[entry("gate", "secret")]);
+    let cases = [
+        (
+            "PATCH",
+            "/v2/team/app/manifests/v1",
+            detail(&[
+                ("repository", "team/app", "pull"),
+                ("repository", "team/app", "push"),
+            ]),
+        ),
+        (
+            "GET",
+            "/v2/team/app/blobs/uploads/",
+            detail(&[("repository", "team/app", "pull")]),
+        ),
+        (
+            "GET",
+            "/v2/team/app/blobs/uploads/not-an-id",
+            detail(&[("repository", "team/app", "pull")]),
+        ),
+        (
+            "GET",
+            "/v2/team/app/blobs/sha256:abc",
+            detail(&[("repository", "team/app", "pull")]),
+        ),
+        (
+            "POST",
+            "/v2/_catalog",
+            detail(&[("registry", "catalog", "*")]),
+        ),
+        (
+            "OPTIONS",
+            "/v2/_catalog",
+            detail(&[("registry", "catalog", "*")]),
+        ),
+        (
+            "OPTIONS",
+            "/v2/team/app/blobs/uploads/?from=team%2Fbase",
+            detail(&[("repository", "team/base", "pull")]),
+        ),
+    ];
+    for (method, path, expected) in cases {
+        let response = send(&fixture, method, path, None).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {path}"
+        );
+        assert_eq!(
+            body(response).await["errors"][0]["detail"],
+            expected,
+            "{method} {path}"
+        );
+    }
+    // The base route and a bare OPTIONS name nothing: Go sends `"detail": null`.
+    for (method, path) in [("GET", "/v2/"), ("OPTIONS", "/v2/team/app/manifests/v1")] {
+        let answer = body(send(&fixture, method, path, None).await).await;
+        let error = answer["errors"][0].as_object().expect("an error").clone();
+        assert_eq!(error.get("detail"), Some(&Value::Null), "{method} {path}");
+    }
+    // A path the reference's router does not match is its plain 404, login or not.
+    let none = send(&fixture, "GET", "/v2/team/app/nothing/here", None).await;
+    assert_eq!(none.status(), StatusCode::NOT_FOUND);
+}
+
+#[test]
+fn a_realm_outside_ascii_is_still_sent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("htpasswd");
+    std::fs::write(&file, entry("gate", "secret")).expect("write");
+    let login = Arc::new(Htpasswd::open(file, "Réalm \"q\"".to_owned()).expect("open"));
+    let registry = Registry {
+        store: Arc::new(
+            OciStore::open(
+                &dir.path().join("volume"),
+                OpenOptions {
+                    create: true,
+                    upload_max_age: Duration::from_hours(1),
+                },
+            )
+            .expect("volume"),
+        ),
+        settings: Settings::default(),
+        audit: None,
+        login: Some(login),
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let response = runtime.block_on(handle(
+        registry,
+        Request::builder()
+            .uri("/v2/")
+            .body(Body::empty())
+            .expect("request"),
+    ));
+    let challenge = response
+        .headers()
+        .get("www-authenticate")
+        .expect("a challenge");
+    assert_eq!(
+        challenge.as_bytes(),
+        "Basic realm=\"Réalm \\\"q\\\"\"".as_bytes()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn provisioning_leaves_a_directory_that_is_already_there_as_it_is() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let shared = dir.path().join("shared");
+    std::fs::create_dir(&shared).expect("shared");
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    Htpasswd::open(shared.join("new/htpasswd"), REALM.to_owned()).expect("provisioned");
+    let mode = |path: &std::path::Path| {
+        std::fs::metadata(path).expect("meta").permissions().mode() & 0o777
+    };
+    assert_eq!(
+        mode(&shared),
+        0o755,
+        "an existing directory is not made 0700"
+    );
+    assert_eq!(mode(&shared.join("new")), 0o700, "a new one is 0700");
+}

@@ -168,23 +168,25 @@ docker build -q -t "$tag" "$work" > /dev/null
 docker push -q "$tag" > /dev/null 2>"$work/push.err" \
   || {
     cat "$work/push.err" >&2
-    echo '--- the same push against a host-network container on 5008 ---' >&2
-    docker run -d --name swap-diag2 --network host \
-      -e REGISTRY_HTTP_ADDR=0.0.0.0:5008 \
+    # The control: the same push, same certificate, same daemon, against
+    # the reference registry. If the reference fails too, the daemon or
+    # the runner is the variable; if it succeeds, the difference is ours.
+    echo '--- the same push against the reference registry on 5009 ---' >&2
+    echo "127.0.0.1 registry-tls" | sudo tee -a /etc/hosts > /dev/null
+    sudo mkdir -p /etc/docker/certs.d/registry-tls:5009
+    sudo cp "$work/path/ca.crt" /etc/docker/certs.d/registry-tls:5009/ca.crt
+    docker run -d --name ref-tls -p 5009:5000 \
       -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
       -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
-      -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
-      -e REGISTRY_AUTH_HTPASSWD_REALM="Registry Realm" \
-      -e REGISTRY_LOG_LEVEL=debug \
-      -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
-      "$image" > /dev/null 2>&1 || true
+      -v "$work/path/certs:/certs" \
+      registry:3 > /dev/null 2>&1 || true
     sleep 2
-    printf 'gate-password' | docker login -u gate --password-stdin registry.local:5008 > /dev/null 2>&1 || true
-    tag8="registry.local:5008/swap/hello:v1"
-    docker build -q -t "$tag8" "$work" > /dev/null 2>&1 || true
-    docker push -q "$tag8" 2>&1 | head -n 3 >&2 || true
-    docker logs swap-diag2 2>&1 | tail -n 25 >&2
-    docker rm -f swap-diag2 > /dev/null 2>&1 || true
+    tag9="registry-tls:5009/swap/hello:v1"
+    docker build -q -t "$tag9" "$work" > /dev/null 2>&1 || true
+    docker push -q "$tag9" 2>&1 | head -n 3 >&2 || true
+    docker rm -f ref-tls > /dev/null 2>&1 || true
+    sudo sed -i '/registry-tls/d' /etc/hosts
+    sudo rm -rf /etc/docker/certs.d/registry-tls:5009
     docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
     fail "docker push through the TLS compose file"
   }

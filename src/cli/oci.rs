@@ -142,7 +142,13 @@ async fn garbage_collect(
     tokio::task::spawn_blocking(move || -> Result<()> {
         // A volume nothing was ever pushed to: the reference's empty answer,
         // and nothing created.
-        let empty = std::fs::read_dir(&root).map_or(true, |mut entries| entries.next().is_none());
+        // A path that does not exist is a mistake, not an empty registry.
+        let empty = std::fs::read_dir(&root)
+            .map_err(|error| {
+                LiveError::Config(format!("registry volume {}: {error}", root.display()))
+            })?
+            .next()
+            .is_none();
         if empty {
             if !quiet {
                 println!("\n0 blobs marked, 0 blobs and 0 manifests eligible for deletion");

@@ -449,10 +449,6 @@ impl OciStore {
             links
                 .insert(link_key(repo, digest).as_str(), link.encode().as_slice())
                 .map_err(io)?;
-            txn.open_table(OBJECTS)
-                .map_err(io)?
-                .insert(digest.as_str(), 1)
-                .map_err(io)?;
             if let Some((key, value)) = &referrer_row {
                 let mut referrers = txn.open_table(REFERRERS).map_err(io)?;
                 referrers
@@ -515,6 +511,7 @@ impl OciStore {
         repo: &RepoName,
         stored: &Digest,
         alias: Option<&Digest>,
+        newly_stored: bool,
     ) -> Result<(), OciStoreError> {
         let link = Link {
             kind: LinkKind::Blob,
@@ -526,10 +523,14 @@ impl OciStore {
             links
                 .insert(link_key(repo, stored).as_str(), link.encode().as_slice())
                 .map_err(io)?;
-            txn.open_table(OBJECTS)
-                .map_err(io)?
-                .insert(stored.as_str(), 0)
-                .map_err(io)?;
+            // Only a file this write created is the registry's to sweep: the
+            // same bytes already on disk may be one of the store's own records.
+            if newly_stored {
+                txn.open_table(OBJECTS)
+                    .map_err(io)?
+                    .insert(stored.as_str(), 0)
+                    .map_err(io)?;
+            }
             let mut repos = txn.open_table(REPOS).map_err(io)?;
             if repos.get(repo.as_str()).map_err(io)?.is_none() {
                 repos.insert(repo.as_str(), now_ms()).map_err(io)?;
@@ -557,6 +558,51 @@ impl OciStore {
     /// # Errors
     ///
     /// `Io` when the database refuses.
+    /// Note a manifest the registry stored, when its bytes were new.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database refuses.
+    pub(crate) fn object_note(&self, digest: &Digest) -> Result<(), OciStoreError> {
+        let txn = self.links.begin_write().map_err(io)?;
+        txn.open_table(OBJECTS)
+            .map_err(io)?
+            .insert(digest.as_str(), 1)
+            .map_err(io)?;
+        txn.commit().map_err(io)
+    }
+
+    /// What [`OciStore::objects_backfill`] would add, without writing: every
+    /// linked digest not yet recorded, when the backfill has not run.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database cannot be read.
+    pub(crate) fn objects_backfill_plan(&self) -> Result<Vec<(Digest, bool)>, OciStoreError> {
+        let txn = self.links.begin_read().map_err(io)?;
+        let meta = txn.open_table(META).map_err(io)?;
+        if meta.get("objects").map_err(io)?.is_some() {
+            return Ok(Vec::new());
+        }
+        let links = txn.open_table(LINKS).map_err(io)?;
+        let objects = txn.open_table(OBJECTS).map_err(io)?;
+        let mut out: std::collections::BTreeMap<String, bool> = std::collections::BTreeMap::new();
+        for row in links.iter().map_err(io)? {
+            let (key, value) = row.map_err(io)?;
+            let Some((_, digest)) = key.value().split_once('\0') else {
+                continue;
+            };
+            if objects.get(digest).map_err(io)?.is_none() {
+                let manifest =
+                    Link::decode(value.value()).is_ok_and(|link| link.kind != LinkKind::Blob);
+                *out.entry(digest.to_owned()).or_default() |= manifest;
+            }
+        }
+        out.into_iter()
+            .map(|(digest, manifest)| Ok((Digest::parse(&digest)?, manifest)))
+            .collect()
+    }
+
     pub(crate) fn objects_backfill(&self) -> Result<(), OciStoreError> {
         let txn = self.links.begin_write().map_err(io)?;
         {
@@ -642,8 +688,16 @@ impl OciStore {
                 .remove(digest.as_str())
                 .map_err(io)?
                 .map(|value| value.value().to_owned());
+            // With three names for one set of bytes, the other's row may point
+            // at a third name that is kept: leave that one alone.
             if let Some(other) = other {
-                aliases.remove(other.as_str()).map_err(io)?;
+                let points_back = aliases
+                    .get(other.as_str())
+                    .map_err(io)?
+                    .is_some_and(|value| value.value() == digest.as_str());
+                if points_back {
+                    aliases.remove(other.as_str()).map_err(io)?;
+                }
             }
         }
         txn.commit().map_err(io)?;

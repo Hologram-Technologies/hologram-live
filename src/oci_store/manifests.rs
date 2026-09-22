@@ -119,15 +119,15 @@ impl OciStore {
         }
 
         // 1. The bytes. The store hashes them again against the address.
-        match self.kappa().ingest_verified(digest.as_str(), bytes) {
-            Ok(_) => {}
+        let newly_stored = match self.kappa().ingest_verified(digest.as_str(), bytes) {
+            Ok(result) => result.newly_stored,
             Err(StoreError::Rejected(_)) => {
                 return Err(OciStoreError::DigestMismatch {
                     claimed: digest.as_str().to_owned(),
                 });
             }
             Err(error) => return Err(store_io("store the manifest", &error)),
-        }
+        };
         // The same bytes under their other name, so a manifest pushed by
         // blake3 is also served by sha256 and back.
         let other = if digest.algorithm() == Algorithm::Blake3 {
@@ -162,6 +162,10 @@ impl OciStore {
                 .as_ref()
                 .map(|(subject, descriptor)| (*subject, descriptor)),
         )?;
+        // Only bytes this push stored are the registry's to sweep later.
+        if newly_stored {
+            self.object_note(&digest)?;
+        }
 
         // 3. The tag moves last, and only now.
         if let Reference::Tag(tag) = reference {

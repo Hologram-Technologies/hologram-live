@@ -363,19 +363,67 @@ impl Rng {
     }
 }
 
+/// A layer from the shared pool, pushed by sha256 or, half the time, by
+/// blake3 (linked under that name); a manifest names it by sha256 either way.
+fn pool_layer(store: &OciStore, name: &str, rng: &mut Rng) -> Digest {
+    let bytes = format!("layer {}", rng.below(6)).into_bytes();
+    if rng.below(2) == 0 {
+        return blob(store, name, &bytes);
+    }
+    let id = store.upload_begin(&repo(name)).expect("begin");
+    store.upload_append(&id, 0, &bytes).expect("append");
+    store
+        .upload_finish(&id, &Digest::from_blake3(&blake3::hash(&bytes)))
+        .expect("finish");
+    Digest::sha256_of(&bytes)
+}
+
+/// Every signature attached to a tagged image is still listed and pulls.
+fn every_signature_stays(store: &OciStore, name: &str, signed: &[(String, Digest, Digest)]) {
+    for (repo_name, subject, signature) in
+        signed.iter().filter(|(repo_name, _, _)| repo_name == name)
+    {
+        let still_tagged = store
+            .tags_page(&repo(repo_name), None, 1000)
+            .unwrap_or_default()
+            .iter()
+            .any(|tag| {
+                store
+                    .manifest_get(&repo(repo_name), &Reference::Tag(tag.clone()))
+                    .is_ok_and(|manifest| manifest.digest == *subject)
+            });
+        if !still_tagged {
+            continue;
+        }
+        let listed = store
+            .referrers_of(&repo(repo_name), subject)
+            .expect("referrers");
+        assert!(
+            listed
+                .iter()
+                .any(|referrer| referrer.digest == signature.as_str()),
+            "{repo_name}: signature of {subject} lost"
+        );
+        assert!(store
+            .manifest_get(&repo(repo_name), &Reference::Digest(signature.clone()))
+            .is_ok());
+    }
+}
+
 fn one_case(seed: u64) {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = open(dir.path());
     let mut rng = Rng(seed | 1);
     let repos = ["p/one", "p/two", "p/three"];
+    let mut signed: Vec<(String, Digest, Digest)> = Vec::new();
     for step in 0..24 {
         let name = repos[usize::try_from(rng.below(3)).expect("index")];
-        match rng.below(8) {
+        match rng.below(9) {
             // Push an image of one to three layers from a small shared pool, tagged.
             0..=2 => {
                 let count = 1 + rng.below(3);
                 let layers: Vec<Digest> = (0..count)
-                    .map(|_| blob(&store, name, format!("layer {}", rng.below(6)).as_bytes()))
+                    .map(|_| pool_layer(&store, name, &mut rng))
                     .collect();
                 let refs: Vec<&Digest> = layers.iter().collect();
                 let tag = format!("t{}", rng.below(4));
@@ -383,8 +431,24 @@ fn one_case(seed: u64) {
             }
             // Push untagged.
             3 => {
-                let layer = blob(&store, name, format!("layer {}", rng.below(6)).as_bytes());
+                let layer = pool_layer(&store, name, &mut rng);
                 manifest(&store, name, None, &[&layer], None);
+            }
+            // Sign a tagged image: an untagged manifest whose subject it is.
+            8 => {
+                if let Some(tag) = store
+                    .tags_page(&repo(name), None, 10)
+                    .ok()
+                    .and_then(|tags| tags.into_iter().next())
+                {
+                    let subject = store
+                        .manifest_get(&repo(name), &Reference::Tag(tag))
+                        .expect("tagged")
+                        .digest;
+                    let sig = blob(&store, name, format!("signature {step}").as_bytes());
+                    let signature = manifest(&store, name, None, &[&sig], Some(&subject));
+                    signed.push((name.to_owned(), subject, signature));
+                }
             }
             // Untag.
             4 => {
@@ -405,6 +469,7 @@ fn one_case(seed: u64) {
                     .unwrap_or_else(|error| panic!("seed {seed}: {error}"));
                 for name in repos {
                     every_tag_pulls(&store, name);
+                    every_signature_stays(&store, name, &signed);
                 }
             }
             _ => {
@@ -419,6 +484,7 @@ fn one_case(seed: u64) {
                     .unwrap_or_else(|error| panic!("seed {seed}: {error}"));
                 for name in repos {
                     every_tag_pulls(&store, name);
+                    every_signature_stays(&store, name, &signed);
                 }
             }
         }
@@ -434,6 +500,7 @@ fn one_case(seed: u64) {
         .unwrap_or_else(|error| panic!("seed {seed}: {error}"));
     for name in repos {
         every_tag_pulls(&store, name);
+        every_signature_stays(&store, name, &signed);
     }
 }
 
@@ -546,5 +613,153 @@ fn the_command_prints_the_references_lines_and_sweeps() {
         std::fs::read_dir(&empty).expect("dir").count(),
         0,
         "nothing created"
+    );
+}
+
+/// A layer pushed by blake3 (linked under that name) and named by sha256 in
+/// a tagged manifest: its link must survive a collect (review of #106, 1).
+#[test]
+fn a_layer_named_by_its_other_digest_keeps_its_link() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let bytes = b"a layer pushed by blake3".to_vec();
+    let id = store.upload_begin(&repo("a/b")).expect("begin");
+    store.upload_append(&id, 0, &bytes).expect("append");
+    let blake3 = Digest::from_blake3(&blake3::hash(&bytes));
+    store.upload_finish(&id, &blake3).expect("finish");
+    let sha256 = Digest::sha256_of(&bytes);
+    manifest(&store, "a/b", Some("v1"), &[&sha256], None);
+    collect(&store, GcOptions::default());
+    collect(
+        &store,
+        GcOptions {
+            dry_run: false,
+            delete_untagged: true,
+        },
+    );
+    every_tag_pulls(&store, "a/b");
+    assert!(
+        store.blob_stat(&repo("a/b"), &blake3).is_ok(),
+        "the blake3 link is kept"
+    );
+}
+
+/// An index that names its child by the child's other digest: the child's
+/// layers are kept under --delete-untagged (review of #106, 2).
+#[test]
+fn an_index_child_named_by_its_other_digest_is_walked() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let layer = blob(&store, "i/app", b"the child's layer");
+    let child = manifest(&store, "i/app", None, &[&layer], None);
+    let child_blake3 = store
+        .alias_of(&child)
+        .expect("alias")
+        .expect("a blake3 name");
+    let index = format!(
+        r#"{{"schemaVersion":2,"mediaType":"{INDEX}","manifests":[{{"mediaType":"{MANIFEST}","digest":"{child_blake3}","size":1}}]}}"#
+    );
+    let plan = ManifestPlan {
+        kind: LinkKind::Index,
+        must_exist: vec![child_blake3.clone()],
+        subject: None,
+    };
+    store
+        .manifest_put(
+            &repo("i/app"),
+            &Reference::parse("multi").expect("tag"),
+            INDEX,
+            index.as_bytes(),
+            &plan,
+        )
+        .expect("index");
+    collect(
+        &store,
+        GcOptions {
+            dry_run: false,
+            delete_untagged: true,
+        },
+    );
+    assert!(store
+        .manifest_get(&repo("i/app"), &Reference::Digest(child.clone()))
+        .is_ok());
+    assert!(
+        store.blob_stat(&repo("i/app"), &layer).is_ok(),
+        "the child's layer is kept"
+    );
+}
+
+/// One image, untagged in one repository and tagged in another, with a
+/// signature in the first: in the first it still pulls by digest and keeps
+/// its signature (review of #106, 3).
+#[test]
+fn an_image_kept_by_another_repository_keeps_its_links_and_signatures_here() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    // Enumerated first: untagged here.
+    let layer_a = blob(&store, "a/first", b"shared image layer");
+    let image = manifest(&store, "a/first", None, &[&layer_a], None);
+    let sig_layer = blob(&store, "a/first", b"signature");
+    let signature = manifest(&store, "a/first", None, &[&sig_layer], Some(&image));
+    // Tagged in the second repository.
+    blob(&store, "b/second", b"shared image layer");
+    manifest(&store, "b/second", Some("v1"), &[&layer_a], None);
+
+    collect(
+        &store,
+        GcOptions {
+            dry_run: false,
+            delete_untagged: true,
+        },
+    );
+    let pulled = store
+        .manifest_get(&repo("a/first"), &Reference::Digest(image.clone()))
+        .expect("the image is kept in a/first");
+    let value: serde_json::Value = serde_json::from_slice(&pulled.bytes).expect("json");
+    let layer =
+        Digest::parse(value["layers"][0]["digest"].as_str().expect("layer")).expect("digest");
+    assert!(
+        store.blob_stat(&repo("a/first"), &layer).is_ok(),
+        "its layer link in a/first is kept"
+    );
+    let referrers = store
+        .referrers_of(&repo("a/first"), &image)
+        .expect("referrers");
+    assert!(
+        referrers
+            .iter()
+            .any(|referrer| referrer.digest == signature.as_str()),
+        "its signature is kept"
+    );
+    assert!(store
+        .manifest_get(&repo("a/first"), &Reference::Digest(signature))
+        .is_ok());
+    every_tag_pulls(&store, "b/second");
+}
+
+/// Collecting a blob pushed by blake3 frees its bytes: the sha256 name the
+/// store hard-linked to the same file goes too (review of #106, 4).
+#[test]
+fn a_swept_blake3_blob_frees_its_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let bytes = b"an orphan pushed by blake3".to_vec();
+    let id = store.upload_begin(&repo("a/b")).expect("begin");
+    store.upload_append(&id, 0, &bytes).expect("append");
+    store
+        .upload_finish(&id, &Digest::from_blake3(&blake3::hash(&bytes)))
+        .expect("finish");
+    let before = files(&dir.path().join("kappa/blobs"));
+    let holding = |tree: &BTreeMap<String, Vec<u8>>| {
+        tree.values()
+            .filter(|content| content.as_slice() == bytes.as_slice())
+            .count()
+    };
+    assert!(holding(&before) >= 1);
+    collect(&store, GcOptions::default());
+    assert_eq!(
+        holding(&files(&dir.path().join("kappa/blobs"))),
+        0,
+        "no name of the bytes is left"
     );
 }

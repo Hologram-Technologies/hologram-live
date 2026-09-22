@@ -15,6 +15,7 @@ pub mod links;
 pub mod manifests;
 pub mod types;
 pub mod uploads;
+pub mod verify;
 
 pub use blobs::{AsyncBlob, BlobRead, BlobStat};
 pub use layout::Layout;
@@ -22,6 +23,7 @@ pub use links::{Link, LinkKind, ReferrerDescriptor};
 pub use manifests::{ManifestPlan, StoredManifest, SubjectPlan};
 pub use types::{Algorithm, Digest, Reference, RepoName, Tag, UploadId};
 pub use uploads::{Framer, ResumeReport, UploadStatus, FRAME};
+pub use verify::{Damaged, Reach, VerifyReport};
 
 use kappa_core::clock::Clock;
 use kappa_store_redb::{PersistentStore, PersistentStoreConfig};

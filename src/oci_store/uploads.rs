@@ -245,7 +245,13 @@ impl OciStore {
         };
 
         // 3. Link, alias and the session row, in one transaction.
-        self.commit_finished_upload(id, &state.repo, &stored, alias.as_ref())?;
+        self.commit_finished_upload(
+            id,
+            &state.repo,
+            &stored,
+            alias.as_ref(),
+            result.newly_stored,
+        )?;
         Ok(stored)
     }
 

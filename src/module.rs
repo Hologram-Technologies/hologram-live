@@ -205,6 +205,20 @@ impl ModuleRegistry {
         Ok(())
     }
 
+    /// The document of the modules that authenticate themselves: the routes
+    /// registry mode serves on its public port (ADR 028).
+    pub fn open_openapi(&self) -> OpenApi {
+        let mut document = OpenApiBuilder::new().build();
+        for module in self
+            .modules
+            .iter()
+            .filter(|module| module.authenticates_itself())
+        {
+            document.merge(module.openapi());
+        }
+        document
+    }
+
     pub fn openapi(&self) -> OpenApi {
         let mut document = OpenApiBuilder::new().build();
         for module in &self.modules {

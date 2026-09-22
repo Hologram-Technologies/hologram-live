@@ -19,6 +19,7 @@ use crate::registry::RegistryProvider;
 use crate::store::ObjectStore;
 use axum::Router;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -41,6 +42,7 @@ struct AppInner {
     tracing: TracingHandle,
     authorizer: Arc<dyn Authorizer>,
     shutdown: Notify,
+    shutdown_requested: AtomicBool,
     server_id: String,
 }
 
@@ -140,6 +142,7 @@ impl AppState {
                 tracing,
                 authorizer: Arc::new(LocalAuthorizer),
                 shutdown: Notify::new(),
+                shutdown_requested: AtomicBool::new(false),
                 server_id,
             }),
         };
@@ -249,11 +252,21 @@ impl AppState {
     }
 
     pub fn request_shutdown(&self) {
+        self.inner.shutdown_requested.store(true, Ordering::SeqCst);
         self.inner.shutdown.notify_waiters();
     }
 
+    /// Resolves once shutdown is requested, also when it was requested before
+    /// this call: `notify_waiters` wakes only waiters already registered, and
+    /// registry mode has two listeners that start waiting at different times.
     pub async fn wait_shutdown(&self) {
-        self.inner.shutdown.notified().await;
+        let notified = self.inner.shutdown.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if self.inner.shutdown_requested.load(Ordering::SeqCst) {
+            return;
+        }
+        notified.await;
     }
 
     pub async fn dispatch(&self, principal: &Principal, request: RpcRequest) -> RpcResponse {

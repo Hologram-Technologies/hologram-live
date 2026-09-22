@@ -160,8 +160,14 @@ mod tests {
             run(&["registry", "sh"]),
             Some(Rewritten::Refuse(_))
         ));
+        // Only Windows splits a path on `\`; elsewhere this is one file name.
+        #[cfg(windows)]
         assert!(matches!(
             run(&["C:\\bin\\REGISTRY.EXE", "--version"]),
+            Some(Rewritten::Print(_))
+        ));
+        assert!(matches!(
+            run(&["/usr/bin/REGISTRY", "--version"]),
             Some(Rewritten::Print(_))
         ));
     }

@@ -315,13 +315,13 @@ pub fn tracing_config(settings: &RegistrySettings, mut tracing: TracingConfig) -
 /// Apply what the server itself owns, and keep the rest for the registry
 /// module. Called once, before the configuration is validated.
 pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
-    if let Some(addr) = settings.get("http.addr") {
-        // `:5000` means every interface, as in Go.
-        config.server.listen = match addr.strip_prefix(':') {
-            Some(port) => format!("0.0.0.0:{port}"),
-            None => addr.to_owned(),
-        };
-    }
+    // `:5000` means every interface, as in Go. With no `http.addr`, the
+    // image's port (plan D1).
+    let addr = settings.get("http.addr").unwrap_or(":5000");
+    config.server.listen = match addr.strip_prefix(':') {
+        Some(port) => format!("0.0.0.0:{port}"),
+        None => addr.to_owned(),
+    };
     // Everything the server keeps lives on the registry's volume, under
     // `live/`, so a container needs no home directory and a developer's home
     // is never written (FR-S07).

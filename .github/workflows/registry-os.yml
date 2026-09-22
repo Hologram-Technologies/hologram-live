@@ -10,6 +10,13 @@ on:
       - "src/oci_store/**"
       - "src/modules/oci/**"
       - "src/registry_compat/**"
+      - "src/admin_socket.rs"
+      - "src/server.rs"
+      - "src/config.rs"
+      - "src/app.rs"
+      - "src/cli/serve.rs"
+      - "src/cli/registry_argv.rs"
+      - "src/cli/oci.rs"
       - "apps/registry/**"
       - "third_party/kappa/**"
       - "third_party/dcbor/**"
@@ -49,7 +56,9 @@ jobs:
       - name: Integration tests
         run: cargo test --locked --features oci --test oci_store -- --test-threads=1
       - name: Registry module, unit tests (parser, errors, ranges)
-        run: cargo test --locked --features oci --lib -- modules::oci module::tests
+        run: cargo test --locked --features oci --lib -- modules::oci module::tests registry_compat config::tests::registry_mode
+      - name: The reference's command line (registry serve, garbage-collect, entrypoint.sh)
+        run: cargo test --locked --features oci --bin hologram -- registry_argv
       - name: Registry over HTTP, through the handler and through the binary
         run: cargo test --locked --features oci --test oci_http
       - name: Memory while pushing 2 GiB stays under 200 MB (SC-007 in small)

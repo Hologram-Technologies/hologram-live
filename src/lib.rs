@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod actor;
+pub mod admin_socket;
 pub mod app;
 pub mod application_plan;
 pub mod artifact_manifest;

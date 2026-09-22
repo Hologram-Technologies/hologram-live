@@ -229,12 +229,20 @@ pub struct UpdateConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct InferenceConfig {
-    /// echo | weightc | ollama
+    /// echo | weightc | ollama | llamacpp | vllm
     pub engine: String,
-    /// `blake3:...` of an imported model (weightc) or a model tag (ollama).
+    /// Imported model id (weightc) or upstream model name (Ollama/vLLM).
     pub default_model: String,
     pub weightc_path: String,
     pub ollama_endpoint: String,
+    pub vllm_endpoint: String,
+    pub vllm_token_env: String,
+    /// Local GGUF file used by the feature-gated llama.cpp engine.
+    pub model_path: String,
+    pub n_ctx: u32,
+    pub n_gpu_layers: u32,
+    /// Maximum number of in-process llama.cpp contexts decoding at once.
+    pub llamacpp_max_concurrent_requests: usize,
     pub request_timeout_secs: u64,
     /// Keep `weightc enter --jsonl` sessions resident per conversation.
     /// Only meaningful for the weightc engine.
@@ -403,6 +411,12 @@ impl Default for InferenceConfig {
             default_model: String::new(),
             weightc_path: "weightc".to_owned(),
             ollama_endpoint: "http://127.0.0.1:11434".to_owned(),
+            vllm_endpoint: "http://127.0.0.1:8000".to_owned(),
+            vllm_token_env: "VLLM_API_KEY".to_owned(),
+            model_path: String::new(),
+            n_ctx: 4096,
+            n_gpu_layers: 0,
+            llamacpp_max_concurrent_requests: 1,
             request_timeout_secs: 300,
             resident_sessions: false,
             max_resident_sessions: 4,
@@ -650,10 +664,26 @@ impl AppConfig {
             validate_endpoint(endpoint, false)?;
         }
         match self.inference.engine.as_str() {
-            "echo" | "weightc" | "ollama" => {}
+            "echo" | "weightc" | "ollama" | "vllm" => {}
+            "llamacpp" => {
+                if !cfg!(feature = "llamacpp") {
+                    return Err(LiveError::Config(
+                        "inference.engine \"llamacpp\" needs a build with --features llamacpp"
+                            .to_owned(),
+                    ));
+                }
+                if self.inference.model_path.trim().is_empty()
+                    && self.inference.default_model.trim().is_empty()
+                {
+                    return Err(LiveError::Config(
+                        "llamacpp requires inference.model_path or an imported inference.default_model"
+                            .to_owned(),
+                    ));
+                }
+            }
             other => {
                 return Err(LiveError::Config(format!(
-                    "unsupported inference.engine {other:?}; expected echo, weightc, or ollama"
+                    "unsupported inference.engine {other:?}; expected echo, weightc, ollama, llamacpp, or vllm"
                 )))
             }
         }
@@ -663,6 +693,22 @@ impl AppConfig {
             ));
         }
         validate_endpoint(&self.inference.ollama_endpoint, false)?;
+        validate_endpoint(&self.inference.vllm_endpoint, false)?;
+        if self.inference.vllm_token_env.trim().is_empty() {
+            return Err(LiveError::Config(
+                "inference.vllm_token_env must not be empty".to_owned(),
+            ));
+        }
+        if self.inference.n_ctx == 0 {
+            return Err(LiveError::Config(
+                "inference.n_ctx must be greater than zero".to_owned(),
+            ));
+        }
+        if self.inference.llamacpp_max_concurrent_requests == 0 {
+            return Err(LiveError::Config(
+                "inference.llamacpp_max_concurrent_requests must be greater than zero".to_owned(),
+            ));
+        }
         if self.inference.request_timeout_secs == 0 {
             return Err(LiveError::Config(
                 "inference.request_timeout_secs must be greater than zero".to_owned(),
@@ -1389,6 +1435,12 @@ path = "/usr/local/bin/plugin"
         assert!(config.inference.default_model.is_empty());
         assert_eq!(config.inference.weightc_path, "weightc");
         assert_eq!(config.inference.ollama_endpoint, "http://127.0.0.1:11434");
+        assert_eq!(config.inference.vllm_endpoint, "http://127.0.0.1:8000");
+        assert_eq!(config.inference.vllm_token_env, "VLLM_API_KEY");
+        assert!(config.inference.model_path.is_empty());
+        assert_eq!(config.inference.n_ctx, 4096);
+        assert_eq!(config.inference.n_gpu_layers, 0);
+        assert_eq!(config.inference.llamacpp_max_concurrent_requests, 1);
         assert_eq!(config.inference.request_timeout_secs, 300);
         assert!(!config.inference.resident_sessions);
         assert_eq!(config.inference.max_resident_sessions, 4);
@@ -1411,6 +1463,37 @@ path = "/usr/local/bin/plugin"
         let mut config = AppConfig::default();
         config.inference.engine = "surprise".to_owned();
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn llamacpp_requires_the_feature_and_a_model_source() {
+        let mut config = AppConfig::default();
+        config.inference.engine = "llamacpp".to_owned();
+        config.inference.model_path = "/models/tiny.gguf".to_owned();
+        let result = config.validate();
+        if cfg!(feature = "llamacpp") {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            let error = result.expect_err("featureless build must reject llamacpp");
+            assert!(error.to_string().contains("--features llamacpp"), "{error}");
+        }
+
+        config.inference.model_path.clear();
+        config.inference.default_model = "blake3:imported".to_owned();
+        let imported = config.validate();
+        if cfg!(feature = "llamacpp") {
+            assert!(imported.is_ok(), "{imported:?}");
+        } else {
+            assert!(imported.is_err());
+        }
+    }
+
+    #[test]
+    fn vllm_is_a_supported_inference_engine() {
+        let mut config = AppConfig::default();
+        config.inference.engine = "vllm".to_owned();
+        config.inference.default_model = "org/model".to_owned();
+        config.validate().expect("vllm config");
     }
 
     #[test]

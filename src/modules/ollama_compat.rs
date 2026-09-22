@@ -588,9 +588,9 @@ fn ndjson_response(
 )]
 pub async fn list_tags(State(state): State<AppState>) -> Result<Json<TagsResponse>, OllamaError> {
     let catalog = state.models().clone();
-    let models = tokio::task::spawn_blocking(move || catalog.list())
+    let engine = state.chat().engine().clone();
+    let models = super::model_inventory::list(catalog, engine)
         .await
-        .map_err(|error| OllamaError::server(format!("join model listing: {error}")))?
         .map_err(OllamaError::from)?;
     Ok(Json(tags_from(models)))
 }
@@ -613,10 +613,9 @@ pub async fn show_model(
         return Err(OllamaError::bad_request("model is required"));
     }
     let catalog = state.models().clone();
-    let name = request.model.trim().to_owned();
-    let info = tokio::task::spawn_blocking(move || catalog.resolve(&name))
+    let engine = state.chat().engine().clone();
+    let info = super::model_inventory::find(catalog, engine, request.model.trim())
         .await
-        .map_err(|error| OllamaError::server(format!("join model lookup: {error}")))?
         .map_err(OllamaError::from)?;
     Ok(Json(show_from(&info)))
 }
@@ -684,7 +683,11 @@ fn show_from(model: &ModelInfo) -> ShowResponse {
         parameters: String::new(),
         template: String::new(),
         details: ModelDetails {
-            format: "wcpu".to_owned(),
+            format: match model.engine.as_str() {
+                "weightc" => "wcpu".to_owned(),
+                "llamacpp" => "gguf".to_owned(),
+                other => other.to_owned(),
+            },
             family: model.engine.clone(),
             families: vec![model.engine.clone()],
             parameter_size: String::new(),
@@ -1299,6 +1302,16 @@ mod tests {
         assert_eq!(show.details.format, "wcpu");
         assert_eq!(show.details.family, "weightc");
         assert_eq!(show.details.families, vec!["weightc".to_owned()]);
+    }
+
+    #[test]
+    fn show_response_reports_gguf_format_for_llamacpp() {
+        let mut model = import_model(&fixture());
+        model.engine = "llamacpp".to_owned();
+        let show = show_from(&model);
+
+        assert_eq!(show.details.format, "gguf");
+        assert_eq!(show.details.family, "llamacpp");
     }
 
     #[test]

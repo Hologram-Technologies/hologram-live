@@ -9,7 +9,11 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     throw "cargo is required to build this source distribution. Install Rust from https://rustup.rs first."
 }
 
-cargo build --manifest-path (Join-Path $Root "Cargo.toml") --release --locked --package hologram-live --bin hologram
+$BuildArguments = @("build", "--manifest-path", (Join-Path $Root "Cargo.toml"), "--release", "--locked", "--package", "hologram-live", "--bin", "hologram")
+if ($env:HOLOGRAM_CARGO_FEATURES) {
+    $BuildArguments += @("--features", $env:HOLOGRAM_CARGO_FEATURES)
+}
+cargo @BuildArguments
 New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
 Copy-Item -Force (Join-Path $Root "target\release\hologram.exe") $Destination
 & $Destination init 2>$null | Out-Null

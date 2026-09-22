@@ -97,11 +97,13 @@ impl AppState {
             store.clone(),
             config.paths.data_dir.join("models"),
         )?);
-        let engine = crate::inference::engine_from_config(
-            &config.inference,
-            models.clone(),
-            config.server.actor_mailbox_capacity,
-        )?;
+        let inference_config = config.inference.clone();
+        let engine_models = models.clone();
+        let mailbox_capacity = config.server.actor_mailbox_capacity;
+        let engine = blocking(move || {
+            crate::inference::engine_from_config(&inference_config, engine_models, mailbox_capacity)
+        })
+        .await?;
         let chat = ChatService::new(history.clone(), engine);
         let nodes = Arc::new(NodeDirectory::open(
             config.paths.data_dir.join("control-plane/nodes.json"),
@@ -511,8 +513,16 @@ impl AppState {
             }
             RpcRequest::ModelImport { path } => {
                 let models = self.inner.models.clone();
+                let path = PathBuf::from(path);
                 RpcResponse::from_result(
-                    blocking(move || models.import(&PathBuf::from(path))).await,
+                    blocking(move || {
+                        if path.is_file() {
+                            models.import_gguf(&path)
+                        } else {
+                            models.import(&path)
+                        }
+                    })
+                    .await,
                     RpcResponse::Model,
                 )
             }

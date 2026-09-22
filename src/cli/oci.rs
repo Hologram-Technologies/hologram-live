@@ -1,13 +1,14 @@
 //! `hologram oci …`: the registry's operator commands.
 //!
 //! Declared so the reference's command names reach them (`registry
-//! garbage-collect` becomes `hologram oci garbage-collect`). `verify` and
-//! `garbage-collect` are built; `import` says it is not yet (plan P8).
+//! garbage-collect` becomes `hologram oci garbage-collect`).
 
 use super::Cli;
 use clap::{Args, Subcommand};
 use hologram_live::error::{LiveError, Result};
-use hologram_live::oci_store::{GcOptions, OciStore, OciStoreError, OpenOptions, VerifyReport};
+use hologram_live::oci_store::{
+    GcOptions, ImportEvent, ImportReport, OciStore, OciStoreError, OpenOptions, VerifyReport,
+};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -55,10 +56,18 @@ enum OciCommand {
         registry_config: Option<PathBuf>,
     },
     /// Copy a Docker Registry volume into this registry's layout.
+    ///
+    /// Every blob is hashed on the way in, and every manifest is checked as a
+    /// push of it would be. The source is only read. What is already here is
+    /// skipped, so a second run adds nothing and an interrupted run finishes
+    /// when run again. Exits 1 when anything the source serves did not come
+    /// over, and names it; blobs the source links but no longer holds (its
+    /// garbage collection leaves those links) are reported and do not fail.
     Import {
         /// The reference's volume (`/var/lib/registry`).
         source: PathBuf,
-        /// A new, empty directory for this registry's volume.
+        /// This registry's volume: a new or empty directory, or one an earlier
+        /// import wrote. The registry must not be running on it.
         #[arg(long)]
         into: PathBuf,
     },
@@ -79,14 +88,8 @@ pub async fn run(cli: Cli, args: OciArgs) -> Result<()> {
             };
             garbage_collect(options, quiet, registry_config).await
         }
-        OciCommand::Import { .. } => not_built("import"),
+        OciCommand::Import { source, into } => import(&cli, source, into).await,
     }
-}
-
-fn not_built(name: &str) -> Result<()> {
-    Err(LiveError::Capability(format!(
-        "hologram oci {name} is not built yet (plan P8)"
-    )))
 }
 
 /// The configuration file operator commands read, as `registry serve` finds it.
@@ -176,6 +179,129 @@ async fn garbage_collect(
     })
     .await
     .map_err(|error| LiveError::Config(format!("join garbage-collect: {error}")))?
+}
+
+async fn import(cli: &Cli, source: PathBuf, into: PathBuf) -> Result<()> {
+    let json = cli.json;
+    let report = tokio::task::spawn_blocking(move || -> Result<ImportReport> {
+        let store = open_for_import(&source, &into)?;
+        let terminal = std::io::IsTerminal::is_terminal(&std::io::stderr());
+        store
+            .import(
+                &source,
+                &hologram_live::modules::oci::import_plan,
+                &mut |event| match event {
+                    ImportEvent::Repository { name, index, total } if terminal => {
+                        eprintln!("[{}/{total}] {name}", index + 1);
+                    }
+                    ImportEvent::Problem(problem) if terminal => {
+                        eprintln!("  {}: {}", problem.kind.as_str(), problem.detail);
+                    }
+                    _ => {}
+                },
+            )
+            .map_err(|error| match error {
+                OciStoreError::Layout(message) => LiveError::Config(message),
+                other => LiveError::Config(format!("import: {other}")),
+            })
+    })
+    .await
+    .map_err(|error| LiveError::Config(format!("join import: {error}")))??;
+    let mut out = std::io::stdout().lock();
+    let written = if json {
+        serde_json::to_writer_pretty(&mut out, &report)
+            .map_err(std::io::Error::other)
+            .and_then(|()| writeln!(out))
+    } else {
+        print_import(&mut out, &report)
+    };
+    written
+        .and_then(|()| out.flush())
+        .map_err(|error| LiveError::Config(format!("print the report: {error}")))?;
+    if report.failed() {
+        // As for verify: the report is the answer, the exit code is for the
+        // operator's automation.
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// The volume to import into: new, empty, or this registry's already.
+fn open_for_import(source: &Path, into: &Path) -> Result<OciStore> {
+    let same = match (source.canonicalize(), into.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if same {
+        return Err(LiveError::Config(format!(
+            "import into a directory of its own: {} is the source",
+            into.display()
+        )));
+    }
+    let ours = hologram_live::oci_store::Layout::resolve(into)
+        .marker()
+        .is_file();
+    let empty = std::fs::read_dir(into).map_or(true, |mut entries| entries.next().is_none());
+    if !ours && !empty {
+        return Err(LiveError::Config(format!(
+            "{} is neither empty nor a Hologram Registry volume",
+            into.display()
+        )));
+    }
+    std::fs::create_dir_all(into)
+        .map_err(|error| LiveError::Config(format!("create {}: {error}", into.display())))?;
+    let options = OpenOptions {
+        create: true,
+        upload_max_age: std::time::Duration::from_hours(168),
+    };
+    OciStore::open(into, options).map_err(|error| match error {
+        OciStoreError::Locked => LiveError::Capability(format!(
+            "the registry is running on {}: stop it first",
+            into.display()
+        )),
+        other => LiveError::Config(format!("registry volume {}: {other}", into.display())),
+    })
+}
+
+fn print_import(out: &mut impl std::io::Write, report: &ImportReport) -> std::io::Result<()> {
+    writeln!(
+        out,
+        "{} repositories: {} blobs copied ({} bytes), {} linked from another repository, {} manifests, {} tags",
+        report.repositories,
+        report.blobs_copied,
+        report.bytes_copied,
+        report.blobs_linked,
+        report.manifests,
+        report.tags
+    )?;
+    let (failed, notes): (Vec<_>, Vec<_>) = report
+        .problems
+        .iter()
+        .partition(|problem| problem.kind.fails());
+    if !failed.is_empty() {
+        writeln!(out, "{} not imported; the rest is:", failed.len())?;
+        for problem in failed {
+            writeln!(
+                out,
+                "  {} {}: {} ({})",
+                problem.kind.as_str(),
+                problem.repository,
+                problem.detail,
+                problem.path.display()
+            )?;
+        }
+    }
+    if !notes.is_empty() {
+        writeln!(
+            out,
+            "{} links the source holds no bytes for (not served there either):",
+            notes.len()
+        )?;
+        for problem in notes {
+            writeln!(out, "  {}: {}", problem.repository, problem.detail)?;
+        }
+    }
+    Ok(())
 }
 
 async fn verify(cli: &Cli, registry_config: Option<PathBuf>) -> Result<()> {

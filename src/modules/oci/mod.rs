@@ -523,6 +523,20 @@ fn json(status: StatusCode, body: &'static str) -> Response {
     response
 }
 
+
+/// A manifest the reference stored, checked as a push of it would be, for
+/// `OciStore::import`: its media type, and what the store must find linked.
+///
+/// # Errors
+///
+/// The reason a push of these bytes would be refused.
+pub fn import_plan(
+    media_type: &str,
+    bytes: &[u8],
+) -> Result<(String, crate::oci_store::ManifestPlan), String> {
+    media::plan(Some(media_type), bytes).map_err(|error| error.reason())
+}
+
 #[cfg(test)]
 mod tests {
     use super::origin;

@@ -329,6 +329,33 @@ impl OciStore {
             .collect()
     }
 
+    /// Point `tag` at a manifest this repository already links (import).
+    ///
+    /// # Errors
+    ///
+    /// `NotInRepository` when `digest` is not linked here as a manifest; `Io`.
+    pub(crate) fn tag_set(
+        &self,
+        repo: &RepoName,
+        tag: &Tag,
+        digest: &Digest,
+    ) -> Result<(), OciStoreError> {
+        match self.link_get(repo, digest)? {
+            Some(link) if link.kind != LinkKind::Blob => {}
+            _ => {
+                return Err(OciStoreError::NotInRepository {
+                    repo: repo.as_str().to_owned(),
+                    digest: digest.as_str().to_owned(),
+                })
+            }
+        }
+        let namespace = self.namespace(repo)?;
+        self.kappa()
+            .tag_set(&namespace, tag.as_str(), digest.as_str())
+            .map(|_| ())
+            .map_err(|error| store_io("set the tag", &error))
+    }
+
     pub(crate) fn tag_resolve(&self, repo: &RepoName, tag: &Tag) -> Result<Digest, OciStoreError> {
         let namespace = self.namespace(repo)?;
         match self.kappa().tag_get(&namespace, tag.as_str()) {

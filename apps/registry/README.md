@@ -22,8 +22,15 @@ docker pull localhost:5000/ubuntu
 Moving in from an existing registry, and back out, is a copy:
 
 ```bash
-skopeo sync --src docker --dest docker old:5000 new:5000      # or: hologram oci import /var/lib/registry
-docker exec registry hologram oci verify                      # re-hash everything held
+skopeo sync --src docker --dest docker old:5000 new:5000      # from a running registry
+```
+
+Or from the old registry's volume, with both stopped. The source is only read; every blob is hashed on the way in,
+and a second run adds nothing:
+
+```bash
+docker run --rm --entrypoint hologram -v old-volume:/source:ro -v new-volume:/var/lib/registry   ghcr.io/hologram-technologies/registry:1 oci import /source --into /var/lib/registry
+docker run --rm --entrypoint hologram -v new-volume:/var/lib/registry   ghcr.io/hologram-technologies/registry:1 oci verify          # re-hash everything held
 ```
 
 Data on disk is Kappa's layout, so an existing `/var/lib/registry` volume does not open in place. That is the one

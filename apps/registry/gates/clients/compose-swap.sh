@@ -157,10 +157,11 @@ skopeo copy -q --dest-tls-verify docker-daemon:swap/hello:v1 docker://registry.l
       -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
       "$image" > /dev/null 2>&1 || true
     sleep 2
-    skopeo login registry.local:5008 -u gate --password-stdin --tls-verify < /dev/null > /dev/null 2>&1 || true
+    sudo mkdir -p /etc/containers/certs.d/registry.local:5008
+    sudo cp "$work/path/ca.crt" /etc/containers/certs.d/registry.local:5008/ca.crt
     printf 'gate-password' | skopeo login registry.local:5008 -u gate --password-stdin --tls-verify > /dev/null 2>&1 || true
     skopeo copy --dest-tls-verify docker-daemon:swap/hello:v1 docker://registry.local:5008/swap/hello:v1 2>&1 | head -n 5 >&2 || true
-    docker logs push-diag 2>&1 | tail -n 40 >&2
+    docker logs push-diag 2>&1 | grep -vE "CloseNotify|decided upon|unwilling to resume|framed_write" | tail -n 40 >&2
     docker rm -f push-diag > /dev/null 2>&1 || true
     docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
     fail "skopeo push through the TLS compose file"

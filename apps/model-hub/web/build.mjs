@@ -98,6 +98,7 @@ const SECTIONS = [
   ["models", "Models", "grid", BROWSE],
   ["registry", "Registry", "box", `${base}registry/`],
   ["spaces", "Spaces", "cpu", `${base}spaces/`],
+  ["buckets", "Buckets", "bucket", `${base}buckets/`],
   ["docs", "Docs", "file", `${base}docs/`],
 ];
 // `current` is the section the page belongs to. It marks that one link aria-current, which the stylesheet
@@ -486,8 +487,8 @@ await writeFile(join(DIST, ".nojekyll"), "");
 // of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
 // one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
 // very same header() and topNav() every other page is built with.
-// The Spaces page ships the same way: its own components and its own runtime, the site's header.
-for (const section of ["registry", "spaces"]) {
+// The Spaces and Buckets pages ship the same way: their own components, the site's header.
+for (const section of ["registry", "spaces", "buckets"]) {
   const path = join(DIST, section, "index.html");
   let html = await readFile(path, "utf8");
   for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {

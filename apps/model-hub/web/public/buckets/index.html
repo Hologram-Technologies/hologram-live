@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="/">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buckets · Hologram Models Hub</title>
+<meta name="description" content="Object storage for models, datasets and checkpoints, where every object carries the address of its own bytes.">
+<!--chrome:head-->
+<link rel="stylesheet" href="buckets.css">
+</head>
+<body>
+
+<div class="veil" aria-hidden="true"></div>
+<div class="shell">
+<!--chrome:header-->
+
+<main>
+  <div class="lead">
+    <div class="lead-main">
+      <h1 id="title">Buckets</h1>
+      <span class="pill" id="count" hidden></span>
+    </div>
+    <div class="lead-end">
+      <button type="button" class="button" id="settings" hidden>Settings</button>
+      <button type="button" class="button primary" id="new-bucket">New bucket</button>
+    </div>
+  </div>
+  <p class="prov" id="sub">Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.</p>
+
+  <nav class="crumbs" id="crumbs" hidden aria-label="Breadcrumb"></nav>
+
+  <div class="bar" id="bar" hidden>
+    <label class="field compact" for="q">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+      <input id="q" type="search" placeholder="Filter by name" autocomplete="off">
+    </label>
+    <button type="button" class="button" id="verify">Check every object</button>
+  </div>
+
+  <div class="panel flush">
+    <table>
+      <thead id="head"></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="empty" id="empty" hidden>Nothing here yet.</p>
+  </div>
+
+  <label class="drop" id="drop" hidden>
+    <input type="file" id="file" multiple>
+    <span id="drop-text">Drop files here to add them to this bucket, or choose files.</span>
+  </label>
+
+  <div class="cred" id="cred" hidden>
+    <span id="cred-why">Adding to a bucket needs a credential. It stays in this tab.</span>
+    <label class="field compact"><input id="cred-value" type="password" placeholder="operator token, or user:password" autocomplete="off"></label>
+    <button type="button" class="button primary" id="cred-save">Use it</button>
+  </div>
+
+  <div class="readme" id="readme" hidden></div>
+
+  <p class="prov note" id="note"></p>
+</main>
+
+<dialog class="ask" id="dialog">
+  <form method="dialog" id="dialog-form">
+    <h2 id="dialog-title">New bucket</h2>
+    <p class="muted" id="dialog-why"></p>
+    <div id="dialog-body"></div>
+    <div class="ask-foot">
+      <button type="button" class="button" id="dialog-cancel">Cancel</button>
+      <button type="submit" class="button primary" id="dialog-ok">Create</button>
+    </div>
+  </form>
+</dialog>
+</div>
+
+<script type="module" src="buckets.js"></script>
+</body>
+</html>

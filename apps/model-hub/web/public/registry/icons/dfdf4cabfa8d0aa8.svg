@@ -1,0 +1,16 @@
+<svg id="afaccbcb-d27a-458d-90c2-628b83aab4c5" xmlns="http://www.w3.org/2000/svg"  width="18" height="18" viewBox="0 0 18 18">
+  <title>Azure-Sphere-Outline</title>
+  <defs>
+    <linearGradient id="grad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#4ec5e6"/>
+      <stop offset="100%" stop-color="#1a8ab3"/>
+    </linearGradient>
+  </defs>
+  <circle cx="9" cy="9.6" r="7.9" fill="url(#grad)"/>
+  <g transform="scale(0.9) translate(0.95, 0.95)">
+    <path d="M8.81,15.05 c -1 -0.6 -4.15 -2.74 -4.15 -5.25 V6.59l.34,0a4,4,0,0,0,2.35-.74 A2.5,2.5,0,0,1,9,5.34 a2.52,2.52,0,0,1,1.65.49 A4,4,0,0,0,13,6.57l.34,0 V9.8 c0,2.51-3.18,4.65-4.15,5.25 L9,15.17 Z" stroke="#ddf1f7" stroke-width="0.5" fill="#50e6ff"/>
+  </g>
+  <circle cx="2.66" cy="13.91" r="1.65" stroke="#b3b3b3" stroke-width="0.7" fill="white"/>
+  <circle cx="9" cy="2.05" r="1.65" stroke="#b3b3b3" stroke-width="0.7" fill="white"/>
+  <circle cx="15.34" cy="14" r="1.65" stroke="#b3b3b3" stroke-width="0.7" fill="white"/>
+</svg>

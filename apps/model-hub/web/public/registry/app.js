@@ -109,10 +109,26 @@ const ACCEPT = [
   "application/vnd.docker.distribution.manifest.list.v2+json",
 ].join(", ");
 
+// hash-wasm's blake3 build, vendored beside this page and pinned by checksum, because the layers here
+// are addressed by blake3 and crypto.subtle cannot do it. Nothing is fetched from another origin: a
+// verification page that loaded its own hasher from a third party would be verifying nothing.
+//   vendor/blake3.umd.min.js  hash-wasm 4.12.0
+//   sha256:21a2bf9f37dd86cf38fdd4bcb7ac8a4f8fa8956ea1b92a4f2eb440345ab20727
 let hashwasm = null;
+function loadBlake3() {
+  if (window.hashwasm) return Promise.resolve(window.hashwasm);
+  return new Promise((ok, bad) => {
+    const el = document.createElement("script");
+    el.src = "vendor/blake3.umd.min.js";
+    el.onload = () => ok(window.hashwasm);
+    el.onerror = () => bad(new Error("blake3 unavailable"));
+    document.head.appendChild(el);
+  });
+}
+
 async function digestOf(algo, stream) {
   if (algo === "blake3") {
-    if (!hashwasm) hashwasm = await import("https://cdn.jsdelivr.net/npm/hash-wasm@4.12.0/dist/index.esm.min.js");
+    if (!hashwasm) hashwasm = await loadBlake3();
     const h = await hashwasm.createBLAKE3();
     h.init();
     const reader = stream.getReader();
@@ -345,17 +361,15 @@ function askToken(repo, tag, row, detail) {
 }
 
 function cover(img, r) {
-  const tries = [];
-  if (r.logo && !r.logo.startsWith("data:")) tries.push(r.logo);
-  for (const slug of r.slugs || []) tries.push("https://cdn.simpleicons.org/" + slug + "/a6a4a2");
-  tries.push(r.logo || "");
-  let at = 0;
-  const next = () => {
-    if (at >= tries.length) { img.style.visibility = "hidden"; return; }
-    img.src = tries[at++];
-  };
-  img.addEventListener("error", next);
-  next();
+  // Covers are vendored at build time and served from this origin. Nothing here reaches a third party,
+  // so scrolling the list tells nobody outside what you looked at.
+  if (r.cover) {
+    img.src = r.cover;
+    img.addEventListener("error", () => { if (r.logo) img.src = r.logo; else img.style.visibility = "hidden"; });
+    return;
+  }
+  if (r.logo) { img.src = r.logo; return; }        // the mark drawn from the name, a data url
+  img.style.visibility = "hidden";
 }
 
 // The command that actually uses this thing, which is not the same command for every kind.

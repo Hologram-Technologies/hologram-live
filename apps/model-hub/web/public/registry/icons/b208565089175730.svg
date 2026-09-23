@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Yellow circle background matching Headlamp style -->
+  <circle cx="100" cy="100" r="100" fill="#f5c518"/>
+
+  <!-- Tower (dark silhouette) -->
+  <polygon points="88,90 112,90 108,158 92,158" fill="#1a1a1a"/>
+
+  <!-- Gray stripe bands on tower -->
+  <polygon points="88.9,103 111.1,103 110.4,113 89.6,113" fill="#888888"/>
+  <polygon points="90.2,124 109.8,124 109.1,134 90.9,134" fill="#888888"/>
+
+  <!-- Base -->
+  <rect x="82" y="158" width="36" height="9" rx="2" fill="#1a1a1a"/>
+  <!-- Lantern housing -->
+  <rect x="85" y="76" width="30" height="16" rx="2" fill="#1a1a1a"/>
+  <!-- Glow -->
+  <rect x="89" y="79" width="22" height="10" rx="1" fill="#fff" opacity="0.55"/>
+  <!-- Roof -->
+  <polygon points="83,76 117,76 100,56" fill="#1a1a1a"/>
+  <!-- Spike -->
+  <rect x="98" y="50" width="4" height="8" rx="1" fill="#1a1a1a"/>
+  <!-- Railing -->
+  <rect x="82" y="74" width="36" height="3" rx="1" fill="#1a1a1a"/>
+  <!-- Beam left -->
+  <polygon points="85,84 54,70 54,98" fill="#1a1a1a" opacity="0.2"/>
+  <!-- Beam right -->
+  <polygon points="115,84 146,70 146,98" fill="#1a1a1a" opacity="0.2"/>
+</svg>

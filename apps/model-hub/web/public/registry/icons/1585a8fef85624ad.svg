@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="headlamp-click-ops">
+  <title>headlamp-click-ops</title>
+
+  <!-- Background tile (Kubernetes blue) -->
+  <rect width="256" height="256" rx="56" ry="56" fill="#326CE5"/>
+
+  <!-- Light cone projected downward from the lamp -->
+  <path d="M 104 122 L 152 122 L 196 220 L 60 220 Z"
+        fill="#FFFFFF" fill-opacity="0.18"/>
+
+  <!-- Headband strap (curved housing at the top) -->
+  <path d="M 60 84
+           C 60 56, 196 56, 196 84
+           L 196 104
+           C 196 116, 188 122, 172 122
+           L 84 122
+           C 68 122, 60 116, 60 104 Z"
+        fill="#FFFFFF"/>
+
+  <!-- Lens recess (k8s blue) -->
+  <circle cx="128" cy="92" r="22" fill="#326CE5"/>
+
+  <!-- Lens highlight -->
+  <circle cx="128" cy="92" r="10" fill="#FFFFFF"/>
+
+  <!-- Cursor arrow sitting inside the beam = the "click" -->
+  <path d="M 104 144
+           L 104 214
+           L 122 198
+           L 134 222
+           L 150 215
+           L 138 192
+           L 160 192 Z"
+        fill="#FFFFFF" stroke="#326CE5" stroke-width="3" stroke-linejoin="round"/>
+</svg>

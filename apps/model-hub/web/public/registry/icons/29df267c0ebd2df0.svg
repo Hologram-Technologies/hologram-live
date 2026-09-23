@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 140" fill="none">
+  <defs>
+    <linearGradient id="shield" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#58a6ff"/>
+      <stop offset="100%" style="stop-color:#1f6feb"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3fb950"/>
+      <stop offset="100%" style="stop-color:#238636"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield shape -->
+  <path d="M60 12 L108 30 L108 68 C108 96 84 118 60 128 C36 118 12 96 12 68 L12 30 Z" fill="url(#shield)" opacity="0.9"/>
+  <!-- Lock icon inside shield -->
+  <rect x="44" y="60" width="32" height="24" rx="4" fill="white" opacity="0.95"/>
+  <path d="M50 60 L50 50 C50 42 54 38 60 38 C66 38 70 42 70 50 L70 60" stroke="white" stroke-width="4" fill="none" opacity="0.95"/>
+  <circle cx="60" cy="70" r="3" fill="url(#shield)"/>
+  <!-- Arrow cycle (token exchange) -->
+  <path d="M120 55 C130 35 150 30 165 40" stroke="url(#accent)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <polygon points="165,34 170,42 162,43" fill="url(#accent)"/>
+  <path d="M165 85 C155 105 135 110 120 100" stroke="url(#accent)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <polygon points="120,106 115,98 123,97" fill="url(#accent)"/>
+  <!-- Title text -->
+  <text x="188" y="62" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="44" font-weight="700" fill="#e6edf3">github</text>
+  <text x="188" y="62" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="44" font-weight="700" fill="#c9d1d9">github</text>
+  <text x="340" y="62" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="44" font-weight="700" fill="#58a6ff">-sts</text>
+  <!-- Subtitle -->
+  <text x="188" y="90" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#8b949e">Security Token Service for GitHub</text>
+  <!-- Version badge area -->
+  <rect x="188" y="102" width="52" height="20" rx="10" fill="#238636" opacity="0.9"/>
+  <text x="214" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="white" text-anchor="middle" font-weight="600">Go</text>
+  <rect x="248" y="102" width="72" height="20" rx="10" fill="#1f6feb" opacity="0.9"/>
+  <text x="284" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="white" text-anchor="middle" font-weight="600">OIDC</text>
+  <rect x="328" y="102" width="90" height="20" rx="10" fill="#8957e5" opacity="0.9"/>
+  <text x="373" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="white" text-anchor="middle" font-weight="600">Zero-Trust</text>
+</svg>

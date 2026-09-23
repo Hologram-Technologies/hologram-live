@@ -6,13 +6,18 @@
 #   ./install-openapi.sh verify     probe the live endpoint only
 #   ./install-openapi.sh rollback   restore the newest backup this script made and reload
 #
-# What it changes, and nothing else: two surgical edits inside the existing hub.uor.foundation block of the front
+# What it changes, and nothing else: three surgical edits inside the existing hub.uor.foundation block of the front
 # Caddyfile. The block is edited IN PLACE, never rewritten and never renamed: Caddy bind-mounts that single file and
 # the tokens live inline in it.
 #   1. /openapi.json leaves the Hologram Server's route list, so it falls through to the site, which now ships the
 #      document that describes the whole endpoint rather than the server's own six paths.
 #   2. /.well-known/openapi.json is rewritten onto /openapi.json, and /openapi.json and /robots.txt are made readable
 #      from another origin.
+#   3. GET / answers agent.md to anything that is neither a browser nor asking for JSON, so `curl hub.uor.foundation`
+#      returns the hub in one screen instead of 77 KB of markup; and the front door becomes readable cross-origin.
+#
+# Each edit is applied only if it is missing, so this is safe to run against a host that has had an earlier version
+# of this script: it adds what is absent and leaves the rest alone.
 # /docs is untouched. It loads the spec from /openapi.json, so it renders the new document with no change to it.
 #
 # The route change itself is rehearsed off the host by ./rehearse-openapi-route.sh, which runs the real
@@ -25,6 +30,7 @@ HOST=${HOST:-hub.uor.foundation}
 STAMP=$(date -u +%Y-%m-%d)
 BACKUP="$CADDYFILE.bak-$STAMP-openapi"
 MARK='rewrite /.well-known/openapi.json /openapi.json'
+MARK_ARRIVING='rewrite @arriving /agent.md'
 
 die() { echo "FAIL $*" >&2; exit 1; }
 say() { echo "  $*"; }
@@ -50,7 +56,11 @@ preconditions() {
 	[ -n "$CADDY" ] || CADDY=$(caddy_container)
 }
 
-applied() { grep -qF "$MARK" "$CADDYFILE"; }
+# All three markers, not one: an earlier version of this script applied only the first two, and a host in that
+# state must still be treated as needing work rather than as done.
+applied() {
+	grep -qF "$MARK" "$CADDYFILE" && grep -qF "$MARK_ARRIVING" "$CADDYFILE" && ! grep -qE 'path /healthz /openapi\.json ' "$CADDYFILE"
+}
 
 apply_edits() {
 	python3 - "$CADDYFILE" "$HOST" <<'PY'
@@ -71,36 +81,62 @@ while True:
 block = text[start:i + 1]
 before = block
 
-# Applying twice would duplicate the rewrite and both headers. The caller guards this too; guard it here as well,
-# because this half is the half that writes.
-if 'rewrite /.well-known/openapi.json' in block:
-    raise SystemExit('already applied; refusing to apply twice')
+# Three independent edits, each applied only when missing, so a host that got an earlier version of this script
+# is brought the rest of the way rather than refused outright.
+done = []
 
 # 1. /openapi.json leaves the Hologram Server's route list.
 block, n = re.subn(r"(path /healthz )(/openapi\.json )", r"\1", block, count=1)
-if n == 0 and "/openapi.json" in block.split("handle {")[0]:
-    raise SystemExit("the server route list does not look as expected; refusing to guess")
+if n:
+    done.append("moved /openapi.json to the site")
 
-# 2. the well-known alias and the two cross-origin headers, next to the ones already there.
+# 2. the well-known alias and the cross-origin headers, next to the ones already there.
 anchor = '\t\theader /llms.txt Access-Control-Allow-Origin "*"\n'
 if anchor not in block:
     raise SystemExit("the site handler does not carry the llms.txt header line; refusing to guess where to insert")
-addition = (
-    '\t\t# One document, two paths: an agent handed nothing but the host name looks under /.well-known first.\n'
-    '\t\trewrite /.well-known/openapi.json /openapi.json\n'
-    '\t\t# The whole endpoint in one OpenAPI document, built with the site. A browser agent reads it cross-origin.\n'
-    '\t\theader /openapi.json Access-Control-Allow-Origin "*"\n'
-    '\t\theader /openapi.json Cache-Control "public, max-age=300"\n'
-    '\t\theader /robots.txt Access-Control-Allow-Origin "*"\n'
-)
-block = block.replace(anchor, anchor + addition, 1)
+if "rewrite /.well-known/openapi.json" not in block:
+    block = block.replace(anchor, anchor + (
+        '\t\t# One document, two paths: an agent handed nothing but the host name looks under /.well-known first.\n'
+        '\t\trewrite /.well-known/openapi.json /openapi.json\n'
+        '\t\t# The whole endpoint in one OpenAPI document, built with the site. A browser agent reads it cross-origin.\n'
+        '\t\theader /openapi.json Access-Control-Allow-Origin "*"\n'
+        '\t\theader /openapi.json Cache-Control "public, max-age=300"\n'
+        '\t\theader /robots.txt Access-Control-Allow-Origin "*"\n'
+    ), 1)
+    done.append("added the /.well-known alias and the cross-origin headers")
 
-if block == before:
-    raise SystemExit("nothing changed; refusing to write")
+# 3. the arriving agent. curl, node fetch and python requests all send Accept: */*, so without this the bare name
+#    answers markup to every one of them.
+agent_anchor = '\t\trewrite @agent /.well-known/model-hub.json\n'
+if agent_anchor not in block:
+    raise SystemExit("the site handler does not carry the descriptor rewrite; refusing to guess where to insert")
+if "rewrite @arriving /agent.md" not in block:
+    block = block.replace(agent_anchor, agent_anchor + (
+        '\t\t@arriving {\n'
+        '\t\t\tpath /\n'
+        '\t\t\tnot header Accept *text/html*\n'
+        '\t\t\tnot header Accept *application/json*\n'
+        '\t\t\t# Link unfurlers send */* too, and a preview of markdown is a worse card than a preview of the page.\n'
+        '\t\t\tnot header User-Agent *bot*\n'
+        '\t\t\tnot header User-Agent *Bot*\n'
+        '\t\t\tnot header User-Agent *Slack*\n'
+        '\t\t\tnot header User-Agent *Twitter*\n'
+        '\t\t\tnot header User-Agent *Discord*\n'
+        '\t\t\tnot header User-Agent *facebookexternalhit*\n'
+        '\t\t}\n'
+        '\t\trewrite @arriving /agent.md\n'
+        '\t\t# The front door has to be readable from another origin, or a browser-resident agent cannot start at all.\n'
+        '\t\theader / Access-Control-Allow-Origin "*"\n'
+        '\t\theader /agent.md Access-Control-Allow-Origin "*"\n'
+    ), 1)
+    done.append("made the bare name answer agent.md")
+
+if not done:
+    raise SystemExit("already applied; nothing to change")
 # Written in place: Caddy bind-mounts this single file, so a rename would break the mount.
 with io.open(path, "w", encoding="utf-8", newline="\n") as f:
     f.write(text[:start] + block + text[i + 1:])
-print("edited the block in place")
+print("edited the block in place: " + "; ".join(done))
 PY
 }
 
@@ -119,6 +155,13 @@ verify() {
 	probe "agent card"          /.well-known/agent-card.json  200 'Hologram Model Hub'
 	probe "robots"              /robots.txt                   200 'Disallow: /via/'
 	probe "the brief"           /agent.md                     200 'Hash what arrives'
+	# The headline claim: what curl actually gets from the bare name.
+	if curl -s --max-time 20 -H 'accept: */*' "https://$HOST/" | head -1 | grep -q '^# hub.uor.foundation'; then
+		echo "  ok   the bare name answers the brief"
+	else
+		echo "  FAIL the bare name still answers markup: curl https://$HOST returns HTML, not agent.md"
+		fails=$((fails + 1))
+	fi
 	probe "docs still render"   /docs                         200 'openapi.json'
 	probe "health untouched"    /healthz                      200 'ready'
 	probe "capabilities"        /api/v1/capabilities          200 'operations'

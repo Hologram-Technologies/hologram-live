@@ -126,6 +126,9 @@ name = "oci_store"
 required-features = ["oci"]
 
 [[test]]
+name = "cluster_e2e"
+
+[[test]]
 name = "oci_http"
 required-features = ["oci"]
 

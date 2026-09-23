@@ -1,12 +1,12 @@
 use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
-use crate::protocol::{operation, NodeRecord, OperationKind};
+use crate::protocol::{operation, NodeRecord, ObjectPage, ObjectQuery, OperationKind};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse};
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 
 const OPERATIONS: &[OperationDescriptor] = &[
@@ -40,7 +40,6 @@ impl LiveModule for ControlPlaneModule {
     fn router(&self) -> Router<AppState> {
         Router::new()
             .route("/api/v1/nodes", get(list_nodes))
-            .route(crate::cluster::JOIN_PATH, post(join_cluster))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {
@@ -126,6 +125,65 @@ pub async fn join_cluster(
         crate::error::LiveError::Conflict(format!("join cluster response: {error}"))
     })??;
     Ok(Json(ClusterJoinResponse { node: local, peers }))
+}
+
+pub async fn list_cluster_objects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ObjectQuery>,
+) -> Result<Json<ObjectPage>, HttpError> {
+    verify_cluster_request(&state, &headers, &[])?;
+    let registry = state.registry().clone();
+    let objects = tokio::task::spawn_blocking(move || registry.search(&query))
+        .await
+        .map_err(|error| crate::error::LiveError::Conflict(format!("join cluster inventory: {error}")))??;
+    Ok(Json(objects))
+}
+
+pub async fn get_cluster_object(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, HttpError> {
+    verify_cluster_request(&state, &headers, &[])?;
+    let registry = state.registry().clone();
+    let object = tokio::task::spawn_blocking(move || registry.get_object(&id))
+        .await
+        .map_err(|error| crate::error::LiveError::Conflict(format!("join cluster object read: {error}")))??;
+    let metadata = object.metadata.clone();
+    let mut response = crate::modules::registry::object_response(object)?;
+    let headers = response.headers_mut();
+    headers.insert(
+        "x-hologram-object-kind",
+        axum::http::HeaderValue::from_str(&metadata.kind)
+            .map_err(|error| HttpError(crate::error::LiveError::Protocol(format!("cluster object kind header: {error}"))))?,
+    );
+    headers.insert(
+        "x-hologram-object-created-at-millis",
+        axum::http::HeaderValue::from_str(&metadata.created_at_millis.to_string())
+            .map_err(|error| HttpError(crate::error::LiveError::Protocol(format!("cluster object timestamp header: {error}"))))?,
+    );
+    if let Some(filename) = metadata.filename {
+        headers.insert(
+            "x-hologram-object-filename",
+            axum::http::HeaderValue::from_str(&filename)
+                .map_err(|error| HttpError(crate::error::LiveError::Protocol(format!("cluster object filename header: {error}"))))?,
+        );
+    }
+    Ok(response)
+}
+
+fn verify_cluster_request(state: &AppState, headers: &HeaderMap, body: &[u8]) -> Result<(), HttpError> {
+    let token = state.cluster_token().ok_or_else(|| {
+        HttpError(crate::error::LiveError::Authentication("cluster token is unavailable".to_owned()))
+    })?;
+    crate::cluster::verify(
+        token,
+        header(headers, crate::cluster::TIMESTAMP_HEADER)?,
+        header(headers, crate::cluster::SIGNATURE_HEADER)?,
+        body,
+    )
+    .map_err(HttpError)
 }
 
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, HttpError> {

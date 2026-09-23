@@ -19,6 +19,7 @@ mod media;
 pub mod metrics;
 mod openapi;
 pub mod path;
+pub mod token;
 mod respond;
 mod uploads;
 
@@ -59,14 +60,129 @@ pub struct Registry {
     pub audit: Option<crate::audit::AuditLog>,
     /// `auth.htpasswd`; `None` is an anonymous registry, as the reference
     /// is with no `auth` section.
-    pub login: Option<Arc<auth::Htpasswd>>,
+    pub login: Option<Login>,
+}
+
+/// How this registry authenticates: a password file, as the reference's
+/// `auth.htpasswd`, or bearer tokens, as its `auth.token`.
+#[derive(Clone)]
+pub enum Login {
+    Password(Arc<auth::Htpasswd>),
+    Token(Arc<token::TokenAuth>),
+}
+
+impl Login {
+    /// Who the client is, if they may do this.
+    ///
+    /// # Errors
+    ///
+    /// [`auth::Denied`], which decides the answer.
+    pub async fn authenticate(
+        &self,
+        headers: &axum::http::HeaderMap,
+        method: &axum::http::Method,
+        scope: &path::Scope,
+        query: Option<&str>,
+    ) -> Result<String, auth::Denied> {
+        match self {
+            Self::Password(file) => file.authenticate(headers).await,
+            Self::Token(token) => token.authenticate(headers, method, scope, query),
+        }
+    }
+
+    /// The answer for a client that may not.
+    #[must_use]
+    pub fn refuse(
+        &self,
+        denied: &auth::Denied,
+        method: &axum::http::Method,
+        scope: &path::Scope,
+        query: Option<&str>,
+    ) -> axum::response::Response {
+        match self {
+            Self::Password(file) => file.refuse(denied, method, scope, query),
+            Self::Token(token) => match denied {
+                auth::Denied::Broken(reason) => {
+                    tracing::error!(reason = reason.as_str(), "error checking authorization");
+                    axum::http::StatusCode::BAD_REQUEST.into_response()
+                }
+                auth::Denied::Challenge => token.refuse(method, scope, query),
+            },
+        }
+    }
+}
+
+/// The issuer this registry runs, when `auth.token.local` is set.
+fn local_issuer() -> Option<std::sync::Arc<token::LocalIssuer>> {
+    match LOGIN.get()? {
+        Some(Login::Token(token)) => token.issuer_side(),
+        _ => None,
+    }
+}
+
+/// `GET /auth/token`: what a client fetches when the challenge sends it here.
+/// Anonymous asks get the read half of what they asked for; a password gets
+/// everything the password file allows.
+async fn issue_token(
+    headers: axum::http::HeaderMap,
+    uri: axum::http::Uri,
+) -> axum::response::Response {
+    let Some(issuer) = local_issuer() else {
+        return (StatusCode::NOT_FOUND, "this registry does not issue tokens").into_response();
+    };
+    let query = uri.query();
+    let scopes = path::query_params(query, "scope").join(" ");
+    match issuer.issue(&headers, &scopes).await {
+        Ok(jwt) => {
+            let at = token::rfc3339(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            );
+            let body = serde_json::json!({
+                "token": jwt,
+                "access_token": jwt,
+                "expires_in": 900,
+                "issued_at": at,
+            });
+            (StatusCode::OK, axum::Json(body)).into_response()
+        }
+        Err(auth::Denied::Broken(reason)) => {
+            tracing::error!(reason = reason.as_str(), "a token could not be issued");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+        Err(auth::Denied::Challenge) => {
+            let mut response = (StatusCode::UNAUTHORIZED, "incorrect username or password").into_response();
+            if let Ok(value) = axum::http::HeaderValue::from_str("Basic realm=\"Registry Realm\"") {
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::WWW_AUTHENTICATE, value);
+            }
+            response
+        }
+    }
+}
+
+/// `GET /auth/jwks.json`: the key that signed those tokens, so anything else
+/// can check them.
+async fn key_set() -> axum::response::Response {
+    match local_issuer() {
+        Some(issuer) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/jwk-set+json")],
+            issuer.jwks(),
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "this registry does not issue tokens").into_response(),
+    }
 }
 
 /// Who a registry write is recorded as when no login is configured.
 const ANONYMOUS: &str = "anonymous";
 
 /// The login the module started with (see [`OciRegistryModule::start`]).
-static LOGIN: std::sync::OnceLock<Option<Arc<auth::Htpasswd>>> = std::sync::OnceLock::new();
+static LOGIN: std::sync::OnceLock<Option<Login>> = std::sync::OnceLock::new();
 
 /// `auth.htpasswd.path` and `.realm`, from the registry configuration or else
 /// the reference's environment names. `Ok(None)`: no login configured.
@@ -75,7 +191,62 @@ static LOGIN: std::sync::OnceLock<Option<Arc<auth::Htpasswd>>> = std::sync::Once
 ///
 /// A login is asked for without its path or realm, as the reference refuses
 /// it, or the file cannot be created.
-pub fn login_from_settings() -> crate::error::Result<Option<auth::Htpasswd>> {
+pub fn login_from_settings() -> crate::error::Result<Option<Login>> {
+    if let Some(token) = token_from_settings()? {
+        return Ok(Some(Login::Token(Arc::new(token))));
+    }
+    Ok(password_from_settings()?.map(|file| Login::Password(Arc::new(file))))
+}
+
+/// `auth.token`: the reference's keys, and `local` for a registry that issues
+/// its own. `Ok(None)`: no token login configured.
+///
+/// # Errors
+///
+/// A key of the set is missing, or the key set or signing key cannot be read.
+fn token_from_settings() -> crate::error::Result<Option<token::TokenAuth>> {
+    let Some(settings) = crate::registry_compat::installed() else {
+        return Ok(None);
+    };
+    let asked = settings
+        .values
+        .keys()
+        .any(|key| key.starts_with("auth.token."));
+    if !asked {
+        return Ok(None);
+    }
+    let refuse = |what: &str| {
+        crate::error::LiveError::Config(format!(
+            "auth.token: \"{what}\" must be set for token access controller"
+        ))
+    };
+    let realm = settings.get("auth.token.realm").ok_or_else(|| refuse("realm"))?.to_owned();
+    let service = settings.get("auth.token.service").ok_or_else(|| refuse("service"))?.to_owned();
+    let issuer = settings.get("auth.token.issuer").ok_or_else(|| refuse("issuer"))?.to_owned();
+    let bad = |what: &str, error: &dyn std::fmt::Display| {
+        crate::error::LiveError::Config(format!("auth.token.{what}: {error}"))
+    };
+    if settings.flag("auth.token.local").unwrap_or(false) {
+        // The passwords that decide what a token may carry, and a signing key
+        // kept beside the volume's other state.
+        let passwords = password_from_settings()?.map(Arc::new);
+        let key = crate::registry_compat::state_dir().join("registry-token-key.der");
+        return token::TokenAuth::local(realm, service, issuer, &key, passwords)
+            .map(Some)
+            .map_err(|error| bad("local", &error));
+    }
+    let jwks = settings.get("auth.token.jwks").ok_or_else(|| refuse("jwks"))?;
+    token::TokenAuth::validating(realm, service, issuer, std::path::Path::new(jwks))
+        .map(Some)
+        .map_err(|error| bad("jwks", &error))
+}
+
+/// `auth.htpasswd.path` and `.realm`.
+///
+/// # Errors
+///
+/// As [`login_from_settings`].
+fn password_from_settings() -> crate::error::Result<Option<auth::Htpasswd>> {
     let (asked, path, realm) = if let Some(settings) = crate::registry_compat::installed() {
         (
             settings
@@ -127,6 +298,11 @@ pub struct Settings {
     /// `http.host`, as `scheme://host[:port]`: what an absolute `Location` is
     /// built on, in place of the request's own host.
     pub host: Option<String>,
+    /// `storage.maintenance.minfreespace`: a write that would leave the volume
+    /// with less room than this is refused before it starts. Not a reference
+    /// setting; unset is the reference's behaviour, which is to write until
+    /// the disk is full.
+    pub min_free_bytes: Option<u64>,
 }
 
 impl Settings {
@@ -152,6 +328,9 @@ impl Settings {
             read_only: settings.flag("storage.maintenance.readonly.enabled").unwrap_or(false),
             relative_urls: settings.flag("http.relativeurls").unwrap_or(false),
             host: settings.get("http.host").and_then(crate::registry_compat::host_origin),
+            min_free_bytes: settings
+                .get("storage.maintenance.minfreespace")
+                .and_then(crate::registry_compat::byte_size),
         }
     }
 
@@ -168,6 +347,10 @@ impl Settings {
                 .ok()
                 .as_deref()
                 .and_then(crate::registry_compat::host_origin),
+            min_free_bytes: std::env::var("REGISTRY_STORAGE_MAINTENANCE_MINFREESPACE")
+                .ok()
+                .as_deref()
+                .and_then(crate::registry_compat::byte_size),
         }
     }
 }
@@ -187,6 +370,11 @@ impl LiveModule for OciRegistryModule {
             .route("/v2/", any(dispatch))
             .route("/v2/{*rest}", any(dispatch))
             .layer(middleware::from_fn(envelope))
+            // The token endpoints, when this registry issues its own. They
+            // are outside the `/v2/` envelope: a token server answers in its
+            // own shape, which is what clients expect at a realm.
+            .route("/auth/token", axum::routing::get(issue_token))
+            .route("/auth/jwks.json", axum::routing::get(key_set))
     }
 
     fn authenticates_itself(&self) -> bool {
@@ -198,8 +386,7 @@ impl LiveModule for OciRegistryModule {
     fn start<'a>(&'a self, _context: &'a crate::module::ModuleContext) -> crate::module::ModuleStartFuture<'a> {
         Box::pin(async {
             if LOGIN.get().is_none() {
-                let login = login_from_settings()?.map(Arc::new);
-                let _ = LOGIN.set(login);
+                let _ = LOGIN.set(login_from_settings()?);
             }
             Ok(())
         })
@@ -305,7 +492,10 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
     let scope = decoded.as_deref().and_then(path::Scope::of).filter(|_| routed);
     let mut principal = ANONYMOUS.to_owned();
     let denied = match (&registry.login, &scope) {
-        (Some(login), Some(scope)) => match login.authenticate(&head.headers).await {
+        (Some(login), Some(scope)) => match login
+            .authenticate(&head.headers, &head.method, scope, head.uri.query())
+            .await
+        {
             Ok(user) => {
                 principal = user;
                 None
@@ -497,6 +687,24 @@ async fn serve(
     } else {
         route
     };
+    // A volume with no room left fails a push somewhere in the middle, and the
+    // client cannot tell that from a fault of its own. Refuse it at the door,
+    // while reads go on (`storage.maintenance.minfreespace`).
+    if let Some(floor) = settings.min_free_bytes {
+        if writes(&route) {
+            let store = store.clone();
+            let free = tokio::task::spawn_blocking(move || store.free_space())
+                .await
+                .map_err(|error| OciError::internal(&error))?
+                .map_err(|error| OciError::internal(&error))?;
+            if free < floor {
+                tracing::warn!(free, floor, "a write was refused: the volume is nearly full");
+                return Err(OciError::new(ErrorCode::Denied).with_detail(serde_json::json!(
+                    format!("the volume has {free} bytes free, under the {floor} this registry keeps in reserve")
+                )));
+            }
+        }
+    }
     match route {
         Route::Base => Ok(json(StatusCode::OK, "{}")),
         Route::Options { allow } => {
@@ -574,6 +782,22 @@ async fn read_only(store: &Arc<OciStore>, route: Route) -> Result<Route, OciErro
         }
         other => Ok(other),
     }
+}
+
+/// Whether this route writes: what the free-space floor refuses.
+fn writes(route: &Route) -> bool {
+    matches!(
+        route,
+        Route::UploadStart { .. }
+            | Route::Upload {
+                verb: UploadVerb::Patch | UploadVerb::Put,
+                ..
+            }
+            | Route::Manifest {
+                verb: ManifestVerb::Put,
+                ..
+            }
+    )
 }
 
 fn json(status: StatusCode, body: &'static str) -> Response {

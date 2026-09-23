@@ -90,6 +90,8 @@ function marquee(base, models) {
 // says something like "487+". Under a hundred it just says the number.
 const count = (n) => (n < 100 ? `${n}` : `${Math.floor(n / 100) * 100}+`);
 
+const host = (url) => url.replace(/^https:\/\//, "").replace(/\/$/, "");
+
 export function landing({ base, models, endpoint, repo }) {
   return `<main class="land" id="land">
   <div class="land-art" aria-hidden="true">${art()}</div>
@@ -99,7 +101,12 @@ export function landing({ base, models, endpoint, repo }) {
     <p class="land-sub">Discover, use and share <b class="hl">self-verifying</b><span class="hl-seal">${icon.seal}</span> models, skills and artifacts.</p>
     <div class="land-actions">
       <a class="button primary" href="${base}models/">Browse ${count(models.length)} models${icon.right}</a>
-      <button type="button" class="land-second copy" data-copy="HF_ENDPOINT=${esc(endpoint)}" title="Copy HF_ENDPOINT=${esc(endpoint)}" aria-label="Copy the endpoint">${esc(endpoint.replace(/^https:\/\//, ""))}${icon.copy}</button>
+      ${/* The whole endpoint in one line. It used to show a domain and copy something else, which meant the
+             useful half was the half nobody could see. The bare name answers this command with the hub in one
+             screen -- what it is, the three calls that use it, and the rule that makes it safe -- so an agent
+             handed nothing but this line is one request from working, and a person reading it learns the same
+             thing. Nothing else in the hero is copyable, so nothing competes with it. */""}
+      <button type="button" class="land-second copy" data-copy="curl ${esc(host(endpoint))}" title="Copy curl ${esc(host(endpoint))}" aria-label="Copy the one line"><span class="land-prompt" aria-hidden="true">$</span>curl ${esc(host(endpoint))}${icon.copy}</button>
     </div>
   </div>
 </main>

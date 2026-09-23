@@ -146,13 +146,16 @@ misleads the UIs that read it. (C) **One base URL, many dialects, one truth.** C
 ## 5. Path map (one host, no collisions)
 | Path | Owner | Dialect | Cache | Auth |
 |---|---|---|---|---|
-| `/`, `/models/…`, `/data/…`, `/zip/…` (worker), `/archive/…`, `/archive.json`, `/pins.json` | site | website; `/` with `Accept: application/json` is the hub descriptor | short | none |
+| `/`, `/models/…`, `/data/…`, `/zip/…` (worker), `/archive/…`, `/archive.json`, `/pins.json` | site | website; `/` answers three ways by `Accept` (see below) | short | none |
+| `/agent.md`, `/openapi.json`, `/.well-known/openapi.json`, `/.well-known/agent-card.json`, `/robots.txt` | site | agent discovery, all generated from the OpenAPI document | 5 min | none |
 | `/api/models`, `/api/models/{id}[/revision/{rev}]`, `/refs`, `/tree/{rev}`, `/xet-read-token/{rev}`, `/{org}/{name}/resolve/{rev}/{path}`, `/via/{source}/…`, `/api/hub/health` | hub-resolve | Hugging Face | 60 s metadata, redirects uncached | `Authorization` and `Cookie` stripped |
 | `/v2/{org}/{name}/manifests/{tag or digest}`, `/blobs/{digest}`, `/tags/list` (org ≠ `model-hub`) | hub-resolve | Ollama registry, or CNCF ModelPack when the client accepts `application/vnd.oci.image.manifest.v1+json` | uncached | stripped |
 | `/v2/`, `/v2/model-hub/…`, `/_*` | kappa-registry | OCI distribution, the daily index | registry | token for writes |
-| `/api/v1/objects[/{id}]`, `/api/v1/capabilities`, `/api/v1/modules`, `/openapi.json`, `/docs`, `/healthz` | Hologram Server | Hologram objects | immutable per address | publisher token for writes |
+| `/api/v1/objects[/{id}]`, `/api/v1/capabilities`, `/api/v1/modules`, `/docs`, `/healthz` | Hologram Server | Hologram objects | immutable per address | publisher token for writes |
+| `/openapi.json`, `/.well-known/openapi.json`, `/.well-known/agent-card.json`, `/robots.txt` | site | one OpenAPI 3.1 document over every dialect, built by `web/scripts/openapi.build.mjs` | 5 min | none |
 | `/.well-known/model-hub.json`, `/llms.txt` | site | agent discovery | short | none |
 | `/mcp` | hub-resolve | MCP (POST only, stateless) | uncached | none |
+| `/api/account`, `/api/account/*` | hub-account | the only surface that needs a person: saved list, attributed model request, recorded interest in publishing. Declared before `@server_other`; answers its own origin only; `Authorization` is NOT stripped here, because it carries the visitor's own Privy token | uncached | Privy access token |
 | `/v1/…` | — | reserved and deliberately empty: inference is out of scope | — | — |
 
 ## 6. Sequencing, each with its adoption signal and kill criterion
@@ -175,7 +178,64 @@ misleads the UIs that read it. (C) **One base URL, many dialects, one truth.** C
 3. Wording: "works with `HF_ENDPOINT`", "pull with Ollama": compatibility stated as the setting, never as affiliation.
 4. More IPFS pins (failover today covers 11 models beyond Hugging Face and ModelScope) needs a paid Filebase plan.
 
-## 8. Sources
+## 8. One document over every dialect
+
+Section 4 rejected inventing a REST API of our own, and that stands: no route here is new and no client needs
+changing. What was missing was a machine-readable description of the endpoint that already exists. `/openapi.json`
+was the Hologram Server's own document: six paths, no `servers`, no security schemes, no examples, and no mention of
+the Hugging Face dialect, the registry, MCP or the discovery files. About four fifths of the endpoint was reachable
+but undescribed, so a framework had to be told about it by a person.
+
+One OpenAPI 3.1 document now covers all of it, 39 paths and 41 operations, built by `web/scripts/openapi.build.mjs`
+and shipped with the site. It keeps the server's generated document as the source of truth for the server's own six
+paths and patches what that document leaves empty, so the two can never drift; every example in it is copied from a
+recording of the live endpoint (`web/qa/openapi/evidence.json`), never written by hand. `/docs` renders it unchanged,
+because Scalar loads the spec from the same URL. The agent card and `robots.txt` are generated from the same document,
+so a skill cannot say one thing in one place and something else in another.
+
+Three gates keep it honest, all in `web/qa/openapi`:
+
+| Gate | What it proves |
+|---|---|
+| `redocly lint` | The document is valid and complete. Both relaxed rules are written down in `scripts/redocly.yaml` with their reason |
+| `conformance.mjs` | Forward: every operation is called against the live hub and its status, media type and body are checked against the document. Reverse: every route the hub answers is matched back to a path in it, so surface cannot be added without describing it |
+| `bind.mjs` | Given only the host name, an agent discovers the document, turns all 41 operations into tool definitions in the OpenAI, Anthropic and MCP shapes, and completes find, describe, resolve, download and SHA-256 verification using nothing else. The same chain is then run through `/mcp` |
+
+Measured 2026-09-23 against the built document and the live hub: 19 assertions pass in `bind.mjs` with a real
+download hashing to the value the index gave, and 86 of 86 in `conformance.mjs` once the three files it adds are
+deployed. The gates found four defects in the first draft of the document and two on the endpoint itself: `/docs`
+answered but was undescribed, and the account service, the one surface a signed-in person can write to, was missing
+from the document entirely. Both are now covered.
+
+Left: the two dialect surfaces are described but still read a different source from the agent API (step 5 of the
+sequencing above). The document makes that split visible, it does not close it.
+
+## 9. One line
+
+The endpoint had a discovery problem shaped like its hero. The landing page showed `hub.uor.foundation` and copied
+`HF_ENDPOINT=https://hub.uor.foundation`, so the useful half was the half nobody could see; and the bare name
+answered 77 KB of markup to `curl`, because curl, node's `fetch` and python's `requests` all send `Accept: */*` and
+only an explicit `Accept: application/json` was negotiated. An agent handed nothing but the host name got a page it
+could not use.
+
+`/` now answers three ways. `text/html` gets the site. `application/json` gets the descriptor, as before. Anything
+else gets `agent.md`: the whole hub on one screen, in the imperative — the one environment variable, the three
+requests, and the rule that makes the bytes safe — ending in a check the reader runs itself. Known link unfurlers
+are excepted by user agent, because a preview of markdown is a worse card than a preview of the page. `agent.md` is
+generated from the OpenAPI document, so it cannot name a route that does not exist, and it ends in a canary comment:
+a fetcher that summarises drops it, and an agent that cannot see it knows to fetch the file again verbatim.
+
+The hero is now that line and nothing else: `curl hub.uor.foundation`. Measured against the ten API-first products
+surveyed on 2026-09-23, `llms.txt` is near universal (9 of 10) and a root `/openapi.json` is common (4 of 10), but
+only OpenRouter addresses the agent directly (`/learn.md`, `/agents.md`), only Resend ships a `/.well-known/mcp.json`,
+and **none of the ten uses `rel="service-desc"`**, the registered relation (RFC 8631) for an API description. The
+head now carries it, beside `service-doc`, `llms-txt` and a schema.org `WebAPI` block, so an agent that never renders
+a pixel finds the same line.
+
+`bind.mjs` gates the claim: it makes the request curl makes and fails if the answer is markup or if it does not show
+how to fetch a file and how to check it.
+
+## 10. Sources
 pepy.tech and pypistats.org (PyPI), api.npmjs.org (npm), GitHub code search (measured counts);
 huggingface.co/.well-known/openapi.json; huggingface.co/docs/hub/ollama, /agents-mcp, /rate-limits;
 huggingface.co/blog/hf-cli-for-agents, /state-of-open-models-summer-2026, /jeffboudier/jfrog-artifactory-june-2026;

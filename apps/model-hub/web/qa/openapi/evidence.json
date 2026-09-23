@@ -1,0 +1,2609 @@
+{
+ "probed_at": "2026-09-23T20:13:52.531Z",
+ "base": "https://hub.uor.foundation",
+ "sample": {
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "file": "sentence_bert_config.json",
+  "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f"
+ },
+ "records": [
+  {
+   "id": "root.html",
+   "method": "GET",
+   "path": "/",
+   "ms": 216,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "etag": "\"dlmy4qd9uphv1oo8-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\" data-page=\"landing\" data-highlight=\"seal\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Hologram Models Hub</title>\n<meta name=\"description\" content=\"Discover, use and share self-verifying models, skills and artifacts.\">\n<meta property=\"og:…",
+   "error": null
+  },
+  {
+   "id": "root.descriptor",
+   "method": "GET",
+   "path": "/",
+   "ms": 103,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "etag": "\"dlmy50qfl1mruz-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "format": "hologram.model-hub.descriptor/v1",
+    "name": "Hologram Model Hub",
+    "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
+    "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+    "snapshot": "2026-09-23",
+    "fetch": "/api/v1/objects/{id}",
+    "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
+    "publish": "POST /api/v1/objects with a publisher token",
+    "openapi": "/openapi.json",
+    "capabilities": "/api/v1/capabilities",
+    "registry": "/v2/",
+    "guide": "/llms.txt",
+    "addresses": {
+     "objects": "blake3 of the object bytes",
+     "files": "sha256 of the file bytes, listed in the model object"
+    },
+    "kinds": {
+     "model-hub.catalog": "today's browse rows, plus objects: { <model id>: { model: <address>, sources: [<address>] } }, plus prev",
+     "model-hub.model": "one revision of one model: id, revision, license, files[{path,size,sha256}], prev",
+     "model-hub.source": "one place the bytes of one revision can be fetched: ipfs, http or hologram (chunks on any Hologram Server)"
+    }
+   },
+   "error": null
+  },
+  {
+   "id": "root.brief",
+   "method": "GET",
+   "path": "/",
+   "ms": 95,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "etag": "\"dlmy4qd9uphv1oo8-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\" data-page=\"landing\" data-highlight=\"seal\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Hologram Models Hub</title>\n<meta name=\"description\" content=\"Discover, use and share self-verifying models, skills and artifacts.\">\n<meta property=\"og:…",
+   "error": null
+  },
+  {
+   "id": "brief",
+   "method": "GET",
+   "path": "/agent.md",
+   "ms": 99,
+   "status": 404,
+   "headers": {},
+   "error": null
+  },
+  {
+   "id": "descriptor",
+   "method": "GET",
+   "path": "/.well-known/model-hub.json",
+   "ms": 300,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "etag": "\"dlmy50qfl1mruz-gzip\"",
+    "access-control-allow-origin": "*",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "format": "hologram.model-hub.descriptor/v1",
+    "name": "Hologram Model Hub",
+    "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
+    "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+    "snapshot": "2026-09-23",
+    "fetch": "/api/v1/objects/{id}",
+    "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
+    "publish": "POST /api/v1/objects with a publisher token",
+    "openapi": "/openapi.json",
+    "capabilities": "/api/v1/capabilities",
+    "registry": "/v2/",
+    "guide": "/llms.txt",
+    "addresses": {
+     "objects": "blake3 of the object bytes",
+     "files": "sha256 of the file bytes, listed in the model object"
+    },
+    "kinds": {
+     "model-hub.catalog": "today's browse rows, plus objects: { <model id>: { model: <address>, sources: [<address>] } }, plus prev",
+     "model-hub.model": "one revision of one model: id, revision, license, files[{path,size,sha256}], prev",
+     "model-hub.source": "one place the bytes of one revision can be fetched: ipfs, http or hologram (chunks on any Hologram Server)"
+    }
+   },
+   "error": null
+  },
+  {
+   "id": "llms",
+   "method": "GET",
+   "path": "/llms.txt",
+   "ms": 84,
+   "status": 200,
+   "headers": {
+    "content-type": "text/plain; charset=utf-8",
+    "etag": "\"dlmy50qjr2qz2w0-gzip\"",
+    "access-control-allow-origin": "*",
+    "content-encoding": "gzip"
+   },
+   "body": "# Hologram Model Hub\n\nOpen models. Every object is named by the BLAKE3 hash of its bytes; every model file by its SHA-256. Fetch from anywhere, check it yourself, trust no host.\n\n## The short way (use the tools you already have)\n\n- Any Hugging Face tool: `export HF_ENDPOINT=https://hub.uor.foundation`, then `hf download <owner>/<name>` (or `snapshot_download`, `from_pretrained`, `llama-server -hf`…",
+   "error": null
+  },
+  {
+   "id": "openapi",
+   "method": "GET",
+   "path": "/openapi.json",
+   "ms": 111,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "openapi": "3.1.0",
+    "info": {
+     "title": "Hologram Live API",
+     "description": "Extensible local and remote module host for Hologram",
+     "license": {
+      "name": "MIT OR Apache-2.0",
+      "identifier": "MIT OR Apache-2.0"
+     },
+     "version": "1.0.0"
+    },
+    "paths": {
+     "/api/v1/capabilities": {
+      "get": {
+       "tags": [],
+       "operationId": "capabilities",
+       "responses": {
+        "200": {
+         "description": "",
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/CapabilityManifest"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "/api/v1/modules": {
+      "get": {
+       "tags": [],
+       "operationId": "list_modules",
+       "responses": {
+        "200": {
+         "description": "",
+         "content": {
+          "application/json": {
+           "schema": {
+            "type": "array",
+            "items": {
+             "$ref": "#/components/schemas/ModuleInfo"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "/api/v1/objects": {
+      "get": {
+       "tags": [],
+       "operationId": "list_objects",
+       "responses": {
+        "200": {
+         "description": "",
+         "content": {
+          "application/json": {
+           "schema": {
+            "type": "array",
+            "items": {
+             "$ref": "#/components/schemas/ObjectMetadata"
+            }
+           }
+          }
+         }
+        }
+       }
+      },
+      "post": {
+       "tags": [],
+       "operationId": "put_object",
+       "parameters": [
+        {
+         "name": "content-type",
+         "in": "header",
+         "description": "Stored media type",
+         "required": false,
+         "schema": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        {
+         "name": "x-hologram-kind",
+         "in": "header",
+         "description": "Object kind; defaults to file",
+         "required": false,
+         "schema": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        {
+         "name": "x-hologram-filename",
+         "in": "header",
+         "description": "Original filename",
+         "required": false,
+         "schema": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        }
+       ],
+       "requestBody": {
+        "content": {
+         "application/octet-stream": {
+          "schema": {
+           "type": "array",
+           "items": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+           }
+          }
+         }
+        },
+        "required": true
+       },
+       "responses": {
+        "201": {
+         "description": "",
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/ObjectMetadata"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "/api/v1/objects/search": {
+      "get": {
+       "tags": [],
+       "operationId": "search_objects",
+       "parameters": [
+        {
+         "name": "kind",
+         "in": "query",
+         "description": "Exact object kind",
+         "required": false,
+         "schema": {
+          "type": "string"
+         }
+        },
+        {
+         "name": "media_type",
+         "in": "query",
+         "description": "Exact media type",
+         "required": false,
+         "schema": {
+          "type": "string"
+         }
+        },
+        {
+         "name": "filename_contains",
+         "in": "query",
+         "description": "Filename substring",
+         "required": false,
+         "schema": {
+          "type": "string"
+         }
+        }
+       ],
+       "responses": {
+        "200": {
+         "description": "",
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/ObjectPage"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "/api/v1/objects/{id}": {
+      "get": {
+       "tags": [],
+       "operationId": "get_object",
+       "parameters": [
+        {
+         "name": "id",
+         "in": "path",
+         "description": "Content-addressed object ID",
+         "required": true,
+         "schema": {
+          "type": "string"
+         }
+        }
+       ],
+       "responses": {
+        "200": {
+         "description": "Raw object bytes",
+         "content": {
+          "application/octet-stream": {}
+         }
+        },
+        "404": {
+         "description": "Object not found"
+        }
+       }
+      }
+     },
+     "/healthz": {
+      "get": {
+       "tags": [],
+       "operationId": "healthz",
+       "responses": {
+        "200": {
+         "description": "",
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/HealthResponse"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "components": {
+     "schemas": {
+      "ApiError": {
+       "type": "object",
+       "required": [
+        "code",
+        "message"
+       ],
+       "properties": {
+        "code": {
+         "type": "string"
+        },
+        "message": {
+         "type": "string"
+        }
+       }
+      },
+      "CapabilityManifest": {
+       "type": "object",
+       "required": [
+        "protocol_version",
+        "server_version",
+        "server_id"
+       ],
+       "properties": {
+        "maximum_message_bytes": {
+         "type": "integer",
+         "format": "int32",
+         "minimum": 0
+        },
+        "modules": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ModuleInfo"
+         }
+        },
+        "operations": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/OperationInfo"
+         }
+        },
+        "protocol_version": {
+         "type": "integer",
+         "format": "int32",
+         "minimum": 0
+        },
+        "role": {
+         "type": "string"
+        },
+        "server_id": {
+         "type": "string"
+        },
+        "server_version": {
+         "type": "string"
+        }
+       }
+      },
+      "HealthResponse": {
+       "type": "object",
+       "required": [
+        "status",
+        "version",
+        "role"
+       ],
+       "properties": {
+        "modules_ready": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "role": {
+         "type": "string"
+        },
+        "status": {
+         "type": "string"
+        },
+        "version": {
+         "type": "string"
+        }
+       }
+      },
+      "ModuleInfo": {
+       "type": "object",
+       "required": [
+        "id",
+        "name",
+        "version"
+       ],
+       "properties": {
+        "dependencies": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "id": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        },
+        "operations": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "state": {
+         "type": "string"
+        },
+        "version": {
+         "type": "string"
+        }
+       }
+      },
+      "ObjectMetadata": {
+       "type": "object",
+       "required": [
+        "id",
+        "kind",
+        "media_type"
+       ],
+       "properties": {
+        "created_at_millis": {
+         "type": "integer",
+         "format": "int64",
+         "minimum": 0
+        },
+        "filename": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "id": {
+         "type": "string"
+        },
+        "kind": {
+         "type": "string"
+        },
+        "media_type": {
+         "type": "string"
+        },
+        "size": {
+         "type": "integer",
+         "format": "int64",
+         "minimum": 0
+        }
+       }
+      },
+      "ObjectPage": {
+       "type": "object",
+       "description": "One page of search results.",
+       "required": [
+        "objects",
+        "truncated"
+       ],
+       "properties": {
+        "next_cursor": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Absent when the walk reached the end of the result set."
+        },
+        "objects": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ObjectMetadata"
+         }
+        },
+        "truncated": {
+         "type": "boolean",
+         "description": "True when a provider-side scan bound stopped the walk before `limit`\nwas satisfied. A capped result is never presented as a complete one."
+        }
+       }
+      },
+      "ObjectQuery": {
+       "type": "object",
+       "description": "A search over stored objects.\n\nEvery field is an independent conjunctive filter; `None` means \"do not\nconstrain\". Ordering is ascending by object id, identically for every\nprovider: a remote tag listing arrives in lexical order, and imposing a\ntime ordering on it would mean enumerating everything before returning the\nfirst page.",
+       "properties": {
+        "created_after_millis": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "minimum": 0
+        },
+        "created_before_millis": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "minimum": 0
+        },
+        "cursor": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Opaque, and valid only for the provider that issued it. A structured\ncursor would leak provider internals into a public API and stop either\nside changing independently."
+        },
+        "filename_contains": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "kind": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "limit": {
+         "type": "integer",
+         "format": "int32",
+         "minimum": 0
+        },
+        "max_size": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "minimum": 0
+        },
+        "media_type": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "min_size": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "minimum": 0
+        }
+       }
+      },
+      "OperationInfo": {
+       "type": "object",
+       "required": [
+        "id",
+        "kind",
+        "fallback_safe_before_dispatch"
+       ],
+       "properties": {
+        "fallback_safe_before_dispatch": {
+         "type": "boolean"
+        },
+        "id": {
+         "type": "string"
+        },
+        "kind": {
+         "$ref": "#/components/schemas/OperationKind"
+        }
+       }
+      },
+      "OperationKind": {
+       "type": "string",
+       "enum": [
+        "read",
+        "mutation",
+        "stream"
+       ]
+      }
+     }
+    },
+    "tags": [
+     {
+      "name": "system",
+      "description": "Hologram Live system endpoints"
+     },
+     {
+      "name": "system",
+      "description": "Host capabilities and module discovery"
+     },
+     {
+      "name": "kappa-registry",
+      "description": "Content-addressed registry provider"
+     }
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "wellknown.openapi",
+   "method": "GET",
+   "path": "/.well-known/openapi.json",
+   "ms": 96,
+   "status": 404,
+   "headers": {
+    "access-control-allow-origin": "*"
+   },
+   "error": null
+  },
+  {
+   "id": "agentcard",
+   "method": "GET",
+   "path": "/.well-known/agent-card.json",
+   "ms": 86,
+   "status": 404,
+   "headers": {
+    "access-control-allow-origin": "*"
+   },
+   "error": null
+  },
+  {
+   "id": "robots",
+   "method": "GET",
+   "path": "/robots.txt",
+   "ms": 91,
+   "status": 404,
+   "headers": {},
+   "error": null
+  },
+  {
+   "id": "docs",
+   "method": "GET",
+   "path": "/docs",
+   "ms": 95,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html>\n  <head>\n    <title>Scalar API Reference</title>\n    <meta charset=\"utf-8\" />\n    <meta\n      name=\"viewport\"\n      content=\"width=device-width, initial-scale=1\" />\n  </head>\n\n  <body>\n    <div id=\"app\"></div>\n\n    <!-- Load the Script -->\n    <script src=\"/docs/scalar.js\"></script>\n\n    <!-- Initialize the Scalar API Reference -->\n    <script>\n      Scalar.createApiReferenc…",
+   "error": null
+  },
+  {
+   "id": "archive",
+   "method": "GET",
+   "path": "/archive.json",
+   "ms": 102,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "etag": "\"dlmy50q32ya2302-gzip\"",
+    "access-control-allow-origin": "*",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "days": [
+     {
+      "addressed": 416,
+      "archived": "2026-09-18T11:57:59Z",
+      "bytes": 16653256,
+      "cid": "bafybeid2uvmk6wz6ynltymwqvbtrhgxheb2epnvno7jkm6ey5jocwpwozi",
+      "date": "2026-09-17",
+      "files": 1404,
+      "index": "blake3:ebe4d5f39a0dfee9fd7574bb662c9fe63860d636c077e007e4a87a9c91b4dc0f",
+      "models": 500,
+      "prev": null,
+      "prev_ledger": null,
+      "source": "3830a23"
+     },
+     {
+      "addressed": 386,
+      "archived": "2026-09-18T11:58:22Z",
+      "bytes": 14960298,
+      "cid": "bafybeifqsf6tj65qho2jlg6i7uzwbwilm2qrqnipzkkzu5quklldurrso4",
+      "date": "2026-09-18",
+      "files": 1300,
+      "index": "blake3:1ec81f29bac9b5e81fc5cf9ee1ed128645b2713f080b5f5b540a12c2279a5dbd",
+      "models": 500,
+      "prev": "bafybeid2uvmk6wz6ynltymwqvbtrhgxheb2epnvno7jkm6ey5jocwpwozi",
+      "prev_ledger": "Qmf6qu2Dn7c6bfVNtwZGNeaEqPWvys9uvdHYGvqYkbXR9P",
+      "source": "3830a23"
+     },
+     {
+      "addressed": 397,
+      "archived": "2026-09-19T07:47:26Z",
+      "bytes": 15296859,
+      "catalog": "blake3:f8e68e4b56ef62f42b7a9a1c3a05f2bc6729fc6573910eddcc42e8435fa88d98",
+      "cid": "bafybeidsutq73qgmgh7ugk44fponuun4iv6yaocsztrpenpepf6rje7f6u",
+      "date": "2026-09-19",
+      "files": 1328,
+      "index": "blake3:141a144dd47df05ec22b45854ab60ff87f842255019bbe332e270207a3942442",
+      "models": 500,
+      "prev": "bafybeifqsf6tj65qho2jlg6i7uzwbwilm2qrqnipzkkzu5quklldurrso4",
+      "prev_ledger": "QmYYRyTQtYuVMekgzYarnYy7UwuNDzXMhPSoYbejTjSmPE",
+      "source": "423e378"
+     }
+    ],
+    "format": "hologram.model-hub.archive/v1",
+    "gateway": "https://ipfs.filebase.io/ipfs/",
+    "mirror": "https://hub.uor.foundation/archive/",
+    "registry": "hub.uor.foundation/model-hub/index"
+   },
+   "error": null
+  },
+  {
+   "id": "pins",
+   "method": "GET",
+   "path": "/pins.json",
+   "ms": 100,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "etag": "\"dlmy50pybhknejs-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "format": "hologram.model-hub.pins/v1",
+    "gateway": "https://ipfs.filebase.io/ipfs/",
+    "models": {
+     "AlayaLab/WorldSculpt": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "8cb81056d803c61371dd84ef18a14142a738610e",
+      "root": "bafybeifau7fxa3zohzh7v3iu3yu6x7oe55r4xlzlrwflrrjrbgwit5rghq"
+     },
+     "AlicanKiraz0/Kizagan-TTS-v1.0": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "a22aac87ee3d84c3757f06efec5cfa08f426e02b",
+      "root": "bafybeicwr55uxy77r4i3snh2llzvic5sw72q5xwdterzgusgz6vtjgrpum"
+     },
+     "Alissonerdx/Minimax-H3-ComfyUI": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "212c3b26d2abbb9b2db3289e0d0f0bfcdf0f003e",
+      "root": "bafybeifbmqbht34rwrimuxugoiy2xd4e2wbjviwjidb7fdqepkaok7arba"
+     },
+     "BAAI/Brainmu-Spike": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "1c133a51711c1762faaadce4494b9e4a5f64e370",
+      "root": "bafybeigdtrzy5wp552juhng677mqjavxra25fx2vegjz6rjwf65y6cj7hi"
+     },
+     "BAAI/bge-base-en-v1.5": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+      "root": "bafybeihry44zttrv6ls4xjui2mm5cdzcuf5vdmgub44y73m4vrvs7orrh4"
+     },
+     "BAAI/bge-m3": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "root": "bafybeicabpm3eebmgxvbi3flyqwtbwh3zwza2cvsepglxe3gvmxecwurfu"
+     },
+     "BAAI/bge-reranker-v2-m3": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+      "root": "bafybeiexdnnqfbmqkzwry6r2ysjqzdsvms4gf7vcaumceeyeoiaay35r4q"
+     },
+     "BAAI/bge-small-en-v1.5": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+      "root": "bafybeicjwdj3rjigqigwznzibq47b7mhwmi6jvvooec7da7kiado6tiapa"
+     },
+     "Cactus-Compute/needle2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "32e9e3a93b205f786929697446ae669cf0a84579",
+      "root": "bafybeihleb2yv6cvnpcgfz2yrknmp7bkfbakaiskq342njiis4htheb5cm"
+     },
+     "Cactus-Compute/needle3": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "9da75122d4ca11aa4a667281c9c8ba38a7eed679",
+      "root": "bafybeigypejm3zdodheenrckfwsdojuzdzmsr6cwotrq2c7tq6e6yntvim"
+     },
+     "ConwayResearch/Underdog-Woof-4B-1.1": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "cf5f8db5409258e73303b78e112051fc443cb02b",
+      "root": "bafybeigwblc3jb4qw6yjteajyluvnywx2lo3ich3o323jx4tl4bufvr44m"
+     },
+     "DeepMostInnovations/sales-conversion-model-reinf-learning": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "105963aa2bcdaa9a41600366ee7218bb03e397d2",
+      "root": "bafybeib5yj2wyutey5ystvzpupfcboxqzhq7zl6gjxhj4tc6tvru5hmhru"
+     },
+     "Edge0/Edge0-8B-A1B-preview": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "cadc35c7059469fad8569a63ce6c851172bbca61",
+      "root": "bafybeidjss25xh6uajfsfh3hnyzexyd2f23en5cwdtnqq7o2jgzo5se2um"
+     },
+     "FacebookAI/xlm-roberta-base": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089",
+      "root": "bafybeifd6kqaf2tkfb6ew4p3bzoyqfcsk44hly5ia27jqzx7ak4c5l3fi4"
+     },
+     "Gensyn/open-1b-sft": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "95f087274c521962ce4fa867a6d20c4d04e1afba",
+      "root": "bafybeiepwump4xlp3qka2xhxtu7papbashtljxv3bruanpldxvu7r5vbz4"
+     },
+     "HermiHg/Qwen3.8-27B-DFlash2-Q2_K_S-MIX-GGUF": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "2b4527438b07460dcf27713107aedf0c6853e850",
+      "root": "bafybeifmwdne7mudx7gbzapuunquvrkyppvoticl3m23nksqeadzh2leem"
+     },
+     "HuggingFaceTB/SmolLM2-135M-Instruct": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+      "root": "bafybeihqnd6n4gvseolrlofy3appwfqqqwtubukkfzt2qvmya3xzfezkiu"
+     },
+     "IFM/K2-Horizon-0.9B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "9fa6faa55fe1c9eb008bb241cc6fb7e4536d0e91",
+      "root": "bafybeigrzzjcpfed6sj3uqq523sw5k6gcgwj6dapbnl7iksuwqb44x3riq"
+     },
+     "IFM/K2-Horizon-7B-Uno": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "669f041aab04fad836e757ede9a028058b064996",
+      "root": "bafybeibbckojk6whwwsb476tgt43xl265huadl7pgtyz535ytmtxtkztci"
+     },
+     "LBH-123-AI/Minimax_h3_latent_Upscaler": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "3f941d5d182014dd5c0a5e16330420ee2d4aa0c6",
+      "root": "bafybeiaxptgmc6khhuaczet2z4ctjoxkrvw55vwfatowniok65d5u45wj4"
+     },
+     "LiconStudio/LTX-2.5-Multiple-Subject-Reference": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "9e71dd44a64581d343ae9dd6068a822159b9aa13",
+      "root": "bafybeihixir7xqmoootnbegcr72yqhinjk72pyzcmufhlgqayukwfrf7lm"
+     },
+     "Linkup-Platform/linkup-sparseup-embed-v1": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "76f294a176372d67d8e30507e6ac3cc4ce3f888f",
+      "root": "bafybeihgqonz2bjknthntioqf2mdpv6g3ydvhgjleqtgbtahhzgnqnsmyy"
+     },
+     "OpenMOSS-Team/MOSS-Transcribe-Diarize": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "704aa4a9c304e8520be88901e0d1960158ef5b15",
+      "root": "bafybeidq3cgorl33nlxto67ibjkx3m6fz6uk4fudbyyhyttrv7ugghsava"
+     },
+     "PaddlePaddle/PaddleOCR-VL-1.6": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "c5630abae1d940eafe0697512a0325494b02ab42",
+      "root": "bafybeif3l55roymx36iu3giogxmz7lqv53jilb7lm6em6yunzpi4b6hlre"
+     },
+     "Playtime-AI/Minimax_H3-Age_Slider": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "36a0cc6042ec5849cac798165eedde0538762254",
+      "root": "bafybeibgloo2lpg5ooufm36qxmgkjoea2gbbgv6bcsbmeg4yulaunu62c4"
+     },
+     "Qwen/Qwen2.5-0.5B-Instruct": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "root": "bafybeighwn5y57zbeyhrusfumj6zljlgo7zk7i55xb6a3sgq5st4eu2c5m"
+     },
+     "Qwen/Qwen2.5-1.5B-Instruct": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "root": "bafybeieiwculvtvt3cofvhr2r5rffv7stbwrk5tmhfzvvnprpjgjqkhrsy"
+     },
+     "Qwen/Qwen3-0.6B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+      "root": "bafybeibpsitfep42kdnxg2n4srn7plwjmw5lh4xpeaney7zweslwbl7p2m"
+     },
+     "Qwen/Qwen3-1.7B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "root": "bafybeichkusuqicii4r5zzbn3hdwypoy7bmpv6n5rzzvu47ydf4t625dwm"
+     },
+     "Qwen/Qwen3-ASR-1.7B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+      "root": "bafybeiawbayx3nu6ib3vsz752lfn555ctiwx6fzul6c5te67pks5jo2ype"
+     },
+     "Qwen/Qwen3-Embedding-0.6B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+      "root": "bafybeiay346sumbnrxtajrs4zfvegiskbdjyqjq7lbvnx5usejowqtzrfe"
+     },
+     "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+      "root": "bafybeihoqmarjg2h5n5hxol5y3jb3v3hyw4mxm6kvh6mz7vdms67xxshw4"
+     },
+     "Qwen/Qwen3.5-0.8B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+      "root": "bafybeicy3fzh7nv4gcei75hqnrto6lrigiyy7ovwbyeo3msdcyywyyd43y"
+     },
+     "Qwen/Qwen3.5-2B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+      "root": "bafybeickxalfopzrfkgxrfzlftuujlf52w4vir6bj5ucdc4r5dknm2kmly"
+     },
+     "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+      "root": "bafybeigbxumxrtqqyjgjl5q5ckixy3avqnbvi5ibnbz2t2j2647qkudwh4"
+     },
+     "UntMods/FaceSwap_MiniMaxH3_REF2VA": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "605f97cdea17b780f4cf3d0329bb5c70a609a091",
+      "root": "bafybeif6iaqwf2acmj3a5sdzdgqmqk5k3cdlgysoyg6kejkcmiltgblpbi"
+     },
+     "XHToken/Spark-X2.5-1.7B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8",
+      "root": "bafybeiegb3jbbtrxrdh7b5otsxzrkfh5hhzb2xnsmvnbgkr5c5mbpnjoiy"
+     },
+     "agents-course/notebooks": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "cecf8edffb02101c90634b84076bd93b1a20c713",
+      "root": "bafybeihee4vraktkdjom3ntmnhhjzxt2dihidihemzft6rfkfbk7uw2t6m"
+     },
+     "amazon/chronos-2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+      "root": "bafybeihdpqbpjqgnz3sr37thfuqz76yncbmnnajujrh3roxptvxlqbgtxq"
+     },
+     "baidu/Unlimited-OCR": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "07dea832e22aefee32ad281d4b80551282e1c168",
+      "root": "bafybeigwjc3mfq3ho4g5on7ov6f7qux4tit2e4yg36s2v7crlkmfo3jbuy"
+     },
+     "cross-encoder/ms-marco-MiniLM-L6-v2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "233902d25c440f23af6f7d6e94d2946bac0bee0a",
+      "root": "bafybeifkxceikap6ki5f4mgna2xumz6wzz5cagkagzj23qelvp5x62dhpa"
+     },
+     "dealignai/Bonsai-2-27B-1bit-CRACK-GGUF": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "9665897ee63152226ecd64a1036d14292397186f",
+      "root": "bafybeiboqo4qvifiezoqzfxmkduuv6fdrzq7umokvinwzbaz3klzzwbcwq"
+     },
+     "dealignai/Bonsai-2-27B-Ternary-CRACK-GGUF": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "3d36486a5fb2a3868116b8f6e768179e2391d28d",
+      "root": "bafybeiarlpaubvnl5b4i2kvvcdrmpuc5swydthptzdh3nmvgdjwyi3do74"
+     },
+     "deepseek-ai/DeepSeek-OCR": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "9f30c71f441d010e5429c532364a86705536c53a",
+      "root": "bafybeifmxsen4gxlt2i526hx4m2fm5ewv22ohyoabkff6epxg3jbc2ld2q"
+     },
+     "distilbert/distilbert-base-uncased": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "12040accade4e8a0f71eabdb258fecc2e7e948be",
+      "root": "bafybeigei5v2f2zyevwmny5554tw4y4jjsppqgiyy5t5qngkytrbzjg6km"
+     },
+     "divergentlabs/qwen-jeff-B2": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "60cd45c7f8ebcf04b8ec5f7c9c4cc98038ea5adf",
+      "root": "bafybeicqfyf76xgltaqq4skbrvnhj2ui4bwboa35nt7yeunax66qo2t2qy"
+     },
+     "e-n-v-y/Krea-2-Pixel-Art": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "2fa8d14a24a62f5f3679326f782548c97039d9c2",
+      "root": "bafybeiddyog2a4evd4css3wxqdlm6depbmdssj5gqqrwe2vw76w5b7q62y"
+     },
+     "eric-venti-seeds/Eyes_Direction_Lora_Flux2Klein9B": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "1d60331399de7f7a17f0c94413e2723422d5abe6",
+      "root": "bafybeifggc4of7xf5purfuzrw7inb6mh2peywa2drdg37g2dhabkd5x5em"
+     },
+     "fastino/gliner2.5-multi-v1": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "235cf92d6d4318da9bfca0d08975c8fa7250d13b",
+      "root": "bafybeidyrhmwnsgauj5ksvwpzbvaouw26bqglqxgbaoisgko4fmbwvy3xi"
+     },
+     "fastino/gliner2.5-small-v1": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "f1e4d8fdd6fe328f45dee6aca3e6a07c9db4296e",
+      "root": "bafybeidfsjjyeaoq3xslyttcbm5i6prsnlbtsm2dw6rhxbqkrtgrxkqsky"
+     },
+     "froggeric/Qwen-Fixed-Chat-Templates": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "855bffc49448e299789730ff92c9b8d834d6cc14",
+      "root": "bafybeieaqyiuryvdyhh5u2l56tgrobgkqsocqmlywn47ake3goelarxaum"
+     },
+     "google-bert/bert-base-uncased": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "86b5e0934494bd15c9632b12f734a8a67f723594",
+      "root": "bafybeifarisahtyoyijw5ajunizfel6vcu7sgsm6qn6mo5222qmhrl6n74"
+     },
+     "harshatheg/Qwen-2.5-1B-RLCD": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "2af86848be75847ccb3553b0941cc51d6ef7e4e9",
+      "root": "bafybeieh6fbourdnjxeykzcfeavsr7ahpnp4ytq2gfp2u7ozbtdzww26q4"
+     },
+     "hexgrad/Kokoro-82M": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+      "root": "bafybeiauiszvph34uhfnyzxi3uojfcm546hfcyi7cd5ozd272latt5pnnu"
+     },
+     "huihui-ai/Huihui-MiniCPM5-2B-abliterated": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "aea962bb5558e659624eeefc8c1b9f418a3e6ffb",
+      "root": "bafybeibto3jzd3j44xe7uw2w2nso4vznu2uasmjnlccqyssf6khxtrik34"
+     },
+     "ifmylove2011/girlslike-krea2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "ec4c47ae07f53ae83d19aaaff82e89658610c74e",
+      "root": "bafybeihm5n6wlkhtswo2lowkgqa4ltyq5iaesag5lsfpwy72oimrodejba"
+     },
+     "knowledgator/gliformer-base-v1": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "590f9d3f577ea2f6d685aaec84b2d66b6db86b15",
+      "root": "bafybeih5wbenk4f3thdqxqvtmbsnxkgjksuq5p6kcoivhp7kkvbdhxmxey"
+     },
+     "knowledgator/gliformer-large-v1": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "da62fb8ea654b8d19f169b139ebefd13692372d2",
+      "root": "bafybeic6nhh7glgd6vrbgx5cih5mbjh5owcdfqixfcfrl2dwpbvqy263l4"
+     },
+     "malcolmrey/minimaxh3": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "353a4ef0845a934926b1dbd84f1d78131868dd1d",
+      "root": "bafybeic6q57wlzdy2fz435mcuhrcjsmw3hw2f34fa6caa6gnqe76pikg6q"
+     },
+     "nomic-ai/nomic-embed-text-v1.5": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "e9b6763023c676ca8431644204f50c2b100d9aab",
+      "root": "bafybeieldm2vsyv6flvnvetsh2tj7xq7ahpcprq7oux4ynqpaqjct6rzm4"
+     },
+     "nvidia/parakeet-tdt-0.6b-v3": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+      "root": "bafybeiaapqx64up5ekiuguurluqdxgznq2dlnepkggrub4lhfualyp4vwa"
+     },
+     "oddadmix/Kokoro-7M-Distill": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "9357717e6499717b769ab65de61797aa7c501c86",
+      "root": "bafybeifuixybckrv754b4yf43ypr7mt7idrz3yuwihvqoktt7gckzlvpfi"
+     },
+     "oddadmix/Nabra-7M-Distill": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "03b95013d3dcd8be6f0b0412a157d25518c7b756",
+      "root": "bafybeibcf3b2gamd7lpz775ppjhadfvctwiealegocemy4s53zzw7dfqme"
+     },
+     "openai-community/gpt2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+      "root": "bafybeifevktfoc4yh4jjauof47jlybesu2ndyzk5mff5mqif4mfzigwjmi"
+     },
+     "openai/whisper-base": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "e37978b90ca9030d5170a5c07aadb050351a65bb",
+      "root": "bafybeifxg2g66td3hc6alkt5jzux2bz2ajff3w2s2aeiw6pstn2ube3xia"
+     },
+     "openai/whisper-large-v3-turbo": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+      "root": "bafybeihdq32xeja33bo5k3ue6mbz7kjvu7m72jsx42byjssdovik7vxdlu"
+     },
+     "openai/whisper-tiny": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "169d4a4341b33bc18d8881c4b69c2e104e1cc0af",
+      "root": "bafybeigqv3qni6jvhcutvqoedamiob5wlhjfmwj56b4rwcsyuz7lmpfoje"
+     },
+     "openbmb/MiniCPM5-1B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "87179e5c1f455ef22e6223592d2d61351b525bfc",
+      "root": "bafybeibmslosgjmnhlt4rpqmt536dgoq77xm4b6qkhgl3wlwsbcocargiq"
+     },
+     "openbmb/MiniCPM5-2B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "12a3808a956f869c767195e9266b59c4d21d92e2",
+      "root": "bafybeibmx7htha54oiiakkr5fnmr63senqkibgcjv4gedceqhs5i7ldboi"
+     },
+     "openbmb/MiniCPM5-2B-DSpark-GGUF": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "a261d2b4abc9c9ebfbad2af8a817a09802fc4ca3",
+      "root": "bafybeieydqmnfgzdccaqryczjaepm6rkrkdwrgcfpvek7wdfnfbnzmvawi"
+     },
+     "openbmb/MiniCPM5-2B-MLX": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "8a9ad7539ac86281d0ac2b017ba04a5de53fe9a3",
+      "root": "bafybeicwtlpztvjappbtfmstjxjcxo2p43kdtx5sw6mylhyh4preqztthm"
+     },
+     "openbmb/VoxCPM2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "32279effe8c19989596f05d353d1447f51d9e915",
+      "root": "bafybeict6qhqbhjgkxp3prsg3sgyx3llnany4o2kiz2ulx3hom3scgi5i4"
+     },
+     "peculiar-ragdoll/Qwen-Sharp-Chat-Templates": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "85461fc118aaf25e7319c7ecf2481f944aac3a32",
+      "root": "bafybeidzu3wd6r43mkkane46cp55ojmxa7a2m7qh2sbngslauisrvupq7i"
+     },
+     "prism-ml/Ternary-Bonsai-2-27B-gguf-dev": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "2a263ef827a2e215f3ddd14c9871a5bd1800fcbc",
+      "root": "bafybeiah54uf5q7izxafgkygplhtomiv7eps3666e4ztjd7ac3psjbc25y"
+     },
+     "remsky/kokoro-inno-clone-tuner": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "9b5e3c063fb34a63633d7921067af3c4ee966847",
+      "root": "bafybeiezovdje67h33lcc533fxevpmof5v4ipg3cnpp63v72chkunmy23m"
+     },
+     "sentence-transformers/all-MiniLM-L6-v2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+      "root": "bafybeibob7gkhs3har6vmrigcb7efbqxhhna3p2qqadqukguoqdxwfeq4m"
+     },
+     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+      "root": "bafybeihikm6eofdmnhoovizxws3bgevwl7zu5zqfyo3i47yc2jxkwyncwa"
+     },
+     "tencent/AuK": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "790742b71a4430120daf2b2099192abae449eb9f",
+      "root": "bafybeiaee4goxhochuhjn3ecpeqxp7gbb4e3w2ffjnbkoo7n3slmn65xca"
+     },
+     "tencent/AuK-Flash": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "575b92f0895f75180bf2cbd35f2e176c5732b8ed",
+      "root": "bafybeigka5zmj2cw4gxomo4crnoaa45hsqpktudxzzfrv626urxkrak5e4"
+     },
+     "tencent/Hy-MT2-1.8B": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+      "root": "bafybeif66ngz3f3mczphb4q6fgol5krljyafoofj7mhcklilsap4zcb4z4"
+     },
+     "tencent/Hy-MT2-1.8B-GGUF": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "a0c709d9fac510f2c807aa3af52872340dc37a4a",
+      "root": "bafybeibsugw3gojpojeqscjbifh7vtnlzzsgi47cpo4xxzdgt2tiao32si"
+     },
+     "turboderp/Qwen3.8-27B-exl3": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "d23340a1fdb479f3c2878136dcede06cf57ea31a",
+      "root": "bafybeidifbzihurskcb2wsqnztsbtog55uyylws7a77gamnggog5t3yol4"
+     },
+     "yqi0/petitgpt": {
+      "hidden": true,
+      "pinned": "2026-09-19",
+      "revision": "7ae08edab72fd4a43c110b6c87c73671dac80f29",
+      "root": "bafybeih3qcnlsn67seh6jigzhpc5za52nmrvndzzu6daujjmkqnjgl4p4y"
+     },
+     "z-lab/Qwen3.8-27B-DFlash2": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "50307d4c4cde6860d4eee73e2547cd786fe8e8a4",
+      "root": "bafybeihaxytd3p6iebz33tfi3nmijxzuxm5ilnp7scfkq6cqqs2s22ofg4"
+     },
+     "zai-org/GLM-OCR": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "2e85a62840ccac27daa451df36c736c4636b8628",
+      "root": "bafybeifahlyl36vynj53kbworbsjrsyjmgmpd6hzk5xamr22jzuenzv5we"
+     },
+     "zeroweight-ai/ZeroTTS": {
+      "hidden": true,
+      "pinned": "2026-09-18",
+      "revision": "c2bfbd67dc648cac455077333f7cf5c18a2e3bb4",
+      "root": "bafybeidlxbbe77y7ppf3padfssm7y2bejdeuklrxpzhzgboiqtoxy73nna"
+     }
+    }
+   },
+   "error": null
+  },
+  {
+   "id": "healthz",
+   "method": "GET",
+   "path": "/healthz",
+   "ms": 96,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*"
+   },
+   "body": {
+    "status": "ready",
+    "version": "1.0.0",
+    "role": "node",
+    "modules_ready": 2
+   },
+   "error": null
+  },
+  {
+   "id": "hub.health",
+   "method": "GET",
+   "path": "/api/hub/health",
+   "ms": 92,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "sources": {
+     "huggingface.co": {
+      "ok": true,
+      "checked": "2026-09-23T20:13:21.350Z",
+      "reason": "verified"
+     },
+     "modelscope.cn": {
+      "ok": true,
+      "checked": "2026-09-23T20:13:23.313Z",
+      "reason": "verified"
+     },
+     "ipfs": {
+      "ok": true,
+      "checked": "2026-09-23T20:13:23.387Z",
+      "reason": "verified"
+     }
+    },
+    "order": [
+     "huggingface.co",
+     "modelscope.cn",
+     "ipfs"
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "models.list",
+   "method": "GET",
+   "path": "/api/models?limit=2&sort=downloads",
+   "ms": 89,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-total-count": "421",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "content-encoding": "gzip"
+   },
+   "body": [
+    {
+     "_id": "591cee3cd6fb2b90f96475fc",
+     "id": "sentence-transformers/all-MiniLM-L6-v2",
+     "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+     "author": "sentence-transformers",
+     "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+     "private": false,
+     "gated": false,
+     "disabled": false,
+     "likes": 6111,
+     "downloads": 251354399,
+     "trendingScore": 423,
+     "createdAt": "2022-03-02T00:00:00.000Z",
+     "pipeline_tag": "sentence-similarity",
+     "library_name": "sentence-transformers",
+     "tags": [
+      "sentence-similarity",
+      "sentence-transformers",
+      "safetensors"
+     ],
+     "hologram": {
+      "manifest": "blake3:591cee3cd6fb2b90f96475fcb063c844ebbf86587ac22c73b3cc30b143c24cac",
+      "files": 30,
+      "weight_bytes": 975605706,
+      "parameters": 22713728,
+      "context": 512,
+      "sources": [
+       "Hugging Face",
+       "ModelScope",
+       "P2P"
+      ]
+     }
+    },
+    {
+     "_id": "bd31a9ad9e4705f6ddf97c7d",
+     "id": "google-bert/bert-base-uncased",
+     "modelId": "google-bert/bert-base-uncased",
+     "author": "google-bert",
+     "sha": "86b5e0934494bd15c9632b12f734a8a67f723594",
+     "private": false,
+     "gated": false,
+     "disabled": false,
+     "likes": 3368,
+     "downloads": 45461966,
+     "trendingScore": 63,
+     "createdAt": "2022-03-02T00:00:00.000Z",
+     "pipeline_tag": "fill-mask",
+     "library_name": "transformers",
+     "tags": [
+      "fill-mask",
+      "transformers",
+      "safetensors"
+     ],
+     "hologram": {
+      "manifest": "blake3:bd31a9ad9e4705f6ddf97c7dc1c43b3ab26c4d583b0526955664d54f867571d4",
+      "files": 16,
+      "weight_bytes": 3453216078,
+      "parameters": 110106428,
+      "context": 512,
+      "sources": [
+       "Hugging Face",
+       "ModelScope",
+       "IPFS"
+      ]
+     }
+    }
+   ],
+   "error": null
+  },
+  {
+   "id": "models.search",
+   "method": "GET",
+   "path": "/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&limit=2",
+   "ms": 92,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-total-count": "12",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "content-encoding": "gzip"
+   },
+   "body": [
+    {
+     "_id": "9760086f94a7cccd1145e61c",
+     "id": "empero-ai/Qwen3.8-35B-A3B-Distill-GGUF",
+     "modelId": "empero-ai/Qwen3.8-35B-A3B-Distill-GGUF",
+     "author": "empero-ai",
+     "sha": "b1f9d1dcc3de8aa867669b0ab919384aeeb9b8d5",
+     "private": false,
+     "gated": false,
+     "disabled": false,
+     "likes": 134,
+     "downloads": 95061,
+     "trendingScore": 456,
+     "createdAt": "2026-09-16T00:00:00.000Z",
+     "pipeline_tag": "text-generation",
+     "library_name": "gguf",
+     "tags": [
+      "text-generation",
+      "gguf",
+      "gguf"
+     ],
+     "hologram": {
+      "manifest": "blake3:9760086f94a7cccd1145e61c6fecccf8e480e24e85d28c247d4a1207c8d8f6db",
+      "files": 14,
+      "weight_bytes": 266066096704,
+      "parameters": 35505251456,
+      "context": 262144,
+      "sources": [
+       "Hugging Face",
+       "ModelScope"
+      ]
+     }
+    },
+    {
+     "_id": "3ab39812037fa021592c5b23",
+     "id": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+     "modelId": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+     "author": "JonathanColetti",
+     "sha": "45d0fc0ad6cfcf9eeee6008ddaea925536409b18",
+     "private": false,
+     "gated": false,
+     "disabled": false,
+     "likes": 1240,
+     "downloads": 2327149,
+     "trendingScore": 433,
+     "createdAt": "2026-08-14T00:00:00.000Z",
+     "pipeline_tag": "text-generation",
+     "library_name": "llama.cpp",
+     "tags": [
+      "text-generation",
+      "llama.cpp",
+      "gguf"
+     ],
+     "hologram": {
+      "manifest": "blake3:3ab39812037fa021592c5b23d56a3484634c4f2b4f4193bbdd1ba893938f1fbb",
+      "files": 20,
+      "weight_bytes": 231256590464,
+      "parameters": 27320697856,
+      "context": 262144,
+      "sources": [
+       "Hugging Face"
+      ]
+     }
+    }
+   ],
+   "error": null
+  },
+  {
+   "id": "models.info",
+   "method": "GET",
+   "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
+   "ms": 87,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "_id": "591cee3cd6fb2b90f96475fc",
+    "id": "sentence-transformers/all-MiniLM-L6-v2",
+    "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+    "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "private": false,
+    "gated": false,
+    "disabled": false,
+    "tags": [],
+    "downloads": 0,
+    "likes": 0,
+    "siblings": [
+     {
+      "rfilename": ".gitattributes"
+     },
+     {
+      "rfilename": "1_Pooling/config.json"
+     },
+     {
+      "rfilename": "README.md"
+     }
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "models.info.revision",
+   "method": "GET",
+   "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+   "ms": 99,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "_id": "591cee3cd6fb2b90f96475fc",
+    "id": "sentence-transformers/all-MiniLM-L6-v2",
+    "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+    "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "private": false,
+    "gated": false,
+    "disabled": false,
+    "tags": [],
+    "downloads": 0,
+    "likes": 0,
+    "siblings": [
+     {
+      "rfilename": ".gitattributes"
+     },
+     {
+      "rfilename": "1_Pooling/config.json"
+     },
+     {
+      "rfilename": "README.md"
+     }
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "models.refs",
+   "method": "GET",
+   "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/refs",
+   "ms": 91,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "branches": [
+     {
+      "name": "main",
+      "ref": "refs/heads/main",
+      "targetCommit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+     }
+    ],
+    "tags": [],
+    "converts": []
+   },
+   "error": null
+  },
+  {
+   "id": "models.tree",
+   "method": "GET",
+   "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
+   "ms": 90,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "content-encoding": "gzip"
+   },
+   "body": [
+    {
+     "type": "file",
+     "oid": "98ccb431c012ebfe976280fbd45aea4cec7409935868ccecf3954370f96732a1",
+     "size": 1229,
+     "path": ".gitattributes"
+    },
+    {
+     "type": "file",
+     "oid": "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
+     "size": 190,
+     "path": "1_Pooling/config.json"
+    },
+    {
+     "type": "file",
+     "oid": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0",
+     "size": 10502,
+     "path": "README.md"
+    }
+   ],
+   "error": null
+  },
+  {
+   "id": "models.missing",
+   "method": "GET",
+   "path": "/api/models/nobody/not-a-real-model-xyz",
+   "ms": 202,
+   "status": 404,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-error-code": "RepoNotFound",
+    "x-error-message": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile.",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "error": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile."
+   },
+   "error": null
+  },
+  {
+   "id": "models.revision.wrong",
+   "method": "GET",
+   "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/0000000",
+   "ms": 100,
+   "status": 404,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-error-code": "RevisionNotFound",
+    "x-error-message": "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only.",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "error": "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only."
+   },
+   "error": null
+  },
+  {
+   "id": "models.readonly",
+   "method": "POST",
+   "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
+   "ms": 89,
+   "status": 405,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-error-code": "ReadOnly",
+    "x-error-message": "The hub endpoint is read-only.",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "error": "The hub endpoint is read-only."
+   },
+   "error": null
+  },
+  {
+   "id": "resolve",
+   "method": "HEAD",
+   "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+   "ms": 88,
+   "status": 302,
+   "headers": {
+    "cache-control": "no-store",
+    "etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "location": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/sentence_bert_config.json",
+    "x-repo-commit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "x-linked-etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "x-linked-size": "53",
+    "x-hub-source": "huggingface.co",
+    "accept-ranges": "bytes",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "error": null
+  },
+  {
+   "id": "resolve.sha256sums",
+   "method": "GET",
+   "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/SHA256SUMS",
+   "ms": 89,
+   "status": 200,
+   "headers": {
+    "content-type": "text/plain; charset=utf-8",
+    "etag": "\"01e6b2b053e3f506935318cbfe4b432921d48265426e5a7b02899b581537f164-gzip\"",
+    "x-repo-commit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "content-encoding": "gzip"
+   },
+   "body": "98ccb431c012ebfe976280fbd45aea4cec7409935868ccecf3954370f96732a1  .gitattributes\n4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23  1_Pooling/config.json\ndcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0  README.md\n953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41  config.json\n061ca9d39661d6c6d6de5ba27f79a1cd5770ea247f8d46412a68a498dc5ac9f3  config_sent…",
+   "error": null
+  },
+  {
+   "id": "resolve.entry.missing",
+   "method": "GET",
+   "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/not-a-file.bin",
+   "ms": 86,
+   "status": 404,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-error-code": "EntryNotFound",
+    "x-error-message": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41.",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+   },
+   "error": null
+  },
+  {
+   "id": "via.ipfs",
+   "method": "HEAD",
+   "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+   "ms": 272,
+   "status": 302,
+   "headers": {
+    "cache-control": "no-store",
+    "etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "location": "https://ipfs.filebase.io/ipfs/bafybeibob7gkhs3har6vmrigcb7efbqxhhna3p2qqadqukguoqdxwfeq4m/sentence_bert_config.json",
+    "x-repo-commit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "x-linked-etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "x-linked-size": "53",
+    "x-hub-source": "ipfs",
+    "accept-ranges": "bytes",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "error": null
+  },
+  {
+   "id": "via.huggingface",
+   "method": "HEAD",
+   "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+   "ms": 103,
+   "status": 302,
+   "headers": {
+    "cache-control": "no-store",
+    "etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "location": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/sentence_bert_config.json",
+    "x-repo-commit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "x-linked-etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "x-linked-size": "53",
+    "x-hub-source": "huggingface.co",
+    "accept-ranges": "bytes",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "error": null
+  },
+  {
+   "id": "via.list",
+   "method": "GET",
+   "path": "/via/ipfs/api/models?limit=1",
+   "ms": 265,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-total-count": "421",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "content-encoding": "gzip"
+   },
+   "body": [
+    {
+     "_id": "54393b0f6b21f18d93521f9c",
+     "id": "convaiinnovations/laya",
+     "modelId": "convaiinnovations/laya",
+     "author": "convaiinnovations",
+     "sha": "5e7b2b1b8ca2ecdd3f2322d94069c9b6ce7e844b",
+     "private": false,
+     "gated": false,
+     "disabled": false,
+     "likes": 3035,
+     "downloads": 0,
+     "trendingScore": 500,
+     "createdAt": "2026-09-18T00:00:00.000Z",
+     "pipeline_tag": "text-classification",
+     "library_name": "transformers",
+     "tags": [
+      "text-classification",
+      "transformers",
+      "safetensors"
+     ],
+     "hologram": {
+      "manifest": "blake3:54393b0f6b21f18d93521f9caac3187adf6bbe4f9799cdaba74936bbec4d442e",
+      "files": 38,
+      "weight_bytes": 2365127066,
+      "parameters": 421293830,
+      "sources": [
+       "Hugging Face",
+       "ModelScope"
+      ]
+     }
+    }
+   ],
+   "error": null
+  },
+  {
+   "id": "xet",
+   "method": "HEAD",
+   "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
+   "ms": 264,
+   "status": 307,
+   "headers": {
+    "cache-control": "no-store",
+    "location": "https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "error": null
+  },
+  {
+   "id": "objects.get",
+   "method": "HEAD",
+   "path": "/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+   "ms": 113,
+   "status": 200,
+   "headers": {
+    "content-type": "application/vnd.hologram.model-hub.catalog.v1+json",
+    "cache-control": "public, max-age=31536000, immutable",
+    "etag": "\"blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f\"",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "ETag, Content-Disposition"
+   },
+   "error": null
+  },
+  {
+   "id": "objects.list.anon",
+   "method": "GET",
+   "path": "/api/v1/objects",
+   "ms": 269,
+   "status": 401,
+   "headers": {
+    "content-type": "text/plain; charset=utf-8",
+    "access-control-allow-origin": "*"
+   },
+   "body": "publish requires a publisher token",
+   "error": null
+  },
+  {
+   "id": "objects.search.anon",
+   "method": "GET",
+   "path": "/api/v1/objects/search?q=qwen",
+   "ms": 254,
+   "status": 401,
+   "headers": {
+    "content-type": "text/plain; charset=utf-8",
+    "access-control-allow-origin": "*"
+   },
+   "body": "publish requires a publisher token",
+   "error": null
+  },
+  {
+   "id": "objects.missing",
+   "method": "GET",
+   "path": "/api/v1/objects/blake3:0000000000000000000000000000000000000000000000000000000000000000",
+   "ms": 98,
+   "status": 404,
+   "headers": {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=31536000, immutable",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "ETag, Content-Disposition"
+   },
+   "body": {
+    "code": "LIVE_NOT_FOUND",
+    "message": "object blake3:0000000000000000000000000000000000000000000000000000000000000000 not found"
+   },
+   "error": null
+  },
+  {
+   "id": "capabilities",
+   "method": "GET",
+   "path": "/api/v1/capabilities",
+   "ms": 95,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "protocol_version": 1,
+    "server_version": "1.0.0",
+    "server_id": "blake3:f0f219a02da8703831b6ae0c97c74cbb9dba43b890151d9fb5e036be9412c50e",
+    "role": "node",
+    "operations": [
+     {
+      "id": "modules.list",
+      "kind": "read",
+      "fallback_safe_before_dispatch": true
+     },
+     {
+      "id": "plugin.call",
+      "kind": "mutation",
+      "fallback_safe_before_dispatch": false
+     },
+     {
+      "id": "plugin.list",
+      "kind": "read",
+      "fallback_safe_before_dispatch": true
+     }
+    ],
+    "modules": [
+     {
+      "id": "dev.hologram.live.system",
+      "name": "Hologram Live System",
+      "version": "1.0.0",
+      "state": "ready",
+      "dependencies": [],
+      "operations": [
+       "system.handshake",
+       "system.health",
+       "system.shutdown"
+      ]
+     },
+     {
+      "id": "dev.hologram.live.kappa-registry",
+      "name": "Kappa Registry Provider",
+      "version": "1.0.0",
+      "state": "ready",
+      "dependencies": [
+       "dev.hologram.live.system"
+      ],
+      "operations": [
+       "registry.list",
+       "registry.get",
+       "registry.search"
+      ]
+     }
+    ],
+    "maximum_message_bytes": 33554432
+   },
+   "error": null
+  },
+  {
+   "id": "modules",
+   "method": "GET",
+   "path": "/api/v1/modules",
+   "ms": 90,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*"
+   },
+   "body": [
+    {
+     "id": "dev.hologram.live.system",
+     "name": "Hologram Live System",
+     "version": "1.0.0",
+     "state": "ready",
+     "dependencies": [],
+     "operations": [
+      "system.handshake",
+      "system.health",
+      "system.shutdown"
+     ]
+    },
+    {
+     "id": "dev.hologram.live.kappa-registry",
+     "name": "Kappa Registry Provider",
+     "version": "1.0.0",
+     "state": "ready",
+     "dependencies": [
+      "dev.hologram.live.system"
+     ],
+     "operations": [
+      "registry.list",
+      "registry.get",
+      "registry.search"
+     ]
+    }
+   ],
+   "error": null
+  },
+  {
+   "id": "api.v1.bare",
+   "method": "GET",
+   "path": "/api/v1",
+   "ms": 97,
+   "status": 404,
+   "headers": {
+    "content-type": "text/plain; charset=utf-8"
+   },
+   "body": "not found",
+   "error": null
+  },
+  {
+   "id": "oci.base",
+   "method": "GET",
+   "path": "/v2/",
+   "ms": 111,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json"
+   },
+   "body": {},
+   "error": null
+  },
+  {
+   "id": "oci.catalog",
+   "method": "GET",
+   "path": "/v2/_catalog",
+   "ms": 179,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json"
+   },
+   "body": {
+    "repositories": [
+     "demo/hello",
+     "live/crane",
+     "model-hub/index"
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "oci.manifest.docker",
+   "method": "GET",
+   "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
+   "ms": 103,
+   "status": 404,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "errors": [
+     {
+      "code": "MANIFEST_UNKNOWN",
+      "message": "sentence-transformers/all-MiniLM-L6-v2 has no GGUF file; Ollama pulls GGUF models."
+     }
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "oci.manifest.modelpack",
+   "method": "GET",
+   "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
+   "ms": 212,
+   "status": 200,
+   "headers": {
+    "content-type": "application/vnd.oci.image.manifest.v1+json",
+    "cache-control": "no-store",
+    "x-repo-commit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "docker-content-digest": "sha256:69ed33bbc22a97c68f1fd7137ab8bb237a4555c53195efffb71192bab7e0c040",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "artifactType": "application/vnd.cncf.model.manifest.v1+json",
+    "config": {
+     "mediaType": "application/vnd.cncf.model.config.v1+json",
+     "digest": "sha256:bd4787556da7d3673a79a76a1637ab6468a8126b96d80a31e2d8f2f28dc2175c",
+     "size": 2703
+    },
+    "layers": [
+     {
+      "mediaType": "application/vnd.cncf.model.weight.config.v1.raw",
+      "digest": "sha256:98ccb431c012ebfe976280fbd45aea4cec7409935868ccecf3954370f96732a1",
+      "size": 1229,
+      "annotations": {
+       "org.opencontainers.image.title": ".gitattributes",
+       "org.cncf.model.filepath": ".gitattributes",
+       "org.cncf.model.file.metadata+json": "{\"name\":\".gitattributes\",\"mode\":420,\"uid\":0,\"gid\":0,\"size\":1229,\"mtime\":\"1970-01-01T00:00:00Z\",\"typeflag\":48}"
+      }
+     },
+     {
+      "mediaType": "application/vnd.cncf.model.weight.config.v1.raw",
+      "digest": "sha256:4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
+      "size": 190,
+      "annotations": {
+       "org.opencontainers.image.title": "1_Pooling/config.json",
+       "org.cncf.model.filepath": "1_Pooling/config.json",
+       "org.cncf.model.file.metadata+json": "{\"name\":\"1_Pooling/config.json\",\"mode\":420,\"uid\":0,\"gid\":0,\"size\":190,\"mtime\":\"1970-01-01T00:00:00Z\",\"typeflag\":48}"
+      }
+     },
+     {
+      "mediaType": "application/vnd.cncf.model.doc.v1.raw",
+      "digest": "sha256:dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0",
+      "size": 10502,
+      "annotations": {
+       "org.opencontainers.image.title": "README.md",
+       "org.cncf.model.filepath": "README.md",
+       "org.cncf.model.file.metadata+json": "{\"name\":\"README.md\",\"mode\":420,\"uid\":0,\"gid\":0,\"size\":10502,\"mtime\":\"1970-01-01T00:00:00Z\",\"typeflag\":48}"
+      }
+     }
+    ],
+    "annotations": {
+     "org.opencontainers.image.source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+     "org.opencontainers.image.revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+     "org.opencontainers.image.url": "https://hub.uor.foundation/models/sentence-transformers/all-MiniLM-L6-v2/"
+    }
+   },
+   "error": null
+  },
+  {
+   "id": "oci.tags",
+   "method": "GET",
+   "path": "/v2/sentence-transformers/all-minilm-l6-v2/tags/list",
+   "ms": 93,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "body": {
+    "name": "sentence-transformers/all-MiniLM-L6-v2",
+    "tags": [
+     "latest"
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "oci.index.tags",
+   "method": "GET",
+   "path": "/v2/model-hub/index/tags/list",
+   "ms": 86,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json"
+   },
+   "body": {
+    "name": "model-hub/index",
+    "tags": [
+     "2026-09-23"
+    ]
+   },
+   "error": null
+  },
+  {
+   "id": "account.health",
+   "method": "GET",
+   "path": "/api/account/health",
+   "ms": 92,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "ok": true,
+    "configured": true
+   },
+   "error": null
+  },
+  {
+   "id": "account.me.anon",
+   "method": "GET",
+   "path": "/api/account/me",
+   "ms": 87,
+   "status": 401,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "error": "sign in to use this"
+   },
+   "error": null
+  },
+  {
+   "id": "account.me.patch.anon",
+   "method": "PATCH",
+   "path": "/api/account/me",
+   "ms": 123,
+   "status": 401,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "error": "sign in to use this"
+   },
+   "error": null
+  },
+  {
+   "id": "account.saved.anon",
+   "method": "POST",
+   "path": "/api/account/saved",
+   "ms": 101,
+   "status": 401,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "error": "sign in to use this"
+   },
+   "error": null
+  },
+  {
+   "id": "account.saved.delete.anon",
+   "method": "DELETE",
+   "path": "/api/account/saved/a%2Fb",
+   "ms": 85,
+   "status": 401,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "error": "sign in to use this"
+   },
+   "error": null
+  },
+  {
+   "id": "account.request.anon",
+   "method": "POST",
+   "path": "/api/account/request",
+   "ms": 88,
+   "status": 401,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "error": "sign in to use this"
+   },
+   "error": null
+  },
+  {
+   "id": "account.publisher.anon",
+   "method": "POST",
+   "path": "/api/account/publisher-request",
+   "ms": 86,
+   "status": 401,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "error": "sign in to use this"
+   },
+   "error": null
+  },
+  {
+   "id": "account.unknown.anon",
+   "method": "GET",
+   "path": "/api/account/nope",
+   "ms": 85,
+   "status": 401,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+   },
+   "body": {
+    "error": "sign in to use this"
+   },
+   "error": null
+  },
+  {
+   "id": "mcp.get",
+   "method": "GET",
+   "path": "/mcp",
+   "ms": 101,
+   "status": 405,
+   "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "mcp-protocol-version"
+   },
+   "error": null
+  },
+  {
+   "id": "mcp.initialize",
+   "method": "POST",
+   "path": "/mcp",
+   "ms": 110,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "mcp-protocol-version"
+   },
+   "body": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "protocolVersion": "2025-06-18",
+     "capabilities": {
+      "tools": {
+       "listChanged": false
+      }
+     },
+     "serverInfo": {
+      "name": "hologram-model-hub",
+      "title": "Hologram Model Hub",
+      "version": "1.0.0"
+     },
+     "instructions": "Open models, every file named by its SHA-256. search_models to find one, get_model for its files, resolve_file for a download URL with the hash it must have. Weights are fetched by your shell or engine, never through a tool result."
+    }
+   },
+   "error": null
+  },
+  {
+   "id": "mcp.tools.list",
+   "method": "POST",
+   "path": "/mcp",
+   "ms": 102,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "mcp-protocol-version",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "tools": [
+      {
+       "name": "search_models",
+       "title": "Search models",
+       "description": "Find open models in the hub's index. Every result has all of its files addressed by SHA-256. Returns id, task, library, licence, parameters, weight size, downloads and where the bytes live.",
+       "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "query": {
+          "type": "string",
+          "description": "Part of the model id, e.g. 'qwen' or 'whisper'."
+         },
+         "task": {
+          "type": "string",
+          "description": "Hugging Face pipeline tag, e.g. text-generation, text-to-speech, feature-extraction."
+         },
+         "license": {
+          "type": "string",
+          "description": "SPDX-style licence id, e.g. apache-2.0, mit."
+         },
+         "format": {
+          "type": "string",
+          "description": "gguf, safetensors, mlx, onnx …"
+         },
+         "max_weights_gb": {
+          "type": "number",
+          "description": "Upper bound on the total size of the weights."
+         },
+         "sort": {
+          "type": "string",
+          "enum": [
+           "trending",
+           "downloads",
+           "likes",
+           "newest"
+          ],
+          "default": "trending"
+         },
+         "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10
+         }
+        }
+       }
+      },
+      {
+       "name": "get_model",
+       "title": "Get a model",
+       "description": "The pinned revision of one model, its files with size and SHA-256, its GGUF quantisations if any, and its sources with their current health.",
+       "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+         "id"
+        ],
+        "properties": {
+         "id": {
+          "type": "string",
+          "description": "org/name, as on Hugging Face."
+         }
+        }
+       }
+      },
+      {
+       "name": "resolve_file",
+       "title": "Resolve a file",
+       "description": "Where to download one file of a model right now, the SHA-256 it must have, how to check it, and the commands that hand it to an engine (hf, Ollama, llama.cpp). Give either a path or, for GGUF models, a quantisation such as Q4_K_M.",
+       "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+         "id"
+        ],
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "path": {
+          "type": "string"
+         },
+         "quant": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     ]
+    }
+   },
+   "error": null
+  },
+  {
+   "id": "mcp.tools.call",
+   "method": "POST",
+   "path": "/mcp",
+   "ms": 96,
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "mcp-protocol-version",
+    "content-encoding": "gzip"
+   },
+   "body": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+     "content": [
+      {
+       "type": "text",
+       "text": "{\"total\":120,\"models\":[{\"id\":\"Qwen/Qwen-Image-2.1\",\"task\":\"text-to-image\",\"library\":\"diffusers\",\"license\":\"other\",\"parameters\":7115124736,\"weights_gb\":33.13,\"downloads\":28407,\"sources\":[\"Hugging Face\"],\"page\":\"https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/\"},{\"id\":\"abenzerps/Qwen-Image-2.1-Uncensored-GGUF\",\"task\":\"text-to-image\",\"library\":\"gguf\",\"license\":\"other\",\"parameters\":7115124736,\"w…"
+      }
+     ],
+     "structuredContent": {
+      "total": 120,
+      "models": [
+       {
+        "id": "Qwen/Qwen-Image-2.1",
+        "task": "text-to-image",
+        "library": "diffusers",
+        "license": "other",
+        "parameters": 7115124736,
+        "weights_gb": 33.13,
+        "downloads": 28407,
+        "sources": [
+         "Hugging Face"
+        ],
+        "page": "https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/"
+       },
+       {
+        "id": "abenzerps/Qwen-Image-2.1-Uncensored-GGUF",
+        "task": "text-to-image",
+        "library": "gguf",
+        "license": "other",
+        "parameters": 7115124736,
+        "weights_gb": 83.61,
+        "downloads": 350678,
+        "sources": [
+         "Hugging Face"
+        ],
+        "page": "https://hub.uor.foundation/models/abenzerps/Qwen-Image-2.1-Uncensored-GGUF/"
+       }
+      ]
+     }
+    }
+   },
+   "error": null
+  },
+  {
+   "id": "preflight.models",
+   "method": "OPTIONS",
+   "path": "/api/models",
+   "ms": 92,
+   "status": 204,
+   "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "error": null
+  },
+  {
+   "id": "preflight.objects",
+   "method": "OPTIONS",
+   "path": "/api/v1/objects",
+   "ms": 88,
+   "status": 204,
+   "headers": {
+    "access-control-allow-origin": "*"
+   },
+   "error": null
+  },
+  {
+   "id": "closed.grpc",
+   "method": "POST",
+   "path": "/hologram.live.v1.HologramLive/Handshake",
+   "ms": 82,
+   "status": 404,
+   "headers": {
+    "content-type": "text/plain; charset=utf-8"
+   },
+   "body": "not found",
+   "error": null
+  },
+  {
+   "id": "nav.registry",
+   "method": "GET",
+   "path": "/registry/",
+   "ms": 85,
+   "status": 404,
+   "headers": {},
+   "error": null
+  },
+  {
+   "id": "nav.wallpapers",
+   "method": "GET",
+   "path": "/wallpapers/",
+   "ms": 89,
+   "status": 404,
+   "headers": {},
+   "error": null
+  }
+ ]
+}

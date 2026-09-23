@@ -122,6 +122,15 @@ const page = ({ title, description, body, search = false, model = "", home = fal
 <script>${prepaint}</script>
 ${home ? `<script>if(location.search)location.replace(${JSON.stringify(BROWSE)}+location.search);</script>\n` : ""}<script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>
 ${privy ? `<script type="application/json" id="privy">${JSON.stringify(privy)}</script>` : ""}
+<link rel="service-desc" type="application/openapi+json" href="${base}openapi.json">
+<link rel="service-doc" type="text/markdown" href="${base}agent.md">
+<link rel="llms-txt" href="${base}llms.txt">
+<link rel="alternate" type="application/json" href="${base}.well-known/model-hub.json">
+<script type="application/ld+json">${JSON.stringify({
+  "@context": "https://schema.org", "@type": "WebAPI", name: "Hologram Model Hub", url: ENDPOINT,
+  description: "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
+  documentation: `${ENDPOINT}/agent.md`, provider: { "@type": "Organization", name: "UOR Foundation", url: "https://uor.foundation" },
+})}</script>
 <link rel="icon" href="${base}logos/Hologram_Logomark_White.svg" type="image/svg+xml">
 <link rel="preload" href="${base}fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="${base}fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>

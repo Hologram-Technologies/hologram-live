@@ -8,6 +8,7 @@ use axum::http::{Request, StatusCode};
 use axum::response::Response;
 use base64::Engine as _;
 use hologram_live::modules::oci::auth::Htpasswd;
+use hologram_live::modules::oci::Login;
 use hologram_live::modules::oci::{handle, Registry, Settings};
 use hologram_live::oci_store::{OciStore, OpenOptions};
 use serde_json::{json, Value};
@@ -46,7 +47,7 @@ fn fixture(lines: &[String]) -> Fixture {
         store: Arc::new(store),
         settings: Settings::default(),
         audit: None,
-        login: Some(Arc::new(login)),
+        login: Some(Login::Password(Arc::new(login))),
     };
     Fixture {
         _dir: dir,
@@ -312,7 +313,7 @@ fn a_realm_outside_ascii_is_still_sent() {
         ),
         settings: Settings::default(),
         audit: None,
-        login: Some(login),
+        login: Some(Login::Password(login)),
     };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

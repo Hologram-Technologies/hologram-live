@@ -6,11 +6,17 @@
   "scripts": {
     "data": "node scripts/data.mjs",
     "build": "node build.mjs",
+    "openapi": "node scripts/openapi.build.mjs",
+    "openapi:check": "node scripts/openapi.build.mjs --check",
+    "openapi:lint": "redocly lint public/openapi.json --config scripts/redocly.yaml",
+    "openapi:conformance": "node qa/openapi/probe.mjs && node qa/openapi/conformance.mjs",
     "lint": "node scripts/lint-tokens.mjs",
     "fit": "node qa/landing-fit.mjs",
     "qa:registry": "node qa/registry-sealed.mjs"
   },
   "devDependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "markdown-it": "14.1.0"
   }
 }

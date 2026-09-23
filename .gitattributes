@@ -6,3 +6,6 @@ third_party/** -text
 # Vendored browser code, audited by checksum (apps/model-hub/web/scripts/vendor-privy.mjs --check): never convert
 # line endings, or the committed bytes stop matching the hash that vouches for them.
 apps/model-hub/web/vendor/** -text
+
+# Shell scripts run on the Linux host: a CRLF checkout on Windows would break every one of them.
+apps/model-hub/deploy/*.sh text eol=lf

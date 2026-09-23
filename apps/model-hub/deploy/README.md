@@ -6,6 +6,8 @@ Everything needed to rebuild `https://hub.uor.foundation` on one Linux host with
 |---|---|
 | `/` | Model Hub static site (`apps/model-hub/web`, built with `BASE=/`) |
 | `/v2/*`, `/_*` | Kappa Registry (OCI distribution). Reads are public; writes need the registry bearer token |
+| `/openapi.json`, `/.well-known/openapi.json` | One OpenAPI 3.1 document describing every dialect of the endpoint. Built into the site by `web/scripts/openapi.build.mjs`; `/docs` renders it |
+| `/agent.md` | The whole hub on one screen for an arriving agent. `GET /` answers it to anything that is not a browser and is not asking for JSON, so `curl hub.uor.foundation` is a usable answer rather than 77 KB of markup |
 
 ## Layout on the host (`/root/hub`)
 
@@ -25,6 +27,8 @@ Everything needed to rebuild `https://hub.uor.foundation` on one Linux host with
 | `archive.sh [date]` | Daily after `snapshot.sh`: rebuilds the day's directory from the snapshot, packs a CAR (`ipfs-car`), uploads it to the Filebase IPFS bucket, accepts it only if the read-back CID equals the local root, appends the day to the hash-chained ledger `archive.json` (pinned with `pins.json`; the ledger CID kept in `archive.cid`), keeps the current day's directory under `archive/<date>` as the fast mirror the site container serves at `/archive/<date>/` (older days removed), and warms the gateway. IPFS is the only backup of the index. Schema in `../README.md` |
 | `filebase.env` | `FILEBASE_KEY` and `FILEBASE_SECRET`, mode 600. Never committed |
 | `health.sh` | Every 5 minutes: probes both services from inside the Caddy container and restarts one that stops answering |
+| `install-openapi.sh` | One-time: moves `/openapi.json` off the Hologram Server so the site serves the endpoint's own document, and adds `/.well-known/openapi.json`. Two surgical in-place edits to the `hub.uor.foundation` block, backed up, validated, reloaded, verified, and rolled back by itself if verification fails. `check` first, then `install`; `rollback` undoes it. Refuses unless the running site already carries the document, so the flip can never take `/openapi.json` off the air |
+| `rehearse-openapi-route.sh` | Proves that same route change off the host: runs the real `Caddyfile.hub` in a throwaway Caddy against a stub for every upstream and asserts 20 routes, including everything the change must not disturb |
 | `registry-token` | Generated with `openssl rand -hex 32`, mode 600. Never committed |
 
 Both binaries are built in `rust:1.97-bookworm` so their glibc matches the runtime image. Build on a workstation, not on the host: the builds need several GB of memory.
@@ -55,6 +59,7 @@ Append `Caddyfile.hub` (with the token) to the front Caddyfile, then `caddy relo
 ## Operations
 
 - **Uptime:** `.github/workflows/model-hub-uptime.yml` probes the public URLs every 15 minutes and opens an issue when they fail.
+- **The OpenAPI document:** `.github/workflows/model-hub-openapi.yml`. On every change it checks that the committed document is what the builder produces, lints it, and proves an agent framework can bind to it; daily it calls every documented operation against the live hub and matches every answering route back to the document. Rebuild it with `npm run openapi` in `apps/model-hub/web` after re-recording with `node qa/openapi/probe.mjs`.
 - **Logs:** `/root/hub/logs/{build-site,snapshot,health}.log`.
 - **MCP registry listing** (`mcp-server.json`, name `foundation.uor.hub/model-hub`): ownership is proven by a file the hub serves, so no DNS change. On your own machine: `openssl genpkey -algorithm Ed25519 -out key.pem` (keep it), then `echo "v=MCPv1; k=ed25519; p=$(openssl pkey -in key.pem -pubout -outform DER | tail -c 32 | base64)" > mcp-registry-auth`; copy that one-line public file to `/root/hub/mcp-registry-auth` and `/root/hub/site/.well-known/` (the daily build keeps it); then `mcp-publisher login http --domain hub.uor.foundation --private-key "$(openssl pkey -in key.pem -noout -text | grep -A3 priv: | tail -n +2 | tr -d ' :
 ')"` and `mcp-publisher publish` next to `mcp-server.json` renamed `server.json`. Check: `curl "https://registry.modelcontextprotocol.io/v0/servers?search=hologram"`.

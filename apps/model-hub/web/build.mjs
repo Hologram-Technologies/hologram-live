@@ -4,6 +4,7 @@
 //                                  Git Bash: prefix MSYS_NO_PATHCONV=1)
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { checkSealed } from "./qa/registry-sealed.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -398,5 +399,9 @@ if (archive) {
   for (const d of archive.days) await writeFile(join(DIST, "at", `${d.date}.json`), JSON.stringify({ date: d.date, cid: d.cid, index: d.index, gateway: archive.gateway, mirror: archive.mirror && d === archive.days[archive.days.length - 1] ? `${archive.mirror}${d.date}/` : null, registry: archive.registry && d === archive.days[archive.days.length - 1] ? `${archive.registry}:${d.date}` : null }));
 }
 await writeFile(join(DIST, ".nojekyll"), "");
+
+// The Registry page ships from public/. It carries its own covers and its own hasher, and this
+// refuses to build a copy that would fetch either from somebody else.
+console.log(await checkSealed(DIST));
 
 console.log(`built ${models.length} model pages + browse at base ${base} → ${DIST}`);

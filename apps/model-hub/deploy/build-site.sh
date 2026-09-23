@@ -27,7 +27,7 @@ docker run --rm \
   -v "$SRC/apps/model-hub/web:/web" -w /web \
   --env-file "$HUB/build.env" \
   -e BASE=/ \
-  node:22-alpine sh -c 'npm ci --no-fund --no-audit >/dev/null && node scripts/data.mjs --limit 500 && node scripts/lint-tokens.mjs && node build.mjs && node qa/registry-sealed.mjs dist'
+  node:22-alpine sh -c 'npm ci --no-fund --no-audit >/dev/null && node scripts/data.mjs --limit 500 && node scripts/lint-tokens.mjs && node build.mjs'
 
 NEW="$SRC/apps/model-hub/web/dist"
 test -f "$NEW/index.html"
@@ -35,7 +35,7 @@ test -f "$NEW/index.html"
 test "$(find "$NEW/models" -mindepth 3 -name index.html | wc -l)" -ge 400
 test -f "$NEW/models/index.html"
 # The Registry page ships with the site and must carry its own hasher and its own covers;
-# qa/registry-sealed.mjs above proves it loads nothing from another origin.
+# build.mjs runs qa/registry-sealed.mjs itself, which proves it loads nothing from another origin.
 test -f "$NEW/registry/index.html"
 test -f "$NEW/registry/vendor/blake3.umd.min.js"
 

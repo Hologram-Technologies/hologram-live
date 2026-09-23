@@ -57,6 +57,12 @@ answers 405 with `Allow: GET, HEAD`, reads go on, and a write to an unknown uplo
 24 h) whole, so `age`, `interval` and `dryrun` must all be there unless `enabled` is false. The first purge runs a
 minute after start, where the reference waits a random 0 to 59 minutes.
 
+**Inside Harbor.** Harbor's own registry configuration loads as it is (read from Harbor 2.15.2). Four settings it
+carries are accepted and do nothing: a redis cache (`redis`, `storage.cache.layerinfo`), which this registry does not
+need because its index is local; `validation.disabled: true`, which is what this registry already does, since it never
+fetches a foreign layer; and `compatibility.schema1`, because schema 1 manifests are refused whatever it says.
+`validation.disabled: false` is refused by name, because the check it asks for is not built.
+
 **Behind a proxy.** `http.host` is what an absolute `Location` is built on, in place of the request's host;
 `http.relativeurls` sends the path alone. Without either, `Location` is built from the request's host and
 `X-Forwarded-Proto`, as the reference's is.

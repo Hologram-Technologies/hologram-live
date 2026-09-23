@@ -19,6 +19,20 @@ jobs:
   component-reproducibility:
     uses: ./.github/workflows/component-reproducibility.yml
 
+  gates:
+    # `FR-017`: the gates block a release. They judge THIS commit, so a tag on a
+    # commit no gate has ever seen is refused as loudly as a red one.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Every required gate is green on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/check-gates.sh "$GITHUB_SHA"
+
   verify:
     runs-on: ubuntu-24.04
     steps:
@@ -30,7 +44,7 @@ jobs:
       - run: cargo test --workspace --all-targets --locked -- --test-threads=1
 
   build:
-    needs: [verify, rootfs-reproducibility, component-reproducibility]
+    needs: [gates, verify, rootfs-reproducibility, component-reproducibility]
     strategy:
       fail-fast: false
       matrix:

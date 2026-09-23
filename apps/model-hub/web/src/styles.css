@@ -225,9 +225,14 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 /* ---- results */
 .head { display: flex; align-items: center; gap: var(--space-3); }
-/* The index control sits with the thing it describes — the count of models on this page — rather than in the
-   header, which is for the product. Pushed to the end of its row, above the search and sort bar. */
-.head .archive { margin-left: auto; }
+/* The index control sits with the thing it describes — the catalog this page is showing — rather than in the
+   header, which is for the product. It opens the row on the browse page, and follows the back link on a model
+   page, so it is on the same side of the page either way. */
+.head .archive { margin-right: var(--space-2); }
+.back-row .archive { margin-right: 0; margin-left: var(--space-3); }
+/* The menu hangs from the right of its control, which is what the header wanted. Here the control opens the row,
+   so the menu hangs from the left instead — otherwise it reaches back across the filters beside it. */
+.head .archive .menu { right: auto; left: 0; }
 .back-row { margin-bottom: var(--space-4); }
 .back-row .back { margin: 0; }
 .head h1, .hero h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }

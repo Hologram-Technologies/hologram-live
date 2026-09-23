@@ -498,7 +498,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
             .create_new(true)
             .mode(0o600)
             .open(path)?;
-        return file.write_all(bytes);
+        file.write_all(bytes)
     }
     #[cfg(not(unix))]
     std::fs::write(path, bytes)

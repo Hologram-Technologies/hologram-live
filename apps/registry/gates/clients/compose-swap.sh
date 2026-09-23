@@ -67,12 +67,14 @@ echo "the guide's four docker run deployments: ok"
 compose="$work/docker-compose.yml"
 mkdir -p "$work/path/data" "$work/path/certs" "$work/path/auth"
 # A certificate the way the guide's operator has one: a test CA signs a
-# server certificate, and the daemon trusts the CA through certs.d. The
-# name the daemon uses is registry.local - a DNS name, not 127.0.0.1:
-# docker treats a loopback registry as insecure, retries it over plain
-# HTTP, and dockerd 28's push pipeline degrades to http:// - the same
-# TLS-only port that refuses it. An operator's registry has a name in
-# its certificate; the test borrows that shape.
+# A certificate the way the guide's operator has one: a test CA signs a
+# server certificate, and the client trusts the CA. The client is a
+# skopeo container on the registry's own Docker network, addressing the
+# registry by its service name - the spec's tls.sh shape ("two containers
+# on one Docker network... by DNS name with no insecure-registries").
+# The host daemon's push pipeline for a loopback address retries plain
+# HTTP against the TLS-only port (dockerd 28 on the runner, observed
+# against the reference too), so the host daemon is not the TLS client.
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -keyout "$work/path/ca.key" -out "$work/path/ca.crt" \
   -days 2 -nodes -subj "//CN=registry-test-ca" \
@@ -80,24 +82,20 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   || fail "openssl could not make the test CA"
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -keyout "$work/path/certs/domain.key" -out "$work/path/domain.csr" \
-  -nodes -subj "//CN=registry.local" \
-  -addext "subjectAltName=DNS:registry.local,DNS:localhost,IP:127.0.0.1" > /dev/null 2>&1 \
+  -nodes -subj "//CN=registry" \
+  -addext "subjectAltName=DNS:registry,DNS:localhost,IP:127.0.0.1" > /dev/null 2>&1 \
   || fail "openssl could not make the test key"
 openssl x509 -req -in "$work/path/domain.csr" \
   -CA "$work/path/ca.crt" -CAkey "$work/path/ca.key" -CAcreateserial \
   -days 2 -out "$work/path/certs/domain.crt" \
-  -extfile <(printf 'subjectAltName=DNS:registry.local,DNS:localhost,IP:127.0.0.1\n') > /dev/null 2>&1 \
+  -extfile <(printf 'subjectAltName=DNS:registry,DNS:localhost,IP:127.0.0.1\n') > /dev/null 2>&1 \
   || fail "openssl could not sign the test certificate"
-echo "127.0.0.1 registry.local" | sudo tee -a /etc/hosts > /dev/null
-# The daemon trusts the test CA the one way docker supports: certs.d.
-sudo mkdir -p /etc/docker/certs.d/registry.local:5000
-sudo cp "$work/path/ca.crt" /etc/docker/certs.d/registry.local:5000/ca.crt
 cp "$here/../differential/fixtures/htpasswd" "$work/path/auth/htpasswd"
 sed -e "s|image: registry:3|image: $image|" -e "s|/path/|$work/path/|" "$here/../compose/deploying-tls-htpasswd.yml" > "$compose"
 extra=$(diff <(grep -v '^#' "$here/../compose/deploying-tls-htpasswd.yml") <(grep -v '^#' "$compose") \
   | grep '^[<>]' | grep -vE 'image:|/path/|'"$work" || true)
 [ -z "$extra" ] || fail "compose-swap changed more than the image and /path: $extra"
-cleanup() { sudo sed -i '/registry\.local/d' /etc/hosts; sudo rm -rf /etc/docker/certs.d/registry.local:5000 /etc/containers/certs.d/registry.local:5000; }
+cleanup() { docker rm -f swap-client > /dev/null 2>&1 || true; }
 trap cleanup EXIT
 started=$(date +%s)
 docker compose -f "$compose" -p swap up -d > /dev/null 2>&1
@@ -130,49 +128,29 @@ if curl -fsS "http://127.0.0.1:5000/v2/" > /dev/null 2>&1; then
   fail "the TLS compose file answered over plain HTTP"
 fi
 # The login and the round trip, through the TLS port, within SC-001's 300 s.
-# `docker login` exercises the docker CLI's own TLS path. The push and the
-# pull go through skopeo, which speaks exactly the scheme its URL carries -
-# HTTPS, verified - where the docker daemon's push pipeline for a loopback
-# address retries plain HTTP against the TLS-only port and reads our TLS
-# alert as a malformed response (dockerd 28 on the runner, observed).
-printf 'gate-password' | docker login -u gate --password-stdin registry.local:5000 > /dev/null 2>"$work/login.err" \
-  || { cat "$work/login.err" >&2; docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "docker login through TLS"; }
-# skopeo trusts through /etc/containers/certs.d, its own table.
-sudo mkdir -p /etc/containers/certs.d/registry.local:5000
-sudo cp "$work/path/ca.crt" /etc/containers/certs.d/registry.local:5000/ca.crt
-printf 'gate-password' | skopeo login registry.local:5000 -u gate --password-stdin --tls-verify > /dev/null \
-  || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo login through TLS"; }
+
+# The round trip, through TLS, within SC-001's 300 s. The client is a
+# skopeo container on the registry's own Docker network: it trusts the
+# test CA from its own certs.d, addresses the registry by the service's
+# DNS name, and verifies the certificate (--tls-verify). The image comes
+# from, and returns to, the host daemon through its socket (docker-daemon:);
+# the TLS conversations happen between the two containers on the network.
 docker build -q -t swap/hello:v1 "$work" > /dev/null
-skopeo copy -q --dest-tls-verify docker-daemon:swap/hello:v1 docker://registry.local:5000/swap/hello:v1 \
-  || {
-    echo '--- the same skopeo push against a debug-logged twin on 5008 ---' >&2
-    docker run -d --name push-diag --network host \
-      -e REGISTRY_HTTP_ADDR=0.0.0.0:5008 \
-      -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
-      -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
-      -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
-      -e REGISTRY_AUTH_HTPASSWD_REALM="Registry Realm" \
-      -e REGISTRY_LOG_LEVEL=debug \
-      -e RUST_BACKTRACE=1 \
-      -v "$work/path/certs:/certs" -v "$work/path/auth:/auth" \
-      "$image" > /dev/null 2>&1 || true
-    sleep 2
-    sudo mkdir -p /etc/containers/certs.d/registry.local:5008
-    sudo cp "$work/path/ca.crt" /etc/containers/certs.d/registry.local:5008/ca.crt
-    printf 'gate-password' | skopeo login registry.local:5008 -u gate --password-stdin --tls-verify > /dev/null 2>&1 || true
-    skopeo copy --dest-tls-verify docker-daemon:swap/hello:v1 docker://registry.local:5008/swap/hello:v1 2>&1 | head -n 5 >&2 || true
-    docker logs push-diag 2>&1 | grep -vE "CloseNotify|decided upon|unwilling to resume|framed_write" | tail -n 40 >&2
-    docker rm -f push-diag > /dev/null 2>&1 || true
-    docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true
-    fail "skopeo push through the TLS compose file"
-  }
-pushed=$(skopeo inspect --tls-verify --format '{{.Digest}}' docker://registry.local:5000/swap/hello:v1)
-skopeo copy -q --src-tls-verify docker://registry.local:5000/swap/hello:v1 docker-daemon:swap/hello:v2 \
+skopeo() {
+  docker run --rm --name swap-client --network swap_default \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$work/path/ca.crt:/etc/containers/certs.d/registry:5000/ca.crt" \
+    quay.io/skopeo/stable:latest "$@"
+}
+skopeo copy -q --dest-creds gate:gate-password --dest-tls-verify \
+  docker-daemon:swap/hello:v1 docker://registry:5000/swap/hello:v1 \
+  || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo push through the TLS compose file"; }
+pushed=$(skopeo inspect --tls-verify --format '{{.Digest}}' docker://registry:5000/swap/hello:v1)
+skopeo copy -q --src-creds gate:gate-password --src-tls-verify \
+  docker://registry:5000/swap/hello:v1 docker-daemon:swap/hello:v2 \
   || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo pull through the TLS compose file"; }
 pulled=$(skopeo inspect --format '{{.Digest}}' docker-daemon:swap/hello:v2)
 [ "$pulled" = "$pushed" ] || fail "the digest pulled differs from the one pushed"
-docker logout registry.local:5000 > /dev/null
-skopeo logout registry.local:5000 > /dev/null
 docker image rm swap/hello:v1 swap/hello:v2 > /dev/null
 took=$(( $(date +%s) - started ))
 [ "$took" -le 300 ] || fail "${took}s from start to a pushed image behind TLS, over 300 s"

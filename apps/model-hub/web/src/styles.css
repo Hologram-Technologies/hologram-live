@@ -1,159 +1,10 @@
-/* Hologram Hub. Every value resolves to the Hologram brand kit:
+/* Hologram Hub, the pages. What every page shares — tokens, resets, shell, controls, header — lives in
+   chrome.css and loads before this; this file is the browse table, the model page and the landing.
+   Every value resolves to the Hologram brand kit:
    colors and families from hologram-warm.css (.dark) + gap tokens, scales from tokens.css.
-   Only 1px hairlines and 2px focus rings are literal. Checked by site/scripts/lint-tokens.mjs. */
+   Only 1px hairlines and 2px focus rings are literal. Checked by scripts/lint-tokens.mjs. */
 
-:root {
-  /* product aliases: references only */
-  --hh-ground: var(--background);
-  --hh-surface: var(--card);
-  --hh-popover: var(--popover);
-  --hh-fill: var(--muted);
-  --hh-line: var(--border);
-  --hh-line-strong: var(--input);
-  --hh-line-focus: var(--ring);
-  --hh-text: var(--foreground);
-  --hh-text-dim: var(--muted-foreground);
-  --hh-text-faint: var(--muted-foreground-subtle);
-  --hh-accent: var(--brand);
-  --hh-accent-text: var(--brand-foreground);
-  --hh-primary: var(--primary);
-  --hh-primary-text: var(--primary-foreground);
-  --hh-shadow: color-mix(in srgb, var(--background) 60%, transparent);
-  --hh-ok: var(--success);
-  --hh-bad: var(--destructive);
-  --hh-wash: color-mix(in srgb, var(--foreground) 3%, transparent);
 
-  /* control system: two heights, one tag height */
-  --hh-control: var(--space-8);
-  --hh-field: var(--space-10);
-  --hh-tag: var(--space-6);
-  --hh-avatar: var(--space-12);
-  --hh-icon: var(--space-4);
-  --hh-icon-small: var(--text-sm);
-  --hh-ease: 150ms cubic-bezier(.4, 0, .2, 1);
-  --hh-leading: 1.5;
-  --hh-pad: var(--space-6);
-  --hh-gutter: var(--space-6);
-
-  /* landing type: the kit's steps, sized by whichever of width or height is scarcer */
-  --hh-display: clamp(var(--text-3xl), min(8.5vw, 11svh), calc(var(--text-6xl) * 1.3));
-  --hh-lead: var(--text-lg);
-  /* The pinned strip: one mark plus the air above and below it. The landing reserves exactly this. */
-  --hh-strip-mark: var(--space-10);
-  --hh-strip-top: var(--space-6);
-  --hh-strip-bottom: var(--space-10);
-  --hh-strip-gap: var(--space-16);
-  --hh-strip-label: var(--text-xl);
-  --hh-strip: calc(var(--hh-strip-mark) + var(--hh-strip-top) + var(--hh-strip-bottom));
-}
-
-*, *::before, *::after { box-sizing: border-box; }
-html { background: var(--hh-ground); }
-body {
-  margin: 0;
-  background: var(--hh-ground);
-  color: var(--hh-text);
-  font-family: var(--font-sans);
-  font-size: var(--text-base);
-  font-weight: var(--weight-normal);
-  line-height: var(--hh-leading);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  font-variant-numeric: tabular-nums;
-}
-::selection { background: var(--hh-text); color: var(--background); }
-a { color: inherit; text-decoration: none; }
-button, input { font: inherit; color: inherit; letter-spacing: inherit; }
-button { background: none; border: 0; padding: 0; cursor: pointer; }
-button:disabled { cursor: default; }
-h1, h2, p, dl, dd { margin: 0; font-size: inherit; font-weight: inherit; }
-ul { list-style: none; margin: 0; padding: 0; }
-[hidden] { display: none !important; }
-.i { width: var(--hh-icon); height: var(--hh-icon); flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-:focus-visible { outline: 2px solid var(--hh-line-focus); outline-offset: 2px; }
-
-.shell { max-width: 120rem; margin: 0 auto; padding: var(--space-6) var(--hh-gutter) var(--space-16); }
-@media (min-width: 992px) { :root { --hh-gutter: var(--space-8); } }
-@media (max-width: 480px) { :root { --hh-gutter: var(--space-4); } }
-
-/* ---- shared controls */
-.control {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  height: var(--hh-control); padding: 0 var(--space-3);
-  border: 1px solid var(--hh-line); border-radius: var(--radius-md);
-  font-size: var(--text-sm); color: var(--hh-text-dim);
-  transition: color var(--hh-ease), border-color var(--hh-ease), background var(--hh-ease), opacity var(--hh-ease);
-}
-.control:not(:disabled):hover { color: var(--hh-text); border-color: var(--hh-line-focus); }
-.control:disabled { opacity: .45; }
-.control.square { width: var(--hh-control); padding: 0; flex: none; }
-
-.field {
-  display: flex; align-items: center; gap: var(--space-3);
-  height: var(--hh-field); padding: 0 var(--space-4);
-  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md);
-  color: var(--hh-text-dim);
-  transition: border-color var(--hh-ease);
-}
-.field:hover, .field:focus-within { border-color: var(--hh-line-focus); }
-.field input { flex: 1; min-width: 0; height: 100%; padding: 0; background: none; border: 0; outline: 0; color: var(--hh-text); }
-.field input::placeholder { color: var(--hh-text-dim); }
-.field input::-webkit-search-cancel-button { display: none; }
-.field.compact { height: var(--hh-control); padding: 0 var(--space-3); gap: var(--space-2); font-size: var(--text-sm); }
-
-.button {
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  height: var(--hh-field); padding: 0 var(--space-4);
-  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md);
-  white-space: nowrap;
-  transition: border-color var(--hh-ease), opacity var(--hh-ease);
-}
-.button:hover { border-color: var(--hh-line-focus); }
-.button.primary { background: var(--hh-primary); border-color: var(--hh-primary); color: var(--hh-primary-text); }
-.button.primary .i { color: var(--hh-accent); stroke-width: 2.25; }
-.button.primary:hover { opacity: .85; }
-/* The brand kit's success pair: --success behind --success-foreground. Used for Download. */
-.button.success { background: var(--success); border-color: var(--success); color: var(--success-foreground); }
-.button.success .i { color: var(--success-foreground); stroke-width: 2.25; }
-/* Hover adds a ring instead of dimming, so the fill is always exactly --success (the green of "Verified"). */
-.button.success:hover, .button.success:focus-visible { border-color: var(--success); box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--success) 30%, transparent); }
-.button:disabled { opacity: .5; }
-
-.pill { display: inline-flex; align-items: center; height: var(--hh-control); padding: 0 var(--space-3); border-radius: var(--hh-control); background: var(--hh-fill); font-family: var(--font-mono); font-size: var(--text-sm); }
-
-.panel { background: var(--hh-surface); border-radius: var(--radius-lg); padding: var(--hh-pad); }
-
-/* ---- header */
-.top {
-  position: sticky; top: var(--space-6); z-index: 10;
-  display: flex; align-items: center; gap: var(--space-8);
-  height: var(--space-16); padding: 0 var(--space-6);
-  background: var(--hh-surface); border-radius: var(--radius-xl);
-}
-/* Scroll veil: content dissolves before it reaches the header instead of sliding under it. */
-.veil {
-  position: fixed; z-index: 9; top: 0; left: 0; right: 0; height: calc(var(--space-6) * 2 + var(--space-16));
-  pointer-events: none; background: var(--background);
-  -webkit-mask-image: linear-gradient(var(--hh-text) 64%, transparent);
-  mask-image: linear-gradient(var(--hh-text) 64%, transparent);
-}
-.brand { display: flex; align-items: center; gap: var(--space-3); flex: none; }
-.brand img { width: auto; display: block; }
-.brand .on-light { display: none; }
-:root:not(.dark) .brand .on-dark { display: none; }
-:root:not(.dark) .brand .on-light { display: block; }
-.brand .mark { height: var(--space-8); }
-.brand .word { height: var(--space-4); }
-.brand .hub { font-family: var(--font-display); font-size: var(--text-lg); font-weight: var(--weight-medium); color: var(--hh-text-dim); margin-left: var(--space-1); padding-left: var(--space-4); border-left: 1px solid var(--hh-line-strong); line-height: var(--space-6); }
-.top-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-6); font-family: var(--font-mono); font-size: var(--text-sm); }
-.top-search { width: 14.5rem; }
-.status { display: flex; align-items: center; gap: var(--space-2); color: var(--hh-text-dim); transition: color var(--hh-ease); white-space: nowrap; }
-.status:hover { color: var(--hh-text); }
-.github { display: grid; place-items: center; width: var(--hh-control); height: var(--hh-control); color: var(--hh-text); transition: opacity var(--hh-ease); }
-.github:hover { opacity: .6; }
-.github .i { width: var(--space-5); height: var(--space-5); }
-.i.mark { fill: currentColor; stroke: none; }
-.status::before { content: ""; width: var(--space-2); height: var(--space-2); border-radius: 50%; background: var(--hh-ok); }
 .archive { position: relative; }
 .archive .status { min-height: var(--hh-control); }
 .archive .status .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-text-dim); }
@@ -173,9 +24,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .archive-banner .i { flex: none; color: var(--hh-accent); }
 .archive-banner .link, .verdict .link { min-height: var(--hh-control); }
 .archive-banner span { flex: 1; }
-@media (max-width: 1419px) { .top-search { display: none; } }
 @media (max-width: 720px) {
-  .top { gap: var(--space-4); padding: 0 var(--space-4); }
   /* Narrow enough that hanging the menu off a small control puts it through an edge whichever side it hangs
      from. Anchor it to the row instead: its width is already clamped to the viewport, so left: 0 always fits. */
   .head { position: relative; }
@@ -183,16 +32,6 @@ ul { list-style: none; margin: 0; padding: 0; }
   /* On a phone the date is more room than the row has: the dot and the chevron still open every day. */
   .archive .status { min-width: var(--hh-control); justify-content: center; }
   .archive .status #archive-label { display: none; }
-  /* The header still needs its room for the account control. */
-  .brand .hub { display: none; }
-  .brand .mark { height: var(--space-6); }
-  .brand .word { height: var(--space-3); }
-  .brand { gap: var(--space-2); }
-  .brand .hub { font-size: var(--text-sm); margin-left: 0; padding-left: var(--space-2); }
-  .top-end { gap: var(--space-2); }
-  /* the same room the other header controls take: the mark alone says it */
-  #sign-in-button .label { display: none; }
-  #sign-in-button { width: var(--hh-control); padding: 0; justify-content: center; border-radius: 50%; }
 }
 
 /* ---- landing: one hero, one screen, no scroll.
@@ -207,14 +46,6 @@ ul { list-style: none; margin: 0; padding: 0; }
   height: 100%; padding-bottom: var(--hh-strip);
 }
 
-/* Sits at the end of the row, immediately before the icons. Each label carries a mark of its own: a grid for
-   the catalogue, a package for the registry, a page for the guide. Three silhouettes that stay apart at 14px. */
-.top-nav { display: flex; align-items: center; gap: var(--space-6); font-family: var(--font-mono); font-size: var(--text-sm); }
-.top-nav a { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--hh-text-dim); transition: color var(--hh-ease); }
-.top-nav a:hover { color: var(--hh-text); }
-/* The house 16px mark against the 14px label: a touch above the cap height, which is where a mark sits. */
-.top-nav .i { width: var(--hh-icon); height: var(--hh-icon); }
-@media (max-width: 860px) { .top-nav { display: none; } }
 
 .land {
   position: relative; isolation: isolate; min-height: 0;
@@ -424,7 +255,9 @@ ul { list-style: none; margin: 0; padding: 0; }
 .back-row { margin-bottom: var(--space-4); }
 .back-row .back { margin: 0; }
 .head h1, .hero h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
-.bar { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-4) 0 var(--space-6); }
+/* Wraps: the sort control cannot shrink past its own words, and without this the whole page scrolls
+   sideways on a laptop narrow enough to put the filter rail beside a two-column grid. */
+.bar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-3); margin: var(--space-4) 0 var(--space-6); }
 .bar .search { flex: 0 1 40%; min-width: 17.5rem; }
 .open-filters { display: none; }
 .results-head { position: relative; z-index: 5; }
@@ -582,34 +415,6 @@ td.addr { color: var(--hh-text-dim); }
 :root:not(.dark) .tag.state.addressed { background: color-mix(in srgb, var(--success) 6%, transparent); }
 :root:not(.dark) .tag.state.skipped { background: transparent; }
 :root[data-theme="immersive"] .tag.state.skipped { background: color-mix(in srgb, var(--destructive) 10%, var(--card)); }
-:root:not(.dark) { --hh-shadow: color-mix(in srgb, var(--foreground) 14%, transparent); --hh-wash: color-mix(in srgb, var(--foreground) 4%, transparent); }
-:root[data-wallpaper="alps"] { --hh-wallpaper: url("wallpapers/alps.jpg"); }
-:root[data-wallpaper="galaxy"] { --hh-wallpaper: url("wallpapers/galaxy.jpg"); }
-:root[data-wallpaper="aurora"] { --hh-wallpaper: url("wallpapers/aurora.jpg"); }
-:root[data-theme="immersive"] {
-  --hh-ground: transparent;
-  --hh-surface: color-mix(in srgb, var(--card) 86%, transparent);
-  --hh-popover: var(--popover);
-  --hh-fill: color-mix(in srgb, var(--muted) 84%, transparent);
-  --hh-glass: blur(var(--space-6)) saturate(1.3);
-  /* How much ground is laid over the wallpaper. qa/contrast.js reads it, so a page may ask for more. */
-  --hh-veil: 22%;
-}
-:root[data-theme="immersive"] { background: var(--background); }
-:root[data-theme="immersive"] body { background: transparent; }
-:root[data-theme="immersive"] body::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background: linear-gradient(color-mix(in srgb, var(--background) var(--hh-veil), transparent), color-mix(in srgb, var(--background) var(--hh-veil), transparent)), var(--hh-wallpaper) center / cover no-repeat, var(--background);
-}
-:root[data-theme="immersive"] .panel,
-:root[data-theme="immersive"] .top,
-:root[data-theme="immersive"] .menu,
-:root[data-theme="immersive"] .sort [role="listbox"],
-:root[data-theme="immersive"] .sheet-footer { -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
-:root[data-theme="immersive"] .veil {
-  background: color-mix(in srgb, var(--background) 35%, transparent);
-  -webkit-backdrop-filter: blur(var(--space-4)); backdrop-filter: blur(var(--space-4));
-}
 /* Lighter immersive browse: no slab behind the grid; head, cards and pager each carry their own glass. */
 :root[data-theme="immersive"] #results { background: transparent; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 :root[data-theme="immersive"] .results-head,
@@ -627,43 +432,6 @@ td.addr { color: var(--hh-text-dim); }
 :root[data-theme="immersive"] .pager { width: fit-content; margin-inline: auto; padding: var(--space-1); border-radius: var(--radius-lg); }
 :root[data-theme="immersive"] .back { padding: 0 var(--space-3); border-radius: var(--hh-control); background: var(--hh-surface); color: var(--hh-text); -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
 
-/* ---- theme switch */
-.appearance { position: relative; }
-.appearance > button { display: grid; place-items: center; width: var(--hh-control); height: var(--hh-control); border-radius: 50%; border: 1px solid var(--hh-line-strong); color: var(--hh-text); transition: border-color var(--hh-ease), transform var(--hh-ease); }
-.appearance > button:hover, .appearance > button[aria-expanded="true"] { border-color: var(--hh-line-focus); }
-.appearance > button:active { transform: scale(.94); }
-.appearance > button .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
-.appearance > button .i[data-for] { display: none; }
-:root[data-theme="dark"] .appearance > button .i[data-for="dark"],
-:root[data-theme="light"] .appearance > button .i[data-for="light"],
-:root[data-theme="immersive"] .appearance > button .i[data-for="immersive"] { display: block; }
-.menu {
-  position: absolute; right: 0; top: calc(100% + var(--space-3)); z-index: 40; width: min(16.25rem, calc(100vw - 2 * var(--hh-gutter))); padding: var(--space-1);
-  background: var(--hh-popover); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-lg);
-  box-shadow: 0 var(--space-4) var(--space-12) var(--hh-shadow);
-  font-family: var(--font-sans); font-size: var(--text-sm); color: var(--hh-text);
-  transform-origin: top right; animation: menu-in 160ms cubic-bezier(.2, .8, .2, 1);
-}
-@keyframes menu-in { from { opacity: 0; transform: translateY(calc(-1 * var(--space-1))) scale(.97); } }
-.menu [role="menuitemradio"] { display: flex; align-items: center; gap: var(--space-3); width: 100%; height: var(--hh-control); padding: 0 var(--space-3); border-radius: var(--radius-md); text-align: left; transition: background var(--hh-ease); }
-.menu [role="menuitemradio"]:hover, .menu [role="menuitemradio"]:focus-visible { background: var(--hh-fill); outline: 0; }
-.menu [role="menuitemradio"] .label { flex: 1; }
-.menu [role="menuitemradio"] .i { color: var(--hh-text-dim); }
-.menu [role="menuitemradio"] .tick { visibility: hidden; color: var(--hh-text); }
-.menu [role="menuitemradio"][aria-checked="true"] { background: var(--hh-fill); }
-.menu [role="menuitemradio"][aria-checked="true"] .i { color: var(--hh-text); }
-.menu [role="menuitemradio"][aria-checked="true"] .tick { visibility: visible; }
-.walls { display: grid; gap: var(--space-2); margin-top: var(--space-1); padding: var(--space-3) var(--space-2) var(--space-2); border-top: 1px solid var(--hh-line); }
-.walls h3 { margin: 0; font-size: var(--text-sm); font-weight: var(--weight-normal); color: var(--hh-text-dim); padding: 0 var(--space-1); }
-.wall-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
-.wall { position: relative; aspect-ratio: 1.618; border-radius: var(--radius-md); overflow: hidden; outline: 1px solid var(--hh-line-strong); outline-offset: 0; transition: outline-color var(--hh-ease), transform var(--hh-ease); }
-.wall img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.wall:hover { transform: translateY(-1px); outline-color: var(--hh-line-focus); }
-.wall[aria-checked="true"] { outline: 2px solid var(--hh-text); outline-offset: 2px; }
-.credit { padding: 0 var(--space-1); font-size: var(--text-sm); line-height: 1.43; color: var(--hh-text-dim); }
-.credit a { color: var(--hh-text); text-decoration: underline; text-decoration-color: var(--hh-line-focus); text-underline-offset: var(--space-1); }
-.walls:not(.on) .credit { visibility: hidden; }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: 280ms; }
 
 /* ---- braille: Hologram dots, one cell per byte (src/braille.mjs) */
 .bx { display: inline-flex; gap: .18em; vertical-align: middle; line-height: 1; }
@@ -818,95 +586,3 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 .ov-provenance { font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.6; }
 .ov-provenance .copy { font-family: var(--font-mono); }
 
-/* ---- sign-in (src/auth.js)
-   The control sits at the end of the header cluster. Signed out it is a word; signed in it is the person's own
-   mark, the same circle as the theme control beside it, so the row keeps its rhythm either way. The sheet it
-   opens borrows the popover, the field and the buttons the rest of the site already uses. Every value resolves
-   to the Hologram brand kit. */
-.account { position: relative; display: flex; align-items: center; }
-
-/* The one brand-coloured control on the page: the only thing here asking to be done. */
-.sign-in {
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  height: var(--hh-control); padding: 0 var(--space-4);
-  background: var(--hh-accent); border: 1px solid var(--hh-accent); border-radius: var(--radius-lg);
-  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-semibold);
-  color: var(--hh-accent-text); white-space: nowrap;
-  transition: opacity var(--hh-ease), transform var(--hh-ease);
-}
-.sign-in:hover { opacity: .88; }
-.sign-in:active { transform: scale(.97); }
-.sign-in .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-accent-text); stroke-width: 2; }
-
-/* Signed in: one letter, the same circle as the theme control. */
-.account-mark {
-  display: grid; place-items: center;
-  width: var(--hh-control); height: var(--hh-control);
-  border: 1px solid var(--hh-line-strong); border-radius: 50%;
-  background: var(--hh-fill);
-  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium);
-  color: var(--hh-text);
-  transition: border-color var(--hh-ease), transform var(--hh-ease);
-}
-.account-mark:hover, .account-mark[aria-expanded="true"] { border-color: var(--hh-line-focus); }
-.account-mark:active { transform: scale(.94); }
-
-.account .menu { font-family: var(--font-sans); }
-.account-who { display: grid; gap: var(--space-1); padding: var(--space-3); }
-.account-who .label { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--hh-text-faint); }
-.account-who b { font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-rows { padding-top: var(--space-1); border-top: 1px solid var(--hh-line); }
-.account-row {
-  display: flex; align-items: center; gap: var(--space-3); width: 100%;
-  min-height: var(--hh-field); padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md); text-align: left;
-  transition: background var(--hh-ease);
-}
-button.account-row:hover, button.account-row:focus-visible { background: var(--hh-fill); outline: 0; }
-.account-row .i { color: var(--hh-text-dim); }
-.account-row .label { flex: 1; display: grid; min-width: 0; }
-.account-row .sub { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-dim); overflow: hidden; text-overflow: ellipsis; }
-.account-row.quiet { color: var(--hh-text-dim); }
-
-.auth-sheet {
-  width: min(25rem, calc(100vw - 2 * var(--hh-gutter))); padding: var(--space-8);
-  background: var(--hh-popover); color: var(--hh-text);
-  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-xl);
-  box-shadow: 0 var(--space-4) var(--space-12) var(--hh-shadow);
-  font-family: var(--font-sans); font-size: var(--text-base);
-}
-.auth-sheet::backdrop { background: var(--hh-shadow); backdrop-filter: blur(var(--space-1)); }
-.auth-sheet[open] { animation: menu-in 200ms cubic-bezier(.2, .8, .2, 1); }
-.auth-close { position: absolute; top: var(--space-4); right: var(--space-4); }
-.auth-close button { display: grid; place-items: center; width: var(--hh-control); height: var(--hh-control); border-radius: var(--radius-md); color: var(--hh-text-dim); transition: background var(--hh-ease), color var(--hh-ease); }
-.auth-close button:hover { background: var(--hh-fill); color: var(--hh-text); }
-.auth-head { display: grid; gap: var(--space-2); margin-bottom: var(--space-6); padding-right: var(--space-10); }
-.auth-head h2 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
-.auth-head p { font-size: var(--text-base); line-height: var(--hh-leading); color: var(--hh-text-dim); }
-.auth-body { display: grid; gap: var(--space-5); }
-.auth-foot { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--hh-line); font-size: var(--text-sm); line-height: var(--hh-leading); color: var(--hh-text-dim); }
-.auth-error { font-size: var(--text-sm); line-height: var(--hh-leading); color: var(--hh-bad); }
-
-/* Typing a six digit code is one task. The other ways in step out of the way while it is on screen. */
-.auth-sheet.on-code .providers, .auth-sheet.on-code .or, .auth-sheet.on-code .auth-head p { display: none; }
-.providers { display: grid; gap: var(--space-3); }
-.provider {
-  display: flex; align-items: center; justify-content: center; gap: var(--space-3);
-  height: var(--hh-field); padding: 0 var(--space-4);
-  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md);
-  font-size: var(--text-base); font-weight: var(--weight-medium);
-  transition: border-color var(--hh-ease), background var(--hh-ease);
-}
-.provider:hover { border-color: var(--hh-line-focus); background: var(--hh-wash); }
-.provider .mark { width: var(--space-5); height: var(--space-5); }
-/* The way in that worked last time, offered first. */
-.provider.preferred { border-color: var(--hh-line-focus); background: var(--hh-fill); }
-.or { display: flex; align-items: center; gap: var(--space-4); font-size: var(--text-sm); color: var(--hh-text-dim); }
-.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--hh-line); }
-.email-step, .code-step { display: grid; gap: var(--space-3); }
-.email-step .button, .code-step .button { justify-content: center; font-size: var(--text-base); font-weight: var(--weight-medium); }
-.code-sent { font-size: var(--text-base); line-height: var(--hh-leading); color: var(--hh-text-dim); }
-.code-step .field input { font-family: var(--font-mono); font-size: var(--text-2xl); letter-spacing: var(--tracking-caps); text-align: center; }
-.code-foot { display: flex; justify-content: space-between; gap: var(--space-4); font-size: var(--text-sm); }
-.code-foot .link { color: var(--hh-text-dim); }
-.code-foot .link:hover { color: var(--hh-text); }

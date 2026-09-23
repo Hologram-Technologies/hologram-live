@@ -89,6 +89,22 @@ const accountControl = () => privy ? `<div class="account" id="account">
       <div class="menu" id="account-menu" role="menu" aria-label="Your account" hidden></div>
     </div>` : "";
 
+// ---- the top-level menu
+//
+// One list, one renderer, one place to add a section. Every page this build writes carries it, and the
+// Registry page — which ships as its own finished file from public/ — has the same markup put into it at
+// the end of this build, so no page of the site can be left holding a different menu.
+const SECTIONS = [
+  ["models", "Models", "grid", BROWSE],
+  ["registry", "Registry", "box", `${base}registry/`],
+  ["docs", "Docs", "file", `${base}llms.txt`],
+];
+// `current` is the section the page belongs to. It marks that one link aria-current, which the stylesheet
+// draws in the brand colour: where you are, said once in the row and once to a screen reader.
+const topNav = (current = "") => `<nav class="top-nav" aria-label="Sections">${SECTIONS
+  .map(([key, label, mark, href]) => `<a href="${href}"${key === current ? ' aria-current="page"' : ""}>${label}${R.icon[mark]}</a>`)
+  .join("")}</nav>`;
+
 // Runs before first paint: Dark for first visits, the saved choice after that. No flash.
 const prepaint = `(function(){var s={};try{s=JSON.parse(localStorage.getItem("hologram-models-hub.theme"))||{}}catch(e){}
 var m=["dark","light","immersive"].indexOf(s.mode)>=0?s.mode:"dark",w=${JSON.stringify(WALLPAPERS.map((w) => w.key))}.indexOf(s.wallpaper)>=0?s.wallpaper:"alps",r=document.documentElement;
@@ -107,9 +123,36 @@ const themeSwitch = `<div class="appearance">
       </div>
     </div>`;
 
-const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "styles.css"];
+const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "chrome.css", "styles.css"];
 
-const page = ({ title, description, body, search = false, model = "", home = false }) => `<!doctype html>
+// The header, one definition for the whole site. The brand lockup is the same on every page — the wordmark
+// alone, because the menu beside it is what says where you are. `home` drops only the GitHub mark, which the
+// landing already carries at hero size in its star badge.
+const header = ({ section = "", search = false, home = false } = {}) => `<header class="top">
+  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
+  <div class="top-end">
+    ${topNav(section)}
+    ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
+    ${home ? "" : `<a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>`}
+    ${themeSwitch}
+    ${accountControl()}
+  </div>
+</header>`;
+
+// Everything the header needs in <head>, for a page that is not written by page(): the no-flash theme
+// script, the data the theme menu reads, the kit and chrome stylesheets, and the module that wires the two
+// controls up. The Registry page's own stylesheet loads after these and keeps its own component rules.
+const chromeHead = [
+  `<script>${prepaint}</script>`,
+  `<script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>`,
+  ...(privy ? [`<script type="application/json" id="privy">${JSON.stringify(privy)}</script>`] : []),
+  `<link rel="preload" href="${base}fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>`,
+  `<link rel="preload" href="${base}fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>`,
+  ...["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "chrome.css"].map((f) => `<link rel="stylesheet" href="${base}${f}">`),
+  `<script type="module">import { mountChrome } from "${base}chrome.js"; mountChrome();</script>`,
+].join("\n");
+
+const page = ({ title, description, body, search = false, model = "", home = false, section = "" }) => `<!doctype html>
 <html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
@@ -139,16 +182,7 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
 </head>
 <body>
 ${home ? "" : `<div class="veil" aria-hidden="true"></div>\n`}<div class="shell">
-<header class="top">
-  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16">${home ? "" : `<span class="hub">Models Hub</span>`}</a>
-  <div class="top-end">
-    ${home ? `<nav class="top-nav" aria-label="Sections"><a href="${BROWSE}">Models${R.icon.grid}</a><a href="${base}registry/">Registry${R.icon.box}</a><a href="${base}llms.txt">Docs${R.icon.file}</a></nav>` : ""}
-    ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    ${home ? "" : `<a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>`}
-    ${themeSwitch}
-    ${accountControl()}
-  </div>
-</header>
+${header({ section, search, home })}
 ${archive ? `<div class="archive-banner" id="archive-banner" role="status" hidden>${R.icon.calendar}<span>Viewing the index of <b id="archive-banner-date"></b>. Every file shown was checked against its address.</span><button type="button" class="link" data-at="latest">Back to latest</button></div>` : ""}
 ${body}
 </div>
@@ -169,6 +203,7 @@ const initial = R.parseState("");
 const r = R.query(models, initial);
 const sortMenu = R.SORTS.map(([k, label]) => `<li role="option" data-sort="${k}" aria-selected="${k === initial.sort}">${label}${R.icon.check}</li>`).join("");
 const browse = page({
+  section: "models",
   title: R.title(initial),
   description: `The ${models.length} trending models on Hugging Face, every file named by its bytes.`,
   body: `<main class="browse" id="browse">
@@ -313,6 +348,7 @@ function modelPage(m, files, ov, readme) {
   }
 
   return page({
+    section: "models",
     model: m.id,
     title: `${m.name} · Hologram Models Hub`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
@@ -378,7 +414,7 @@ for (const m of models) {
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
 const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "render.mjs", "braille.mjs", "zip.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "chrome.js", "render.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
 if (privy) {
   await cp(join(SITE, "src", "auth.js"), join(DIST, "auth.js"));
   await mkdir(join(DIST, "vendor", "privy"), { recursive: true });
@@ -408,6 +444,23 @@ if (archive) {
   for (const d of archive.days) await writeFile(join(DIST, "at", `${d.date}.json`), JSON.stringify({ date: d.date, cid: d.cid, index: d.index, gateway: archive.gateway, mirror: archive.mirror && d === archive.days[archive.days.length - 1] ? `${archive.mirror}${d.date}/` : null, registry: archive.registry && d === archive.days[archive.days.length - 1] ? `${archive.registry}:${d.date}` : null }));
 }
 await writeFile(join(DIST, ".nojekyll"), "");
+
+// ---- the Registry page gets the same header as everything else
+//
+// It ships as its own finished file rather than through page(), because it carries its own component set,
+// its own covers and its own hasher. What it must not carry is its own idea of the header: a second copy
+// of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
+// one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
+// very same header() and topNav() every other page is built with.
+const regPath = join(DIST, "registry", "index.html");
+let registryHtml = await readFile(regPath, "utf8");
+for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {
+  if (!registryHtml.includes(mark)) throw new Error(`registry/index.html lost ${mark}: the shared header has nowhere to go`);
+}
+registryHtml = registryHtml
+  .replace("<!--chrome:head-->", chromeHead)
+  .replace("<!--chrome:header-->", header({ section: "registry" }));
+await writeFile(regPath, registryHtml);
 
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this
 // refuses to build a copy that would fetch either from somebody else.

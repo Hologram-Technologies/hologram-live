@@ -305,32 +305,38 @@ pub fn byte_size(text: &str) -> Option<u64> {
     let digits = text
         .find(|c: char| !c.is_ascii_digit() && c != '.')
         .unwrap_or(text.len());
-    let value: f64 = text.get(..digits)?.parse().ok()?;
-    if value < 0.0 {
-        return None;
-    }
-    let unit = text.get(digits..)?.trim().to_ascii_lowercase();
-    let scale = match unit.as_str() {
-        "" | "b" => 1.0,
-        "k" | "kb" => 1e3,
-        "m" | "mb" => 1e6,
-        "g" | "gb" => 1e9,
-        "t" | "tb" => 1e12,
-        "ki" | "kib" => 1024.0,
-        "mi" | "mib" => 1024.0 * 1024.0,
-        "gi" | "gib" => 1024.0 * 1024.0 * 1024.0,
-        "ti" | "tib" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+    let (number, unit) = text.split_at(digits);
+    let scale: u128 = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1,
+        "k" | "kb" => 1_000,
+        "m" | "mb" => 1_000_000,
+        "g" | "gb" => 1_000_000_000,
+        "t" | "tb" => 1_000_000_000_000,
+        "ki" | "kib" => 1 << 10,
+        "mi" | "mib" => 1 << 20,
+        "gi" | "gib" => 1 << 30,
+        "ti" | "tib" => 1 << 40,
         _ => return None,
     };
-    let bytes = value * scale;
-    // A size larger than the machine can hold is the machine's whole disk.
-    (bytes.is_finite() && bytes >= 0.0).then(|| {
-        if bytes >= u64::MAX as f64 {
-            u64::MAX
-        } else {
-            bytes.trunc() as u64
-        }
-    })
+    // Integer arithmetic throughout: a size is a count of bytes, and 2.5GiB
+    // is exactly 2684354560 of them.
+    let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+    if whole.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    let whole: u128 = if whole.is_empty() {
+        0
+    } else {
+        whole.parse().ok()?
+    };
+    let mut bytes = whole.checked_mul(scale)?;
+    if !fraction.is_empty() {
+        let places = u32::try_from(fraction.len()).ok()?;
+        let value: u128 = fraction.parse().ok()?;
+        bytes = bytes.checked_add(value.checked_mul(scale)? / 10_u128.checked_pow(places)?)?;
+    }
+    // A floor larger than any disk is every byte of it.
+    Some(u64::try_from(bytes).unwrap_or(u64::MAX))
 }
 
 /// `http.host` as `scheme://host[:port]`: what `Location` is built on. The

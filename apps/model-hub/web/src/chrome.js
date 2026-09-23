@@ -95,7 +95,17 @@ function account() {
     mark.hidden = !user;
     if (!user) { menu.hidden = true; menu.replaceChildren(); return; }
     const m = mod && modReady;
-    $("#account-initial").textContent = m ? m.initialOf(user) : "?";
+    // A picture when the provider gave one, the brand mark with their initial when it did not. The photo is
+    // dropped if it fails to load, so a broken image never stands where a person's mark should be.
+    const initial = m ? m.initialOf(user) : "?";
+    $("#account-initial").textContent = initial;
+    mark.classList.toggle("has-photo", Boolean(user.photo));
+    let img = mark.querySelector("img");
+    if (user.photo) {
+      if (!img) { img = new Image(); img.alt = ""; img.width = 32; img.height = 32; img.decoding = "async"; mark.prepend(img); }
+      img.onerror = () => { img.remove(); mark.classList.remove("has-photo"); };
+      if (img.src !== user.photo) img.src = user.photo;
+    } else if (img) img.remove();
     mark.title = user.email || "Your account";
     if (m) menu.innerHTML = m.accountMenu(user);
     $("#sign-out")?.addEventListener("click", async () => { open(false); (await load()).signOut(); });

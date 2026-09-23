@@ -13,7 +13,6 @@
     "lint": "node scripts/lint-tokens.mjs",
     "fit": "node qa/landing-fit.mjs",
     "menu": "node qa/menu.mjs",
-    "menu": "node qa/menu.mjs",
     "qa:registry": "node qa/registry-sealed.mjs"
   },
   "devDependencies": {

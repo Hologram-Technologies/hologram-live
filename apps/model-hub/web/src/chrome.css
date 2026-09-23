@@ -244,16 +244,22 @@ ul { list-style: none; margin: 0; padding: 0; }
 .sign-in:active { transform: scale(.97); }
 .sign-in .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-accent-text); stroke-width: 2; }
 
-/* Signed in: one letter, the same circle as the theme control. */
+/* Signed in: the same circle the Sign in control was, still wearing the brand colour, now carrying one letter —
+   or the person's own picture when the provider they used gave us one. */
 .account-mark {
-  display: grid; place-items: center;
+  display: grid; place-items: center; overflow: hidden;
   width: var(--hh-control); height: var(--hh-control);
-  border: 1px solid var(--hh-line-strong); border-radius: 50%;
-  background: var(--hh-fill);
-  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium);
-  color: var(--hh-text);
-  transition: border-color var(--hh-ease), transform var(--hh-ease);
+  border: 1px solid var(--hh-accent); border-radius: 50%;
+  background: var(--hh-accent);
+  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  color: var(--hh-accent-text);
+  transition: border-color var(--hh-ease), transform var(--hh-ease), opacity var(--hh-ease);
 }
+.account-mark:hover { opacity: .88; }
+.account-mark img { grid-area: 1 / 1; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+/* With a picture the letter underneath it is not needed, and the brand ground stops being a background. */
+.account-mark.has-photo { background: var(--hh-fill); border-color: var(--hh-line-strong); }
+.account-mark.has-photo #account-initial { display: none; }
 .account-mark:hover, .account-mark[aria-expanded="true"] { border-color: var(--hh-line-focus); }
 .account-mark:active { transform: scale(.94); }
 

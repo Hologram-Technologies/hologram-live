@@ -681,7 +681,7 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
 .account-row.quiet { color: var(--hh-text-dim); }
 
 .auth-sheet {
-  width: min(24rem, calc(100vw - 2 * var(--hh-gutter))); padding: var(--hh-pad);
+  width: min(25rem, calc(100vw - 2 * var(--hh-gutter))); padding: var(--space-8);
   background: var(--hh-popover); color: var(--hh-text);
   border: 1px solid var(--hh-line-strong); border-radius: var(--radius-xl);
   box-shadow: 0 var(--space-4) var(--space-12) var(--hh-shadow);
@@ -689,32 +689,36 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
 }
 .auth-sheet::backdrop { background: var(--hh-shadow); backdrop-filter: blur(var(--space-1)); }
 .auth-sheet[open] { animation: menu-in 200ms cubic-bezier(.2, .8, .2, 1); }
-.auth-close { position: absolute; top: var(--space-3); right: var(--space-3); }
-.auth-head { display: grid; gap: var(--space-2); margin-bottom: var(--hh-pad); padding-right: var(--space-8); }
-.auth-head h2 { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); }
-.auth-head p { font-size: var(--text-sm); line-height: 1.43; color: var(--hh-text-dim); }
-.auth-body { display: grid; gap: var(--space-4); }
-.auth-foot { margin-top: var(--hh-pad); padding-top: var(--space-4); border-top: 1px solid var(--hh-line); font-size: var(--text-xs); line-height: 1.5; color: var(--hh-text-faint); }
-.auth-error { font-size: var(--text-sm); line-height: 1.43; color: var(--hh-bad); }
+.auth-close { position: absolute; top: var(--space-4); right: var(--space-4); }
+.auth-close button { display: grid; place-items: center; width: var(--hh-control); height: var(--hh-control); border-radius: var(--radius-md); color: var(--hh-text-dim); transition: background var(--hh-ease), color var(--hh-ease); }
+.auth-close button:hover { background: var(--hh-fill); color: var(--hh-text); }
+.auth-head { display: grid; gap: var(--space-2); margin-bottom: var(--space-6); padding-right: var(--space-10); }
+.auth-head h2 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
+.auth-head p { font-size: var(--text-base); line-height: var(--hh-leading); color: var(--hh-text-dim); }
+.auth-body { display: grid; gap: var(--space-5); }
+.auth-foot { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--hh-line); font-size: var(--text-sm); line-height: var(--hh-leading); color: var(--hh-text-dim); }
+.auth-error { font-size: var(--text-sm); line-height: var(--hh-leading); color: var(--hh-bad); }
 
-.providers { display: grid; gap: var(--space-2); }
+/* Typing a six digit code is one task. The other ways in step out of the way while it is on screen. */
+.auth-sheet.on-code .providers, .auth-sheet.on-code .or, .auth-sheet.on-code .auth-head p { display: none; }
+.providers { display: grid; gap: var(--space-3); }
 .provider {
   display: flex; align-items: center; justify-content: center; gap: var(--space-3);
   height: var(--hh-field); padding: 0 var(--space-4);
   border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md);
-  font-size: var(--text-sm); font-weight: var(--weight-medium);
+  font-size: var(--text-base); font-weight: var(--weight-medium);
   transition: border-color var(--hh-ease), background var(--hh-ease);
 }
 .provider:hover { border-color: var(--hh-line-focus); background: var(--hh-wash); }
 .provider .mark { width: var(--space-5); height: var(--space-5); }
 /* The way in that worked last time, offered first. */
 .provider.preferred { border-color: var(--hh-line-focus); background: var(--hh-fill); }
-.or { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-xs); color: var(--hh-text-faint); }
+.or { display: flex; align-items: center; gap: var(--space-4); font-size: var(--text-sm); color: var(--hh-text-dim); }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--hh-line); }
 .email-step, .code-step { display: grid; gap: var(--space-3); }
-.email-step .button, .code-step .button { justify-content: center; }
-.code-sent { font-size: var(--text-sm); line-height: 1.43; color: var(--hh-text-dim); }
-.code-step .field input { font-family: var(--font-mono); font-size: var(--text-xl); letter-spacing: var(--tracking-caps); text-align: center; }
-.code-foot { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.email-step .button, .code-step .button { justify-content: center; font-size: var(--text-base); font-weight: var(--weight-medium); }
+.code-sent { font-size: var(--text-base); line-height: var(--hh-leading); color: var(--hh-text-dim); }
+.code-step .field input { font-family: var(--font-mono); font-size: var(--text-2xl); letter-spacing: var(--tracking-caps); text-align: center; }
+.code-foot { display: flex; justify-content: space-between; gap: var(--space-4); font-size: var(--text-sm); }
 .code-foot .link { color: var(--hh-text-dim); }
 .code-foot .link:hover { color: var(--hh-text); }

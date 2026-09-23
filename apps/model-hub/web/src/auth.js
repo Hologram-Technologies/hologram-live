@@ -134,7 +134,7 @@ function build() {
     <form method="dialog" class="auth-close"><button type="submit" class="control square" aria-label="Close">${icon.close}</button></form>
     <div class="auth-head">
       <h2>Sign in</h2>
-      <p>New here? This makes your account. There is nothing else to fill in, and no password to keep.</p>
+      <p>New here? Signing in creates your account. No password needed.</p>
     </div>
     <div class="auth-body" id="sign-in-body">
       <div class="providers">${PROVIDERS.map(([k, label, mark]) => `<button type="button" class="provider" data-provider="${k}">${mark}<span class="label">Continue with ${label}</span></button>`).join("")}</div>
@@ -144,14 +144,14 @@ function build() {
         <button type="submit" class="button primary" id="email-go">Continue with email</button>
       </form>
       <form class="code-step" id="code-step" hidden novalidate>
-        <p class="code-sent">We sent a six digit code to <b id="code-to"></b>.</p>
+        <p class="code-sent">Enter the six digit code sent to <b id="code-to"></b>.</p>
         <label class="field"><input type="text" id="sign-in-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="Six digit code" enterkeyhint="go"></label>
         <button type="submit" class="button primary" id="code-go">Sign in</button>
-        <div class="code-foot"><button type="button" class="link" id="code-again">Send another code</button><button type="button" class="link" id="code-back">Use a different email</button></div>
+        <div class="code-foot"><button type="button" class="link" id="code-again">Send a new code</button><button type="button" class="link" id="code-back">Change email</button></div>
       </form>
       <p class="auth-error" id="sign-in-error" role="alert" hidden></p>
     </div>
-    <p class="auth-foot">The hub stays open without an account: every model, every dialect, every download works signed out.</p>`;
+    <p class="auth-foot">No account needed to browse, download or verify.</p>`;
   document.body.append(dialog);
   wire();
   return dialog;
@@ -225,6 +225,7 @@ function wire() {
       $("#code-to").textContent = address;
       emailStep.hidden = true;
       codeStep.hidden = false;
+      dialog.classList.add("on-code");
       codeInput.value = "";
       codeInput.focus();
     } catch (err) { working(false, go); fail(err); }
@@ -232,7 +233,7 @@ function wire() {
 
   emailStep.addEventListener("submit", (e) => { e.preventDefault(); if (!busy) send(); });
   $("#code-again").addEventListener("click", () => { if (!busy) send(); });
-  $("#code-back").addEventListener("click", () => { codeStep.hidden = true; emailStep.hidden = false; fail(null); emailInput.focus(); });
+  $("#code-back").addEventListener("click", () => { codeStep.hidden = true; emailStep.hidden = false; dialog.classList.remove("on-code"); fail(null); emailInput.focus(); });
 
   const submitCode = async () => {
     const otp = codeInput.value.replace(/\D/g, "");
@@ -254,7 +255,7 @@ function wire() {
     if (codeInput.value.length === 6 && !busy) submitCode();
   });
 
-  dialog.addEventListener("close", () => { fail(null); codeStep.hidden = true; emailStep.hidden = false; });
+  dialog.addEventListener("close", () => { fail(null); codeStep.hidden = true; emailStep.hidden = false; dialog.classList.remove("on-code"); });
   // A click on the backdrop closes it, the way every sheet on this site does.
   dialog.addEventListener("click", (e) => { if (e.target === dialog) close(); });
 }

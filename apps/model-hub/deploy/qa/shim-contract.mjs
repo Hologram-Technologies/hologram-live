@@ -71,7 +71,7 @@ async function main() {
   await fixtures();
 
   const child = spawn(process.execPath, [SHIM], {
-    env: { ...process.env, HUB_DATA: FIX, HUB_STATE: join(FIX, "state"), PORT: String(PORT), HUB: `http://127.0.0.1:${PORT}` },
+    env: { ...process.env, HUB_DATA: FIX, HUB_STATE: join(FIX, "state"), PORT: String(PORT), HUB: LIVE },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stderr.on("data", (d) => process.stderr.write(`  shim: ${d}`));
@@ -140,6 +140,43 @@ async function main() {
       if (got.files_truncated_note && /tree\/main/.test(got.files_truncated_note)) ok("truncation says where the full list is", "points at the tree route");
       else bad("truncation says where the full list is", got.files_truncated_note || "no note");
     }
+
+    // ---- the hub's own object plane as the backstop under every dialect
+    //
+    // These models are in neither the fixtures nor the third-party address index; the only place their file
+    // hashes exist is the model object this hub published on an earlier day. Before the backstop they 404'd from
+    // every dialect while being served perfectly well by address.
+    for (const orphan of ["thesysdev/OUI-1", "Comfy-Org/marigold-v2-0"]) {
+      const info = await get(`/api/models/${orphan}`);
+      if (info.status !== 200) { bad(`the hub serves ${orphan}`, `getModel ${info.status}`); continue; }
+      const doc = await info.json();
+      const tree = await (await get(`/api/models/${orphan}/tree/main`)).json();
+      const hashed = Array.isArray(tree) && tree.length && tree.every((f) => /^[0-9a-f]{64}$/.test(f.oid));
+      if (hashed) ok(`the hub serves ${orphan} from its own objects`, `${tree.length} files, revision ${String(doc.sha).slice(0, 8)}`);
+      else bad(`the hub serves ${orphan} from its own objects`, `tree ${JSON.stringify(tree).slice(0, 60)}`);
+
+      const red = await get(`/${orphan}/resolve/main/${tree[0].path}`, { method: "HEAD" });
+      if (red.status === 302 && (red.headers.get("etag") || "").includes(tree[0].oid)) ok(`  and redirects with the index hash`, `→ ${red.headers.get("x-hub-source")}`);
+      else bad(`  and redirects with the index hash`, `status ${red.status}, etag ${red.headers.get("etag")}`);
+
+      const oci = await get(`/v2/${orphan.toLowerCase()}/manifests/latest`, { headers: { accept: "application/vnd.oci.image.manifest.v1+json" } });
+      if (oci.status === 200) ok(`  and has an OCI manifest`, `${(await oci.json()).layers.length} layers`);
+      else bad(`  and has an OCI manifest`, `status ${oci.status}`);
+    }
+
+    // ---- and search can find them
+    const listed = await (await get("/api/models?limit=500")).json();
+    const total = (await get("/api/models?limit=1")).then ? null : null;
+    const head = await get("/api/models?limit=1");
+    const count = Number(head.headers.get("x-total-count") || 0);
+    if (count > 500) ok("search covers more than the browse list", `${count} rows`);
+    else bad("search covers more than the browse list", `${count} rows — the backstop rows are not in the list`);
+    const found = await (await get("/api/models?search=OUI-1&limit=20")).json();
+    if (found.some((m) => m.id === "thesysdev/OUI-1")) ok("search finds a model the browse list forgot", "thesysdev/OUI-1");
+    else bad("search finds a model the browse list forgot", `${found.length} rows, none matching`);
+    const thin = found.find((m) => m.id === "thesysdev/OUI-1");
+    if (thin && thin.hologram && thin.hologram.listed === false) ok("a thin row says it is thin", "hologram.listed false");
+    else if (thin) bad("a thin row says it is thin", `hologram ${JSON.stringify(thin.hologram)}`);
 
     const small = await tool("get_model", { id: M });
     if (!small.files_truncated && small.files.length === small.files_total) ok("a small model is not truncated", `${small.files_total} files`);

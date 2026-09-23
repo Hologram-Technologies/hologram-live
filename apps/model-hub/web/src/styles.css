@@ -182,7 +182,6 @@ ul { list-style: none; margin: 0; padding: 0; }
   /* the same room the other header controls take: the mark alone says it */
   #sign-in-button .label { display: none; }
   #sign-in-button { width: var(--hh-control); padding: 0; justify-content: center; border-radius: 50%; }
-  #sign-in-button .i { color: var(--hh-text); }
 }
 
 /* ---- browse: filters | results */
@@ -638,18 +637,18 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
    to the Hologram brand kit. */
 .account { position: relative; display: flex; align-items: center; }
 
+/* The one brand-coloured control on the page: the only thing here asking to be done. */
 .sign-in {
   display: inline-flex; align-items: center; gap: var(--space-2);
   height: var(--hh-control); padding: 0 var(--space-4);
-  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-lg);
-  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium);
-  color: var(--hh-text); white-space: nowrap;
-  transition: border-color var(--hh-ease), background var(--hh-ease), transform var(--hh-ease);
+  background: var(--hh-accent); border: 1px solid var(--hh-accent); border-radius: var(--radius-lg);
+  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  color: var(--hh-accent-text); white-space: nowrap;
+  transition: opacity var(--hh-ease), transform var(--hh-ease);
 }
-.sign-in:hover { border-color: var(--hh-line-focus); background: var(--hh-wash); }
+.sign-in:hover { opacity: .88; }
 .sign-in:active { transform: scale(.97); }
-.sign-in .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-text-dim); }
-.sign-in:hover .i { color: var(--hh-text); }
+.sign-in .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-accent-text); stroke-width: 2; }
 
 /* Signed in: one letter, the same circle as the theme control. */
 .account-mark {

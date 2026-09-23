@@ -82,7 +82,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FIT = `(() => {
   const d = document.documentElement, T = 1;
   // The strip counts too when it is on: a hero that pushes it past the bottom edge is a clipped page.
-  const must = [".top", ".land-title", ".land-sub", ".land-actions .button", ".land-second", ".land-actions", ".land-marquee"];
+  const must = [".top", ".land-badge", ".land-title", ".land-sub", ".land-actions .button", ".land-second", ".land-actions", ".land-marquee"];
   const outside = [];
   for (const sel of must) {
     const el = document.querySelector(sel);

@@ -127,6 +127,11 @@ pub struct Settings {
     /// `http.host`, as `scheme://host[:port]`: what an absolute `Location` is
     /// built on, in place of the request's own host.
     pub host: Option<String>,
+    /// `storage.maintenance.minfreespace`: a write that would leave the volume
+    /// with less room than this is refused before it starts. Not a reference
+    /// setting; unset is the reference's behaviour, which is to write until
+    /// the disk is full.
+    pub min_free_bytes: Option<u64>,
 }
 
 impl Settings {
@@ -152,6 +157,9 @@ impl Settings {
             read_only: settings.flag("storage.maintenance.readonly.enabled").unwrap_or(false),
             relative_urls: settings.flag("http.relativeurls").unwrap_or(false),
             host: settings.get("http.host").and_then(crate::registry_compat::host_origin),
+            min_free_bytes: settings
+                .get("storage.maintenance.minfreespace")
+                .and_then(crate::registry_compat::byte_size),
         }
     }
 
@@ -168,6 +176,10 @@ impl Settings {
                 .ok()
                 .as_deref()
                 .and_then(crate::registry_compat::host_origin),
+            min_free_bytes: std::env::var("REGISTRY_STORAGE_MAINTENANCE_MINFREESPACE")
+                .ok()
+                .as_deref()
+                .and_then(crate::registry_compat::byte_size),
         }
     }
 }
@@ -497,6 +509,24 @@ async fn serve(
     } else {
         route
     };
+    // A volume with no room left fails a push somewhere in the middle, and the
+    // client cannot tell that from a fault of its own. Refuse it at the door,
+    // while reads go on (`storage.maintenance.minfreespace`).
+    if let Some(floor) = settings.min_free_bytes {
+        if writes(&route) {
+            let store = store.clone();
+            let free = tokio::task::spawn_blocking(move || store.free_space())
+                .await
+                .map_err(|error| OciError::internal(&error))?
+                .map_err(|error| OciError::internal(&error))?;
+            if free < floor {
+                tracing::warn!(free, floor, "a write was refused: the volume is nearly full");
+                return Err(OciError::new(ErrorCode::Denied).with_detail(serde_json::json!(
+                    format!("the volume has {free} bytes free, under the {floor} this registry keeps in reserve")
+                )));
+            }
+        }
+    }
     match route {
         Route::Base => Ok(json(StatusCode::OK, "{}")),
         Route::Options { allow } => {
@@ -574,6 +604,22 @@ async fn read_only(store: &Arc<OciStore>, route: Route) -> Result<Route, OciErro
         }
         other => Ok(other),
     }
+}
+
+/// Whether this route writes: what the free-space floor refuses.
+fn writes(route: &Route) -> bool {
+    matches!(
+        route,
+        Route::UploadStart { .. }
+            | Route::Upload {
+                verb: UploadVerb::Patch | UploadVerb::Put,
+                ..
+            }
+            | Route::Manifest {
+                verb: ManifestVerb::Put,
+                ..
+            }
+    )
 }
 
 fn json(status: StatusCode, body: &'static str) -> Response {

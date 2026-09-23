@@ -62,6 +62,10 @@ table! {
     "storage.inmemory" => Refused("is for tests only: use a tmpfs volume"),
     "storage.maintenance.uploadpurging" => Supported,
     "storage.maintenance.readonly" => Supported,
+    // Not a reference setting. The reference writes until the disk is full
+    // and then fails a push mid-flight; this refuses the push that would
+    // cross the floor, with a message that says so (DIFFERENCES.md).
+    "storage.maintenance.minfreespace" => Supported,
     "storage.delete.enabled" => Supported,
     "storage.cache.blobdescriptor" => Ignored("the index is local; there is nothing to cache"),
     // Harbor's own registry sets the old name for it, with a redis section.

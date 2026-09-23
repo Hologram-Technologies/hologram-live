@@ -273,6 +273,9 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
         ("storage.maintenance.uploadpurging" | "storage.maintenance.readonly", _) => {
             refuse("must be a section: enabled, and for uploadpurging age, interval and dryrun")
         }
+        ("storage.maintenance.minfreespace", text) if byte_size(text).is_none() => {
+            refuse("is not a size: write it as 8GiB, 500MB, or a number of bytes")
+        }
         ("http.host", text) if host_origin(text).is_none() => {
             refuse("must be an absolute URL, as https://registry.example.com:5000")
         }
@@ -291,6 +294,49 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
             _ => Ok(()),
         },
     }
+}
+
+/// A size as an operator writes one: `8GiB`, `500MB`, `1024`. Binary units
+/// (`KiB`, `MiB`, `GiB`, `TiB`) and their decimal cousins (`KB`, `MB`, `GB`,
+/// `TB`), case insensitive, and a bare number of bytes.
+#[must_use]
+pub fn byte_size(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let digits = text
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(text.len());
+    let (number, unit) = text.split_at(digits);
+    let scale: u128 = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1,
+        "k" | "kb" => 1_000,
+        "m" | "mb" => 1_000_000,
+        "g" | "gb" => 1_000_000_000,
+        "t" | "tb" => 1_000_000_000_000,
+        "ki" | "kib" => 1 << 10,
+        "mi" | "mib" => 1 << 20,
+        "gi" | "gib" => 1 << 30,
+        "ti" | "tib" => 1 << 40,
+        _ => return None,
+    };
+    // Integer arithmetic throughout: a size is a count of bytes, and 2.5GiB
+    // is exactly 2684354560 of them.
+    let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+    if whole.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    let whole: u128 = if whole.is_empty() {
+        0
+    } else {
+        whole.parse().ok()?
+    };
+    let mut bytes = whole.checked_mul(scale)?;
+    if !fraction.is_empty() {
+        let places = u32::try_from(fraction.len()).ok()?;
+        let value: u128 = fraction.parse().ok()?;
+        bytes = bytes.checked_add(value.checked_mul(scale)? / 10_u128.checked_pow(places)?)?;
+    }
+    // A floor larger than any disk is every byte of it.
+    Some(u64::try_from(bytes).unwrap_or(u64::MAX))
 }
 
 /// `http.host` as `scheme://host[:port]`: what `Location` is built on. The
@@ -807,6 +853,36 @@ compatibility:
             .expect_err("validation on")
             .to_string();
         assert!(error.contains("validation.disabled"), "{error}");
+    }
+    /// `storage.maintenance.minfreespace`, this registry's own: the sizes an
+    /// operator writes, and what a push sees when the volume is nearly full.
+    #[test]
+    fn the_free_space_floor_reads_the_sizes_people_write() {
+        for (text, bytes) in [
+            ("8GiB", 8 * 1024 * 1024 * 1024),
+            ("8 GiB", 8 * 1024 * 1024 * 1024),
+            ("500MB", 500_000_000),
+            ("1Ti", 1024_u64.pow(4)),
+            ("1024", 1024),
+            ("2.5GiB", 2_684_354_560),
+        ] {
+            assert_eq!(byte_size(text), Some(bytes), "{text}");
+        }
+        for text in ["", "lots", "8 gigs", "-1", "8GiBB"] {
+            assert_eq!(byte_size(text), None, "{text}");
+        }
+        let settings =
+            load_text("storage:\n  maintenance:\n    minfreespace: 8GiB\n", &[]).expect("loads");
+        assert_eq!(
+            settings
+                .get("storage.maintenance.minfreespace")
+                .and_then(byte_size),
+            Some(8 * 1024 * 1024 * 1024)
+        );
+        let error = load_text("storage:\n  maintenance:\n    minfreespace: lots\n", &[])
+            .expect_err("not a size")
+            .to_string();
+        assert!(error.contains("minfreespace"), "{error}");
     }
 
     /// `storage.maintenance`, `http.host` and `http.relativeurls`, as the

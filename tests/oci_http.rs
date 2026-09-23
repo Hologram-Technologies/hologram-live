@@ -79,6 +79,8 @@ struct Volume {
     /// `http.relativeurls` and `http.host`.
     relative_urls: bool,
     host: Option<&'static str>,
+    /// `storage.maintenance.minfreespace`.
+    min_free_bytes: Option<u64>,
 }
 
 fn volume() -> Volume {
@@ -92,6 +94,7 @@ fn volume() -> Volume {
         read_only: false,
         relative_urls: false,
         host: None,
+        min_free_bytes: None,
     }
 }
 
@@ -135,6 +138,7 @@ async fn send_body(
             read_only: volume.read_only,
             relative_urls: volume.relative_urls,
             host: volume.host.map(str::to_owned),
+            min_free_bytes: volume.min_free_bytes,
         },
         audit: None,
         login: None,
@@ -1621,4 +1625,63 @@ async fn location_follows_http_host_and_relativeurls() {
     volume.relative_urls = true;
     let relative = send(&volume, "POST", "/v2/team/app/blobs/uploads/", &host).await;
     assert!(header(&relative, "location").starts_with("/v2/team/app/blobs/uploads/"));
+}
+
+/// `storage.maintenance.minfreespace`: a volume with less room than the floor
+/// takes no more writes, and says why. Reads are untouched, so what is already
+/// there still pulls while an operator makes room. The reference has no such
+/// setting: it writes until the disk is full and fails mid-push.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_nearly_full_volume_refuses_writes_and_still_serves_reads() {
+    let mut volume = volume();
+    let (layer_digest, manifest_digest, manifest) = seed(&volume.store);
+    // No disk has this much room, so every write is under the floor.
+    volume.min_free_bytes = Some(u64::MAX);
+
+    let refused = send(&volume, "POST", "/v2/team/app/blobs/uploads/", &[]).await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+    let refusal = body(refused).await;
+    let text = String::from_utf8_lossy(&refusal);
+    assert!(text.contains("DENIED"), "{text}");
+    assert!(text.contains("in reserve"), "{text}");
+
+    let refused = send_body(
+        &volume,
+        "PUT",
+        "/v2/team/app/manifests/v2",
+        &[("content-type", MANIFEST_TYPE)],
+        manifest.clone(),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN, "a manifest too");
+
+    // Reads go on.
+    let read = send(&volume, "GET", "/v2/team/app/manifests/v1", &[]).await;
+    assert_eq!(read.status(), StatusCode::OK);
+    let blob = send(
+        &volume,
+        "GET",
+        &format!("/v2/team/app/blobs/{layer_digest}"),
+        &[],
+    )
+    .await;
+    assert_eq!(blob.status(), StatusCode::OK);
+    assert_eq!(
+        header(
+            &send(
+                &volume,
+                "HEAD",
+                &format!("/v2/team/app/manifests/{manifest_digest}"),
+                &[]
+            )
+            .await,
+            "docker-content-digest"
+        ),
+        manifest_digest.as_str()
+    );
+
+    // With room, the same push goes through.
+    volume.min_free_bytes = None;
+    let accepted = send(&volume, "POST", "/v2/team/app/blobs/uploads/", &[]).await;
+    assert_eq!(accepted.status(), StatusCode::ACCEPTED);
 }

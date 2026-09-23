@@ -273,6 +273,9 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
         ("storage.maintenance.uploadpurging" | "storage.maintenance.readonly", _) => {
             refuse("must be a section: enabled, and for uploadpurging age, interval and dryrun")
         }
+        ("storage.maintenance.minfreespace", text) if byte_size(text).is_none() => {
+            refuse("is not a size: write it as 8GiB, 500MB, or a number of bytes")
+        }
         ("http.host", text) if host_origin(text).is_none() => {
             refuse("must be an absolute URL, as https://registry.example.com:5000")
         }
@@ -291,6 +294,36 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
             _ => Ok(()),
         },
     }
+}
+
+/// A size as an operator writes one: `8GiB`, `500MB`, `1024`. Binary units
+/// (`KiB`, `MiB`, `GiB`, `TiB`) and their decimal cousins (`KB`, `MB`, `GB`,
+/// `TB`), case insensitive, and a bare number of bytes.
+#[must_use]
+pub fn byte_size(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let digits = text
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(text.len());
+    let value: f64 = text.get(..digits)?.parse().ok()?;
+    if value < 0.0 {
+        return None;
+    }
+    let unit = text.get(digits..)?.trim().to_ascii_lowercase();
+    let scale = match unit.as_str() {
+        "" | "b" => 1.0,
+        "k" | "kb" => 1e3,
+        "m" | "mb" => 1e6,
+        "g" | "gb" => 1e9,
+        "t" | "tb" => 1e12,
+        "ki" | "kib" => 1024.0,
+        "mi" | "mib" => 1024.0 * 1024.0,
+        "gi" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        "ti" | "tib" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    let bytes = value * scale;
+    (bytes.is_finite() && bytes >= 0.0).then_some(bytes as u64)
 }
 
 /// `http.host` as `scheme://host[:port]`: what `Location` is built on. The
@@ -807,6 +840,36 @@ compatibility:
             .expect_err("validation on")
             .to_string();
         assert!(error.contains("validation.disabled"), "{error}");
+    }
+    /// `storage.maintenance.minfreespace`, this registry's own: the sizes an
+    /// operator writes, and what a push sees when the volume is nearly full.
+    #[test]
+    fn the_free_space_floor_reads_the_sizes_people_write() {
+        for (text, bytes) in [
+            ("8GiB", 8 * 1024 * 1024 * 1024),
+            ("8 GiB", 8 * 1024 * 1024 * 1024),
+            ("500MB", 500_000_000),
+            ("1Ti", 1024_u64.pow(4)),
+            ("1024", 1024),
+            ("2.5GiB", 2_684_354_560),
+        ] {
+            assert_eq!(byte_size(text), Some(bytes), "{text}");
+        }
+        for text in ["", "lots", "8 gigs", "-1", "8GiBB"] {
+            assert_eq!(byte_size(text), None, "{text}");
+        }
+        let settings =
+            load_text("storage:\n  maintenance:\n    minfreespace: 8GiB\n", &[]).expect("loads");
+        assert_eq!(
+            settings
+                .get("storage.maintenance.minfreespace")
+                .and_then(byte_size),
+            Some(8 * 1024 * 1024 * 1024)
+        );
+        let error = load_text("storage:\n  maintenance:\n    minfreespace: lots\n", &[])
+            .expect_err("not a size")
+            .to_string();
+        assert!(error.contains("minfreespace"), "{error}");
     }
 
     /// `storage.maintenance`, `http.host` and `http.relativeurls`, as the

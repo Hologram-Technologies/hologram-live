@@ -46,6 +46,18 @@ impl OciStore {
         })
     }
 
+    /// Room left on the volume for this process, in bytes.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the filesystem cannot be asked.
+    pub fn free_space(&self) -> Result<u64, OciStoreError> {
+        let root = self.layout().root();
+        fs4::available_space(root).map_err(|error| {
+            OciStoreError::Io(format!("free space of {}: {error}", root.display()))
+        })
+    }
+
     /// Upload sessions open now.
     #[must_use]
     pub fn uploads_in_progress(&self) -> usize {

@@ -63,6 +63,11 @@ need because its index is local; `validation.disabled: true`, which is what this
 fetches a foreign layer; and `compatibility.schema1`, because schema 1 manifests are refused whatever it says.
 `validation.disabled: false` is refused by name, because the check it asks for is not built.
 
+**Room on the volume.** `storage.maintenance.minfreespace` is ours, not the reference's: a size (`8GiB`, `500MB`,
+a number of bytes) under which uploads and manifest pushes are refused with `DENIED` and a message that says how much
+is left. Reads are untouched, so what is already there keeps pulling while an operator makes room. Unset, the
+behaviour is the reference's: write until the disk is full, and fail a push in the middle of it.
+
 **Behind a proxy.** `http.host` is what an absolute `Location` is built on, in place of the request's host;
 `http.relativeurls` sends the path alone. Without either, `Location` is built from the request's host and
 `X-Forwarded-Proto`, as the reference's is.

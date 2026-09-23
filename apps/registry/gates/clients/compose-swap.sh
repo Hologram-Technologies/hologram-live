@@ -147,7 +147,7 @@ skopeo() {
 skopeo copy -q --dest-creds gate:gate-password --dest-tls-verify \
   docker-daemon:swap/hello:v1 docker://registry:5000/swap/hello:v1 \
   || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo push through the TLS compose file"; }
-pushed=$(skopeo inspect --tls-verify --format '{{.Digest}}' docker://registry:5000/swap/hello:v1)
+pushed=$(skopeo inspect --creds gate:gate-password --tls-verify --format '{{.Digest}}' docker://registry:5000/swap/hello:v1)
 skopeo copy -q --src-creds gate:gate-password --src-tls-verify \
   docker://registry:5000/swap/hello:v1 docker-daemon:swap/hello:v2 \
   || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo pull through the TLS compose file"; }

@@ -144,6 +144,7 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
             hologram_live::registry_compat::apply(settings, &mut config);
             config.modules.enabled = vec![
                 "dev.hologram.live.system".to_owned(),
+                "dev.hologram.live.control-plane".to_owned(),
                 hologram_live::modules::oci::MODULE_ID.to_owned(),
             ];
             // AppState::build opens the plugin host and the inference engine in

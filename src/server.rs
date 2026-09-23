@@ -10,7 +10,7 @@ use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use scalar_api_reference::{get_asset_with_mime, scalar_html};
 use serde_json::json;
@@ -75,6 +75,17 @@ where
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(routers.open);
+    // Registry mode keeps administrative routes on its Unix socket, but
+    // cluster joins are authenticated by their independent signed proof and
+    // must be reachable by other registry frontends.
+    let public = if registry_mode {
+        public.route(
+            crate::cluster::JOIN_PATH,
+            post(crate::modules::control_plane::join_cluster),
+        )
+    } else {
+        public
+    };
 
     // A certificate that cannot be read stops the start before anything binds.
     #[cfg(feature = "oci")]

@@ -922,7 +922,11 @@ impl AppConfig {
     }
 
     fn validate_registry_mode(&self) -> Result<()> {
-        let allowed = ["dev.hologram.live.system", "dev.hologram.live.oci"];
+        let allowed = [
+            "dev.hologram.live.system",
+            "dev.hologram.live.control-plane",
+            "dev.hologram.live.oci",
+        ];
         if let Some(extra) = self
             .modules
             .enabled

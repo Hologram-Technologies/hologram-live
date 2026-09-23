@@ -98,14 +98,17 @@ jobs:
           version="${GITHUB_REF_NAME#server-v}"
           mkdir -p dist staging
           cp "target/${{ matrix.target }}/release/hologram" staging/hologram
-          tar -C staging -czf "dist/hologram-server-${version}-${{ matrix.asset }}.tar.gz" hologram
+          # FR-S14: both licence texts travel with every artefact.
+          cp LICENSE-MIT LICENSE-APACHE staging/
+          tar -C staging -czf "dist/hologram-server-${version}-${{ matrix.asset }}.tar.gz" hologram LICENSE-MIT LICENSE-APACHE
       - name: Package Windows binary
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^server-v', ''
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path "target/${{ matrix.target }}/release/hologram.exe" -DestinationPath "dist/hologram-server-$version-${{ matrix.asset }}.zip"
+          # FR-S14: both licence texts travel with every artefact.
+          Compress-Archive -Path "target/${{ matrix.target }}/release/hologram.exe", "LICENSE-MIT", "LICENSE-APACHE" -DestinationPath "dist/hologram-server-$version-${{ matrix.asset }}.zip"
       - uses: actions/upload-artifact@v7
         with:
           name: server-${{ matrix.asset }}

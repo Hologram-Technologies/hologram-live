@@ -35,6 +35,22 @@ jobs:
           check registry https://hub.uor.foundation/v2/
           check index-tags https://hub.uor.foundation/v2/model-hub/index/tags/list
           grep -q '"tags":\[' /tmp/body || fail="$fail index-tags=empty"
+          # A tag that lists is not a tag that pulls: ask for the newest one's
+          # manifest, as a client would, and head one of the blobs it names.
+          tag=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' /tmp/body | tail -1)
+          if [ -n "$tag" ]; then
+            code=$(curl -s -o /tmp/manifest -w "%{http_code}" --max-time 20 -H 'Accept: application/vnd.oci.image.manifest.v1+json' "https://hub.uor.foundation/v2/model-hub/index/manifests/$tag" || echo 000)
+            echo "index-manifest $code"
+            [ "$code" = 200 ] || fail="$fail index-manifest=$code"
+            digest=$(grep -o '"digest":"[^"]*"' /tmp/manifest | head -1 | cut -d'"' -f4)
+            if [ -n "$digest" ]; then
+              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 -I "https://hub.uor.foundation/v2/model-hub/index/blobs/$digest" || echo 000)
+              echo "index-blob $code"
+              [ "$code" = 200 ] || fail="$fail index-blob=$code"
+            fi
+          else
+            fail="$fail index-tags=no-dated-tag"
+          fi
           echo "failures=${fail# }" >> "$GITHUB_OUTPUT"
 
       - name: Open, update or close the outage issue

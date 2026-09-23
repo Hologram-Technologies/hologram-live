@@ -250,6 +250,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--hh-lead); color: var(--hh-text-dim); }
 .land-sub b { font-family: var(--font-mono); font-weight: var(--weight-normal); color: var(--hh-text); }
 .land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-6); }
+.land-prompt { color: var(--hh-text-dim); margin-right: .5ch; }
 .land-second { font-family: var(--font-mono); font-size: var(--hh-lead); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }
 

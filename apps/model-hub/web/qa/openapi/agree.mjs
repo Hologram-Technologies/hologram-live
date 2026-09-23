@@ -50,7 +50,8 @@ async function mcp(id) {
   const text = (await r.text()).replace(/^data: /gm, "").trim().split("\n").pop();
   let doc; try { doc = JSON.parse(JSON.parse(text).result.content[0].text); } catch { return null; }
   if (!Array.isArray(doc.files)) return null;
-  return { revision: doc.revision, files: new Map(doc.files.map((f) => [f.path, (f.sha256 || "").replace(/^sha256:/, "")])) };
+  // get_model caps at 200 files by design and says so; a capped list is not a disagreement about the model.
+  return { revision: doc.revision, truncated: Boolean(doc.files_truncated), files: new Map(doc.files.map((f) => [f.path, (f.sha256 || "").replace(/^sha256:/, "")])) };
 }
 
 async function object(address) {
@@ -63,12 +64,14 @@ async function object(address) {
 function diff(a, b) {
   if (!a || !b) return null;
   const onlyA = [], onlyB = [], mismatched = [];
+  // When one side is a documented truncation, only the files it did return are comparable.
+  const truncated = a.truncated || b.truncated;
   for (const [p, h] of a.files) {
-    if (!b.files.has(p)) onlyA.push(p);
+    if (!b.files.has(p)) { if (!truncated) onlyA.push(p); }
     else if (b.files.get(p) !== h) mismatched.push({ path: p, a: h, b: b.files.get(p) });
   }
-  for (const p of b.files.keys()) if (!a.files.has(p)) onlyB.push(p);
-  return { shared: a.files.size - onlyA.length, onlyA: onlyA.length, onlyB: onlyB.length, mismatched, revisionSame: !a.revision || !b.revision || a.revision === b.revision };
+  for (const p of b.files.keys()) if (!a.files.has(p) && !truncated) onlyB.push(p);
+  return { truncated, shared: a.files.size - onlyA.length, onlyA: onlyA.length, onlyB: onlyB.length, mismatched, revisionSame: !a.revision || !b.revision || a.revision === b.revision };
 }
 
 async function main() {

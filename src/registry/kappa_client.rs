@@ -56,6 +56,8 @@ pub struct KappaClient {
     endpoint: String,
     namespace: String,
     token: String,
+    /// `registry.upload_flow`.
+    upload_flow: String,
 }
 
 impl KappaClient {
@@ -71,6 +73,7 @@ impl KappaClient {
             http,
             endpoint: config.endpoint.trim_end_matches('/').to_owned(),
             namespace: config.namespace.trim_matches('/').to_owned(),
+            upload_flow: config.upload_flow.trim().to_lowercase(),
             token: config.token.clone(),
         })
     }
@@ -79,12 +82,21 @@ impl KappaClient {
         format!("{}/v2/{}/{suffix}", self.endpoint, self.namespace)
     }
 
+    /// Whether blobs are written with kappa-registry's own PUT rather than
+    /// the registry route every registry has.
+    fn upload_flow_is_direct(&self) -> bool {
+        self.upload_flow == "direct"
+    }
+
     fn authorize(
         &self,
         builder: reqwest::blocking::RequestBuilder,
     ) -> reqwest::blocking::RequestBuilder {
         if self.token.is_empty() {
             builder
+        } else if let Some((user, password)) = self.token.split_once(':') {
+            // A password file is what a drop-in registry authenticates with.
+            builder.basic_auth(user, Some(password))
         } else {
             builder.bearer_auth(&self.token)
         }
@@ -323,11 +335,25 @@ impl crate::artifact_push::LayerPublish for KappaClient {
     ) -> Result<()> {
         // Repository-scoped, like the pull side: a reference names where its
         // layers live, which is not necessarily the configured namespace.
-        let request = self
-            .http
-            .put(format!("{}/v2/{repository}/blobs/{kappa}", self.endpoint))
-            .header(reqwest::header::CONTENT_TYPE, media_type)
-            .body(bytes.to_vec());
+        //
+        // The standard flow is the one route every registry has: one POST
+        // that carries the digest and the whole blob. `direct` is
+        // kappa-registry's own PUT, which the distribution API does not
+        // define, kept for a hub that has not moved yet (P8 T5, FR-022).
+        let request = if self.upload_flow_is_direct() {
+            self.http
+                .put(format!("{}/v2/{repository}/blobs/{kappa}", self.endpoint))
+                .header(reqwest::header::CONTENT_TYPE, media_type)
+                .body(bytes.to_vec())
+        } else {
+            self.http
+                .post(format!(
+                    "{}/v2/{repository}/blobs/uploads/?digest={kappa}",
+                    self.endpoint
+                ))
+                .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+                .body(bytes.to_vec())
+        };
         let response = self
             .authorize(request)
             .send()

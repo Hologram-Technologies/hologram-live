@@ -135,13 +135,26 @@ pub struct RegistryConfig {
     pub endpoint: String,
     /// Namespace that objects are written under.
     pub namespace: String,
-    /// Bearer token. An external registry may allow anonymous access, so an
-    /// empty token is valid.
+    /// The credential. `user:password` logs in with HTTP Basic, as a
+    /// registry behind a password file expects; anything else is sent as a
+    /// bearer token. An external registry may allow anonymous access, so an
+    /// empty value is valid.
     pub token: String,
+    /// How blobs are written: `"standard"` is the registry route every
+    /// registry has (`POST /v2/<repo>/blobs/uploads/?digest=…`); `"direct"`
+    /// is kappa-registry's own `PUT /v2/<repo>/blobs/<digest>`, which the
+    /// distribution API does not define (plan P8 T5, FR-022).
+    #[serde(default = "default_upload_flow")]
+    pub upload_flow: String,
     pub request_timeout_secs: u64,
     /// Upper bound on remote pages walked to satisfy one selective query.
     /// Reaching it sets `ObjectPage::truncated` rather than silently capping.
     pub max_scan_pages: u32,
+}
+
+/// Standard: the route every registry has.
+fn default_upload_flow() -> String {
+    "standard".to_owned()
 }
 
 impl Default for RegistryConfig {
@@ -152,6 +165,7 @@ impl Default for RegistryConfig {
             namespace: "hologram".to_owned(),
             token: String::new(),
             request_timeout_secs: 30,
+            upload_flow: default_upload_flow(),
             max_scan_pages: 20,
         }
     }

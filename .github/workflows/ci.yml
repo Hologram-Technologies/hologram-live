@@ -28,6 +28,18 @@ jobs:
       - run: cargo build --release --locked --package hologram-live --bin hologram
       - run: ./scripts/smoke.sh ./target/release/hologram
 
+  licenses:
+    name: Licences
+    # The crate is `MIT OR Apache-2.0` (FR-S14). Nothing may enter the graph
+    # that cannot ship under both, and both texts must exist to ship with.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: test -s LICENSE-MIT && test -s LICENSE-APACHE
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses
+
   llamacpp:
     name: llama.cpp feature
     runs-on: ubuntu-24.04

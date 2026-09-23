@@ -6,7 +6,8 @@
   "scripts": {
     "data": "node scripts/data.mjs",
     "build": "node build.mjs",
-    "lint": "node scripts/lint-tokens.mjs"
+    "lint": "node scripts/lint-tokens.mjs",
+    "fit": "node qa/landing-fit.mjs"
   },
   "devDependencies": {
     "markdown-it": "14.1.0"

@@ -10,13 +10,18 @@ import { fileURLToPath } from "node:url";
 import * as R from "./src/render.mjs";
 import * as B from "./src/braille.mjs";
 import { overview, metaDescription } from "./src/overview.mjs";
+import { landing } from "./src/landing.mjs";
 
 const SITE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(SITE, "dist");
 const KIT = join(SITE, "vendor", "hologram-brand-kit");
 const base = process.env.BASE || "/";
+// The root is the landing page, so the browse table moves under the prefix its model pages already use.
+const BROWSE = `${base}models/`;
 const REPO = "https://github.com/Hologram-Technologies/hologram-live/tree/main/apps/model-hub";
 const INDEX = "https://github.com/humuhumu33/hologram-api";
+// The one base URL every dialect answers on, whatever prefix this build is served under.
+const ENDPOINT = "https://hub.uor.foundation";
 
 const data = JSON.parse(await readFile(join(SITE, "data", "models.json"), "utf8"));
 const models = R.prepare(data.models, data.snapshot);
@@ -96,8 +101,8 @@ const themeSwitch = `<div class="appearance">
 
 const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "styles.css"];
 
-const page = ({ title, description, body, search = false, model = "" }) => `<!doctype html>
-<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${model ? ` data-model="${R.esc(model)}"` : ""}>
+const page = ({ title, description, body, search = false, model = "", home = false }) => `<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -107,7 +112,7 @@ const page = ({ title, description, body, search = false, model = "" }) => `<!do
 <meta property="og:description" content="${R.esc(description)}">
 <meta name="color-scheme" content="dark light">
 <script>${prepaint}</script>
-<script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>
+${home ? `<script>if(location.search)location.replace(${JSON.stringify(BROWSE)}+location.search);</script>\n` : ""}<script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>
 ${privy ? `<script type="application/json" id="privy">${JSON.stringify(privy)}</script>` : ""}
 <link rel="icon" href="${base}logos/Hologram_Logomark_White.svg" type="image/svg+xml">
 <link rel="preload" href="${base}fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -116,12 +121,12 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
 <script type="module" src="${base}app.js"></script>
 </head>
 <body>
-<div class="veil" aria-hidden="true"></div>
-<div class="shell">
+${home ? "" : `<div class="veil" aria-hidden="true"></div>\n`}<div class="shell">
 <header class="top">
-  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"><span class="hub">Models Hub</span></a>
+  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16">${home ? "" : `<span class="hub">Models Hub</span>`}</a>
   <div class="top-end">
-    ${search ? `<form class="field compact top-search" action="${base}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
+    ${home ? `<nav class="top-nav" aria-label="Sections"><a href="${BROWSE}">Models${R.icon.grid}</a><a href="${base}registry/">Registry${R.icon.box}</a><a href="${base}llms.txt">Docs${R.icon.file}</a></nav>` : ""}
+    ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
     <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
     ${themeSwitch}
     ${accountControl()}
@@ -133,6 +138,14 @@ ${body}
 </body>
 </html>
 `;
+
+// ---- landing: the front door. One hero, one screen, no scroll.
+const home = page({
+  title: "Hologram Models Hub",
+  description: "Discover, use and share self-verifying models, skills and artifacts.",
+  home: true,
+  body: landing({ base, models, endpoint: ENDPOINT }),
+});
 
 // ---- browse
 const initial = R.parseState("");
@@ -287,7 +300,7 @@ function modelPage(m, files, ov, readme) {
     title: `${m.name} · Hologram Models Hub`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
     search: true,
-    body: `<div class="head back-row"><a class="back" href="${base}">${R.icon.left}Models</a>${indexPill()}</div>
+    body: `<div class="head back-row"><a class="back" href="${BROWSE}">${R.icon.left}Models</a>${indexPill()}</div>
 <section class="panel">
   <div class="hero">
     ${R.avatar(m, base)}
@@ -322,12 +335,14 @@ function modelPage(m, files, ov, readme) {
 
 await rm(DIST, { recursive: true, force: true });
 await mkdir(join(DIST, "data"), { recursive: true });
-await writeFile(join(DIST, "index.html"), browse);
+await mkdir(join(DIST, "models"), { recursive: true });
+await writeFile(join(DIST, "index.html"), home);
+await writeFile(join(DIST, "models", "index.html"), browse);
 await writeFile(join(DIST, "404.html"), page({
   title: "Not found · Hologram Models Hub",
   description: "Page not found.",
   search: true,
-  body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${base}">All models</a></div></section>`,
+  body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${BROWSE}">All models</a></div></section>`,
 }));
 
 for (const m of models) {

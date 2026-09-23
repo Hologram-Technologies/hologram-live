@@ -19,6 +19,18 @@ docker tag ubuntu localhost:5000/ubuntu && docker push localhost:5000/ubuntu
 docker pull localhost:5000/ubuntu
 ```
 
+It runs in public at `hub.uor.foundation`, anonymous to read and behind a password to write:
+
+```bash
+docker pull hub.uor.foundation/model-hub/index:2026-09-23    # no login needed
+docker login hub.uor.foundation && docker push hub.uor.foundation/you/app:v1
+oras push hub.uor.foundation/you/artifact:v1 file.txt:text/plain
+helm push chart-0.1.0.tgz oci://hub.uor.foundation/you
+```
+
+The distribution-spec conformance suite runs against that host in all four categories: 75 passed, 0 failed,
+4 skipped (the optional automatic cross-mount cases).
+
 Moving in from an existing registry, and back out, is a copy:
 
 ```bash

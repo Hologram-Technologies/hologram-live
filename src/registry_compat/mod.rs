@@ -276,9 +276,10 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
         ("http.host", text) if host_origin(text).is_none() => {
             refuse("must be an absolute URL, as https://registry.example.com:5000")
         }
-        ("storage.cache.blobdescriptor", "redis") => {
-            refuse("redis is not supported: v1 is one writer")
-        }
+        ("validation.disabled", text) if !is_bool(text) => refuse("must be true or false"),
+        ("validation.disabled", text) if is_false(text) => refuse(
+            "false asks for manifest validation, which is not built: this registry does not fetch foreign layers",
+        ),
         _ => match key.strip_prefix("http.headers.") {
             // A header that cannot be sent is refused, not dropped.
             Some(name) if axum::http::HeaderName::from_bytes(name.as_bytes()).is_err() => {
@@ -519,6 +520,17 @@ pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
             "registry setting accepted, not in effect yet"
         );
     }
+    // A cache the reference would share between replicas. Ignoring it cannot
+    // change an answer, but an operator who configured it should be told.
+    if settings.values.keys().any(|key| {
+        key.starts_with("redis.")
+            || key == "storage.cache.layerinfo"
+            || key == "storage.cache.blobdescriptor"
+    }) {
+        tracing::info!(
+            "a shared cache is configured; this registry keeps its own index and does not use it"
+        );
+    }
     for name in &settings.skipped {
         tracing::info!(
             variable = name.as_str(),
@@ -720,6 +732,81 @@ health:
         .expect_err("unknown key")
         .to_string();
         assert!(error.contains("storage.mystery"), "{error}");
+    }
+
+    /// Harbor gives its own registry this file (read from a running Harbor
+    /// 2.15.2, `common/config/registry/config.yml`, secrets replaced). Harbor
+    /// puts all its policy in its core service and forwards `/v2/` to this
+    /// registry with a password file, so the file is what a swap must load.
+    const HARBOR_REGISTRY: &str = "version: 0.1
+log:
+  level: info
+  fields:
+    service: registry
+storage:
+  cache:
+    layerinfo: redis
+  filesystem:
+    rootdirectory: /storage
+  maintenance:
+    uploadpurging:
+      enabled: true
+      age: 168h
+      interval: 24h
+      dryrun: false
+  delete:
+    enabled: true
+redis:
+  addr: redis:6379
+  readtimeout: 10s
+  writetimeout: 10s
+  dialtimeout: 10s
+  password: placeholder
+  username: \x20
+  db: 1
+  enableTLS: false
+  pool:
+    maxidle: 100
+    maxactive: 500
+    idletimeout: 60s
+http:
+  addr: :5000
+  secret: placeholder
+  debug:
+    addr: localhost:5001
+auth:
+  htpasswd:
+    realm: harbor-registry-basic-realm
+    path: /etc/registry/passwd
+validation:
+  disabled: true
+compatibility:
+  schema1:
+    enabled: true
+";
+
+    #[test]
+    fn harbors_own_registry_configuration_loads() {
+        let settings = load_text(HARBOR_REGISTRY, &[]).expect("Harbor's registry config.yml");
+        let mut config = AppConfig::default();
+        apply(settings, &mut config);
+        assert_eq!(config.server.listen, "0.0.0.0:5000");
+        assert_eq!(config.paths.data_dir, PathBuf::from("/storage"));
+        let settings = load_text(HARBOR_REGISTRY, &[]).expect("again");
+        assert_eq!(
+            settings.get("auth.htpasswd.path"),
+            Some("/etc/registry/passwd")
+        );
+        assert_eq!(settings.flag("storage.delete.enabled"), Some(true));
+        assert_eq!(settings.upload_purging(), Some(Purging::DEFAULT));
+        // The cache it configures is ignored, not refused: this registry keeps
+        // its own index, and a cache cannot change an answer.
+        assert_eq!(settings.get("redis.addr"), Some("redis:6379"));
+        // Validation the other way round asks for a check that is not built.
+        let error = load_text("validation:\n  disabled: false\n", &[])
+            .expect_err("validation on")
+            .to_string();
+        assert!(error.contains("validation.disabled"), "{error}");
     }
 
     /// `storage.maintenance`, `http.host` and `http.relativeurls`, as the
@@ -928,7 +1015,9 @@ health:
     #[test]
     fn refused_values() {
         assert!(load_text("log:\n  formatter: logstash\n", &[]).is_err());
-        assert!(load_text("storage:\n  cache:\n    blobdescriptor: redis\n", &[]).is_err());
+        // A redis cache is ignored, not refused: this registry keeps its own
+        // index, and a cache the reference shares cannot change an answer.
+        assert!(load_text("storage:\n  cache:\n    blobdescriptor: redis\n", &[]).is_ok());
         assert!(load_text("log:\n  formatter: json\n", &[]).is_ok());
     }
 }

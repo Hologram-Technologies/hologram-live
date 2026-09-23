@@ -142,6 +142,10 @@ name = "oci_debug"
 required-features = ["oci"]
 
 [[test]]
+name = "oci_provider"
+required-features = ["oci"]
+
+[[test]]
 name = "oci_gc"
 required-features = ["oci"]
 

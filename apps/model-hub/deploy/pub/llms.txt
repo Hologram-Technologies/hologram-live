@@ -11,6 +11,24 @@ Open models. Every object is named by the BLAKE3 hash of its bytes; every model 
 - MCP: `https://hub.uor.foundation/mcp` (Streamable HTTP, no key). Tools: `search_models`, `get_model`, `resolve_file` (a URL, the SHA-256 it must have, and the commands that hand the file to an engine).
 - Which sources are up: `GET /api/hub/health`. Pin one: put `/via/ipfs`, `/via/modelscope` or `/via/huggingface` in front of the path.
 
+## Push and pull images (Docker Registry API)
+
+`https://hub.uor.foundation/v2/` is a registry. It speaks the OCI distribution API, so the tools you already
+have work unchanged. Reads are anonymous; pushing needs a login.
+
+- Pull: `docker pull hub.uor.foundation/model-hub/index:<date>` (the day's index), or any repository you pushed.
+- Push: `docker login hub.uor.foundation`, then `docker push hub.uor.foundation/<name>/<image>:<tag>`.
+- Artifacts: `oras push hub.uor.foundation/<name>/<artifact>:<tag> file:type`, and `oras attach` for a signature
+  or an SBOM, found again with `oras discover`.
+- Charts: `helm push chart-0.1.0.tgz oci://hub.uor.foundation/<name>`, `helm pull oci://hub.uor.foundation/<name>/chart`.
+- Copy: `crane copy <source> hub.uor.foundation/<name>/<image>:<tag>`; `skopeo copy` works for pulling.
+- Discovery: `GET /v2/_catalog`, `GET /v2/<name>/tags/list`, `GET /v2/<name>/referrers/<digest>`.
+
+Conformance: the OpenContainers distribution-spec suite runs against this host in all four categories (pull, push,
+content discovery, content management): 75 passed, 0 failed, 4 skipped (the automatic cross-mount cases, which are
+optional). A model pulled with `ollama pull hub.uor.foundation/<owner>/<name>` still works: the registry answers
+first, and anything it does not hold falls through to the model index.
+
 The rest of this page is the raw, content-addressed form of the same hub: slower to read, but every object proves itself.
 
 ## Find a model (two requests, no key)

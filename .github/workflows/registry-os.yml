@@ -4,7 +4,10 @@ name: registry-os
 # Path-filtered: it runs only when registry code or its dependencies change.
 on:
   push:
-    branches: ["registry/**"]
+    # `main` unfiltered, for the same reason as gates.yml: a release names a
+    # commit, so every commit that could be released must carry its evidence.
+    branches: ["main", "registry/**"]
+  merge_group:
   pull_request:
     paths:
       - "src/oci_store/**"

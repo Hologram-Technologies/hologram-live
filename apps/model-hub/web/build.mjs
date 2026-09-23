@@ -104,6 +104,7 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
 ${home ? "" : `<div class="veil" aria-hidden="true"></div>\n`}<div class="shell">
 <header class="top">
   <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16">${home ? "" : `<span class="hub">Models Hub</span>`}</a>
+  ${home ? `<nav class="top-nav" aria-label="Sections"><a href="${BROWSE}">Models</a><a href="${base}registry/">Registry</a><a href="${base}llms.txt">Docs</a></nav>` : ""}
   <div class="top-end">
     ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
     ${home ? "" : indexPill()}

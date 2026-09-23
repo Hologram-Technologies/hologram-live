@@ -323,7 +323,14 @@ pub fn byte_size(text: &str) -> Option<u64> {
         _ => return None,
     };
     let bytes = value * scale;
-    (bytes.is_finite() && bytes >= 0.0).then_some(bytes as u64)
+    // A size larger than the machine can hold is the machine's whole disk.
+    (bytes.is_finite() && bytes >= 0.0).then(|| {
+        if bytes >= u64::MAX as f64 {
+            u64::MAX
+        } else {
+            bytes.trunc() as u64
+        }
+    })
 }
 
 /// `http.host` as `scheme://host[:port]`: what `Location` is built on. The

@@ -98,6 +98,9 @@ zstd = "0.13"
 # providers remain outside this crate until their typed adapters are enabled.
 hologram = { package = "uor-hologram", git = "https://github.com/Hologram-Technologies/hologram", rev = "2bda6a9a9476872dade705bd61ece4209607f6da", default-features = false, features = ["archive", "space"] }
 hologram-view-surface = { path = "crates/hologram-view-surface" }
+# Bearer tokens for `auth.token`, registry only.
+jsonwebtoken = { version = "9", default-features = false, features = ["use_pem"], optional = true }
+ring = { version = "0.17.14", optional = true }
 
 [dev-dependencies]
 cucumber = "0.23"
@@ -115,7 +118,8 @@ llamacpp = ["dep:encoding_rs", "dep:llama-cpp-2"]
 llamacpp-cuda = ["llamacpp", "llama-cpp-2/cuda"]
 llamacpp-metal = ["llamacpp", "llama-cpp-2/metal"]
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
-oci = ["dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:getrandom", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
+oci = ["dep:jsonwebtoken", "dep:ring", "dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:getrandom", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
+ring = ["dep:ring"]
 
 [[test]]
 name = "oci_store"
@@ -139,6 +143,10 @@ required-features = ["oci"]
 
 [[test]]
 name = "oci_debug"
+required-features = ["oci"]
+
+[[test]]
+name = "oci_token"
 required-features = ["oci"]
 
 [[test]]

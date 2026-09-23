@@ -127,7 +127,6 @@ const READ = `(() => {
     // The rest of the header cluster, which has to be the same cluster on every page.
     theme: !!document.querySelector("#theme-button"),
     account: !!document.querySelector("#account"),
-    github: !!document.querySelector(".github"),
     headerOverflow: Math.max(0, top.scrollWidth - top.clientWidth),
     pageOverflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
   };
@@ -197,8 +196,6 @@ for (const theme of THEMES) {
       cluster ??= { theme: r.theme, account: r.account };
       if (!r.theme) problems.push(`${where}: the header has no theme switch`);
       if (r.account !== cluster.account) problems.push(`${where}: sign-in is ${r.account ? "present" : "missing"} and elsewhere it is not`);
-      // The landing carries the repository at hero size in its star badge, so it alone drops the mark.
-      if (r.github !== (page !== "landing")) problems.push(`${where}: GitHub mark ${r.github ? "present" : "missing"}`);
       if (r.headerOverflow > 1) problems.push(`${where}: the header row overflows by ${r.headerOverflow}px`);
       if (r.pageOverflowX > 1) problems.push(`${where}: the page scrolls ${r.pageOverflowX}px sideways`);
 
@@ -216,12 +213,7 @@ for (const theme of THEMES) {
 }
 
 // A section that 404s is worse than no section: this menu has shipped with a dead Registry link before.
-// llms.txt is the one exception, and a real one to keep an eye on — it is written on the host at
-// /root/hub/pub/llms.txt, outside this repository, so no build made here contains it.
-const OUTSIDE_DIST = ["llms.txt"];
-const elsewhere = [];
 for (const href of links || []) {
-  if (OUTSIDE_DIST.some((f) => href.endsWith(f))) { elsewhere.push(href); continue; }
   const res = await fetch(origin + href, { redirect: "manual" });
   if (res.status >= 400) problems.push(`the menu points at ${href}, which answers ${res.status}`);
 }
@@ -231,6 +223,5 @@ proc.kill();
 server.close();
 
 console.log(rows.join("\n"));
-if (elsewhere.length) console.log(`\nNot checked, served from outside this build: ${elsewhere.join(", ")}`);
 if (problems.length) { console.error(`\n${problems.length} problems\n${problems.join("\n")}`); process.exit(1); }
 console.log(`\nthe menu holds: ${SECTIONS.join(" · ")} on ${PAGES.length} page shapes x ${THEMES.length} themes x ${WIDTHS.length} widths (${checked} checks); the section you are in is marked and reads at ${lowest}:1 or better`);

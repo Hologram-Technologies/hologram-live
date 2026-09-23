@@ -157,9 +157,6 @@ ul { list-style: none; margin: 0; padding: 0; }
 .top-search { width: 14.5rem; }
 .status { display: flex; align-items: center; gap: var(--space-2); color: var(--hh-text-dim); transition: color var(--hh-ease); white-space: nowrap; }
 .status:hover { color: var(--hh-text); }
-.github { display: grid; place-items: center; width: var(--hh-control); height: var(--hh-control); color: var(--hh-text); transition: opacity var(--hh-ease); }
-.github:hover { opacity: .6; }
-.github .i { width: var(--space-5); height: var(--space-5); }
 .i.mark { fill: currentColor; stroke: none; }
 .status::before { content: ""; width: var(--space-2); height: var(--space-2); border-radius: 50%; background: var(--hh-ok); }
 @media (max-width: 1419px) { .top-search { display: none; } }
@@ -174,10 +171,6 @@ ul { list-style: none; margin: 0; padding: 0; }
   #sign-in-button .label { display: none; }
   #sign-in-button { width: var(--hh-control); padding: 0; justify-content: center; border-radius: 50%; }
 }
-/* The smallest phone still sold. The row needs the wordmark's 129px plus 112px of controls plus 48px of
-   gap and gutter — 289px of content in 288px of room. The logomark alone says Hologram; the wordmark goes. */
-/* The light pair is switched on by a more specific rule above, so it has to be named again here. */
-@media (max-width: 340px) { .brand .word, :root:not(.dark) .brand .word.on-light { display: none; } }
 
 /* The top-level menu. Sits at the end of the row, immediately before the icons. Each label carries a mark
    of its own: a grid for the catalogue, a package for the registry, a page for the guide. Three silhouettes

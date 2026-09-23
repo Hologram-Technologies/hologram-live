@@ -22,7 +22,6 @@ const base = process.env.BASE || "/";
 const HIGHLIGHT = process.env.HIGHLIGHT || "seal";
 // The root is the landing page, so the browse table moves under the prefix its model pages already use.
 const BROWSE = `${base}models/`;
-const REPO = "https://github.com/Hologram-Technologies/hologram-live/tree/main/apps/model-hub";
 // The repository the hero's star badge counts and links to. scripts/data.mjs bakes the count into
 // models.json; a build whose fetch failed, or an offline build off a copied data/, ships the badge without a
 // number and the page fills it in from the public API on load.
@@ -126,15 +125,14 @@ const themeSwitch = `<div class="appearance">
 
 const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "chrome.css", "styles.css"];
 
-// The header, one definition for the whole site. The brand lockup is the same on every page — the wordmark
-// alone, because the menu beside it is what says where you are. `home` drops only the GitHub mark, which the
-// landing already carries at hero size in its star badge.
-const header = ({ section = "", search = false, home = false } = {}) => `<header class="top">
+// The header, one definition for the whole site, and the same row on every page: the brand lockup is the
+// wordmark alone, because the menu beside it is what says where you are, and nothing here changes between the
+// landing and the pages behind it. The repository is reached from the hero's star badge, not from this row.
+const header = ({ section = "", search = false } = {}) => `<header class="top">
   <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
   <div class="top-end">
     ${topNav(section)}
     ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    ${home ? "" : `<a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>`}
     ${themeSwitch}
     ${accountControl()}
   </div>
@@ -183,7 +181,7 @@ ${[...STYLES, ...styles].map((s) => `<link rel="stylesheet" href="${base}${s}">`
 </head>
 <body>
 ${home ? "" : `<div class="veil" aria-hidden="true"></div>\n`}<div class="shell">
-${header({ section, search, home })}
+${header({ section, search })}
 ${archive ? `<div class="archive-banner" id="archive-banner" role="status" hidden>${R.icon.calendar}<span>Viewing the index of <b id="archive-banner-date"></b>. Every file shown was checked against its address.</span><button type="button" class="link" data-at="latest">Back to latest</button></div>` : ""}
 ${body}
 </div>

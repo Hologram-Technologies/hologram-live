@@ -1,5 +1,5 @@
 {
- "probed_at": "2026-09-23T22:02:24.672Z",
+ "probed_at": "2026-09-23T22:46:37.837Z",
  "base": "https://hub.uor.foundation",
  "sample": {
   "model": "sentence-transformers/all-MiniLM-L6-v2",
@@ -12,11 +12,11 @@
    "id": "root.html",
    "method": "GET",
    "path": "/",
-   "ms": 87,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dln0njxihkvx1pc-gzip\"",
+    "etag": "\"dln25lvlawf12zr-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -27,11 +27,11 @@
    "id": "root.descriptor",
    "method": "GET",
    "path": "/",
-   "ms": 85,
+   "ms": 90,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln0nkyxsii2uz-gzip\"",
+    "etag": "\"dln25naxb0jpuz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -64,11 +64,11 @@
    "id": "root.brief",
    "method": "GET",
    "path": "/",
-   "ms": 89,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dln0njxihkvx1pc-gzip\"",
+    "etag": "\"dln25lvlawf12zr-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -79,11 +79,11 @@
    "id": "brief",
    "method": "GET",
    "path": "/agent.md",
-   "ms": 85,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dln0njxihkvx1pc-gzip\"",
+    "etag": "\"dln25lvlawf12zr-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -94,11 +94,11 @@
    "id": "descriptor",
    "method": "GET",
    "path": "/.well-known/model-hub.json",
-   "ms": 95,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln0nkyxsii2uz-gzip\"",
+    "etag": "\"dln25naxb0jpuz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -131,27 +131,27 @@
    "id": "llms",
    "method": "GET",
    "path": "/llms.txt",
-   "ms": 87,
+   "ms": 90,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dln0nkz068uv2w0-gzip\"",
+    "etag": "\"dln25l947f0s3jz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# Hologram Model Hub\n\nOpen models. Every object is named by the BLAKE3 hash of its bytes; every model file by its SHA-256. Fetch from anywhere, check it yourself, trust no host.\n\n## The short way (use the tools you already have)\n\n- Any Hugging Face tool: `export HF_ENDPOINT=https://hub.uor.foundation`, then `hf download <owner>/<name>` (or `snapshot_download`, `from_pretrained`, `llama-server -hf`…",
+   "body": "# Hologram Model Hub\n\n> One base URL for open models. Every file is named by the SHA-256 of its bytes and every object by its BLAKE3; fetch from a source that is up, check it yourself, and trust no host, this one included. No account, no key, no SDK.\n\n## The short way\n\n- `export HF_ENDPOINT=https://hub.uor.foundation` and every tool built on `huggingface_hub` reads from here: `hf download <owner>/…",
    "error": null
   },
   {
    "id": "openapi",
    "method": "GET",
    "path": "/openapi.json",
-   "ms": 177,
+   "ms": 184,
    "status": 200,
    "headers": {
     "content-type": "application/json",
     "cache-control": "public, max-age=300",
-    "etag": "\"dln0njxhappj2h5j-gzip\"",
+    "etag": "\"dln25lvjilnf2pac-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -432,9 +432,15 @@
         "sources": {
          "type": "array",
          "items": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+           "Hugging Face",
+           "ModelScope",
+           "IPFS",
+           "P2P"
+          ]
          },
-         "description": "Which sources hold these bytes today."
+         "description": "Which sources hold these bytes today, in display spelling. Three vocabularies describe the same sources and nothing else maps between them, so map here: `Hugging Face` is `huggingface.co` in `/api/hub/health` and `X-Hub-Source`, and `huggingface` in a `/via/` prefix; `ModelScope` is `modelscope.cn` and `modelscope`; `IPFS` is `ipfs` in both. `P2P` is a fourth source that appears on a few rows and …"
         }
        }
       },
@@ -579,7 +585,7 @@
         "oid": {
          "type": "string",
          "pattern": "^[0-9a-f]{64}$",
-         "description": "The SHA-256 of the file's bytes. This is the expected hash."
+         "description": "The SHA-256 of the file's bytes, 64 hex characters, and the value a download must be checked against. **This differs from Hugging Face**, whose `oid` is a 40-character git blob SHA-1 and which carries the SHA-256 only inside `lfs`, only on large files. Here every file reports its SHA-256 in this field; the length is the tell. A client written against Hugging Face's meaning will read a perfectly go…"
         },
         "size": {
          "type": "integer"
@@ -589,7 +595,7 @@
         },
         "lfs": {
          "type": "object",
-         "description": "Present on large files, for clients that branch on it.",
+         "description": "Present on large files, for clients that branch on it. Its `oid` repeats the SHA-256 above rather than differing from it.",
          "properties": {
           "oid": {
            "type": "string",
@@ -669,7 +675,8 @@
           ],
           "properties": {
            "ok": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the hub reached it on its last probe."
            },
            "checked": {
             "type": "string",
@@ -677,7 +684,7 @@
            },
            "reason": {
             "type": "string",
-            "description": "Why the hub believes it, in one word."
+            "description": "Why the hub believes it, in one word. `verified` means the hub fetched bytes and they hashed correctly — from the hub's network."
            }
           }
          }
@@ -1628,6 +1635,176 @@
        }
       }
      },
+     "/docs/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getDocsIndex",
+       "summary": "The documentation",
+       "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/docs/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
+     "/docs/{page}/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getDocsPage",
+       "summary": "One documentation page",
+       "description": "The page named by its slug: `quickstart`, `verification`, `addresses`, `sources`, `huggingface`, `ollama`, `oci`, `mcp`, `objects`, `api`, `errors`, `limits`.",
+       "parameters": [
+        {
+         "name": "page",
+         "in": "path",
+         "required": true,
+         "schema": {
+          "type": "string"
+         },
+         "description": "The page slug, as listed in `/llms.txt`."
+        }
+       ],
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "No page has that slug.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/docs/quickstart/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
+     "/docs/{page}.md": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getDocsPageMarkdown",
+       "summary": "One documentation page, as Markdown",
+       "description": "The same page as `/docs/{page}/`, from the same source, with every link resolved to an absolute Markdown twin. `index.md` is the overview.",
+       "parameters": [
+        {
+         "name": "page",
+         "in": "path",
+         "required": true,
+         "schema": {
+          "type": "string"
+         },
+         "description": "The page slug, as listed in `/llms.txt`."
+        }
+       ],
+       "responses": {
+        "200": {
+         "description": "Markdown.",
+         "content": {
+          "text/markdown": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "No page has that slug.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/docs/quickstart.md",
+        "status": 200,
+        "contentType": "text/markdown"
+       }
+      }
+     },
+     "/registry/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getRegistryPage",
+       "summary": "The hub's own registry, browsed",
+       "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly.",
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/registry/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
      "/llms.txt": {
       "get": {
        "tags": [
@@ -1860,8 +2037,8 @@
         "Health"
        ],
        "operationId": "getSourceHealth",
-       "summary": "Which byte sources are up",
-       "description": "The result of the hub's own periodic probe of every source it can redirect to, and the order it prefers them in. A file request is sent to the first source in `order` that is `ok`.",
+       "summary": "Which byte sources are up, as seen from the hub",
+       "description": "The result of the hub's own periodic probe of every source it can redirect to, and the order it prefers them in. A file request is sent to the first source in `order` that is `ok`.\n\n**This is measured from the hub, not from you.** A source reported `ok` here can still be unreachable from the network you are on — `ipfs.filebase.io` in particular is blocked or TLS-terminated on some networks while t…",
        "responses": {
         "200": {
          "description": "Per-source liveness and the preference order.",
@@ -1874,17 +2051,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-23T20:13:21.350Z",
+              "checked": "2026-09-23T22:02:06.716Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-23T20:13:23.313Z",
+              "checked": "2026-09-23T22:02:08.215Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-23T20:13:23.387Z",
+              "checked": "2026-09-23T22:02:08.291Z",
               "reason": "verified"
              }
             },
@@ -1933,7 +2110,7 @@
        ],
        "operationId": "listModels",
        "summary": "Search the index",
-       "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row carrying the facts Hugging Face has no field for: the index address of the model, how many files it has, how many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the whole catalog object costs 364 KB, so search here rather than there.",
+       "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**Thi…",
        "parameters": [
         {
          "name": "search",
@@ -2027,7 +2204,7 @@
              "disabled": false,
              "likes": 3368,
              "downloads": 45461966,
-             "trendingScore": 63,
+             "trendingScore": 64,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "fill-mask",
              "library_name": "transformers",
@@ -2050,6 +2227,33 @@
              }
             }
            ]
+          }
+         }
+        },
+        "400": {
+         "description": "A parameter is outside what this operation accepts.",
+         "headers": {
+          "x-error-code": {
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+           "schema": {
+            "type": "string"
+           }
+          },
+          "x-error-message": {
+           "description": "The same sentence as the body, readable in a browser's network panel.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/HubError"
+           },
+           "example": {
+            "error": "limit must be between 1 and 500."
+           }
           }
          }
         },
@@ -2150,7 +2354,7 @@
          "description": "The model is gated on Hugging Face. The hub serves public models only and will not proxy a gate.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2177,7 +2381,7 @@
          "description": "Not in the index. The request is recorded and considered for the next index run.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2263,7 +2467,7 @@
          "description": "Either the model is not indexed, or it is indexed at another revision.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2350,7 +2554,7 @@
          "description": "Not in the index.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2459,7 +2663,7 @@
          "description": "Not in the index, or indexed at another revision.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2548,7 +2752,7 @@
          "description": "Not in the index, or indexed at another revision.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2760,7 +2964,7 @@
          "description": "The model is not indexed, the revision is not the indexed one, or the file is not in it.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2798,7 +3002,7 @@
        ],
        "operationId": "resolveFileVia",
        "summary": "A URL for one file, from the source you name",
-       "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging Face is up, and refuses rather than falling back. The prefix works in front of any Models or Files route, not only this one.",
+       "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging\nFace is up. The prefix works in front of any Models or Files route, not only this one.\n\n**A pin is a constraint, not a hint.** If the named source does not hold the file this refuses with\n`404 SourceHasNotGotIt`, naming the sources that do; an unrecognised source name refuses with\n`404 UnknownS…",
        "parameters": [
         {
          "name": "source",
@@ -2848,7 +3052,7 @@
          }
         },
         "302": {
-         "description": "Redirect to the named source.",
+         "description": "Redirect to a source. Check `X-Hub-Source`: it names who actually served, which is not always the source you asked for.",
          "headers": {
           "location": {
            "description": "Where the bytes are.",
@@ -2858,7 +3062,36 @@
            }
           },
           "x-hub-source": {
-           "description": "The source you named.",
+           "description": "Who actually served: `huggingface.co`, `modelscope.cn` or `ipfs`. Compare it against the source you named; a different value means the hub fell back.",
+           "schema": {
+            "type": "string",
+            "enum": [
+             "huggingface.co",
+             "modelscope.cn",
+             "ipfs"
+            ]
+           }
+          },
+          "etag": {
+           "description": "The SHA-256 the bytes must have, quoted. Returned here exactly as on the unprefixed route.",
+           "schema": {
+            "type": "string"
+           }
+          },
+          "x-linked-etag": {
+           "description": "The same SHA-256, quoted.",
+           "schema": {
+            "type": "string"
+           }
+          },
+          "x-linked-size": {
+           "description": "The size in bytes.",
+           "schema": {
+            "type": "integer"
+           }
+          },
+          "x-repo-commit": {
+           "description": "The revision this file belongs to.",
            "schema": {
             "type": "string"
            }
@@ -2866,10 +3099,10 @@
          }
         },
         "404": {
-         "description": "Unknown model, revision or file; or the named source does not hold this file.",
+         "description": "Unknown model, revision or file; `SourceHasNotGotIt` when the named source does not hold this file, naming the ones that do; or `UnknownSource` when the source name is not one this hub knows. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -2887,7 +3120,7 @@
             "$ref": "#/components/schemas/HubError"
            },
            "example": {
-            "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+            "error": "modelscope does not hold config.json of BAAI/bge-base-en-v1.5. This file is on: huggingface.co. Drop the /via/ prefix to let the hub choose."
            }
           }
          }
@@ -4368,6 +4601,20 @@
            "schema": {
             "type": "string",
             "format": "binary"
+           }
+          }
+         }
+        },
+        "400": {
+         "description": "The path is not an address. An address is `blake3:` followed by 64 hexadecimal characters; anything else under this prefix is refused at the edge rather than passed to the server.",
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/ApiError"
+           },
+           "example": {
+            "code": "LIVE_BAD_REQUEST",
+            "message": "an object address is blake3: followed by 64 hexadecimal characters"
            }
           }
          }
@@ -4404,11 +4651,11 @@
    "id": "wellknown.openapi",
    "method": "GET",
    "path": "/.well-known/openapi.json",
-   "ms": 91,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln0njxhappj2h5j-gzip\"",
+    "etag": "\"dln25lvjilnf2pac-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -4689,9 +4936,15 @@
         "sources": {
          "type": "array",
          "items": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+           "Hugging Face",
+           "ModelScope",
+           "IPFS",
+           "P2P"
+          ]
          },
-         "description": "Which sources hold these bytes today."
+         "description": "Which sources hold these bytes today, in display spelling. Three vocabularies describe the same sources and nothing else maps between them, so map here: `Hugging Face` is `huggingface.co` in `/api/hub/health` and `X-Hub-Source`, and `huggingface` in a `/via/` prefix; `ModelScope` is `modelscope.cn` and `modelscope`; `IPFS` is `ipfs` in both. `P2P` is a fourth source that appears on a few rows and …"
         }
        }
       },
@@ -4836,7 +5089,7 @@
         "oid": {
          "type": "string",
          "pattern": "^[0-9a-f]{64}$",
-         "description": "The SHA-256 of the file's bytes. This is the expected hash."
+         "description": "The SHA-256 of the file's bytes, 64 hex characters, and the value a download must be checked against. **This differs from Hugging Face**, whose `oid` is a 40-character git blob SHA-1 and which carries the SHA-256 only inside `lfs`, only on large files. Here every file reports its SHA-256 in this field; the length is the tell. A client written against Hugging Face's meaning will read a perfectly go…"
         },
         "size": {
          "type": "integer"
@@ -4846,7 +5099,7 @@
         },
         "lfs": {
          "type": "object",
-         "description": "Present on large files, for clients that branch on it.",
+         "description": "Present on large files, for clients that branch on it. Its `oid` repeats the SHA-256 above rather than differing from it.",
          "properties": {
           "oid": {
            "type": "string",
@@ -4926,7 +5179,8 @@
           ],
           "properties": {
            "ok": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the hub reached it on its last probe."
            },
            "checked": {
             "type": "string",
@@ -4934,7 +5188,7 @@
            },
            "reason": {
             "type": "string",
-            "description": "Why the hub believes it, in one word."
+            "description": "Why the hub believes it, in one word. `verified` means the hub fetched bytes and they hashed correctly — from the hub's network."
            }
           }
          }
@@ -5885,6 +6139,176 @@
        }
       }
      },
+     "/docs/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getDocsIndex",
+       "summary": "The documentation",
+       "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/docs/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
+     "/docs/{page}/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getDocsPage",
+       "summary": "One documentation page",
+       "description": "The page named by its slug: `quickstart`, `verification`, `addresses`, `sources`, `huggingface`, `ollama`, `oci`, `mcp`, `objects`, `api`, `errors`, `limits`.",
+       "parameters": [
+        {
+         "name": "page",
+         "in": "path",
+         "required": true,
+         "schema": {
+          "type": "string"
+         },
+         "description": "The page slug, as listed in `/llms.txt`."
+        }
+       ],
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "No page has that slug.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/docs/quickstart/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
+     "/docs/{page}.md": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getDocsPageMarkdown",
+       "summary": "One documentation page, as Markdown",
+       "description": "The same page as `/docs/{page}/`, from the same source, with every link resolved to an absolute Markdown twin. `index.md` is the overview.",
+       "parameters": [
+        {
+         "name": "page",
+         "in": "path",
+         "required": true,
+         "schema": {
+          "type": "string"
+         },
+         "description": "The page slug, as listed in `/llms.txt`."
+        }
+       ],
+       "responses": {
+        "200": {
+         "description": "Markdown.",
+         "content": {
+          "text/markdown": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "No page has that slug.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/docs/quickstart.md",
+        "status": 200,
+        "contentType": "text/markdown"
+       }
+      }
+     },
+     "/registry/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getRegistryPage",
+       "summary": "The hub's own registry, browsed",
+       "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly.",
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/registry/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
      "/llms.txt": {
       "get": {
        "tags": [
@@ -6117,8 +6541,8 @@
         "Health"
        ],
        "operationId": "getSourceHealth",
-       "summary": "Which byte sources are up",
-       "description": "The result of the hub's own periodic probe of every source it can redirect to, and the order it prefers them in. A file request is sent to the first source in `order` that is `ok`.",
+       "summary": "Which byte sources are up, as seen from the hub",
+       "description": "The result of the hub's own periodic probe of every source it can redirect to, and the order it prefers them in. A file request is sent to the first source in `order` that is `ok`.\n\n**This is measured from the hub, not from you.** A source reported `ok` here can still be unreachable from the network you are on — `ipfs.filebase.io` in particular is blocked or TLS-terminated on some networks while t…",
        "responses": {
         "200": {
          "description": "Per-source liveness and the preference order.",
@@ -6131,17 +6555,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-23T20:13:21.350Z",
+              "checked": "2026-09-23T22:02:06.716Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-23T20:13:23.313Z",
+              "checked": "2026-09-23T22:02:08.215Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-23T20:13:23.387Z",
+              "checked": "2026-09-23T22:02:08.291Z",
               "reason": "verified"
              }
             },
@@ -6190,7 +6614,7 @@
        ],
        "operationId": "listModels",
        "summary": "Search the index",
-       "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row carrying the facts Hugging Face has no field for: the index address of the model, how many files it has, how many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the whole catalog object costs 364 KB, so search here rather than there.",
+       "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**Thi…",
        "parameters": [
         {
          "name": "search",
@@ -6284,7 +6708,7 @@
              "disabled": false,
              "likes": 3368,
              "downloads": 45461966,
-             "trendingScore": 63,
+             "trendingScore": 64,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "fill-mask",
              "library_name": "transformers",
@@ -6307,6 +6731,33 @@
              }
             }
            ]
+          }
+         }
+        },
+        "400": {
+         "description": "A parameter is outside what this operation accepts.",
+         "headers": {
+          "x-error-code": {
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+           "schema": {
+            "type": "string"
+           }
+          },
+          "x-error-message": {
+           "description": "The same sentence as the body, readable in a browser's network panel.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/HubError"
+           },
+           "example": {
+            "error": "limit must be between 1 and 500."
+           }
           }
          }
         },
@@ -6407,7 +6858,7 @@
          "description": "The model is gated on Hugging Face. The hub serves public models only and will not proxy a gate.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -6434,7 +6885,7 @@
          "description": "Not in the index. The request is recorded and considered for the next index run.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -6520,7 +6971,7 @@
          "description": "Either the model is not indexed, or it is indexed at another revision.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -6607,7 +7058,7 @@
          "description": "Not in the index.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -6716,7 +7167,7 @@
          "description": "Not in the index, or indexed at another revision.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -6805,7 +7256,7 @@
          "description": "Not in the index, or indexed at another revision.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -7017,7 +7468,7 @@
          "description": "The model is not indexed, the revision is not the indexed one, or the file is not in it.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -7055,7 +7506,7 @@
        ],
        "operationId": "resolveFileVia",
        "summary": "A URL for one file, from the source you name",
-       "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging Face is up, and refuses rather than falling back. The prefix works in front of any Models or Files route, not only this one.",
+       "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging\nFace is up. The prefix works in front of any Models or Files route, not only this one.\n\n**A pin is a constraint, not a hint.** If the named source does not hold the file this refuses with\n`404 SourceHasNotGotIt`, naming the sources that do; an unrecognised source name refuses with\n`404 UnknownS…",
        "parameters": [
         {
          "name": "source",
@@ -7105,7 +7556,7 @@
          }
         },
         "302": {
-         "description": "Redirect to the named source.",
+         "description": "Redirect to a source. Check `X-Hub-Source`: it names who actually served, which is not always the source you asked for.",
          "headers": {
           "location": {
            "description": "Where the bytes are.",
@@ -7115,7 +7566,36 @@
            }
           },
           "x-hub-source": {
-           "description": "The source you named.",
+           "description": "Who actually served: `huggingface.co`, `modelscope.cn` or `ipfs`. Compare it against the source you named; a different value means the hub fell back.",
+           "schema": {
+            "type": "string",
+            "enum": [
+             "huggingface.co",
+             "modelscope.cn",
+             "ipfs"
+            ]
+           }
+          },
+          "etag": {
+           "description": "The SHA-256 the bytes must have, quoted. Returned here exactly as on the unprefixed route.",
+           "schema": {
+            "type": "string"
+           }
+          },
+          "x-linked-etag": {
+           "description": "The same SHA-256, quoted.",
+           "schema": {
+            "type": "string"
+           }
+          },
+          "x-linked-size": {
+           "description": "The size in bytes.",
+           "schema": {
+            "type": "integer"
+           }
+          },
+          "x-repo-commit": {
+           "description": "The revision this file belongs to.",
            "schema": {
             "type": "string"
            }
@@ -7123,10 +7603,10 @@
          }
         },
         "404": {
-         "description": "Unknown model, revision or file; or the named source does not hold this file.",
+         "description": "Unknown model, revision or file; `SourceHasNotGotIt` when the named source does not hold this file, naming the ones that do; or `UnknownSource` when the source name is not one this hub knows. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.",
          "headers": {
           "x-error-code": {
-           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+           "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
            "schema": {
             "type": "string"
            }
@@ -7144,7 +7624,7 @@
             "$ref": "#/components/schemas/HubError"
            },
            "example": {
-            "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+            "error": "modelscope does not hold config.json of BAAI/bge-base-en-v1.5. This file is on: huggingface.co. Drop the /via/ prefix to let the hub choose."
            }
           }
          }
@@ -8629,6 +9109,20 @@
           }
          }
         },
+        "400": {
+         "description": "The path is not an address. An address is `blake3:` followed by 64 hexadecimal characters; anything else under this prefix is refused at the edge rather than passed to the server.",
+         "content": {
+          "application/json": {
+           "schema": {
+            "$ref": "#/components/schemas/ApiError"
+           },
+           "example": {
+            "code": "LIVE_BAD_REQUEST",
+            "message": "an object address is blake3: followed by 64 hexadecimal characters"
+           }
+          }
+         }
+        },
         "404": {
          "description": "No object at that address.",
          "content": {
@@ -8661,11 +9155,11 @@
    "id": "agentcard",
    "method": "GET",
    "path": "/.well-known/agent-card.json",
-   "ms": 87,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln0njx1tgec3il-gzip\"",
+    "etag": "\"dln25luav4h83l2-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -8746,22 +9240,22 @@
    "id": "robots",
    "method": "GET",
    "path": "/robots.txt",
-   "ms": 83,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dln0njwzfq1jdb\"",
+    "etag": "\"dln25lu4bd00dp\"",
     "accept-ranges": "bytes",
     "access-control-allow-origin": "*"
    },
-   "body": "# hub.uor.foundation\n# The website, the model pages and the discovery documents are open to crawlers.\n# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real\n# traffic, and a crawler that follows them pays nothing and keeps nothing.\n\nUser-agent: *\nAllow: /$\nAllow: /models/\nAllow: /openapi.json\nAllow: /llms.txt\nAllow: /.well-known/\nDisallow: /via/\nD…",
+   "body": "# hub.uor.foundation\n# The website, the model pages and the discovery documents are open to crawlers.\n# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real\n# traffic, and a crawler that follows them pays nothing and keeps nothing.\n\nUser-agent: *\nAllow: /$\nAllow: /models/\nAllow: /docs/\nAllow: /openapi.json\nAllow: /llms.txt\nAllow: /.well-known/\nDis…",
    "error": null
   },
   {
    "id": "docs",
    "method": "GET",
    "path": "/docs",
-   "ms": 249,
+   "ms": 247,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
@@ -8776,11 +9270,11 @@
    "id": "archive",
    "method": "GET",
    "path": "/archive.json",
-   "ms": 84,
+   "ms": 82,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln0nkyo9l2v302-gzip\"",
+    "etag": "\"dln25nahtr8f302-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -8838,11 +9332,11 @@
    "id": "pins",
    "method": "GET",
    "path": "/pins.json",
-   "ms": 91,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln0nkylvuq2ejs-gzip\"",
+    "etag": "\"dln25nad2aitejs-gzip\"",
     "content-encoding": "gzip"
    },
    "body": {
@@ -9373,7 +9867,7 @@
    "id": "healthz",
    "method": "GET",
    "path": "/healthz",
-   "ms": 91,
+   "ms": 95,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -9392,7 +9886,7 @@
    "id": "hub.health",
    "method": "GET",
    "path": "/api/hub/health",
-   "ms": 94,
+   "ms": 117,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9404,17 +9898,17 @@
     "sources": {
      "huggingface.co": {
       "ok": true,
-      "checked": "2026-09-23T22:02:06.716Z",
+      "checked": "2026-09-23T22:46:13.491Z",
       "reason": "verified"
      },
      "modelscope.cn": {
       "ok": true,
-      "checked": "2026-09-23T22:02:08.215Z",
+      "checked": "2026-09-23T22:46:14.683Z",
       "reason": "verified"
      },
      "ipfs": {
       "ok": true,
-      "checked": "2026-09-23T22:02:08.291Z",
+      "checked": "2026-09-23T22:46:14.757Z",
       "reason": "verified"
      }
     },
@@ -9430,7 +9924,7 @@
    "id": "models.list",
    "method": "GET",
    "path": "/api/models?limit=2&sort=downloads",
-   "ms": 90,
+   "ms": 103,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9450,9 +9944,9 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 6111,
+     "likes": 6112,
      "downloads": 251354399,
-     "trendingScore": 423,
+     "trendingScore": 422,
      "createdAt": "2022-03-02T00:00:00.000Z",
      "pipeline_tag": "sentence-similarity",
      "library_name": "sentence-transformers",
@@ -9485,7 +9979,7 @@
      "disabled": false,
      "likes": 3368,
      "downloads": 45461966,
-     "trendingScore": 64,
+     "trendingScore": 65,
      "createdAt": "2022-03-02T00:00:00.000Z",
      "pipeline_tag": "fill-mask",
      "library_name": "transformers",
@@ -9514,7 +10008,7 @@
    "id": "models.search",
    "method": "GET",
    "path": "/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&limit=2",
-   "ms": 88,
+   "ms": 119,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9595,7 +10089,7 @@
    "id": "models.info",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 87,
+   "ms": 84,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9633,7 +10127,7 @@
    "id": "models.info.revision",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-   "ms": 88,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9671,7 +10165,7 @@
    "id": "models.refs",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/refs",
-   "ms": 94,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9696,7 +10190,7 @@
    "id": "models.tree",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
-   "ms": 91,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9731,7 +10225,7 @@
    "id": "models.missing",
    "method": "GET",
    "path": "/api/models/nobody/not-a-real-model-xyz",
-   "ms": 119,
+   "ms": 151,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9750,7 +10244,7 @@
    "id": "models.revision.wrong",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/0000000",
-   "ms": 87,
+   "ms": 89,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9769,7 +10263,7 @@
    "id": "models.readonly",
    "method": "POST",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 86,
+   "ms": 88,
    "status": 405,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9788,7 +10282,7 @@
    "id": "resolve",
    "method": "HEAD",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 90,
+   "ms": 96,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -9808,7 +10302,7 @@
    "id": "resolve.sha256sums",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/SHA256SUMS",
-   "ms": 100,
+   "ms": 96,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -9825,7 +10319,7 @@
    "id": "resolve.entry.missing",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/not-a-file.bin",
-   "ms": 86,
+   "ms": 90,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9844,7 +10338,7 @@
    "id": "via.ipfs",
    "method": "HEAD",
    "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 252,
+   "ms": 277,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -9864,7 +10358,7 @@
    "id": "via.huggingface",
    "method": "HEAD",
    "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 88,
+   "ms": 99,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -9884,7 +10378,7 @@
    "id": "via.list",
    "method": "GET",
    "path": "/via/ipfs/api/models?limit=1",
-   "ms": 271,
+   "ms": 267,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9904,7 +10398,7 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 3067,
+     "likes": 3077,
      "downloads": 0,
      "trendingScore": 500,
      "createdAt": "2026-09-18T00:00:00.000Z",
@@ -9933,7 +10427,7 @@
    "id": "xet",
    "method": "HEAD",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
-   "ms": 260,
+   "ms": 248,
    "status": 307,
    "headers": {
     "cache-control": "no-store",
@@ -9947,7 +10441,7 @@
    "id": "objects.get",
    "method": "HEAD",
    "path": "/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-   "ms": 107,
+   "ms": 105,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.hologram.model-hub.catalog.v1+json",
@@ -9962,7 +10456,7 @@
    "id": "objects.list.anon",
    "method": "GET",
    "path": "/api/v1/objects",
-   "ms": 263,
+   "ms": 268,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -9975,7 +10469,7 @@
    "id": "objects.search.anon",
    "method": "GET",
    "path": "/api/v1/objects/search?q=qwen",
-   "ms": 253,
+   "ms": 251,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -9988,7 +10482,7 @@
    "id": "objects.missing",
    "method": "GET",
    "path": "/api/v1/objects/blake3:0000000000000000000000000000000000000000000000000000000000000000",
-   "ms": 86,
+   "ms": 89,
    "status": 404,
    "headers": {
     "content-type": "application/json",
@@ -10006,7 +10500,7 @@
    "id": "capabilities",
    "method": "GET",
    "path": "/api/v1/capabilities",
-   "ms": 82,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10072,7 +10566,7 @@
    "id": "modules",
    "method": "GET",
    "path": "/api/v1/modules",
-   "ms": 83,
+   "ms": 84,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10113,7 +10607,7 @@
    "id": "api.v1.bare",
    "method": "GET",
    "path": "/api/v1",
-   "ms": 81,
+   "ms": 95,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -10125,7 +10619,7 @@
    "id": "oci.base",
    "method": "GET",
    "path": "/v2/",
-   "ms": 87,
+   "ms": 81,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10137,7 +10631,7 @@
    "id": "oci.catalog",
    "method": "GET",
    "path": "/v2/_catalog",
-   "ms": 96,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10155,7 +10649,7 @@
    "id": "oci.manifest.docker",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 92,
+   "ms": 94,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10177,7 +10671,7 @@
    "id": "oci.manifest.modelpack",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 171,
+   "ms": 175,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.oci.image.manifest.v1+json",
@@ -10240,7 +10734,7 @@
    "id": "oci.tags",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/tags/list",
-   "ms": 89,
+   "ms": 116,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10260,7 +10754,7 @@
    "id": "oci.index.tags",
    "method": "GET",
    "path": "/v2/model-hub/index/tags/list",
-   "ms": 83,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10277,7 +10771,7 @@
    "id": "account.health",
    "method": "GET",
    "path": "/api/account/health",
-   "ms": 92,
+   "ms": 107,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10293,7 +10787,7 @@
    "id": "account.me.anon",
    "method": "GET",
    "path": "/api/account/me",
-   "ms": 89,
+   "ms": 87,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10308,7 +10802,7 @@
    "id": "account.me.patch.anon",
    "method": "PATCH",
    "path": "/api/account/me",
-   "ms": 81,
+   "ms": 92,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10323,7 +10817,7 @@
    "id": "account.saved.anon",
    "method": "POST",
    "path": "/api/account/saved",
-   "ms": 99,
+   "ms": 93,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10338,7 +10832,7 @@
    "id": "account.saved.delete.anon",
    "method": "DELETE",
    "path": "/api/account/saved/a%2Fb",
-   "ms": 85,
+   "ms": 91,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10353,7 +10847,7 @@
    "id": "account.request.anon",
    "method": "POST",
    "path": "/api/account/request",
-   "ms": 85,
+   "ms": 84,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10368,7 +10862,7 @@
    "id": "account.publisher.anon",
    "method": "POST",
    "path": "/api/account/publisher-request",
-   "ms": 87,
+   "ms": 84,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10383,7 +10877,7 @@
    "id": "account.unknown.anon",
    "method": "GET",
    "path": "/api/account/nope",
-   "ms": 84,
+   "ms": 85,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10398,7 +10892,7 @@
    "id": "mcp.get",
    "method": "GET",
    "path": "/mcp",
-   "ms": 84,
+   "ms": 100,
    "status": 405,
    "headers": {
     "access-control-allow-origin": "*",
@@ -10410,7 +10904,7 @@
    "id": "mcp.initialize",
    "method": "POST",
    "path": "/mcp",
-   "ms": 82,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10442,7 +10936,7 @@
    "id": "mcp.tools.list",
    "method": "POST",
    "path": "/mcp",
-   "ms": 85,
+   "ms": 84,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10553,7 +11047,7 @@
    "id": "mcp.tools.call",
    "method": "POST",
    "path": "/mcp",
-   "ms": 90,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10611,7 +11105,7 @@
    "id": "preflight.models",
    "method": "OPTIONS",
    "path": "/api/models",
-   "ms": 84,
+   "ms": 83,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*",
@@ -10623,7 +11117,7 @@
    "id": "preflight.objects",
    "method": "OPTIONS",
    "path": "/api/v1/objects",
-   "ms": 82,
+   "ms": 83,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*"
@@ -10634,7 +11128,7 @@
    "id": "closed.grpc",
    "method": "POST",
    "path": "/hologram.live.v1.HologramLive/Handshake",
-   "ms": 80,
+   "ms": 81,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -10646,7 +11140,7 @@
    "id": "nav.wallpapers",
    "method": "GET",
    "path": "/wallpapers/",
-   "ms": 96,
+   "ms": 85,
    "status": 404,
    "headers": {},
    "error": null

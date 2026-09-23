@@ -122,7 +122,7 @@ ${body}
 // ---- landing: the front door. One hero, one screen, no scroll.
 const home = page({
   title: "Hologram Models Hub",
-  description: "Browse, download and store self-verifying models, skills and artifacts.",
+  description: "Discover, get and share self-verifying models, skills and artifacts.",
   home: true,
   body: landing({ base, models, endpoint: ENDPOINT }),
 });

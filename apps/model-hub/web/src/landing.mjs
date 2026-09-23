@@ -77,6 +77,10 @@ function marquee(base, models) {
   return `<div class="land-marquee" aria-hidden="true"><div class="land-track"><ul>${items}</ul><ul>${items}</ul></div></div>`;
 }
 
+// Rounded down to the hundred and marked open, so the label reads as a size rather than a tally and never
+// says something like "487+". Under a hundred it just says the number.
+const count = (n) => (n < 100 ? `${n}` : `${Math.floor(n / 100) * 100}+`);
+
 export function landing({ base, models, endpoint }) {
   return `<main class="land" id="land">
   <div class="land-art" aria-hidden="true">${art()}</div>
@@ -84,7 +88,7 @@ export function landing({ base, models, endpoint }) {
     <h1 class="land-title"><span>The Open Platform</span><span>for Sovereign AI</span></h1>
     <p class="land-sub">Browse, download and store self-verifying models, skills and artifacts.</p>
     <div class="land-actions">
-      <a class="button primary" href="${base}models/">Browse ${models.length} models${icon.right}</a>
+      <a class="button primary" href="${base}models/">Browse ${count(models.length)} models${icon.right}</a>
       <button type="button" class="land-second copy" data-copy="HF_ENDPOINT=${esc(endpoint)}" title="Copy HF_ENDPOINT=${esc(endpoint)}" aria-label="Copy the endpoint">${esc(endpoint.replace(/^https:\/\//, ""))}${icon.copy}</button>
     </div>
   </div>

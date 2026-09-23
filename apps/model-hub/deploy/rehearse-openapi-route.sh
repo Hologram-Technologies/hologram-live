@@ -111,6 +111,11 @@ check "the front door is cors-open" GET / 200 "access-control-allow-origin: \*" 
 check "the brief by its own path"  GET /agent.md 200 "# hub.uor.foundation" -H "accept: */*"
 # The document promises text/markdown here; a file server that guessed octet-stream would make agents download it.
 check "the brief is markdown"      GET /agent.md 200 "content-type: text/markdown" -H "accept: */*"
+# A content-negotiated route that does not declare it lets a shared cache serve the wrong representation.
+check "the root varies on Accept"  GET / 200 "vary: Accept" -H "accept: */*"
+check "malformed address refuses"  GET /api/v1/objects/notanaddress 400 "LIVE_BAD_REQUEST" -H "accept: */*"
+check "a real address still routes" GET /api/v1/objects/blake3:0000000000000000000000000000000000000000000000000000000000000000 200 "hologram-server" -H "accept: */*"
+check "object search still routes" GET /api/v1/objects/search 401 "publish requires a publisher token" -H "accept: */*"
 
 echo "== what the change adds"
 check "openapi from the site"      GET /openapi.json                  200 '"openapi": "3.1.0"'

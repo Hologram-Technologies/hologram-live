@@ -1760,17 +1760,17 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-23T21:48:36.432Z",
+           "checked": "2026-09-23T22:02:06.716Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-23T21:48:37.433Z",
+           "checked": "2026-09-23T22:02:08.215Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-23T21:48:37.513Z",
+           "checked": "2026-09-23T22:02:08.291Z",
            "reason": "verified"
           }
          },
@@ -1819,7 +1819,7 @@
     ],
     "operationId": "listModels",
     "summary": "Search the index",
-    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**This route lists the browse set, not the whole index.** `X-Total-Count` is the size of what is\nsearchable, and the catalog object the descriptor points at addresses more models than that — around 575\nagainst 416 at the time of writing. A model missing from these results may still be fully served by\n`getModel`, `listModelFiles`, `resolveFile`, the registry and the IPFS pins; `BAAI/bge-base-en-v1.5` is one\nsuch today. If a name matters to you, ask for it directly rather than concluding from a search that the\nhub does not have it.\n\nQuery parameters are advisory: an out-of-range `limit` or an unknown `sort` falls back to the default\nrather than returning an error.",
+    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**This route lists the browse set, not the whole index.** `X-Total-Count` is the size of what is\nsearchable, and the catalog object the descriptor points at addresses more models than that — around 575\nagainst 416 at the time of writing. A model missing from these results may still be fully served by\n`getModel`, `listModelFiles`, `resolveFile`, the registry and the IPFS pins; `BAAI/bge-base-en-v1.5` is one\nsuch today. If a name matters to you, ask for it directly rather than concluding from a search that the\nhub does not have it.\n\nQuery parameters are checked rather than coerced: a `limit` outside 1–500 or one that is not a whole number,\nand a `sort` outside the enum, each refuse with `400 BadParameter` and a sentence saying what is allowed.",
     "parameters": [
      {
       "name": "search",
@@ -2001,6 +2001,33 @@
        }
       }
      },
+     "400": {
+      "description": "A parameter is outside what this operation accepts.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "limit must be between 1 and 500."
+        }
+       }
+      }
+     },
      "405": {
       "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
       "headers": {
@@ -2098,7 +2125,7 @@
       "description": "The model is gated on Hugging Face. The hub serves public models only and will not proxy a gate.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2125,7 +2152,7 @@
       "description": "Not in the index. The request is recorded and considered for the next index run.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2211,7 +2238,7 @@
       "description": "Either the model is not indexed, or it is indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2298,7 +2325,7 @@
       "description": "Not in the index.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2407,7 +2434,7 @@
       "description": "Not in the index, or indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2507,7 +2534,7 @@
       "description": "Not in the index, or indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2730,7 +2757,7 @@
       "description": "The model is not indexed, the revision is not the indexed one, or the file is not in it.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2767,8 +2794,8 @@
      "Files"
     ],
     "operationId": "resolveFileVia",
-    "summary": "A URL for one file, preferring the source you name",
-    "description": "The caller states a preference and the hub tries to honour it: `/via/ipfs/...` serves from IPFS even when\nHugging Face is up. The prefix works in front of any Models or Files route, not only this one.\n\n**It is a preference, not a guarantee, and it fails open.** When the named source does not hold the file the\nhub falls back to whichever source does, with no error — and an unknown source name is accepted and ignored\nrather than refused. `/via/modelscope/BAAI/bge-base-en-v1.5/...` redirects to huggingface.co today, and so\ndoes `/via/bogus/...`.\n\nSo the only reliable signal of who actually served you is the `X-Hub-Source` response header. If you pin a\nsource for availability, jurisdiction, or to compare two sources against each other, read that header and\ntreat a value other than the one you asked for as a miss. Comparing two fetches without checking it can\nmean comparing the same host to itself.",
+    "summary": "A URL for one file, from the source you name",
+    "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging\nFace is up. The prefix works in front of any Models or Files route, not only this one.\n\n**A pin is a constraint, not a hint.** If the named source does not hold the file this refuses with\n`404 SourceHasNotGotIt`, naming the sources that do; an unrecognised source name refuses with\n`404 UnknownSource`. It does not quietly serve you something else. That matters most for the obvious use of\na pin — fetching the same file through two sources and comparing them — which is worthless if one fetch can\nsilently come from the other's host.\n\n`X-Hub-Source` still names who served, and on this route it will always equal the source you asked for.\nDrop the prefix to let the hub choose by health and order.",
     "parameters": [
      {
       "name": "source",
@@ -2886,10 +2913,10 @@
       }
      },
      "404": {
-      "description": "Unknown model, revision or file. Note that a source that does not hold the file is *not* a 404: the hub falls back silently, so check `X-Hub-Source`. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.",
+      "description": "Unknown model, revision or file; `SourceHasNotGotIt` when the named source does not hold this file, naming the ones that do; or `UnknownSource` when the source name is not one this hub knows. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2907,7 +2934,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+         "error": "modelscope does not hold config.json of BAAI/bge-base-en-v1.5. This file is on: huggingface.co. Drop the /via/ prefix to let the hub choose."
         }
        }
       }
@@ -3366,7 +3393,7 @@
     ],
     "operationId": "callMcp",
     "summary": "The Model Context Protocol server",
-    "description": "Streamable HTTP, stateless, anonymous, `POST` only. Protocol versions `2026-07-28`, `2025-11-25`,\n`2025-06-18` and `2025-03-26` are accepted. Three tools: `search_models` finds one, `get_model` lists its\nfiles with sizes and hashes, `resolve_file` gives a URL, the SHA-256 it must have, and the command that\nhands the file to an engine.\n\nWeight bytes never travel in a tool result: the tool returns the instruction, the agent's shell or engine\ndoes the download.",
+    "description": "Streamable HTTP, stateless, anonymous, `POST` only. Protocol versions `2026-07-28`, `2025-11-25`,\n`2025-06-18` and `2025-03-26` are accepted. Three tools: `search_models` finds one, `get_model` lists its\nfiles with sizes and hashes, `resolve_file` gives a URL, the SHA-256 it must have, and the command that\nhands the file to an engine.\n\nWeight bytes never travel in a tool result: the tool returns the instruction, the agent's shell or engine\ndoes the download.\n\n`get_model` returns at most 200 files. When a model has more it keeps every config, tokenizer and other\nsmall text file first, fills the remainder with the largest weights, and sets `files_truncated` and\n`files_truncated_note`; `files_total` always counts the whole model. It truncates by usefulness rather than\nalphabetically, because the tail of a model directory is where the tokenizer lives and a caller cannot\nproceed without it. For the complete list use `listModelFiles`.",
     "requestBody": {
      "required": true,
      "description": "A JSON-RPC 2.0 request.",
@@ -4397,6 +4424,20 @@
         "schema": {
          "type": "string",
          "format": "binary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "The path is not an address. An address is `blake3:` followed by 64 hexadecimal characters; anything else under this prefix is refused at the edge rather than passed to the server.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiError"
+        },
+        "example": {
+         "code": "LIVE_BAD_REQUEST",
+         "message": "an object address is blake3: followed by 64 hexadecimal characters"
         }
        }
       }

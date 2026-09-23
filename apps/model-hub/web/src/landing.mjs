@@ -68,7 +68,11 @@ const FAMILIES = [
 function marquee(base, models) {
   const avatars = new Map();
   for (const m of models) if (m.avatar && !avatars.has(m.org)) avatars.set(m.org, m.avatar);
-  const items = FAMILIES.filter(([org]) => avatars.has(org)).map(([org, label]) => `<li><img src="${base}avatars/${esc(avatars.get(org))}" alt="" width="36" height="36" loading="lazy" decoding="async"><span>${esc(label)}</span></li>`).join("");
+  const present = FAMILIES.filter(([org]) => avatars.has(org));
+  // An index without any of them, or a build whose avatar fetches all failed, gets no strip rather than a
+  // band with nothing in it.
+  if (!present.length) return "";
+  const items = present.map(([org, label]) => `<li><img src="${base}avatars/${esc(avatars.get(org))}" alt="" width="36" height="36" loading="lazy" decoding="async"><span>${esc(label)}</span></li>`).join("");
   // Two identical runs: the track slides exactly half its width, so the loop has no seam.
   return `<div class="land-marquee" aria-hidden="true"><div class="land-track"><ul>${items}</ul><ul>${items}</ul></div></div>`;
 }

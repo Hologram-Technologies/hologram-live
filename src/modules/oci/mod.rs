@@ -117,6 +117,11 @@ pub struct Settings {
     /// `-Methods`, `-Headers`, and `-Expose-Headers` naming
     /// `Docker-Content-Digest` and `Link`. P5 fills it from `config.yml`.
     pub headers: Vec<(axum::http::HeaderName, HeaderValue)>,
+    /// This registry's own listener serves TLS (`http.tls.*`, P6 T2). The
+    /// scheme of an absolute `Location`: TLS terminates below the HTTP layer,
+    /// where no header tells the route about it, and a client that follows a
+    /// `http://` Location into a TLS-only port meets a TLS alert.
+    pub tls: bool,
 }
 
 impl Settings {
@@ -139,6 +144,7 @@ impl Settings {
         Self {
             delete_enabled: settings.flag("storage.delete.enabled").unwrap_or(false),
             headers,
+            tls: settings.get("http.tls.certificate").is_some(),
         }
     }
 
@@ -149,6 +155,8 @@ impl Settings {
         Self {
             delete_enabled: on("REGISTRY_STORAGE_DELETE_ENABLED"),
             headers: Vec::new(),
+            tls: std::env::var_os("REGISTRY_HTTP_TLS_CERTIFICATE")
+                .is_some_and(|value| !value.is_empty()),
         }
     }
 }
@@ -245,7 +253,7 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
     // The body is not `Sync`, so nothing borrowed from the whole request may
     // live across an await: the head is borrowed, the body is moved.
     let (head, body) = request.into_parts();
-    let origin = origin(&head.headers);
+    let origin = origin(&head.headers, registry.settings.tls);
     let configured = registry.settings.headers.clone();
     let audit = registry.audit.clone();
     let rest = head.uri.path().strip_prefix("/v2/").unwrap_or_default();
@@ -386,13 +394,21 @@ fn audited(route: &Route) -> Option<Audited> {
 }
 
 /// `scheme://host` as the client addressed us. `None` without a `Host`.
-fn origin(headers: &axum::http::HeaderMap) -> Option<String> {
+fn origin(headers: &axum::http::HeaderMap, tls: bool) -> Option<String> {
     let host = headers.get(axum::http::header::HOST)?.to_str().ok()?;
-    let scheme = headers
-        .get("x-forwarded-proto")
-        .and_then(|value| value.to_str().ok())
-        .filter(|scheme| *scheme == "https" || *scheme == "http")
-        .unwrap_or("http");
+    // Our own TLS listener is the endpoint: the scheme is https, whatever a
+    // forwarded header claims, since nothing may sit in front of a TLS-only
+    // port. Plain HTTP may sit behind a TLS-terminating proxy; then the
+    // proxy's forwarded scheme is what the client saw.
+    let scheme = if tls {
+        "https"
+    } else {
+        headers
+            .get("x-forwarded-proto")
+            .and_then(|value| value.to_str().ok())
+            .filter(|scheme| *scheme == "https" || *scheme == "http")
+            .unwrap_or("http")
+    };
     Some(format!("{scheme}://{host}"))
 }
 

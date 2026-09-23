@@ -113,6 +113,7 @@ async fn send_body(
     let registry = Registry {
         store: volume.store.clone(),
         settings: Settings {
+            tls: false,
             delete_enabled: volume.delete_enabled,
             headers: volume
                 .headers
@@ -1518,4 +1519,41 @@ fn header_of<'a>(head: &'a str, name: &str) -> Option<&'a str> {
         let (key, value) = line.split_once(':')?;
         key.trim().eq_ignore_ascii_case(name).then(|| value.trim())
     })
+}
+
+/// A client that follows the absolute `Location` must be told the scheme it
+/// spoke: over TLS, an `http://` Location walks the client into the TLS-only
+/// port, whose alert reads as a broken connection (P6 T2, found by the
+/// compose gate's push).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_location_names_the_scheme_the_client_spoke() {
+    let volume = volume();
+    for (tls, scheme) in [(false, "http"), (true, "https")] {
+        let registry = Registry {
+            store: volume.store.clone(),
+            settings: Settings {
+                tls,
+                delete_enabled: false,
+                headers: Vec::new(),
+            },
+            audit: None,
+            login: None,
+        };
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v2/team/app/blobs/uploads/")
+            .header("host", "registry.local:5000")
+            .body(Body::empty())
+            .expect("request");
+        let response = handle(registry, request).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            header(&response, "location"),
+            format!(
+                "{scheme}://registry.local:5000/v2/team/app/blobs/uploads/{}",
+                header(&response, "docker-upload-uuid")
+            ),
+            "tls={tls}"
+        );
+    }
 }

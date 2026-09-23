@@ -61,7 +61,9 @@ impl AppState {
         let oci_store = open_oci_store(&config).await?;
         #[cfg(feature = "oci")]
         if let Some(store) = &oci_store {
-            purge_uploads_periodically(Arc::downgrade(store));
+            if let Some(purging) = upload_purging() {
+                purge_uploads_periodically(Arc::downgrade(store), purging);
+            }
         }
         let holo_catalog = Arc::new(HoloCatalog::new(store.clone()));
         let actor_system = ActorSystem::start();
@@ -573,19 +575,42 @@ async fn build_registry(
     blocking(move || crate::registry::provider_from_config(&config, store)).await
 }
 
-/// Abort upload sessions untouched for longer than the store's maximum age,
-/// once a minute after start and then daily: the reference's default
-/// `uploadpurging`. Without it, a client that opens sessions and walks away
-/// fills the disk. The task ends when the store is dropped.
+/// `storage.maintenance.uploadpurging` from the registry settings, or the
+/// reference's default outside registry mode. `None` when it is off.
 #[cfg(feature = "oci")]
-fn purge_uploads_periodically(store: std::sync::Weak<crate::oci_store::OciStore>) {
+fn upload_purging() -> Option<crate::registry_compat::Purging> {
+    crate::registry_compat::installed().map_or(
+        Some(crate::registry_compat::Purging::DEFAULT),
+        crate::registry_compat::RegistrySettings::upload_purging,
+    )
+}
+
+/// Abort upload sessions untouched for longer than the purge age, a minute
+/// after start and then every `interval` (`uploadpurging`; the reference
+/// waits a random 0 to 59 minutes first). Without it, a client that opens
+/// sessions and walks away fills the disk. `dryrun` names what it would
+/// abort and aborts nothing. The task ends when the store is dropped.
+#[cfg(feature = "oci")]
+fn purge_uploads_periodically(
+    store: std::sync::Weak<crate::oci_store::OciStore>,
+    purging: crate::registry_compat::Purging,
+) {
     let first = tokio::time::Instant::now() + std::time::Duration::from_mins(1);
-    let mut tick = tokio::time::interval_at(first, std::time::Duration::from_hours(24));
+    let mut tick = tokio::time::interval_at(first, purging.interval);
     tokio::spawn(async move {
         loop {
             tick.tick().await;
             let Some(store) = store.upgrade() else { return };
             let now = crate::oci_store::now_ms();
+            if purging.dry_run {
+                let expired = tokio::task::spawn_blocking(move || store.expired_uploads(now)).await;
+                if let Ok(expired) = expired {
+                    if !expired.is_empty() {
+                        tracing::info!(count = expired.len(), sessions = ?expired, "upload purge (dry run): would abort");
+                    }
+                }
+                continue;
+            }
             match tokio::task::spawn_blocking(move || store.purge_expired_uploads(now)).await {
                 Ok(Ok(0)) => {}
                 Ok(Ok(purged)) => tracing::info!(purged, "expired upload sessions purged"),
@@ -618,8 +643,11 @@ async fn open_oci_store(config: &AppConfig) -> Result<Option<Arc<crate::oci_stor
     blocking(move || {
         let options = OpenOptions {
             create: true,
-            // The reference purges upload sessions after 168 hours.
-            upload_max_age: std::time::Duration::from_hours(168),
+            // `uploadpurging.age`; the reference's default is 168 hours.
+            upload_max_age: upload_purging()
+                .map_or(crate::registry_compat::Purging::DEFAULT.age, |purging| {
+                    purging.age
+                }),
         };
         OciStore::open(&root, options)
             .map(|store| Some(Arc::new(store)))

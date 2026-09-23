@@ -342,9 +342,19 @@ impl OciStore {
     ///
     /// `Io` when the store or the database refuses.
     pub fn purge_expired_uploads(&self, now_ms: u64) -> Result<usize, OciStoreError> {
+        let expired = self.expired_uploads(now_ms);
+        for id in &expired {
+            self.upload_cancel(&UploadId::parse(id)?)?;
+        }
+        Ok(expired.len())
+    }
+
+    /// The sessions a purge at `now_ms` would abort, aborting none: the
+    /// reference's `dryrun`.
+    #[must_use]
+    pub fn expired_uploads(&self, now_ms: u64) -> Vec<String> {
         let max_age_ms = u64::try_from(self.upload_max_age().as_millis()).unwrap_or(u64::MAX);
-        let expired: Vec<String> = self
-            .sessions()
+        self.sessions()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
@@ -353,11 +363,7 @@ impl OciStore {
                 now_ms.saturating_sub(state.touched_ms) > max_age_ms
             })
             .map(|(id, _)| id.clone())
-            .collect();
-        for id in &expired {
-            self.upload_cancel(&UploadId::parse(id)?)?;
-        }
-        Ok(expired.len())
+            .collect()
     }
 
     fn session(&self, id: &UploadId) -> Result<Arc<Mutex<SessionState>>, OciStoreError> {

@@ -119,6 +119,14 @@ pub struct Settings {
     /// `-Methods`, `-Headers`, and `-Expose-Headers` naming
     /// `Docker-Content-Digest` and `Link`. P5 fills it from `config.yml`.
     pub headers: Vec<(axum::http::HeaderName, HeaderValue)>,
+    /// `storage.maintenance.readonly.enabled`: writes answer 405, as the
+    /// reference's handlers leave their write methods unregistered.
+    pub read_only: bool,
+    /// `http.relativeurls`: `Location` is the path alone.
+    pub relative_urls: bool,
+    /// `http.host`, as `scheme://host[:port]`: what an absolute `Location` is
+    /// built on, in place of the request's own host.
+    pub host: Option<String>,
 }
 
 impl Settings {
@@ -141,6 +149,9 @@ impl Settings {
         Self {
             delete_enabled: settings.flag("storage.delete.enabled").unwrap_or(false),
             headers,
+            read_only: settings.flag("storage.maintenance.readonly.enabled").unwrap_or(false),
+            relative_urls: settings.flag("http.relativeurls").unwrap_or(false),
+            host: settings.get("http.host").and_then(crate::registry_compat::host_origin),
         }
     }
 
@@ -151,6 +162,12 @@ impl Settings {
         Self {
             delete_enabled: on("REGISTRY_STORAGE_DELETE_ENABLED"),
             headers: Vec::new(),
+            read_only: on("REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED"),
+            relative_urls: on("REGISTRY_HTTP_RELATIVEURLS"),
+            host: std::env::var("REGISTRY_HTTP_HOST")
+                .ok()
+                .as_deref()
+                .and_then(crate::registry_compat::host_origin),
         }
     }
 }
@@ -247,7 +264,13 @@ pub async fn handle(registry: Registry, request: Request) -> Response {
     // The body is not `Sync`, so nothing borrowed from the whole request may
     // live across an await: the head is borrowed, the body is moved.
     let (head, body) = request.into_parts();
-    let origin = origin(&head);
+    // As the reference's URL builder: relative when asked, else on
+    // `http.host` when set, else on the request's own host.
+    let origin = if registry.settings.relative_urls {
+        None
+    } else {
+        registry.settings.host.clone().or_else(|| origin(&head))
+    };
     let configured = registry.settings.headers.clone();
     let audit = registry.audit.clone();
     let rest = head.uri.path().strip_prefix("/v2/").unwrap_or_default();
@@ -469,6 +492,11 @@ async fn serve(
     let Registry {
         store, settings, ..
     } = registry;
+    let route = if settings.read_only {
+        read_only(&store, route).await?
+    } else {
+        route
+    };
     match route {
         Route::Base => Ok(json(StatusCode::OK, "{}")),
         Route::Options { allow } => {
@@ -511,6 +539,40 @@ async fn serve(
             repo, reference, ..
         } => delete::manifest(store, repo, reference).await,
         Route::Blob { repo, digest, .. } => delete::blob(store, repo, digest).await,
+    }
+}
+
+/// Read-only mode, as the reference's dispatchers build it: the write methods
+/// are not registered, so the router answers 405 naming `GET, HEAD`. A write
+/// to an upload id tries to resume the upload first, so an unknown id is
+/// `BLOB_UPLOAD_UNKNOWN` before it is a wrong method (`blobupload.go`).
+async fn read_only(store: &Arc<OciStore>, route: Route) -> Result<Route, OciError> {
+    const READS: &str = "GET, HEAD";
+    match route {
+        Route::Options { allow } => Ok(Route::Options {
+            allow: path::read_only_allow(allow),
+        }),
+        Route::Manifest {
+            verb: ManifestVerb::Put | ManifestVerb::Delete,
+            ..
+        }
+        | Route::Blob {
+            verb: BlobVerb::Delete,
+            ..
+        }
+        | Route::UploadStart { .. } => Err(OciError::wrong_method(READS)),
+        Route::Upload { id, verb, .. } if verb != UploadVerb::Status => {
+            let store = store.clone();
+            let known = tokio::task::spawn_blocking(move || store.upload_status(&id).is_ok())
+                .await
+                .map_err(|error| OciError::internal(&error))?;
+            Err(if known {
+                OciError::wrong_method(READS)
+            } else {
+                OciError::upload_unknown()
+            })
+        }
+        other => Ok(other),
     }
 }
 

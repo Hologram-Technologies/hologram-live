@@ -59,6 +59,87 @@ impl RegistrySettings {
     }
 }
 
+/// `storage.maintenance.uploadpurging` in effect: how old an untouched upload
+/// may get, how often the purge runs, and whether it only reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Purging {
+    pub age: std::time::Duration,
+    pub interval: std::time::Duration,
+    pub dry_run: bool,
+}
+
+impl Purging {
+    /// The reference's default (`app.go`, `uploadPurgeDefaultConfig`).
+    pub const DEFAULT: Self = Self {
+        age: std::time::Duration::from_hours(168),
+        interval: std::time::Duration::from_hours(24),
+        dry_run: false,
+    };
+}
+
+impl RegistrySettings {
+    /// The upload purge, or `None` when `enabled` is false. A section given
+    /// replaces the default whole, as the reference's map does; it was
+    /// checked to be complete when loaded.
+    pub fn upload_purging(&self) -> Option<Purging> {
+        const PREFIX: &str = "storage.maintenance.uploadpurging";
+        if self.section(PREFIX).is_empty() {
+            return Some(Purging::DEFAULT);
+        }
+        if self.get(&format!("{PREFIX}.enabled")).is_some_and(is_false) {
+            return None;
+        }
+        let duration = |name: &str| {
+            self.get(&format!("{PREFIX}.{name}"))
+                .and_then(crate::modules::oci::debug::go_duration)
+        };
+        Some(Purging {
+            age: duration("age").unwrap_or(Purging::DEFAULT.age),
+            interval: duration("interval").unwrap_or(Purging::DEFAULT.interval),
+            dry_run: self.flag(&format!("{PREFIX}.dryrun")).unwrap_or(false),
+        })
+    }
+}
+
+/// A YAML 1.1 boolean, either way.
+fn is_bool(value: &str) -> bool {
+    ["true", "yes", "on", "false", "no", "off"]
+        .iter()
+        .any(|word| value.trim().eq_ignore_ascii_case(word))
+}
+
+fn is_false(value: &str) -> bool {
+    ["false", "no", "off"]
+        .iter()
+        .any(|word| value.trim().eq_ignore_ascii_case(word))
+}
+
+/// The reference panics on an upload purge section that is not whole
+/// (`app.go`, `startUploadPurger`): unless `enabled` is false, `age`,
+/// `interval` and `dryrun` must all be there.
+fn check_purging(values: &BTreeMap<String, String>) -> Result<()> {
+    const PREFIX: &str = "storage.maintenance.uploadpurging";
+    let given: Vec<&str> = values
+        .keys()
+        .filter_map(|key| key.strip_prefix(PREFIX)?.strip_prefix('.'))
+        .collect();
+    if given.is_empty()
+        || values
+            .get(&format!("{PREFIX}.enabled"))
+            .is_some_and(|value| is_false(value))
+    {
+        return Ok(());
+    }
+    for needed in ["age", "interval", "dryrun"] {
+        if !given.contains(&needed) {
+            return Err(LiveError::Config(format!(
+                "registry setting {PREFIX}.{needed} is missing: a {PREFIX} section needs age, interval and dryrun, or enabled: false"
+            )));
+        }
+    }
+    Ok(())
+}
+
 static INSTALLED: OnceLock<RegistrySettings> = OnceLock::new();
 
 /// The settings the running registry was started with, when it was started
@@ -111,6 +192,7 @@ pub fn load(
     for (key, value) in &values {
         check(key, value, &mut pending)?;
     }
+    check_purging(&values)?;
     // The reference's TLS listener needs both files.
     match (
         values.contains_key("http.tls.certificate"),
@@ -175,6 +257,25 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
         ("http.draintimeout", text) if drain_timeout(text).is_none() => {
             refuse("is not a duration: write it as the reference does, 60s or 1m")
         }
+        (
+            "storage.maintenance.uploadpurging.age" | "storage.maintenance.uploadpurging.interval",
+            text,
+        ) if crate::modules::oci::debug::go_duration(text).is_none() => {
+            refuse("is not a duration: write it as the reference does, 168h or 24h")
+        }
+        (
+            "storage.maintenance.uploadpurging.enabled"
+            | "storage.maintenance.uploadpurging.dryrun"
+            | "storage.maintenance.readonly.enabled"
+            | "http.relativeurls",
+            text,
+        ) if !is_bool(text) => refuse("must be true or false"),
+        ("storage.maintenance.uploadpurging" | "storage.maintenance.readonly", _) => {
+            refuse("must be a section: enabled, and for uploadpurging age, interval and dryrun")
+        }
+        ("http.host", text) if host_origin(text).is_none() => {
+            refuse("must be an absolute URL, as https://registry.example.com:5000")
+        }
         ("storage.cache.blobdescriptor", "redis") => {
             refuse("redis is not supported: v1 is one writer")
         }
@@ -189,6 +290,18 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
             _ => Ok(()),
         },
     }
+}
+
+/// `http.host` as `scheme://host[:port]`: what `Location` is built on. The
+/// reference resolves the route's absolute path against it, so a path in
+/// the setting is dropped (`v2.NewURLBuilder`).
+pub fn host_origin(text: &str) -> Option<String> {
+    let uri: axum::http::Uri = text.trim().parse().ok()?;
+    let scheme = uri
+        .scheme_str()
+        .filter(|scheme| matches!(*scheme, "http" | "https"))?;
+    let authority = uri.authority()?;
+    Some(format!("{scheme}://{authority}"))
 }
 
 /// `http.draintimeout`: a Go duration, zero included (`0s`, `0`).
@@ -475,6 +588,15 @@ mod tests {
             "log.formatter" => "json",
             "storage.cache.blobdescriptor" => "inmemory",
             "http.draintimeout" => "60s",
+            "storage.maintenance.uploadpurging.age"
+            | "storage.maintenance.uploadpurging.interval" => "1h",
+            "http.host" => "https://registry.example.com",
+            key if key.ends_with(".enabled")
+                || key.ends_with(".dryrun")
+                || key == "http.relativeurls" =>
+            {
+                "true"
+            }
             _ => "x",
         }
     }
@@ -575,11 +697,7 @@ health:
     fn a_setting_that_is_not_built_or_not_supported_stops_the_start_by_name() {
         for (name, value, key) in [
             ("REGISTRY_STORAGE_S3_BUCKET", "x", "storage.s3.bucket"),
-            (
-                "REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED",
-                "true",
-                "storage.maintenance.readonly",
-            ),
+            ("REGISTRY_TAGS_MAXTAGS", "5", "tags.maxtags"),
             (
                 "REGISTRY_PROXY_REMOTEURL",
                 "https://registry-1.docker.io",
@@ -602,6 +720,73 @@ health:
         .expect_err("unknown key")
         .to_string();
         assert!(error.contains("storage.mystery"), "{error}");
+    }
+
+    /// `storage.maintenance`, `http.host` and `http.relativeurls`, as the
+    /// reference reads them (`handlers/app.go`).
+    #[test]
+    fn maintenance_and_url_settings() {
+        let purging = |yaml: &str| load_text(yaml, &[]).map(|settings| settings.upload_purging());
+        assert_eq!(
+            purging("version: 0.1\n").expect("loads"),
+            Some(Purging::DEFAULT)
+        );
+        assert_eq!(
+            purging("storage:\n  maintenance:\n    uploadpurging:\n      enabled: false\n")
+                .expect("loads"),
+            None,
+            "off"
+        );
+        assert_eq!(
+            purging("storage:\n  maintenance:\n    uploadpurging:\n      enabled: true\n      age: 2h\n      interval: 30m\n      dryrun: true\n")
+                .expect("loads"),
+            Some(Purging {
+                age: std::time::Duration::from_hours(2),
+                interval: std::time::Duration::from_mins(30),
+                dry_run: true
+            })
+        );
+        // A section replaces the default whole: all three, or the reference panics.
+        let error = purging(
+            "storage:\n  maintenance:\n    uploadpurging:\n      enabled: true\n      age: 2h\n",
+        )
+        .expect_err("incomplete")
+        .to_string();
+        assert!(error.contains("uploadpurging.interval"), "{error}");
+        let error = purging("storage:\n  maintenance:\n    uploadpurging:\n      enabled: true\n      age: soon\n      interval: 1h\n      dryrun: false\n")
+            .expect_err("bad age")
+            .to_string();
+        assert!(error.contains("uploadpurging.age"), "{error}");
+
+        let settings = load_text(
+            "storage:\n  maintenance:\n    readonly:\n      enabled: true\n",
+            &[],
+        )
+        .expect("readonly");
+        assert_eq!(
+            settings.flag("storage.maintenance.readonly.enabled"),
+            Some(true)
+        );
+        assert!(load_text(
+            "storage:\n  maintenance:\n    readonly:\n      enabled: maybe\n",
+            &[]
+        )
+        .is_err());
+        assert!(load_text("storage:\n  maintenance:\n    readonly: true\n", &[]).is_err());
+
+        assert_eq!(
+            host_origin("https://registry.example.com:5000/ignored/path").as_deref(),
+            Some("https://registry.example.com:5000")
+        );
+        assert!(
+            load_text("http:\n  host: registry.example.com\n", &[]).is_err(),
+            "no scheme"
+        );
+        assert!(load_text(
+            "http:\n  host: https://r.example.com\n  relativeurls: true\n",
+            &[]
+        )
+        .is_ok());
     }
 
     /// `http.draintimeout`: the reference drains for it on a stop signal, and

@@ -78,12 +78,11 @@ function marquee(base, models) {
 }
 
 export function landing({ base, models, endpoint }) {
-  const host = endpoint.replace(/^https:\/\//, "");
   return `<main class="land" id="land">
   <div class="land-art" aria-hidden="true">${art()}</div>
   <div class="land-copy">
     <h1 class="land-title"><span>The Open Platform</span><span>for Sovereign AI</span></h1>
-    <p class="land-sub">Point any tool at <b>${esc(host)}</b>. Every file arrives checked.</p>
+    <p class="land-sub">Browse, download and store self-verifying models, skills and artifacts.</p>
     <div class="land-actions">
       <button type="button" class="button primary" data-copy="HF_ENDPOINT=${esc(endpoint)}">Copy the endpoint${icon.copy}</button>
       <a class="land-second" href="${base}models/">Browse ${models.length} models</a>

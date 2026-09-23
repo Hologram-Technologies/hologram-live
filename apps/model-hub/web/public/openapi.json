@@ -1507,6 +1507,176 @@
     }
    }
   },
+  "/docs/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDocsIndex",
+    "summary": "The documentation",
+    "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+    "responses": {
+     "200": {
+      "description": "An HTML page.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/docs/",
+     "status": 200,
+     "contentType": "text/html"
+    }
+   }
+  },
+  "/docs/{page}/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDocsPage",
+    "summary": "One documentation page",
+    "description": "The page named by its slug: `quickstart`, `verification`, `addresses`, `sources`, `huggingface`, `ollama`, `oci`, `mcp`, `objects`, `api`, `errors`, `limits`.",
+    "parameters": [
+     {
+      "name": "page",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "The page slug, as listed in `/llms.txt`."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "An HTML page.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No page has that slug.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/docs/quickstart/",
+     "status": 200,
+     "contentType": "text/html"
+    }
+   }
+  },
+  "/docs/{page}.md": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDocsPageMarkdown",
+    "summary": "One documentation page, as Markdown",
+    "description": "The same page as `/docs/{page}/`, from the same source, with every link resolved to an absolute Markdown twin. `index.md` is the overview.",
+    "parameters": [
+     {
+      "name": "page",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "The page slug, as listed in `/llms.txt`."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Markdown.",
+      "content": {
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No page has that slug.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/docs/quickstart.md",
+     "status": 200,
+     "contentType": "text/markdown"
+    }
+   }
+  },
+  "/registry/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getRegistryPage",
+    "summary": "The hub's own registry, browsed",
+    "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly.",
+    "responses": {
+     "200": {
+      "description": "An HTML page.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/registry/",
+     "status": 200,
+     "contentType": "text/html"
+    }
+   }
+  },
   "/llms.txt": {
    "get": {
     "tags": [

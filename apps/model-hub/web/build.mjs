@@ -12,6 +12,7 @@ import * as R from "./src/render.mjs";
 import * as B from "./src/braille.mjs";
 import { overview, metaDescription } from "./src/overview.mjs";
 import { landing } from "./src/landing.mjs";
+import * as D from "./src/docs.mjs";
 
 const SITE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(SITE, "dist");
@@ -97,7 +98,7 @@ const accountControl = () => privy ? `<div class="account" id="account">
 const SECTIONS = [
   ["models", "Models", "grid", BROWSE],
   ["registry", "Registry", "box", `${base}registry/`],
-  ["docs", "Docs", "file", `${base}llms.txt`],
+  ["docs", "Docs", "file", `${base}docs/`],
 ];
 // `current` is the section the page belongs to. It marks that one link aria-current, which the stylesheet
 // draws in the brand colour: where you are, said once in the row and once to a screen reader.
@@ -152,7 +153,7 @@ const chromeHead = [
   `<script type="module">import { mountChrome } from "${base}chrome.js"; mountChrome();</script>`,
 ].join("\n");
 
-const page = ({ title, description, body, search = false, model = "", home = false, section = "" }) => `<!doctype html>
+const page = ({ title, description, body, search = false, model = "", home = false, section = "", styles = [] }) => `<!doctype html>
 <html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
@@ -177,7 +178,7 @@ ${privy ? `<script type="application/json" id="privy">${JSON.stringify(privy)}</
 <link rel="icon" href="${base}logos/Hologram_Logomark_White.svg" type="image/svg+xml">
 <link rel="preload" href="${base}fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="${base}fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
+${[...STYLES, ...styles].map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
 <script type="module" src="${base}app.js"></script>
 </head>
 <body>
@@ -414,7 +415,28 @@ for (const m of models) {
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
 const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "chrome.js", "render.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "chrome.js", "render.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+
+// ---- the documentation
+//
+// web/docs/*.md, one file per page, becomes /docs/<slug>/ for a reader, /docs/<slug>.md for an agent, and one line
+// each in /llms.txt, the index every agent fetches first. The API reference page is generated from the same
+// OpenAPI document the endpoint is held to, so it cannot name a route that is not described. The build refuses a
+// page that links to nothing or has nothing to run (D.check, after public/ is copied in).
+const spec = JSON.parse(await readFile(join(SITE, "public", "openapi.json"), "utf8"));
+const docPages = D.render(await D.load(join(SITE, "docs")), { base, spec });
+for (const p of docPages) {
+  await mkdir(dirname(join(DIST, p.path)), { recursive: true });
+  await writeFile(join(DIST, p.path), page({
+    title: p.slug === "index" ? "Docs · Hologram Models Hub" : `${p.title} · Docs · Hologram Models Hub`,
+    description: p.description,
+    section: "docs",
+    styles: ["docs.css"],
+    body: `<main class="docs">${D.sidebar(docPages, p.slug, base)}${D.article(p, docPages, base)}</main>`,
+  }));
+  await writeFile(join(DIST, "docs", `${p.slug}.md`), D.twin(p, { endpoint: ENDPOINT }));
+}
+await writeFile(join(DIST, "llms.txt"), D.llms(docPages, { endpoint: ENDPOINT, spec, snapshot: data.snapshot, models: models.length }));
 if (privy) {
   await cp(join(SITE, "src", "auth.js"), join(DIST, "auth.js"));
   await mkdir(join(DIST, "vendor", "privy"), { recursive: true });
@@ -465,5 +487,7 @@ await writeFile(regPath, registryHtml);
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this
 // refuses to build a copy that would fetch either from somebody else.
 console.log(await checkSealed(DIST));
+// Every link in the docs lands on something this build ships, and every page has something to run.
+console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));
 
-console.log(`built ${models.length} model pages + browse at base ${base} → ${DIST}`);
+console.log(`built ${models.length} model pages + browse + ${docPages.length} docs pages at base ${base} → ${DIST}`);

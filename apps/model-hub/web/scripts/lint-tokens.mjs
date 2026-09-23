@@ -10,9 +10,9 @@ const SITE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFile(join(SITE, p), "utf8");
 
 // chrome.css is the shared header and the product aliases it rests on; styles.css is the pages that hang
-// off it. Both are held to the kit, and a variable either defines counts as defined for the other, because
-// the browser loads them together, in that order, on every page of the site.
-const sheets = [["chrome.css", await read("src/chrome.css")], ["styles.css", await read("src/styles.css")]];
+// off it; docs.css is the documentation, loaded after both on /docs/ only. All three are held to the kit, and a
+// variable either defines counts as defined for the others, because the browser loads them in that order.
+const sheets = [["chrome.css", await read("src/chrome.css")], ["styles.css", await read("src/styles.css")], ["docs.css", await read("src/docs.css")]];
 const defined = new Set();
 for (const src of [await read("vendor/hologram-brand-kit/hologram-warm.css"), await read("vendor/hologram-brand-kit/hologram-gap-tokens.css"), await read("src/tokens.css"), ...sheets.map(([, css]) => css)]) {
   for (const [, name] of src.matchAll(/(--[a-z0-9-]+)\s*:/g)) defined.add(name);
@@ -35,7 +35,7 @@ lines.forEach((line, i) => {
 });
 }
 
-for (const file of ["build.mjs", "src/render.mjs", "src/app.js", "src/chrome.js", "src/auth.js", "src/overview.mjs", "src/braille.mjs", "src/landing.mjs", "src/hero-badge.mjs"]) {
+for (const file of ["build.mjs", "src/render.mjs", "src/app.js", "src/chrome.js", "src/auth.js", "src/overview.mjs", "src/braille.mjs", "src/landing.mjs", "src/hero-badge.mjs", "src/docs.mjs"]) {
   const src = await read(file);
   if (/style="/.test(src)) problems.push(`${file} inline style attribute`);
   if (/#[0-9a-f]{6}\b/i.test(src.replace(/\/\/.*$/gm, ""))) problems.push(`${file} hex color`);

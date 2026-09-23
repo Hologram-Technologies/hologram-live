@@ -30,11 +30,12 @@ whole download at once, with no tool of ours:
 
 ## When you want more
 
-    /openapi.json     the whole endpoint, 39 paths and 41 operations, OpenAPI 3.1. Bind to it directly.
+    /openapi.json     the whole endpoint, 43 paths and 45 operations, OpenAPI 3.1. Bind to it directly.
     /mcp              the same hub as MCP tools over streamable HTTP. No key.
     /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.
     /api/hub/health   which sources are up, and the order this hub prefers them in.
-    /llms.txt         the same thing at more length.
+    /docs/            the documentation: quickstart, the concepts, one page per dialect, the reference. Each page also at /docs/<page>.md.
+    /llms.txt         the same thing at more length, and the index of every docs page.
 
 ## Do this now
 

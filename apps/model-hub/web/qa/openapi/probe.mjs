@@ -84,6 +84,10 @@ async function main() {
     ["agentcard", "/.well-known/agent-card.json", {}],
     ["robots", "/robots.txt", {}],
     ["docs", "/docs", {}],
+    ["docs.index", "/docs/", {}],
+    ["docs.page", "/docs/quickstart/", {}],
+    ["docs.twin", "/docs/quickstart.md", { headers: CORS }],
+    ["docs.missing", "/docs/not-a-page/", {}],
     ["archive", "/archive.json", { headers: CORS }],
     ["pins", "/pins.json", {}],
     // health

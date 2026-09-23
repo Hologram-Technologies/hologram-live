@@ -235,6 +235,52 @@ function document(server, evidence) {
       ...probe("/docs", { contentType: "text/html" }),
     },
   };
+  // The documentation for people: /docs/ and one page per slug, each with a Markdown twin at /docs/<slug>.md so an
+  // agent reads the same page without parsing markup. Built by web/build.mjs from web/docs/*.md; /llms.txt indexes them.
+  spec.paths["/docs/"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getDocsIndex",
+      summary: "The documentation",
+      description: "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+      responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, ...NOT_SERVED },
+      ...probe("/docs/", { contentType: "text/html" }),
+    },
+  };
+  spec.paths["/docs/{page}/"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getDocsPage",
+      summary: "One documentation page",
+      description: "The page named by its slug: `quickstart`, `verification`, `addresses`, `sources`, `huggingface`, `ollama`, `oci`, `mcp`, `objects`, `api`, `errors`, `limits`.",
+      parameters: [{ name: "page", in: "path", required: true, schema: { type: "string" }, description: "The page slug, as listed in `/llms.txt`." }],
+      responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, 404: { description: "No page has that slug.", content: { "text/html": { schema: { type: "string" } } } } },
+      ...probe("/docs/quickstart/", { contentType: "text/html" }),
+    },
+  };
+  spec.paths["/docs/{page}.md"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getDocsPageMarkdown",
+      summary: "One documentation page, as Markdown",
+      description: "The same page as `/docs/{page}/`, from the same source, with every link resolved to an absolute Markdown twin. `index.md` is the overview.",
+      parameters: [{ name: "page", in: "path", required: true, schema: { type: "string" }, description: "The page slug, as listed in `/llms.txt`." }],
+      responses: { 200: { description: "Markdown.", content: { "text/markdown": { schema: { type: "string" } } } }, 404: { description: "No page has that slug.", content: { "text/plain": { schema: { type: "string" } } } } },
+      ...probe("/docs/quickstart.md", { contentType: "text/markdown" }),
+    },
+  };
+  // The Registry page: the hub's own OCI registry, browsed. It ships with the site and loads nothing from another
+  // origin (qa/registry-sealed.mjs); the registry it browses is `/v2/`.
+  spec.paths["/registry/"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getRegistryPage",
+      summary: "The hub's own registry, browsed",
+      description: "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly.",
+      responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, ...NOT_SERVED },
+      ...probe("/registry/", { contentType: "text/html" }),
+    },
+  };
   spec.paths["/llms.txt"] = {
     get: {
       tags: ["Discovery"],
@@ -1012,7 +1058,8 @@ function brief(spec) {
     "    /mcp              the same hub as MCP tools over streamable HTTP. No key.",
     "    /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.",
     "    /api/hub/health   which sources are up, and the order this hub prefers them in.",
-    "    /llms.txt         the same thing at more length.",
+    "    /docs/            the documentation: quickstart, the concepts, one page per dialect, the reference. Each page also at /docs/<page>.md.",
+    "    /llms.txt         the same thing at more length, and the index of every docs page.",
     "",
     "## Do this now",
     "",
@@ -1074,6 +1121,7 @@ function robots() {
     "User-agent: *",
     "Allow: /$",
     "Allow: /models/",
+    "Allow: /docs/",
     "Allow: /openapi.json",
     "Allow: /llms.txt",
     "Allow: /.well-known/",

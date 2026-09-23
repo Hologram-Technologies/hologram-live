@@ -6,6 +6,7 @@
 User-agent: *
 Allow: /$
 Allow: /models/
+Allow: /docs/
 Allow: /openapi.json
 Allow: /llms.txt
 Allow: /.well-known/

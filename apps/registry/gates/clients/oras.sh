@@ -8,16 +8,16 @@ work=$(mktemp -d)
 cd "$work"
 
 printf 'an artifact, not an image\n' > artifact.txt
-oras push -q --plain-http --artifact-type application/vnd.gate.example "$US/gate-c/oras:v1" artifact.txt:text/plain
+oras push --plain-http --artifact-type application/vnd.gate.example "$US/gate-c/oras:v1" artifact.txt:text/plain
 mkdir pulled
-oras pull -q --plain-http -o pulled "$US/gate-c/oras:v1"
+oras pull --plain-http -o pulled "$US/gate-c/oras:v1"
 cmp artifact.txt pulled/artifact.txt || fail "the pulled artifact differs"
 oras manifest fetch --plain-http "$US/gate-c/oras:v1" | grep -q '"artifactType":"application/vnd.gate.example"' ||
   fail "the artifactType did not survive"
 
 subject="$US/gate-c/docker:v1"
 printf 'a signature\n' > signature.txt
-oras attach -q --plain-http --artifact-type application/vnd.gate.signature "$subject" signature.txt:text/plain
+oras attach --plain-http --artifact-type application/vnd.gate.signature "$subject" signature.txt:text/plain
 found=$(oras discover --plain-http --format json --artifact-type application/vnd.gate.signature "$subject")
 grep -q 'application/vnd.gate.signature' <<< "$found" || fail "oras discover does not find the signature: $found"
 

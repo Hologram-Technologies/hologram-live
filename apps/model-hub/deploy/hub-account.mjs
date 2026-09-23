@@ -243,16 +243,31 @@ function publicKeyFromEnv() {
   // carriage returns. Both are the same key, so neither is allowed to be the reason sign-in is down.
   pem = pem.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
   if (!pem) return null;
+  let key;
   try {
-    return createPublicKey(pem);
+    key = createPublicKey(pem);
   } catch (err) {
     console.error(`the Privy verification key is not usable: ${err.message}`);
     return null;
   }
+  // An ES256 token is signed on P-256. Privy's own docs call the same key "Ed25519" in one breath and the token
+  // "a standard ES256 JWT" in the next, so say plainly at startup which one actually arrived: the alternative is a
+  // service that looks healthy and refuses every real visitor.
+  const { namedCurve, type } = key.asymmetricKeyDetails || {};
+  if (type !== "ec" && key.asymmetricKeyType !== "ec") {
+    console.error(`the Privy verification key is ${key.asymmetricKeyType}, not an EC key: an ES256 token cannot be checked with it`);
+    return null;
+  }
+  if (namedCurve && namedCurve !== "prime256v1") {
+    console.error(`the Privy verification key is on ${namedCurve}, not P-256: an ES256 token cannot be checked with it`);
+    return null;
+  }
+  return key;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const publicKey = publicKeyFromEnv();
   if (!publicKey || !APP_ID) console.warn("sign-in is not configured: /api/account/health answers, everything else is 503");
+  else console.log(`sign-in configured for app ${APP_ID} with a P-256 verification key`);
   http.createServer(createApp({ publicKey })).listen(PORT, () => console.log(`hub-account on :${PORT}`));
 }

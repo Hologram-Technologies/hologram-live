@@ -49,7 +49,7 @@ fn start(port: u16, seed: Option<u16>, token: &str) -> Server {
         .env("HOLOGRAM_CLUSTER_E2E_TOKEN", token)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);

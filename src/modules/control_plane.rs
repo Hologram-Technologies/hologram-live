@@ -6,7 +6,7 @@ use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse};
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 
 const OPERATIONS: &[OperationDescriptor] = &[
@@ -40,9 +40,6 @@ impl LiveModule for ControlPlaneModule {
     fn router(&self) -> Router<AppState> {
         Router::new()
             .route("/api/v1/nodes", get(list_nodes))
-            .route(crate::cluster::JOIN_PATH, post(join_cluster))
-            .route(crate::cluster::OBJECTS_PATH, get(list_cluster_objects))
-            .route(crate::cluster::OBJECT_PATH, get(get_cluster_object))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {

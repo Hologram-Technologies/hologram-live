@@ -23,6 +23,8 @@ const VIEWPORTS = [
   [390, 844, "phone"],
   [768, 1024, "tablet"],
   [1440, 700, "short laptop"],
+  [1600, 808, "laptop at 125%"],
+  [2000, 1010, "wide desktop"],
   [1440, 900, "laptop"],
   [1920, 1080, "desktop"],
   [2560, 1440, "ultrawide"],
@@ -75,11 +77,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Runs in the page. Nothing may scroll, and every part of the hero must sit inside the viewport.
 const FIT = `(() => {
   const d = document.documentElement, T = 1;
-  const must = [".top", ".land-title", ".land-sub", ".land-actions .button", ".land-second", ".land-actions"];
+  // The strip counts too when it is on: a hero that pushes it past the bottom edge is a clipped page.
+  const must = [".top", ".land-title", ".land-sub", ".land-actions .button", ".land-second", ".land-actions", ".land-marquee"];
   const outside = [];
   for (const sel of must) {
     const el = document.querySelector(sel);
     if (!el) { outside.push(sel + " missing"); continue; }
+    if (getComputedStyle(el).display === "none") continue;
     const r = el.getBoundingClientRect();
     if (r.top < -T || r.left < -T || r.bottom > innerHeight + T || r.right > innerWidth + T)
       outside.push(sel + " " + [r.left, r.top, r.right, r.bottom].map(Math.round).join(","));

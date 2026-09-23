@@ -15,6 +15,8 @@
 #      from another origin.
 #   3. GET / answers agent.md to anything that is neither a browser nor asking for JSON, so `curl hub.uor.foundation`
 #      returns the hub in one screen instead of 77 KB of markup; and the front door becomes readable cross-origin.
+#   4. GET / declares Vary: Accept, so a shared cache cannot serve one caller's representation to another.
+#   5. A malformed object address refuses in the documented JSON shape instead of the catch-all's text/plain.
 #
 # Each edit is applied only if it is missing, so this is safe to run against a host that has had an earlier version
 # of this script: it adds what is absent and leaves the rest alone.
@@ -31,6 +33,8 @@ STAMP=$(date -u +%Y-%m-%d)
 BACKUP="$CADDYFILE.bak-$STAMP-openapi"
 MARK='rewrite /.well-known/openapi.json /openapi.json'
 MARK_ARRIVING='rewrite @arriving /agent.md'
+MARK_VARY='header / Vary Accept'
+MARK_MALFORMED='@object_malformed'
 
 die() { echo "FAIL $*" >&2; exit 1; }
 say() { echo "  $*"; }
@@ -59,7 +63,9 @@ preconditions() {
 # All three markers, not one: an earlier version of this script applied only the first two, and a host in that
 # state must still be treated as needing work rather than as done.
 applied() {
-	grep -qF "$MARK" "$CADDYFILE" && grep -qF "$MARK_ARRIVING" "$CADDYFILE" && ! grep -qE 'path /healthz /openapi\.json ' "$CADDYFILE"
+	grep -qF "$MARK" "$CADDYFILE" && grep -qF "$MARK_ARRIVING" "$CADDYFILE" \
+		&& grep -qF "$MARK_VARY" "$CADDYFILE" && grep -qF "$MARK_MALFORMED" "$CADDYFILE" \
+		&& ! grep -qE 'path /healthz /openapi\.json ' "$CADDYFILE"
 }
 
 apply_edits() {
@@ -131,6 +137,37 @@ if "rewrite @arriving /agent.md" not in block:
     ), 1)
     done.append("made the bare name answer agent.md")
 
+# 4. Vary: Accept, next to the rewrite that makes it necessary.
+arriving_anchor = '\t\trewrite @arriving /agent.md\n'
+if arriving_anchor in block and "header / Vary Accept" not in block:
+    block = block.replace(arriving_anchor, arriving_anchor + (
+        '\t\t# Three representations chosen by Accept means caches have to be told, or one caller\'s answer is served to\n'
+        '\t\t# the next caller who asked for something else. Silent, intermittent, and invisible from here.\n'
+        '\t\theader / Vary Accept\n'
+    ), 1)
+    done.append("declared Vary: Accept on the front door")
+
+# 5. A malformed object address refuses in the documented shape.
+read_anchor = '\t@read {\n'
+if read_anchor not in block:
+    raise SystemExit("the server read matcher is not where expected; refusing to guess")
+if "@object_malformed" not in block:
+    block = block.replace(read_anchor, (
+        '\t# An address is blake3: and 64 hex characters. Anything else under this prefix is a client error, and it has to\n'
+        '\t# refuse in the shape the document promises rather than falling through to the catch-all\'s text/plain.\n'
+        '\t@object_malformed {\n'
+        '\t\tpath /api/v1/objects/*\n'
+        '\t\tnot path_regexp ^/api/v1/objects/blake3:[0-9a-f]{64}$\n'
+        '\t\tnot path /api/v1/objects/search\n'
+        '\t}\n'
+        '\thandle @object_malformed {\n'
+        '\t\theader Content-Type "application/json"\n'
+        '\t\theader Access-Control-Allow-Origin "*"\n'
+        '\t\trespond `{"code":"LIVE_BAD_REQUEST","message":"an object address is blake3: followed by 64 hexadecimal characters"}` 400\n'
+        '\t}\n\n'
+    ) + read_anchor, 1)
+    done.append("gave a malformed address the documented error shape")
+
 if not done:
     raise SystemExit("already applied; nothing to change")
 # Written in place: Caddy bind-mounts this single file, so a rename would break the mount.
@@ -155,6 +192,8 @@ verify() {
 	probe "agent card"          /.well-known/agent-card.json  200 'Hologram Model Hub'
 	probe "robots"              /robots.txt                   200 'Disallow: /via/'
 	probe "the brief"           /agent.md                     200 'Hash what arrives'
+	probe "vary on the root"    /                             200 'vary: Accept'
+	probe "malformed address"   /api/v1/objects/notanaddress  400 'LIVE_BAD_REQUEST'
 	# The headline claim: what curl actually gets from the bare name.
 	if curl -s --max-time 20 -H 'accept: */*' "https://$HOST/" | head -1 | grep -q '^# hub.uor.foundation'; then
 		echo "  ok   the bare name answers the brief"

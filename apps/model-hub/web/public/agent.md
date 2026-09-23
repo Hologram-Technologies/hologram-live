@@ -40,9 +40,9 @@ same file again through a different source and compare the two for yourself:
     curl -sI https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source
     curl -sL https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | sha256sum
 
-Check that header first, every time. `/via/<source>` is a preference and it fails open: when the named source
-does not hold the file, the hub falls back to one that does and says so only in `X-Hub-Source`. Skip the check
-and you can end up comparing Hugging Face against Hugging Face and calling it agreement.
+`/via/huggingface`, `/via/modelscope` and `/via/ipfs` each pin one source and refuse rather than falling back,
+so two of them agreeing is two unrelated hosts agreeing and not one host repeating itself. A source that does
+not hold the file answers 404 and names the ones that do.
 
 ## When you want more
 

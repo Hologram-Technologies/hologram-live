@@ -59,7 +59,7 @@ hub.uor.foundation {
 
 	@read {
 		method GET HEAD
-		path /healthz /openapi.json /docs /docs/scalar.js /api/v1/capabilities /api/v1/modules
+		path /healthz /docs /docs/scalar.js /api/v1/capabilities /api/v1/modules
 	}
 	handle @read {
 		header Access-Control-Allow-Origin "*"
@@ -110,6 +110,12 @@ hub.uor.foundation {
 		rewrite @agent /.well-known/model-hub.json
 		header /.well-known/* Access-Control-Allow-Origin "*"
 		header /llms.txt Access-Control-Allow-Origin "*"
+		# One document, two paths: an agent handed nothing but the host name looks under /.well-known first.
+		rewrite /.well-known/openapi.json /openapi.json
+		# The whole endpoint in one OpenAPI document, built with the site. A browser agent reads it cross-origin.
+		header /openapi.json Access-Control-Allow-Origin "*"
+		header /openapi.json Cache-Control "public, max-age=300"
+		header /robots.txt Access-Control-Allow-Origin "*"
 		# Archived days are read by the browser from any origin and verified there.
 		header /archive/* Access-Control-Allow-Origin "*"
 		header /archive.json Access-Control-Allow-Origin "*"

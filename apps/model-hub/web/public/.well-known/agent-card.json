@@ -1,0 +1,153 @@
+{
+ "name": "Hologram Model Hub",
+ "description": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
+ "url": "https://hub.uor.foundation",
+ "version": "1.0.0",
+ "documentationUrl": "https://hub.uor.foundation/llms.txt",
+ "provider": {
+  "organization": "Hologram Technologies",
+  "url": "https://github.com/Hologram-Technologies/hologram-live"
+ },
+ "capabilities": {
+  "streaming": false,
+  "pushNotifications": false,
+  "stateTransitionHistory": false
+ },
+ "defaultInputModes": [
+  "text/plain",
+  "application/json"
+ ],
+ "defaultOutputModes": [
+  "application/json"
+ ],
+ "x-openapi": "https://hub.uor.foundation/openapi.json",
+ "x-mcp": {
+  "url": "https://hub.uor.foundation/mcp",
+  "transport": "streamable-http",
+  "authentication": "none"
+ },
+ "skills": [
+  {
+   "id": "discovery",
+   "name": "Discovery",
+   "description": "What this endpoint is, in a form a machine can bind to without reading prose.",
+   "tags": [
+    "getDescriptor",
+    "getWellKnownDescriptor",
+    "getOpenapi",
+    "getWellKnownOpenapi",
+    "getAgentCard",
+    "getDocs",
+    "getLlmsTxt",
+    "getArchive",
+    "getPins",
+    "getRobots"
+   ],
+   "examples": [
+    "curl -H 'accept: application/json' https://hub.uor.foundation/",
+    "curl https://hub.uor.foundation/openapi.json"
+   ]
+  },
+  {
+   "id": "health",
+   "name": "Health",
+   "description": "Is the endpoint up, and which byte sources are up behind it.",
+   "tags": [
+    "getHealth",
+    "getSourceHealth"
+   ],
+   "examples": [
+    "curl https://hub.uor.foundation/api/hub/health"
+   ]
+  },
+  {
+   "id": "models",
+   "name": "Models",
+   "description": "Find a model and read its files, in Hugging Face's shape. This is the dialect every Python client already speaks.",
+   "tags": [
+    "listModels",
+    "getModel",
+    "getModelAtRevision",
+    "listModelRefs",
+    "listModelFiles",
+    "listModelFilesUnder",
+    "getXetReadToken"
+   ],
+   "examples": [
+    "curl 'https://hub.uor.foundation/api/models?search=qwen&filter=gguf&limit=5'",
+    "export HF_ENDPOINT=https://hub.uor.foundation && hf download Qwen/Qwen3-0.6B"
+   ]
+  },
+  {
+   "id": "files",
+   "name": "Files",
+   "description": "Turn a model file into a URL that is up right now, together with the SHA-256 it must have.",
+   "tags": [
+    "resolveFile",
+    "resolveFileVia",
+    "listModelsVia"
+   ],
+   "examples": [
+    "curl -sI https://hub.uor.foundation/Qwen/Qwen3-0.6B/resolve/main/config.json",
+    "curl -s https://hub.uor.foundation/Qwen/Qwen3-0.6B/resolve/main/SHA256SUMS | sha256sum -c"
+   ]
+  },
+  {
+   "id": "objects",
+   "name": "Objects",
+   "description": "The content-addressed floor under every dialect. An object is named by the BLAKE3 of its bytes, so its answer can be cached forever.",
+   "tags": [
+    "getCapabilities",
+    "listModules",
+    "listObjects",
+    "publishObject",
+    "getObject"
+   ],
+   "examples": [
+    "curl https://hub.uor.foundation/api/v1/objects/blake3:<hex>"
+   ]
+  },
+  {
+   "id": "registry",
+   "name": "Registry",
+   "description": "The OCI distribution dialect: Ollama pulls, CNCF ModelPack artifacts, and the hub's own daily index. Reads are anonymous; a write is refused at the edge unless it carries the registry token that `docker login` sends, and writes are not described here because only the hub publishes.",
+   "tags": [
+    "getRegistryBase",
+    "listRegistryRepositories",
+    "listModelTags",
+    "getModelManifest",
+    "getModelBlob"
+   ],
+   "examples": [
+    "ollama pull hub.uor.foundation/qwen/qwen3-0.6b-gguf:Q4_K_M",
+    "oras pull hub.uor.foundation/qwen/qwen3-0.6b:latest"
+   ]
+  },
+  {
+   "id": "account",
+   "name": "Account",
+   "description": "The only surface that needs a person. Everything else on this endpoint is anonymous, and signing in adds nothing to it: an account exists so that a saved list, an attributed model request and a recorded interest in publishing have somewhere to live. Signing in grants no read that anonymous callers do not already have, and publishing access is an operator's decision, not a form's.",
+   "tags": [
+    "getAccountHealth",
+    "getAccount",
+    "updateAccountWallet",
+    "saveModel",
+    "unsaveModel",
+    "requestModel",
+    "requestPublisherAccess"
+   ],
+   "examples": []
+  },
+  {
+   "id": "mcp",
+   "name": "MCP",
+   "description": "The Model Context Protocol server, for agents that bind to tools rather than to routes.",
+   "tags": [
+    "callMcp"
+   ],
+   "examples": [
+    "add the MCP server https://hub.uor.foundation/mcp"
+   ]
+  }
+ ]
+}

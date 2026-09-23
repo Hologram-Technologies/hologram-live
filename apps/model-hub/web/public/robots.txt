@@ -1,0 +1,16 @@
+# hub.uor.foundation
+# The website, the model pages and the discovery documents are open to crawlers.
+# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real
+# traffic, and a crawler that follows them pays nothing and keeps nothing.
+
+User-agent: *
+Allow: /$
+Allow: /models/
+Allow: /openapi.json
+Allow: /llms.txt
+Allow: /.well-known/
+Disallow: /via/
+Disallow: /v2/
+Disallow: /api/v1/objects/
+Disallow: /zip/
+Disallow: /*/resolve/

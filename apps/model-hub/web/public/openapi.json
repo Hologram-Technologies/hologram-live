@@ -1,0 +1,4345 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Hologram Model Hub",
+  "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
+  "description": "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `huggingface_hub` (transformers, diffusers,\nsentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,\n`ollama pull hub.uor.foundation/<owner>/<name>:<quant>`, `oras pull hub.uor.foundation/<owner>/<name>:latest`,\nor the MCP server at `/mcp`.\n\n**The rules that make it safe.**\nThe hub carries names, addresses and directions, never weight bytes: a file request is answered with a\nredirect to a source that passed the last probe, plus the SHA-256 the bytes must have.\nExpected hashes come from the index only, never from the source that serves the bytes.\nNothing here verifies on your behalf, so hash what arrives: `…/resolve/main/SHA256SUMS` piped to\n`sha256sum -c` checks a whole download with no tool of ours.\nReads are anonymous and permitted from any origin; only publishing needs a token.\nCredentials sent to whatever endpoint a client is pointed at are stripped at the edge and never logged.\n\n**Scope.** The hub is the file plane. Inference is deliberately out of scope and `/v1/*` is reserved and\nempty: the engines the hub feeds already speak the OpenAI API.",
+  "version": "1.0.0",
+  "license": {
+   "name": "MIT OR Apache-2.0",
+   "identifier": "MIT OR Apache-2.0"
+  },
+  "contact": {
+   "name": "Hologram Technologies",
+   "url": "https://github.com/Hologram-Technologies/hologram-live"
+  },
+  "x-hologram-dialects": {
+   "huggingface": {
+    "setting": "HF_ENDPOINT=https://hub.uor.foundation",
+    "paths": [
+     "/api/models",
+     "/{owner}/{name}/resolve/{revision}/{path}"
+    ]
+   },
+   "ollama": {
+    "setting": "ollama pull hub.uor.foundation/{owner}/{name}:{quant}",
+    "paths": [
+     "/v2/{owner}/{name}/manifests/{reference}",
+     "/v2/{owner}/{name}/blobs/{digest}"
+    ]
+   },
+   "oci": {
+    "setting": "oras pull hub.uor.foundation/{owner}/{name}:latest",
+    "paths": [
+     "/v2/{owner}/{name}/manifests/{reference}"
+    ]
+   },
+   "mcp": {
+    "setting": "https://hub.uor.foundation/mcp",
+    "paths": [
+     "/mcp"
+    ]
+   },
+   "hologram": {
+    "setting": "GET /api/v1/objects/{address}",
+    "paths": [
+     "/api/v1/objects/{address}"
+    ]
+   }
+  }
+ },
+ "servers": [
+  {
+   "url": "https://hub.uor.foundation",
+   "description": "Production. The hub is one host; there is no staging surface."
+  }
+ ],
+ "externalDocs": {
+  "description": "The same endpoint explained for an agent in prose, shortest path first.",
+  "url": "https://hub.uor.foundation/llms.txt"
+ },
+ "tags": [
+  {
+   "name": "Discovery",
+   "description": "What this endpoint is, in a form a machine can bind to without reading prose."
+  },
+  {
+   "name": "Health",
+   "description": "Is the endpoint up, and which byte sources are up behind it."
+  },
+  {
+   "name": "Models",
+   "description": "Find a model and read its files, in Hugging Face's shape. This is the dialect every Python client already speaks."
+  },
+  {
+   "name": "Files",
+   "description": "Turn a model file into a URL that is up right now, together with the SHA-256 it must have."
+  },
+  {
+   "name": "Objects",
+   "description": "The content-addressed floor under every dialect. An object is named by the BLAKE3 of its bytes, so its answer can be cached forever."
+  },
+  {
+   "name": "Registry",
+   "description": "The OCI distribution dialect: Ollama pulls, CNCF ModelPack artifacts, and the hub's own daily index. Reads are anonymous; a write is refused at the edge unless it carries the registry token that `docker login` sends, and writes are not described here because only the hub publishes."
+  },
+  {
+   "name": "Account",
+   "description": "The only surface that needs a person. Everything else on this endpoint is anonymous, and signing in adds nothing to it: an account exists so that a saved list, an attributed model request and a recorded interest in publishing have somewhere to live. Signing in grants no read that anonymous callers do not already have, and publishing access is an operator's decision, not a form's."
+  },
+  {
+   "name": "MCP",
+   "description": "The Model Context Protocol server, for agents that bind to tools rather than to routes."
+  }
+ ],
+ "components": {
+  "securitySchemes": {
+   "publisherToken": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "A publisher token. Required to list, search or publish objects. Reads of a known address need no token."
+   },
+   "privyToken": {
+    "type": "http",
+    "scheme": "bearer",
+    "bearerFormat": "JWT",
+    "description": "A Privy access token for the person signed in to the site, verified here against the app's ES256 public key. It is only ever accepted on `/api/account/*`; no read surface takes it, and it is stripped from every other route at the edge."
+   }
+  },
+  "schemas": {
+   "Descriptor": {
+    "type": "object",
+    "description": "What the hub is and where everything under it lives. One fetch, no schema needed to read it.",
+    "required": [
+     "format",
+     "catalog",
+     "fetch",
+     "openapi"
+    ],
+    "properties": {
+     "format": {
+      "const": "hologram.model-hub.descriptor/v1"
+     },
+     "name": {
+      "type": "string"
+     },
+     "about": {
+      "type": "string"
+     },
+     "catalog": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$",
+      "description": "Today's catalog object: the whole index in one address."
+     },
+     "snapshot": {
+      "type": "string",
+      "format": "date",
+      "description": "The day this catalog was built."
+     },
+     "fetch": {
+      "type": "string",
+      "description": "The template for fetching any object by address."
+     },
+     "find": {
+      "type": "string"
+     },
+     "publish": {
+      "type": "string"
+     },
+     "openapi": {
+      "type": "string",
+      "description": "Where this document lives."
+     },
+     "capabilities": {
+      "type": "string"
+     },
+     "registry": {
+      "type": "string"
+     },
+     "guide": {
+      "type": "string"
+     },
+     "addresses": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      }
+     },
+     "kinds": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      },
+      "description": "The object kinds the hub publishes and what each holds."
+     }
+    }
+   },
+   "AgentCard": {
+    "type": "object",
+    "description": "The hub as a set of skills, for frameworks that discover a service through an agent card.",
+    "required": [
+     "name",
+     "description",
+     "url",
+     "skills"
+    ],
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string",
+      "format": "uri"
+     },
+     "version": {
+      "type": "string"
+     },
+     "provider": {
+      "type": "object",
+      "properties": {
+       "organization": {
+        "type": "string"
+       },
+       "url": {
+        "type": "string",
+        "format": "uri"
+       }
+      }
+     },
+     "documentationUrl": {
+      "type": "string",
+      "format": "uri"
+     },
+     "capabilities": {
+      "type": "object",
+      "additionalProperties": true
+     },
+     "defaultInputModes": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "defaultOutputModes": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "skills": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "name",
+        "description"
+       ],
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        },
+        "description": {
+         "type": "string"
+        },
+        "tags": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "examples": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "HologramFacts": {
+    "type": "object",
+    "description": "What Hugging Face's row has no field for: where this model sits in the hub's index.",
+    "required": [
+     "manifest",
+     "files"
+    ],
+    "properties": {
+     "manifest": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$",
+      "description": "The index object for this model at this revision."
+     },
+     "files": {
+      "type": "integer",
+      "description": "How many files the revision has."
+     },
+     "weight_bytes": {
+      "type": "integer",
+      "description": "Total bytes of weight files."
+     },
+     "parameters": {
+      "type": "integer",
+      "description": "Parameter count, when it is known."
+     },
+     "context": {
+      "type": "integer",
+      "description": "Context length, when it is known."
+     },
+     "sources": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Which sources hold these bytes today."
+     }
+    }
+   },
+   "ModelRow": {
+    "type": "object",
+    "description": "One search result, in Hugging Face's list shape plus a `hologram` block.",
+    "required": [
+     "id",
+     "modelId",
+     "sha",
+     "hologram"
+    ],
+    "properties": {
+     "_id": {
+      "type": "string"
+     },
+     "id": {
+      "type": "string",
+      "example": "Qwen/Qwen-Image-2.1"
+     },
+     "modelId": {
+      "type": "string"
+     },
+     "author": {
+      "type": "string"
+     },
+     "sha": {
+      "type": "string",
+      "description": "The indexed revision."
+     },
+     "private": {
+      "const": false
+     },
+     "gated": {
+      "const": false
+     },
+     "disabled": {
+      "const": false
+     },
+     "likes": {
+      "type": "integer"
+     },
+     "downloads": {
+      "type": "integer"
+     },
+     "trendingScore": {
+      "type": "integer"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "pipeline_tag": {
+      "type": "string"
+     },
+     "library_name": {
+      "type": "string"
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "hologram": {
+      "$ref": "#/components/schemas/HologramFacts"
+     }
+    }
+   },
+   "ModelInfo": {
+    "type": "object",
+    "description": "One model at the indexed revision, in Hugging Face's model-info shape.",
+    "required": [
+     "id",
+     "modelId",
+     "sha",
+     "siblings"
+    ],
+    "properties": {
+     "_id": {
+      "type": "string"
+     },
+     "id": {
+      "type": "string"
+     },
+     "modelId": {
+      "type": "string"
+     },
+     "sha": {
+      "type": "string",
+      "description": "The indexed revision, always a full commit hash."
+     },
+     "private": {
+      "const": false
+     },
+     "gated": {
+      "const": false
+     },
+     "disabled": {
+      "const": false
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "downloads": {
+      "type": "integer"
+     },
+     "likes": {
+      "type": "integer"
+     },
+     "siblings": {
+      "type": "array",
+      "description": "Every file of the revision, by name only.",
+      "items": {
+       "type": "object",
+       "required": [
+        "rfilename"
+       ],
+       "properties": {
+        "rfilename": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   },
+   "TreeEntry": {
+    "type": "object",
+    "description": "One file, with the hash a download must match.",
+    "required": [
+     "type",
+     "oid",
+     "size",
+     "path"
+    ],
+    "properties": {
+     "type": {
+      "const": "file",
+      "description": "Only files: the index holds no directory entries."
+     },
+     "oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "The SHA-256 of the file's bytes. This is the expected hash."
+     },
+     "size": {
+      "type": "integer"
+     },
+     "path": {
+      "type": "string"
+     },
+     "lfs": {
+      "type": "object",
+      "description": "Present on large files, for clients that branch on it.",
+      "properties": {
+       "oid": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "description": "The SHA-256 of a file's bytes."
+       },
+       "size": {
+        "type": "integer"
+       },
+       "pointerSize": {
+        "type": "integer"
+       }
+      }
+     }
+    }
+   },
+   "Refs": {
+    "type": "object",
+    "description": "The branches the hub knows: exactly one.",
+    "required": [
+     "branches",
+     "tags",
+     "converts"
+    ],
+    "properties": {
+     "branches": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "name",
+        "ref",
+        "targetCommit"
+       ],
+       "properties": {
+        "name": {
+         "const": "main"
+        },
+        "ref": {
+         "const": "refs/heads/main"
+        },
+        "targetCommit": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     },
+     "converts": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     }
+    }
+   },
+   "HubHealth": {
+    "type": "object",
+    "description": "Which byte sources are up, and the order the hub prefers them in.",
+    "required": [
+     "sources",
+     "order"
+    ],
+    "properties": {
+     "sources": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "object",
+       "required": [
+        "ok",
+        "checked"
+       ],
+       "properties": {
+        "ok": {
+         "type": "boolean"
+        },
+        "checked": {
+         "type": "string",
+         "format": "date-time"
+        },
+        "reason": {
+         "type": "string",
+         "description": "Why the hub believes it, in one word."
+        }
+       }
+      }
+     },
+     "order": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Preference order. A file goes to the first source here that is `ok` and holds it."
+     }
+    }
+   },
+   "Archive": {
+    "type": "object",
+    "description": "Every day the hub has indexed, chained backwards, and the three places any day can be read from.",
+    "required": [
+     "format",
+     "days"
+    ],
+    "properties": {
+     "format": {
+      "const": "hologram.model-hub.archive/v1"
+     },
+     "days": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ArchiveDay"
+      }
+     },
+     "gateway": {
+      "type": "string",
+      "format": "uri",
+      "description": "The IPFS gateway a day can be read through."
+     },
+     "mirror": {
+      "type": "string",
+      "format": "uri",
+      "description": "The hub own copy of the archive."
+     },
+     "registry": {
+      "type": "string",
+      "description": "The OCI repository that holds every day index."
+     }
+    }
+   },
+   "ArchiveDay": {
+    "type": "object",
+    "required": [
+     "date",
+     "index"
+    ],
+    "properties": {
+     "date": {
+      "type": "string",
+      "format": "date"
+     },
+     "archived": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "index": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$",
+      "description": "That day's index object."
+     },
+     "catalog": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$",
+      "description": "That day's catalog object: the browse rows and the map from model id to address."
+     },
+     "cid": {
+      "type": "string",
+      "description": "The IPFS CID the day was pinned under."
+     },
+     "models": {
+      "type": "integer"
+     },
+     "addressed": {
+      "type": "integer"
+     },
+     "files": {
+      "type": "integer"
+     },
+     "bytes": {
+      "type": "integer"
+     },
+     "prev": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "prev_ledger": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "source": {
+      "type": "string",
+      "description": "The commit of the code that built it."
+     }
+    }
+   },
+   "Pins": {
+    "type": "object",
+    "description": "The models whose weights survive both Hugging Face and ModelScope being unreachable.",
+    "required": [
+     "format",
+     "gateway",
+     "models"
+    ],
+    "properties": {
+     "format": {
+      "const": "hologram.model-hub.pins/v1"
+     },
+     "gateway": {
+      "type": "string",
+      "format": "uri",
+      "description": "The IPFS gateway the hub redirects through."
+     },
+     "models": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "object",
+       "required": [
+        "root",
+        "revision"
+       ],
+       "properties": {
+        "root": {
+         "type": "string",
+         "description": "The IPFS root CID of the model directory."
+        },
+        "revision": {
+         "type": "string"
+        },
+        "pinned": {
+         "type": "string",
+         "format": "date"
+        },
+        "hidden": {
+         "type": "boolean"
+        }
+       }
+      }
+     }
+    }
+   },
+   "AccountHealth": {
+    "type": "object",
+    "description": "Whether this hub offers sign-in at all.",
+    "required": [
+     "ok"
+    ],
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "configured": {
+      "type": "boolean",
+      "description": "False when the hub has no sign-in keys. Every anonymous surface works either way."
+     }
+    }
+   },
+   "Account": {
+    "type": "object",
+    "description": "Everything the hub holds about one signed-in person, which is deliberately almost nothing.",
+    "required": [
+     "did"
+    ],
+    "properties": {
+     "did": {
+      "type": "string",
+      "description": "The Privy decentralised identifier the token was issued for."
+     },
+     "created": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "wallet": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "An address the person chose to report. Recorded, never trusted."
+     },
+     "saved": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "requests": {
+      "type": "integer",
+      "description": "How many models this account has asked for."
+     }
+    }
+   },
+   "SavedList": {
+    "type": "object",
+    "required": [
+     "saved"
+    ],
+    "properties": {
+     "saved": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "AccountError": {
+    "type": "object",
+    "description": "How the account service refuses: one sentence, no code, because this surface has no clients but the site.",
+    "required": [
+     "error"
+    ],
+    "properties": {
+     "error": {
+      "type": "string"
+     }
+    }
+   },
+   "HubError": {
+    "type": "object",
+    "description": "How every dialect route refuses: one sentence that names the fix, with a machine code in `X-Error-Code`.",
+    "required": [
+     "error"
+    ],
+    "properties": {
+     "error": {
+      "type": "string"
+     }
+    }
+   },
+   "OciError": {
+    "type": "object",
+    "description": "How the registry dialect refuses, in the shape the OCI distribution spec requires.",
+    "required": [
+     "errors"
+    ],
+    "properties": {
+     "errors": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "code",
+        "message"
+       ],
+       "properties": {
+        "code": {
+         "type": "string",
+         "example": "MANIFEST_UNKNOWN"
+        },
+        "message": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   },
+   "OciCatalog": {
+    "type": "object",
+    "required": [
+     "repositories"
+    ],
+    "properties": {
+     "repositories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "OciTagList": {
+    "type": "object",
+    "required": [
+     "name",
+     "tags"
+    ],
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "OciManifest": {
+    "type": "object",
+    "description": "An OCI image manifest. Every layer is one file of the model and its digest is that file's SHA-256, which is what makes a registry with no bytes of its own verifiable.",
+    "required": [
+     "schemaVersion",
+     "mediaType",
+     "config",
+     "layers"
+    ],
+    "properties": {
+     "schemaVersion": {
+      "const": 2
+     },
+     "mediaType": {
+      "type": "string"
+     },
+     "artifactType": {
+      "type": "string"
+     },
+     "config": {
+      "$ref": "#/components/schemas/OciDescriptor"
+     },
+     "layers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/OciDescriptor"
+      }
+     },
+     "annotations": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "OciDescriptor": {
+    "type": "object",
+    "required": [
+     "mediaType",
+     "digest",
+     "size"
+    ],
+    "properties": {
+     "mediaType": {
+      "type": "string"
+     },
+     "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+     },
+     "size": {
+      "type": "integer"
+     },
+     "annotations": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "JsonRpcRequest": {
+    "type": "object",
+    "description": "A JSON-RPC 2.0 request. `method` is an MCP method: `initialize`, `tools/list`, `tools/call`, `ping`, `resources/list`, `prompts/list`.",
+    "required": [
+     "jsonrpc",
+     "method"
+    ],
+    "properties": {
+     "jsonrpc": {
+      "const": "2.0"
+     },
+     "id": {
+      "type": [
+       "string",
+       "integer"
+      ]
+     },
+     "method": {
+      "type": "string"
+     },
+     "params": {
+      "type": "object",
+      "additionalProperties": true
+     }
+    }
+   },
+   "JsonRpcResponse": {
+    "type": "object",
+    "description": "A JSON-RPC 2.0 response. A failing tool answers `200` with `result.isError`, as MCP requires; only a malformed call gets `error`.",
+    "required": [
+     "jsonrpc"
+    ],
+    "properties": {
+     "jsonrpc": {
+      "const": "2.0"
+     },
+     "id": {
+      "type": [
+       "string",
+       "integer",
+       "null"
+      ]
+     },
+     "result": {
+      "type": "object",
+      "additionalProperties": true
+     },
+     "error": {
+      "type": "object",
+      "required": [
+       "code",
+       "message"
+      ],
+      "properties": {
+       "code": {
+        "type": "integer"
+       },
+       "message": {
+        "type": "string"
+       },
+       "data": true
+      }
+     }
+    }
+   },
+   "ApiError": {
+    "type": "object",
+    "required": [
+     "code",
+     "message"
+    ],
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     }
+    }
+   },
+   "CapabilityManifest": {
+    "type": "object",
+    "required": [
+     "protocol_version",
+     "server_version",
+     "server_id",
+     "role",
+     "operations",
+     "modules",
+     "maximum_message_bytes"
+    ],
+    "properties": {
+     "maximum_message_bytes": {
+      "type": "integer",
+      "format": "int32",
+      "minimum": 0
+     },
+     "modules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ModuleInfo"
+      }
+     },
+     "operations": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/OperationInfo"
+      }
+     },
+     "protocol_version": {
+      "type": "integer",
+      "format": "int32",
+      "minimum": 0
+     },
+     "role": {
+      "type": "string"
+     },
+     "server_id": {
+      "type": "string"
+     },
+     "server_version": {
+      "type": "string"
+     }
+    }
+   },
+   "HealthResponse": {
+    "type": "object",
+    "required": [
+     "status",
+     "version",
+     "role",
+     "modules_ready"
+    ],
+    "properties": {
+     "modules_ready": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "role": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "version": {
+      "type": "string"
+     }
+    }
+   },
+   "ModuleInfo": {
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "version",
+     "state",
+     "dependencies",
+     "operations"
+    ],
+    "properties": {
+     "dependencies": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "operations": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "state": {
+      "type": "string"
+     },
+     "version": {
+      "type": "string"
+     }
+    }
+   },
+   "ObjectMetadata": {
+    "type": "object",
+    "required": [
+     "id",
+     "kind",
+     "media_type",
+     "size",
+     "created_at_millis"
+    ],
+    "properties": {
+     "created_at_millis": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 0
+     },
+     "filename": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "id": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string"
+     },
+     "media_type": {
+      "type": "string"
+     },
+     "size": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 0
+     }
+    }
+   },
+   "OperationInfo": {
+    "type": "object",
+    "required": [
+     "id",
+     "kind",
+     "fallback_safe_before_dispatch"
+    ],
+    "properties": {
+     "fallback_safe_before_dispatch": {
+      "type": "boolean"
+     },
+     "id": {
+      "type": "string"
+     },
+     "kind": {
+      "$ref": "#/components/schemas/OperationKind"
+     }
+    }
+   },
+   "OperationKind": {
+    "type": "string",
+    "enum": [
+     "read",
+     "mutation",
+     "stream"
+    ]
+   }
+  }
+ },
+ "security": [],
+ "paths": {
+  "/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDescriptor",
+    "summary": "The hub descriptor, or the website",
+    "description": "One URL, two readers. Ask for `application/json` and the hub answers the descriptor at `/.well-known/model-hub.json`, which names today's catalog address and where everything else lives. Ask for anything else and it answers the website.",
+    "parameters": [
+     {
+      "name": "Accept",
+      "in": "header",
+      "required": false,
+      "description": "Send `application/json` for the descriptor.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "application/json"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The descriptor, or the website's HTML.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Descriptor"
+        },
+        "example": {
+         "format": "hologram.model-hub.descriptor/v1",
+         "name": "Hologram Model Hub",
+         "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
+         "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+         "snapshot": "2026-09-23",
+         "fetch": "/api/v1/objects/{id}",
+         "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
+         "publish": "POST /api/v1/objects with a publisher token",
+         "openapi": "/openapi.json",
+         "capabilities": "/api/v1/capabilities",
+         "registry": "/v2/",
+         "guide": "/llms.txt",
+         "addresses": {
+          "objects": "blake3 of the object bytes",
+          "files": "sha256 of the file bytes, listed in the model object"
+         },
+         "kinds": {
+          "model-hub.catalog": "today's browse rows, plus objects: { <model id>: { model: <address>, sources: [<address>] } }, plus prev",
+          "model-hub.model": "one revision of one model: id, revision, license, files[{path,size,sha256}], prev",
+          "model-hub.source": "one place the bytes of one revision can be fetched: ipfs, http or hologram (chunks on any Hologram Server)"
+         }
+        }
+       },
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "405": {
+      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
+      "headers": {
+       "x-error-code": {
+        "description": "`ReadOnly`.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub endpoint is read-only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/",
+     "status": 200,
+     "headers": {
+      "accept": "application/json"
+     },
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/.well-known/model-hub.json": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getWellKnownDescriptor",
+    "summary": "The hub descriptor at its well-known path",
+    "description": "The same bytes as `GET /` with `Accept: application/json`. Start here if you were given nothing but the host name.",
+    "responses": {
+     "200": {
+      "description": "The descriptor.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Descriptor"
+        },
+        "example": {
+         "format": "hologram.model-hub.descriptor/v1",
+         "name": "Hologram Model Hub",
+         "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
+         "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+         "snapshot": "2026-09-23",
+         "fetch": "/api/v1/objects/{id}",
+         "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
+         "publish": "POST /api/v1/objects with a publisher token",
+         "openapi": "/openapi.json",
+         "capabilities": "/api/v1/capabilities",
+         "registry": "/v2/",
+         "guide": "/llms.txt",
+         "addresses": {
+          "objects": "blake3 of the object bytes",
+          "files": "sha256 of the file bytes, listed in the model object"
+         },
+         "kinds": {
+          "model-hub.catalog": "today's browse rows, plus objects: { <model id>: { model: <address>, sources: [<address>] } }, plus prev",
+          "model-hub.model": "one revision of one model: id, revision, license, files[{path,size,sha256}], prev",
+          "model-hub.source": "one place the bytes of one revision can be fetched: ipfs, http or hologram (chunks on any Hologram Server)"
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/.well-known/model-hub.json",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/openapi.json": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getOpenapi",
+    "summary": "This document",
+    "description": "The whole endpoint, every dialect, in one OpenAPI 3.1 document. `/docs` renders it. Both paths serve the same bytes; the well-known one exists because that is where an agent looks first.",
+    "responses": {
+     "200": {
+      "description": "This document.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/openapi.json",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/.well-known/openapi.json": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getWellKnownOpenapi",
+    "summary": "This document",
+    "description": "The whole endpoint, every dialect, in one OpenAPI 3.1 document. `/docs` renders it. Both paths serve the same bytes; the well-known one exists because that is where an agent looks first.",
+    "responses": {
+     "200": {
+      "description": "This document.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/.well-known/openapi.json",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/.well-known/agent-card.json": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getAgentCard",
+    "summary": "An agent card for this endpoint",
+    "description": "The hub described as a set of skills, for frameworks that discover services through an agent card rather than an OpenAPI document.",
+    "responses": {
+     "200": {
+      "description": "The agent card.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentCard"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/.well-known/agent-card.json",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/docs": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDocs",
+    "summary": "This document, rendered",
+    "description": "A reference page for people, built from `/openapi.json` at load time. It is the same contract as the document; nothing is written twice.",
+    "responses": {
+     "200": {
+      "description": "An HTML page.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/docs",
+     "status": 200,
+     "contentType": "text/html"
+    }
+   }
+  },
+  "/llms.txt": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getLlmsTxt",
+    "summary": "The endpoint explained for an agent, shortest path first",
+    "description": "Prose, not a schema: what to do, in order, with the tools an agent already has. Read this when you would otherwise guess.",
+    "responses": {
+     "200": {
+      "description": "Plain text.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/llms.txt",
+     "status": 200,
+     "contentType": "text/plain"
+    }
+   }
+  },
+  "/archive.json": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getArchive",
+    "summary": "Every day the hub has indexed",
+    "description": "One row per day: the index address, its IPFS CID, how many models and files it held, and the previous day. The chain lets anyone replay the hub's history and check each step.",
+    "responses": {
+     "200": {
+      "description": "The archive ledger.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Archive"
+        },
+        "example": {
+         "days": [
+          {
+           "addressed": 416,
+           "archived": "2026-09-18T11:57:59Z",
+           "bytes": 16653256,
+           "cid": "bafybeid2uvmk6wz6ynltymwqvbtrhgxheb2epnvno7jkm6ey5jocwpwozi",
+           "date": "2026-09-17",
+           "files": 1404,
+           "index": "blake3:ebe4d5f39a0dfee9fd7574bb662c9fe63860d636c077e007e4a87a9c91b4dc0f",
+           "models": 500,
+           "prev": null,
+           "prev_ledger": null,
+           "source": "3830a23"
+          },
+          {
+           "addressed": 386,
+           "archived": "2026-09-18T11:58:22Z",
+           "bytes": 14960298,
+           "cid": "bafybeifqsf6tj65qho2jlg6i7uzwbwilm2qrqnipzkkzu5quklldurrso4",
+           "date": "2026-09-18",
+           "files": 1300,
+           "index": "blake3:1ec81f29bac9b5e81fc5cf9ee1ed128645b2713f080b5f5b540a12c2279a5dbd",
+           "models": 500,
+           "prev": "bafybeid2uvmk6wz6ynltymwqvbtrhgxheb2epnvno7jkm6ey5jocwpwozi",
+           "prev_ledger": "Qmf6qu2Dn7c6bfVNtwZGNeaEqPWvys9uvdHYGvqYkbXR9P",
+           "source": "3830a23"
+          }
+         ],
+         "format": "hologram.model-hub.archive/v1",
+         "gateway": "https://ipfs.filebase.io/ipfs/",
+         "mirror": "https://hub.uor.foundation/archive/",
+         "registry": "hub.uor.foundation/model-hub/index"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/archive.json",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/pins.json": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getPins",
+    "summary": "Which models are pinned on IPFS",
+    "description": "The models whose weights the hub can still serve when Hugging Face and ModelScope are both unreachable, with the IPFS root of each and the gateway to read it through.",
+    "responses": {
+     "200": {
+      "description": "The pin set.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Pins"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/pins.json",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/robots.txt": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getRobots",
+    "summary": "Crawling policy",
+    "description": "Allows the website, the discovery paths and this document; asks crawlers to leave redirect and blob routes alone, because they cost a byte source real traffic.",
+    "responses": {
+     "200": {
+      "description": "Plain text.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/robots.txt",
+     "status": 200,
+     "contentType": "text/plain"
+    }
+   }
+  },
+  "/healthz": {
+   "get": {
+    "tags": [
+     "Health"
+    ],
+    "operationId": "getHealth",
+    "summary": "Is the endpoint up",
+    "description": "The Hologram Server behind the object routes. `status: ready` means the object plane answers; it says nothing about byte sources, which have their own probe.",
+    "responses": {
+     "200": {
+      "description": "The server is up.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthResponse"
+        },
+        "example": {
+         "status": "ready",
+         "version": "1.0.0",
+         "role": "node",
+         "modules_ready": 2
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "The edge routes only GET and HEAD to this path; anything else falls through to the catch-all.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "not found"
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/healthz",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/hub/health": {
+   "get": {
+    "tags": [
+     "Health"
+    ],
+    "operationId": "getSourceHealth",
+    "summary": "Which byte sources are up",
+    "description": "The result of the hub's own periodic probe of every source it can redirect to, and the order it prefers them in. A file request is sent to the first source in `order` that is `ok`.",
+    "responses": {
+     "200": {
+      "description": "Per-source liveness and the preference order.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubHealth"
+        },
+        "example": {
+         "sources": {
+          "huggingface.co": {
+           "ok": true,
+           "checked": "2026-09-23T19:35:50.667Z",
+           "reason": "verified"
+          },
+          "modelscope.cn": {
+           "ok": true,
+           "checked": "2026-09-23T19:35:51.908Z",
+           "reason": "verified"
+          },
+          "ipfs": {
+           "ok": true,
+           "checked": "2026-09-23T19:35:51.981Z",
+           "reason": "verified"
+          }
+         },
+         "order": [
+          "huggingface.co",
+          "modelscope.cn",
+          "ipfs"
+         ]
+        }
+       }
+      }
+     },
+     "405": {
+      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
+      "headers": {
+       "x-error-code": {
+        "description": "`ReadOnly`.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub endpoint is read-only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/hub/health",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/models": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "listModels",
+    "summary": "Search the index",
+    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row carrying the facts Hugging Face has no field for: the index address of the model, how many files it has, how many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the whole catalog object costs 364 KB, so search here rather than there.",
+    "parameters": [
+     {
+      "name": "search",
+      "in": "query",
+      "description": "Case-insensitive substring of the model id.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "qwen"
+     },
+     {
+      "name": "author",
+      "in": "query",
+      "description": "Exact owner match.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "Qwen"
+     },
+     {
+      "name": "pipeline_tag",
+      "in": "query",
+      "description": "Exact task match.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "text-generation"
+     },
+     {
+      "name": "library",
+      "in": "query",
+      "description": "Exact library match.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "transformers"
+     },
+     {
+      "name": "filter",
+      "in": "query",
+      "description": "Tag that must be present. Repeat the parameter, or comma-separate. Tags include the task, the library, the format, the architecture, `license:<id>` and languages.",
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "style": "form",
+      "explode": true,
+      "example": [
+       "gguf"
+      ]
+     },
+     {
+      "name": "sort",
+      "in": "query",
+      "description": "Sort key.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "downloads",
+        "likes",
+        "trendingScore",
+        "trending_score",
+        "createdAt",
+        "created_at"
+       ],
+       "default": "trendingScore"
+      }
+     },
+     {
+      "name": "direction",
+      "in": "query",
+      "description": "`1` sorts ascending. Anything else sorts descending.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "description": "Rows to return, 1 to 500.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 500,
+       "default": 50
+      },
+      "example": 5
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Matching rows, most relevant first by the chosen sort.",
+      "headers": {
+       "x-total-count": {
+        "description": "How many rows matched before `limit` was applied.",
+        "schema": {
+         "type": "integer"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ModelRow"
+         }
+        },
+        "example": [
+         {
+          "_id": "591cee3cd6fb2b90f96475fc",
+          "id": "sentence-transformers/all-MiniLM-L6-v2",
+          "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+          "author": "sentence-transformers",
+          "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+          "private": false,
+          "gated": false,
+          "disabled": false,
+          "likes": 6111,
+          "downloads": 251354399,
+          "trendingScore": 423,
+          "createdAt": "2022-03-02T00:00:00.000Z",
+          "pipeline_tag": "sentence-similarity",
+          "library_name": "sentence-transformers",
+          "tags": [
+           "sentence-similarity",
+           "sentence-transformers",
+           "safetensors"
+          ],
+          "hologram": {
+           "manifest": "blake3:591cee3cd6fb2b90f96475fcb063c844ebbf86587ac22c73b3cc30b143c24cac",
+           "files": 30,
+           "weight_bytes": 975605706,
+           "parameters": 22713728,
+           "context": 512,
+           "sources": [
+            "Hugging Face",
+            "ModelScope",
+            "P2P"
+           ]
+          }
+         },
+         {
+          "_id": "bd31a9ad9e4705f6ddf97c7d",
+          "id": "google-bert/bert-base-uncased",
+          "modelId": "google-bert/bert-base-uncased",
+          "author": "google-bert",
+          "sha": "86b5e0934494bd15c9632b12f734a8a67f723594",
+          "private": false,
+          "gated": false,
+          "disabled": false,
+          "likes": 3368,
+          "downloads": 45461966,
+          "trendingScore": 63,
+          "createdAt": "2022-03-02T00:00:00.000Z",
+          "pipeline_tag": "fill-mask",
+          "library_name": "transformers",
+          "tags": [
+           "fill-mask",
+           "transformers",
+           "safetensors"
+          ],
+          "hologram": {
+           "manifest": "blake3:bd31a9ad9e4705f6ddf97c7dc1c43b3ab26c4d583b0526955664d54f867571d4",
+           "files": 16,
+           "weight_bytes": 3453216078,
+           "parameters": 110106428,
+           "context": 512,
+           "sources": [
+            "Hugging Face",
+            "ModelScope",
+            "IPFS"
+           ]
+          }
+         }
+        ]
+       }
+      }
+     },
+     "405": {
+      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
+      "headers": {
+       "x-error-code": {
+        "description": "`ReadOnly`.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub endpoint is read-only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/models?limit=2&sort=downloads",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/models/{owner}/{name}": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "getModel",
+    "summary": "One model at the indexed revision",
+    "description": "Hugging Face's model-info shape. `sha` is the revision the hub pinned; `siblings` lists every file. For sizes and hashes ask for the tree instead.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The model.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelInfo"
+        },
+        "example": {
+         "_id": "591cee3cd6fb2b90f96475fc",
+         "id": "sentence-transformers/all-MiniLM-L6-v2",
+         "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+         "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+         "private": false,
+         "gated": false,
+         "disabled": false,
+         "tags": [],
+         "downloads": 0,
+         "likes": 0,
+         "siblings": [
+          {
+           "rfilename": ".gitattributes"
+          },
+          {
+           "rfilename": "1_Pooling/config.json"
+          },
+          {
+           "rfilename": "README.md"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "The model is gated on Hugging Face. The hub serves public models only and will not proxy a gate.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "meta-llama/Llama-3-8B is gated on Hugging Face. The hub serves public models only; use huggingface.co directly for this one."
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not in the index. The request is recorded and considered for the next index run.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/models/{owner}/{name}/revision/{revision}": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "getModelAtRevision",
+    "summary": "One model, asserting the revision",
+    "description": "The same answer as `getModel`, refused unless the revision you name is the one the hub indexed. Use it to fail loudly rather than silently receive a different revision.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "main"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The model.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelInfo"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Either the model is not indexed, or it is indexed at another revision.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/models/{owner}/{name}/refs": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "listModelRefs",
+    "summary": "The branches the hub knows",
+    "description": "Always exactly one branch, `main`, pointing at the indexed revision. Clients call this before a download to turn `main` into a commit.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "One branch, no tags.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refs"
+        },
+        "example": {
+         "branches": [
+          {
+           "name": "main",
+           "ref": "refs/heads/main",
+           "targetCommit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+          }
+         ],
+         "tags": [],
+         "converts": []
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not in the index.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/refs",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/models/{owner}/{name}/tree/{revision}": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "listModelFiles",
+    "summary": "Every file, with its size and its SHA-256",
+    "description": "`oid` is the SHA-256 of the file's bytes, which is the value you check a download against. This is the only place the expected hashes come from: never take a hash from the source that serves the bytes.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "main"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "One entry per file.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/TreeEntry"
+         }
+        },
+        "example": [
+         {
+          "type": "file",
+          "oid": "98ccb431c012ebfe976280fbd45aea4cec7409935868ccecf3954370f96732a1",
+          "size": 1229,
+          "path": ".gitattributes"
+         },
+         {
+          "type": "file",
+          "oid": "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
+          "size": 190,
+          "path": "1_Pooling/config.json"
+         },
+         {
+          "type": "file",
+          "oid": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0",
+          "size": 10502,
+          "path": "README.md"
+         }
+        ]
+       }
+      }
+     },
+     "404": {
+      "description": "Not in the index, or indexed at another revision.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/models/{owner}/{name}/tree/{revision}/{prefix}": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "listModelFilesUnder",
+    "summary": "The files under one directory",
+    "description": "The same entries, filtered to one directory prefix.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "main"
+     },
+     {
+      "name": "prefix",
+      "in": "path",
+      "required": true,
+      "description": "Directory prefix, with or without a trailing slash.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "1_Pooling",
+      "x-hologram-multi-segment": true
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "One entry per file under the prefix; empty if nothing matches.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/TreeEntry"
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not in the index, or indexed at another revision.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only."
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/models/{owner}/{name}/xet-read-token/{revision}": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "getXetReadToken",
+    "summary": "Hand a Xet client back to Hugging Face",
+    "description": "`huggingface_hub` follows the hub's redirect, meets Hugging Face's Xet headers there, then asks this endpoint for a Xet read token. That token is Hugging Face's to give, so the hub sends the client there and issues nothing itself.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "main"
+     }
+    ],
+    "responses": {
+     "307": {
+      "description": "Redirect to the same path on huggingface.co.",
+      "headers": {
+       "location": {
+        "description": "The Hugging Face URL.",
+        "schema": {
+         "type": "string",
+         "format": "uri"
+        }
+       }
+      }
+     },
+     "405": {
+      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
+      "headers": {
+       "x-error-code": {
+        "description": "`ReadOnly`.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub endpoint is read-only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
+     "status": 307,
+     "method": "HEAD"
+    }
+   }
+  },
+  "/{owner}/{name}/resolve/{revision}/{path}": {
+   "get": {
+    "tags": [
+     "Files"
+    ],
+    "operationId": "resolveFile",
+    "summary": "A URL for one file, at a source that is up",
+    "description": "The route every download goes through. The hub answers `302` to the first source in its preference order\nthat passed the last probe, and puts the expected SHA-256 in `ETag` and `X-Linked-Etag` and the serving\nsource in `X-Hub-Source`. No weight byte passes through the hub.\n\nAsk for the path `SHA256SUMS` and the hub synthesises the checksum file for the whole model instead, so a\ndownload can be checked with `sha256sum -c` and no tool of ours.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "main"
+     },
+     {
+      "name": "path",
+      "in": "path",
+      "required": true,
+      "description": "The file path inside the repository. It may contain slashes; do not encode them. The literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "config.json",
+      "x-hologram-multi-segment": true
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Only for the synthesised `SHA256SUMS` path: the checksum file itself.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0  README.md\n"
+       }
+      }
+     },
+     "302": {
+      "description": "Follow `Location` for the bytes, then check them against `ETag`.",
+      "headers": {
+       "location": {
+        "description": "Where the bytes are, right now.",
+        "schema": {
+         "type": "string",
+         "format": "uri"
+        }
+       },
+       "etag": {
+        "description": "The SHA-256 the bytes must have, quoted. Identical to `X-Linked-Etag`.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-linked-etag": {
+        "description": "The SHA-256 the bytes must have, quoted.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-linked-size": {
+        "description": "The size in bytes.",
+        "schema": {
+         "type": "integer"
+        }
+       },
+       "x-repo-commit": {
+        "description": "The revision this file belongs to.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-hub-source": {
+        "description": "Which source was chosen: `huggingface.co`, `modelscope.cn` or `ipfs`.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "accept-ranges": {
+        "description": "`bytes`. Range reads work through the redirect.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "The model is not indexed, the revision is not the indexed one, or the file is not in it.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+     "status": 302,
+     "method": "HEAD"
+    }
+   }
+  },
+  "/via/{source}/{owner}/{name}/resolve/{revision}/{path}": {
+   "get": {
+    "tags": [
+     "Files"
+    ],
+    "operationId": "resolveFileVia",
+    "summary": "A URL for one file, from the source you name",
+    "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging Face is up, and refuses rather than falling back. The prefix works in front of any Models or Files route, not only this one.",
+    "parameters": [
+     {
+      "name": "source",
+      "in": "path",
+      "required": true,
+      "description": "Pin one byte source instead of letting the hub choose.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "huggingface",
+        "modelscope",
+        "ipfs"
+       ]
+      },
+      "example": "ipfs"
+     },
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "main"
+     },
+     {
+      "name": "path",
+      "in": "path",
+      "required": true,
+      "description": "The file path inside the repository. It may contain slashes; do not encode them. The literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "config.json",
+      "x-hologram-multi-segment": true
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Only for the synthesised `SHA256SUMS` path, which the prefix reaches like any other.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "302": {
+      "description": "Redirect to the named source.",
+      "headers": {
+       "location": {
+        "description": "Where the bytes are.",
+        "schema": {
+         "type": "string",
+         "format": "uri"
+        }
+       },
+       "x-hub-source": {
+        "description": "The source you named.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Unknown model, revision or file; or the named source does not hold this file.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+        }
+       }
+      }
+     },
+     "405": {
+      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
+      "headers": {
+       "x-error-code": {
+        "description": "`ReadOnly`.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub endpoint is read-only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+     "status": 302,
+     "method": "HEAD"
+    }
+   }
+  },
+  "/via/{source}/api/models": {
+   "get": {
+    "tags": [
+     "Files"
+    ],
+    "operationId": "listModelsVia",
+    "summary": "Search with a source pinned for what follows",
+    "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+    "parameters": [
+     {
+      "name": "source",
+      "in": "path",
+      "required": true,
+      "description": "Pin one byte source instead of letting the hub choose.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "huggingface",
+        "modelscope",
+        "ipfs"
+       ]
+      },
+      "example": "ipfs"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Matching rows.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ModelRow"
+         }
+        }
+       }
+      }
+     },
+     "405": {
+      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
+      "headers": {
+       "x-error-code": {
+        "description": "`ReadOnly`.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "The hub endpoint is read-only."
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/via/ipfs/api/models?limit=1",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/v2/": {
+   "get": {
+    "tags": [
+     "Registry"
+    ],
+    "operationId": "getRegistryBase",
+    "summary": "The OCI distribution entry point",
+    "description": "`200 {}` means version 2 of the distribution API is supported and reads are anonymous. `docker login` is needed only to push.",
+    "responses": {
+     "200": {
+      "description": "The registry speaks the v2 API.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        },
+        "example": {}
+       }
+      }
+     },
+     "401": {
+      "description": "A write was attempted without a registry token. Reads never need one.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "write requires a registry token"
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/v2/",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/v2/_catalog": {
+   "get": {
+    "tags": [
+     "Registry"
+    ],
+    "operationId": "listRegistryRepositories",
+    "summary": "The repositories the hub's own registry holds",
+    "description": "The hub's registry namespace only, `model-hub/index` among them. Model repositories are answered from the index and do not appear here; ask for a model's tags directly.",
+    "responses": {
+     "200": {
+      "description": "Repository names.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OciCatalog"
+        },
+        "example": {
+         "repositories": [
+          "demo/hello",
+          "live/crane",
+          "model-hub/index"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "A write was attempted without a registry token. Reads never need one.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "write requires a registry token"
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/v2/_catalog",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/v2/{owner}/{name}/tags/list": {
+   "get": {
+    "tags": [
+     "Registry"
+    ],
+    "operationId": "listModelTags",
+    "summary": "The tags a model can be pulled by",
+    "description": "`latest` always, plus one tag per single-file GGUF quantisation, which is what `ollama pull …:Q4_K_M` asks for. Owner and name must be lowercase: OCI references are case-sensitive and lowercase-only.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The tag list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OciTagList"
+        },
+        "example": {
+         "name": "sentence-transformers/all-MiniLM-L6-v2",
+         "tags": [
+          "latest"
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not in the index.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OciError"
+        },
+        "example": {
+         "errors": [
+          {
+           "code": "NAME_UNKNOWN",
+           "message": "nobody/nothing is not in the Hologram index yet."
+          }
+         ]
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/v2/sentence-transformers/all-minilm-l6-v2/tags/list",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/v2/{owner}/{name}/manifests/{reference}": {
+   "get": {
+    "tags": [
+     "Registry"
+    ],
+    "operationId": "getModelManifest",
+    "summary": "A model as an OCI artifact",
+    "description": "One route, two answers, chosen by `Accept`. Send the OCI manifest type and the hub answers a CNCF ModelPack\nartifact whose layers are the model's files, each layer digest being that file's SHA-256, which `oras`,\n`modctl`, `skopeo` and `crane` all verify for you. Send the Docker manifest type, which is what Ollama sends,\nand the hub answers a GGUF model manifest; models with no GGUF file refuse it.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "reference",
+      "in": "path",
+      "required": true,
+      "description": "A tag, or a manifest digest asked for again.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "latest"
+     },
+     {
+      "name": "Accept",
+      "in": "header",
+      "required": false,
+      "description": "`application/vnd.oci.image.manifest.v1+json` for ModelPack, `application/vnd.docker.distribution.manifest.v2+json` for Ollama.",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The manifest. Every layer digest is the SHA-256 of one file of the model.",
+      "headers": {
+       "docker-content-digest": {
+        "description": "The digest of the manifest itself.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-repo-commit": {
+        "description": "The revision the artifact describes.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/vnd.oci.image.manifest.v1+json": {
+        "schema": {
+         "$ref": "#/components/schemas/OciManifest"
+        }
+       },
+       "application/vnd.docker.distribution.manifest.v2+json": {
+        "schema": {
+         "$ref": "#/components/schemas/OciManifest"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not in the index, or asked for a GGUF manifest of a model that has none.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OciError"
+        },
+        "example": {
+         "errors": [
+          {
+           "code": "MANIFEST_UNKNOWN",
+           "message": "sentence-transformers/all-MiniLM-L6-v2 has no GGUF file; Ollama pulls GGUF models."
+          }
+         ]
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
+     "status": 200,
+     "headers": {
+      "accept": "application/vnd.oci.image.manifest.v1+json"
+     },
+     "contentType": "application/vnd.oci.image.manifest.v1+json"
+    }
+   }
+  },
+  "/v2/{owner}/{name}/blobs/{digest}": {
+   "get": {
+    "tags": [
+     "Registry"
+    ],
+    "operationId": "getModelBlob",
+    "summary": "One layer of a model artifact",
+    "description": "Small layers (config, chat template, parameters) are answered directly, each checked against its digest before the hub keeps it. Weight layers are a redirect to a live source; the client verifies the digest, as every OCI client already does. `HEAD` answers `200` with the size directly, because newer Ollama refuses a cross-host redirect on `HEAD`.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "digest",
+      "in": "path",
+      "required": true,
+      "description": "`sha256:<64 hex>`, the SHA-256 of the file's bytes.",
+      "schema": {
+       "type": "string",
+       "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A small layer, in full.",
+      "content": {
+       "application/octet-stream": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "307": {
+      "description": "A weight layer: follow `Location`, then verify the digest.",
+      "headers": {
+       "location": {
+        "description": "Where the bytes are.",
+        "schema": {
+         "type": "string",
+         "format": "uri"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No such blob in this model at the indexed revision.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OciError"
+        },
+        "example": {
+         "errors": [
+          {
+           "code": "BLOB_UNKNOWN",
+           "message": "No layer with that digest in this model."
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mcp": {
+   "post": {
+    "tags": [
+     "MCP"
+    ],
+    "operationId": "callMcp",
+    "summary": "The Model Context Protocol server",
+    "description": "Streamable HTTP, stateless, anonymous, `POST` only. Protocol versions `2026-07-28`, `2025-11-25`,\n`2025-06-18` and `2025-03-26` are accepted. Three tools: `search_models` finds one, `get_model` lists its\nfiles with sizes and hashes, `resolve_file` gives a URL, the SHA-256 it must have, and the command that\nhands the file to an engine.\n\nWeight bytes never travel in a tool result: the tool returns the instruction, the agent's shell or engine\ndoes the download.",
+    "requestBody": {
+     "required": true,
+     "description": "A JSON-RPC 2.0 request.",
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JsonRpcRequest"
+       },
+       "example": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+         "name": "search_models",
+         "arguments": {
+          "query": "qwen",
+          "limit": 2
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "A JSON-RPC 2.0 response. A tool that fails answers `200` with `result.isError` set, as the protocol requires.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JsonRpcResponse"
+        },
+        "example": {
+         "jsonrpc": "2.0",
+         "id": 1,
+         "result": {
+          "protocolVersion": "2025-06-18",
+          "capabilities": {
+           "tools": {
+            "listChanged": false
+           }
+          },
+          "serverInfo": {
+           "name": "hologram-model-hub",
+           "title": "Hologram Model Hub",
+           "version": "1.0.0"
+          },
+          "instructions": "Open models, every file named by its SHA-256. search_models to find one, get_model for its files, resolve_file for a download URL with the hash it must have. Weights are fetched by your shell or engine, never through a tool result."
+         }
+        }
+       }
+      }
+     },
+     "405": {
+      "description": "`GET` and `DELETE` are refused: the server keeps no session, so there is no stream to open or close.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/mcp",
+     "status": 200,
+     "method": "POST",
+     "headers": {
+      "content-type": "application/json",
+      "accept": "application/json, text/event-stream"
+     },
+     "body": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/list",
+      "params": {}
+     },
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/account/health": {
+   "get": {
+    "tags": [
+     "Account"
+    ],
+    "operationId": "getAccountHealth",
+    "summary": "Is sign-in available",
+    "description": "The one account route that needs no token. `configured: false` means this hub has no sign-in keys, which changes nothing for anonymous callers.",
+    "responses": {
+     "200": {
+      "description": "Whether the account service is up and configured.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountHealth"
+        },
+        "example": {
+         "ok": true,
+         "configured": true
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Any other path under `/api/account` that is not a route answers 404 once the caller is signed in.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "no such account route"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/api/account/health",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/account/me": {
+   "get": {
+    "tags": [
+     "Account"
+    ],
+    "operationId": "getAccount",
+    "summary": "The signed-in account",
+    "description": "What the hub holds for this person: nothing but a saved list, the models they asked for, and a wallet address they chose to report.",
+    "security": [
+     {
+      "privyToken": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The account.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Account"
+        },
+        "example": {
+         "did": "did:privy:cm2…",
+         "created": "2026-09-22T10:00:00.000Z",
+         "wallet": null,
+         "saved": [
+          "Qwen/Qwen3-0.6B"
+         ],
+         "requests": 2
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Not signed in, or the token is not this hub's to accept.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign in to use this"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many requests from this account.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "too many requests, slow down"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Sign-in is not configured on this hub. Every anonymous surface still works.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign-in is not configured on this hub"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "Account"
+    ],
+    "operationId": "updateAccountWallet",
+    "summary": "Record or clear a wallet address",
+    "description": "The address is Privy's to mint and the page's to report. It is recorded and never trusted for anything.",
+    "security": [
+     {
+      "privyToken": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "wallet"
+        ],
+        "properties": {
+         "wallet": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "description": "An address, or null to clear it."
+         }
+        }
+       },
+       "example": {
+        "wallet": "0x0000000000000000000000000000000000000000"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The address as it now stands.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "wallet": {
+           "type": [
+            "string",
+            "null"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Not an address.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "not an address"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Not signed in, or the token is not this hub's to accept.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign in to use this"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many requests from this account.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "too many requests, slow down"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Sign-in is not configured on this hub. Every anonymous surface still works.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign-in is not configured on this hub"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/account/saved": {
+   "post": {
+    "tags": [
+     "Account"
+    ],
+    "operationId": "saveModel",
+    "summary": "Save a model to this account",
+    "description": "A list the person keeps, nothing more. It is not a download, a pin or a claim on anything.",
+    "security": [
+     {
+      "privyToken": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "model"
+        ],
+        "properties": {
+         "model": {
+          "type": "string",
+          "example": "Qwen/Qwen3-0.6B"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The saved list.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SavedList"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Not a model id.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "not a model id"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Not signed in, or the token is not this hub's to accept.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign in to use this"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "The saved list is full.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "saved list is full"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many requests from this account.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "too many requests, slow down"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Sign-in is not configured on this hub. Every anonymous surface still works.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign-in is not configured on this hub"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/account/saved/{model}": {
+   "delete": {
+    "tags": [
+     "Account"
+    ],
+    "operationId": "unsaveModel",
+    "summary": "Remove a model from the saved list",
+    "description": "Removing something that is not there is not an error.",
+    "security": [
+     {
+      "privyToken": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "model",
+      "in": "path",
+      "required": true,
+      "description": "The model id, URL-encoded (the slash included).",
+      "schema": {
+       "type": "string"
+      },
+      "example": "Qwen%2FQwen3-0.6B"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The saved list as it now stands.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SavedList"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Not signed in, or the token is not this hub's to accept.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign in to use this"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many requests from this account.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "too many requests, slow down"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Sign-in is not configured on this hub. Every anonymous surface still works.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign-in is not configured on this hub"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/account/request": {
+   "post": {
+    "tags": [
+     "Account"
+    ],
+    "operationId": "requestModel",
+    "summary": "Ask for a model to be indexed",
+    "description": "The anonymous version of this already happens: the endpoint records every model it is asked for and does not have. Signing in only adds attribution, so the operator can tell one person asking ten times from ten people asking once.",
+    "security": [
+     {
+      "privyToken": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "model"
+        ],
+        "properties": {
+         "model": {
+          "type": "string",
+          "example": "Qwen/Qwen3-0.6B"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Recorded.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "requested": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Not a model id.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "not a model id"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Not signed in, or the token is not this hub's to accept.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign in to use this"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "This account has asked for enough for now.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "you have asked for enough for now"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many requests from this account.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "too many requests, slow down"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Sign-in is not configured on this hub. Every anonymous surface still works.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign-in is not configured on this hub"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/account/publisher-request": {
+   "post": {
+    "tags": [
+     "Account"
+    ],
+    "operationId": "requestPublisherAccess",
+    "summary": "Record an interest in publishing",
+    "description": "It issues nothing and grants nothing. Who may write to this registry is an operator's decision, and a decision is not something a web form gets to make.",
+    "security": [
+     {
+      "privyToken": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "note": {
+          "type": "string",
+          "maxLength": 500
+         }
+        }
+       },
+       "example": {
+        "note": "I maintain three GGUF conversions and would like to publish them here."
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Recorded, and nothing was issued.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "recorded": {
+           "const": true
+          },
+          "issued": {
+           "const": false
+          }
+         }
+        },
+        "example": {
+         "recorded": true,
+         "issued": false
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Not signed in, or the token is not this hub's to accept.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign in to use this"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many requests from this account.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "too many requests, slow down"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Sign-in is not configured on this hub. Every anonymous surface still works.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountError"
+        },
+        "example": {
+         "error": "sign-in is not configured on this hub"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/capabilities": {
+   "get": {
+    "tags": [
+     "Objects"
+    ],
+    "operationId": "getCapabilities",
+    "responses": {
+     "200": {
+      "description": "The capability manifest.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CapabilityManifest"
+        },
+        "example": {
+         "protocol_version": 1,
+         "server_version": "1.0.0",
+         "server_id": "blake3:f0f219a02da8703831b6ae0c97c74cbb9dba43b890151d9fb5e036be9412c50e",
+         "role": "node",
+         "operations": [
+          {
+           "id": "modules.list",
+           "kind": "read",
+           "fallback_safe_before_dispatch": true
+          },
+          {
+           "id": "plugin.call",
+           "kind": "mutation",
+           "fallback_safe_before_dispatch": false
+          },
+          {
+           "id": "plugin.list",
+           "kind": "read",
+           "fallback_safe_before_dispatch": true
+          }
+         ],
+         "modules": [
+          {
+           "id": "dev.hologram.live.system",
+           "name": "Hologram Live System",
+           "version": "1.0.0",
+           "state": "ready",
+           "dependencies": [],
+           "operations": [
+            "system.handshake",
+            "system.health",
+            "system.shutdown"
+           ]
+          },
+          {
+           "id": "dev.hologram.live.kappa-registry",
+           "name": "Kappa Registry Provider",
+           "version": "1.0.0",
+           "state": "ready",
+           "dependencies": [
+            "dev.hologram.live.system"
+           ],
+           "operations": [
+            "registry.list",
+            "registry.get",
+            "registry.search"
+           ]
+          }
+         ],
+         "maximum_message_bytes": 33554432
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "The edge routes only GET and HEAD to this path; anything else falls through to the catch-all.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "not found"
+       }
+      }
+     }
+    },
+    "summary": "What this server can do",
+    "description": "Every operation the server exposes, which modules are loaded, and the hard limits. `maximum_message_bytes` is 32 MiB: anything larger is published as chunks.",
+    "x-hologram-probe": {
+     "path": "/api/v1/capabilities",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/v1/modules": {
+   "get": {
+    "tags": [
+     "Objects"
+    ],
+    "operationId": "listModules",
+    "responses": {
+     "200": {
+      "description": "Success.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ModuleInfo"
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "The edge routes only GET and HEAD to this path; anything else falls through to the catch-all.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "not found"
+       }
+      }
+     }
+    },
+    "summary": "The modules that are loaded",
+    "description": "One entry per module, with the operations it owns and whether it is ready.",
+    "x-hologram-probe": {
+     "path": "/api/v1/modules",
+     "status": 200,
+     "contentType": "application/json"
+    }
+   }
+  },
+  "/api/v1/objects": {
+   "get": {
+    "tags": [
+     "Objects"
+    ],
+    "operationId": "listObjects",
+    "responses": {
+     "200": {
+      "description": "Success.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ObjectMetadata"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No publisher token.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "publish requires a publisher token"
+       }
+      }
+     }
+    },
+    "summary": "List stored objects",
+    "description": "Needs a publisher token. Reading a known address needs none. There is no anonymous listing, on purpose: the catalog is the public index and it is one object away.",
+    "security": [
+     {
+      "publisherToken": []
+     }
+    ]
+   },
+   "post": {
+    "tags": [
+     "Objects"
+    ],
+    "operationId": "publishObject",
+    "parameters": [
+     {
+      "name": "content-type",
+      "in": "header",
+      "description": "Stored media type",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "name": "x-hologram-kind",
+      "in": "header",
+      "description": "Object kind; defaults to file",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "name": "x-hologram-filename",
+      "in": "header",
+      "description": "Original filename",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "description": "The object's bytes.",
+     "content": {
+      "application/octet-stream": {
+       "schema": {
+        "type": "string",
+        "format": "binary"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Success.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObjectMetadata"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No publisher token.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        },
+        "example": "publish requires a publisher token"
+       }
+      }
+     }
+    },
+    "summary": "Publish an object",
+    "description": "The body is the bytes; the response `id` is their BLAKE3 address. Up to 8 MiB per request at the edge, 32 MiB at the server. Larger payloads are published as chunks and joined by a source record.",
+    "security": [
+     {
+      "publisherToken": []
+     }
+    ]
+   }
+  },
+  "/api/v1/objects/{id}": {
+   "get": {
+    "tags": [
+     "Objects"
+    ],
+    "operationId": "getObject",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "description": "`blake3:<64 hex>`, the hash of the object's bytes.",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^blake3:[0-9a-f]{64}$"
+      },
+      "example": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The object's bytes, served under the media type they were published with. The hub publishes `application/vnd.hologram.model-hub.catalog.v1+json` for a catalog, `…model.v1+json` for one model revision and `…source.v1+json` for one place its bytes can be fetched; anything else published here keeps its own type, and an object stored without one is served as opaque bytes. Match on the address, not on the media type.",
+      "headers": {
+       "etag": {
+        "description": "The address, quoted. It cannot change, because the address is the hash of these bytes.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "cache-control": {
+        "description": "`public, max-age=31536000, immutable`.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/vnd.hologram.model-hub.catalog.v1+json": {
+        "schema": {
+         "type": "object",
+         "description": "Today's browse rows, the map from model id to addresses, and `prev`."
+        }
+       },
+       "application/vnd.hologram.model-hub.model.v1+json": {
+        "schema": {
+         "type": "object",
+         "description": "One revision of one model: id, revision, license, files with sizes and SHA-256s, and `prev`."
+        }
+       },
+       "application/vnd.hologram.model-hub.source.v1+json": {
+        "schema": {
+         "type": "object",
+         "description": "One place the bytes of one revision can be fetched: ipfs, http, or chunks on any Hologram Server."
+        }
+       },
+       "application/octet-stream": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No object at that address.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiError"
+        },
+        "example": {
+         "code": "LIVE_NOT_FOUND",
+         "message": "object blake3:0000000000000000000000000000000000000000000000000000000000000000 not found"
+        }
+       }
+      }
+     }
+    },
+    "summary": "One object, by the hash of its bytes",
+    "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
+    "x-hologram-probe": {
+     "path": "/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+     "status": 200,
+     "method": "HEAD"
+    }
+   }
+  }
+ }
+}

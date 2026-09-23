@@ -1,0 +1,83 @@
+name: model-hub-openapi
+
+# The document at hub.uor.foundation/openapi.json is the endpoint's contract, so it is gated like code.
+#
+#   document  on every change: the committed document matches what the builder produces, it lints clean, and an
+#             agent framework can bind to it and complete find -> resolve -> verify. Runs against the built file,
+#             so it passes before the deploy as well as after.
+#   live      on a schedule and on demand: every operation the document describes is called against the live hub and
+#             checked, and every route the hub answers is matched back to the document. This job fails until
+#             apps/model-hub/deploy/install-openapi.sh has been run on the host.
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/model-hub/**", ".github/workflows/model-hub-openapi.yml"]
+  pull_request:
+    paths: ["apps/model-hub/**", ".github/workflows/model-hub-openapi.yml"]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-hub-openapi-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  document:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/model-hub/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/model-hub/web/package-lock.json
+      - run: npm ci --no-fund --no-audit
+
+      - name: The committed document is what the builder produces
+        run: npm run openapi:check
+
+      - name: It lints clean
+        run: npx --yes @redocly/cli@latest lint public/openapi.json --config scripts/redocly.yaml
+
+      - name: A framework can bind to it and verify a real download
+        run: node qa/openapi/bind.mjs --spec public/openapi.json
+
+  live:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/model-hub/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/model-hub/web/package-lock.json
+      - run: npm ci --no-fund --no-audit
+
+      - name: Record what the live endpoint answers
+        run: node qa/openapi/probe.mjs
+
+      - name: Every documented operation answers, and every answering route is documented
+        run: node qa/openapi/conformance.mjs
+
+      - name: A framework can bind to the live document
+        run: node qa/openapi/bind.mjs
+
+      - name: Keep the recording when something fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hub-evidence
+          path: apps/model-hub/web/qa/openapi/evidence.json

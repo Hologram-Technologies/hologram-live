@@ -171,15 +171,23 @@ ul { list-style: none; margin: 0; padding: 0; }
 @media (max-width: 1419px) { .top-search { display: none; } }
 @media (max-width: 720px) {
   .top { gap: var(--space-4); padding: 0 var(--space-4); }
-  .status { display: none; }
-  .archive .status { display: flex; min-width: var(--hh-control); justify-content: center; }
+  /* Narrow enough that hanging the menu off a small control puts it through an edge whichever side it hangs
+     from. Anchor it to the row instead: its width is already clamped to the viewport, so left: 0 always fits. */
+  .head { position: relative; }
+  .head .archive { position: static; }
+  /* On a phone the date is more room than the row has: the dot and the chevron still open every day. */
+  .archive .status { min-width: var(--hh-control); justify-content: center; }
   .archive .status #archive-label { display: none; }
-  .brand .hub { display: none; } /* the archive control takes its room; the page title names the product */
+  /* The header still needs its room for the account control. */
+  .brand .hub { display: none; }
   .brand .mark { height: var(--space-6); }
   .brand .word { height: var(--space-3); }
   .brand { gap: var(--space-2); }
   .brand .hub { font-size: var(--text-sm); margin-left: 0; padding-left: var(--space-2); }
   .top-end { gap: var(--space-2); }
+  /* the same room the other header controls take: the mark alone says it */
+  #sign-in-button .label { display: none; }
+  #sign-in-button { width: var(--hh-control); padding: 0; justify-content: center; border-radius: 50%; }
 }
 
 /* ---- landing: one hero, one screen, no scroll.
@@ -309,6 +317,15 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 /* ---- results */
 .head { display: flex; align-items: center; gap: var(--space-3); }
+/* The index control sits with the thing it describes — the catalog this page is showing — rather than in the
+   header, which is for the product. It opens the row on the browse page, and follows the back link on a model
+   page, so it is on the same side of the page either way. */
+/* The menu hangs from the right of its control, which is what the header wanted. In a content row the control
+   sits near the start, so the menu hangs from the left instead and opens into the room the row has — otherwise it
+   reaches back across the filters beside it. */
+.head .archive .menu { right: auto; left: 0; }
+.back-row { margin-bottom: var(--space-4); }
+.back-row .back { margin: 0; }
 .head h1, .hero h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
 .bar { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-4) 0 var(--space-6); }
 .bar .search { flex: 0 1 40%; min-width: 17.5rem; }
@@ -386,7 +403,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6) var(--space-2); height: var(--space-5); min-width: 0; font-size: var(--text-sm); color: var(--hh-text-dim); white-space: nowrap; overflow: hidden; }
 .meta > span { display: inline-flex; align-items: center; gap: var(--space-1); }
-.meta > span + span::before { content: "·"; margin-right: var(--space-1); color: var(--hh-text-faint); }
+.meta > span + span::before { content: "Â·"; margin-right: var(--space-1); color: var(--hh-text-faint); }
 .meta .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
 
 .avatar { width: var(--hh-avatar); height: var(--hh-avatar); border-radius: 50%; object-fit: cover; background: var(--hh-fill); box-shadow: 0 0 0 1px var(--hh-line); }
@@ -703,3 +720,96 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 .img-alt { color: var(--hh-text-dim); font-size: var(--text-sm); }
 .ov-provenance { font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.6; }
 .ov-provenance .copy { font-family: var(--font-mono); }
+
+/* ---- sign-in (src/auth.js)
+   The control sits at the end of the header cluster. Signed out it is a word; signed in it is the person's own
+   mark, the same circle as the theme control beside it, so the row keeps its rhythm either way. The sheet it
+   opens borrows the popover, the field and the buttons the rest of the site already uses. Every value resolves
+   to the Hologram brand kit. */
+.account { position: relative; display: flex; align-items: center; }
+
+/* The one brand-coloured control on the page: the only thing here asking to be done. */
+.sign-in {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  height: var(--hh-control); padding: 0 var(--space-4);
+  background: var(--hh-accent); border: 1px solid var(--hh-accent); border-radius: var(--radius-lg);
+  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  color: var(--hh-accent-text); white-space: nowrap;
+  transition: opacity var(--hh-ease), transform var(--hh-ease);
+}
+.sign-in:hover { opacity: .88; }
+.sign-in:active { transform: scale(.97); }
+.sign-in .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-accent-text); stroke-width: 2; }
+
+/* Signed in: one letter, the same circle as the theme control. */
+.account-mark {
+  display: grid; place-items: center;
+  width: var(--hh-control); height: var(--hh-control);
+  border: 1px solid var(--hh-line-strong); border-radius: 50%;
+  background: var(--hh-fill);
+  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium);
+  color: var(--hh-text);
+  transition: border-color var(--hh-ease), transform var(--hh-ease);
+}
+.account-mark:hover, .account-mark[aria-expanded="true"] { border-color: var(--hh-line-focus); }
+.account-mark:active { transform: scale(.94); }
+
+.account .menu { font-family: var(--font-sans); }
+.account-who { display: grid; gap: var(--space-1); padding: var(--space-3); }
+.account-who .label { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--hh-text-faint); }
+.account-who b { font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-rows { padding-top: var(--space-1); border-top: 1px solid var(--hh-line); }
+.account-row {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%;
+  min-height: var(--hh-field); padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md); text-align: left;
+  transition: background var(--hh-ease);
+}
+button.account-row:hover, button.account-row:focus-visible { background: var(--hh-fill); outline: 0; }
+.account-row .i { color: var(--hh-text-dim); }
+.account-row .label { flex: 1; display: grid; min-width: 0; }
+.account-row .sub { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-dim); overflow: hidden; text-overflow: ellipsis; }
+.account-row.quiet { color: var(--hh-text-dim); }
+
+.auth-sheet {
+  width: min(25rem, calc(100vw - 2 * var(--hh-gutter))); padding: var(--space-8);
+  background: var(--hh-popover); color: var(--hh-text);
+  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-xl);
+  box-shadow: 0 var(--space-4) var(--space-12) var(--hh-shadow);
+  font-family: var(--font-sans); font-size: var(--text-base);
+}
+.auth-sheet::backdrop { background: var(--hh-shadow); backdrop-filter: blur(var(--space-1)); }
+.auth-sheet[open] { animation: menu-in 200ms cubic-bezier(.2, .8, .2, 1); }
+.auth-close { position: absolute; top: var(--space-4); right: var(--space-4); }
+.auth-close button { display: grid; place-items: center; width: var(--hh-control); height: var(--hh-control); border-radius: var(--radius-md); color: var(--hh-text-dim); transition: background var(--hh-ease), color var(--hh-ease); }
+.auth-close button:hover { background: var(--hh-fill); color: var(--hh-text); }
+.auth-head { display: grid; gap: var(--space-2); margin-bottom: var(--space-6); padding-right: var(--space-10); }
+.auth-head h2 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
+.auth-head p { font-size: var(--text-base); line-height: var(--hh-leading); color: var(--hh-text-dim); }
+.auth-body { display: grid; gap: var(--space-5); }
+.auth-foot { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--hh-line); font-size: var(--text-sm); line-height: var(--hh-leading); color: var(--hh-text-dim); }
+.auth-error { font-size: var(--text-sm); line-height: var(--hh-leading); color: var(--hh-bad); }
+
+/* Typing a six digit code is one task. The other ways in step out of the way while it is on screen. */
+.auth-sheet.on-code .providers, .auth-sheet.on-code .or, .auth-sheet.on-code .auth-head p { display: none; }
+.providers { display: grid; gap: var(--space-3); }
+.provider {
+  display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+  height: var(--hh-field); padding: 0 var(--space-4);
+  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md);
+  font-size: var(--text-base); font-weight: var(--weight-medium);
+  transition: border-color var(--hh-ease), background var(--hh-ease);
+}
+.provider:hover { border-color: var(--hh-line-focus); background: var(--hh-wash); }
+.provider .mark { width: var(--space-5); height: var(--space-5); }
+/* The way in that worked last time, offered first. */
+.provider.preferred { border-color: var(--hh-line-focus); background: var(--hh-fill); }
+.or { display: flex; align-items: center; gap: var(--space-4); font-size: var(--text-sm); color: var(--hh-text-dim); }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--hh-line); }
+.email-step, .code-step { display: grid; gap: var(--space-3); }
+.email-step .button, .code-step .button { justify-content: center; font-size: var(--text-base); font-weight: var(--weight-medium); }
+.code-sent { font-size: var(--text-base); line-height: var(--hh-leading); color: var(--hh-text-dim); }
+.code-step .field input { font-family: var(--font-mono); font-size: var(--text-2xl); letter-spacing: var(--tracking-caps); text-align: center; }
+.code-foot { display: flex; justify-content: space-between; gap: var(--space-4); font-size: var(--text-sm); }
+.code-foot .link { color: var(--hh-text-dim); }
+.code-foot .link:hover { color: var(--hh-text); }

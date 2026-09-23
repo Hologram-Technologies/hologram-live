@@ -1,0 +1,8 @@
+{
+  "package": "@privy-io/js-sdk-core",
+  "version": "0.76.2",
+  "esbuild": "0.25.12",
+  "file": "privy-0.76.2.mjs",
+  "bytes": 725114,
+  "sha256": "5a419f02665b60b3c8b4b7bcd7fedf3ba2254a460ab897876c31fafd6c366c51"
+}

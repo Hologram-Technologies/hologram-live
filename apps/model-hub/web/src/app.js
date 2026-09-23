@@ -11,6 +11,7 @@ if ($("#browse")) browse();
 if ($("[data-verify]")) model();
 copyButtons();
 if ($("#archive")) archive();
+if ($("#account")) account();
 
 async function browse() {
   const data = await fetch(`${base}data/models.json`).then((r) => r.json());
@@ -803,4 +804,56 @@ function themeSwitch() {
   document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".appearance")) open(false); });
   window.addEventListener("storage", (e) => { if (e.key === KEY) { const s = read(); if (s.mode) apply(s.mode, s.wallpaper || "alps"); } });
   sync();
+}
+
+// ---- sign-in
+//
+// The whole of it lives in auth.js, and auth.js is only fetched when someone reaches for the door: a pointer over
+// the button, a keyboard focus, a click, or a returning visit by someone who was signed in here before. An
+// anonymous visit downloads none of it.
+function account() {
+  const box = $("#account"), signIn = $("#sign-in-button"), mark = $("#account-button"), menu = $("#account-menu");
+  let mod = null, modReady = null;
+  // The module handle is kept the moment it resolves: paint() runs from its own change events and must not wait.
+  const load = () => (mod ??= import(`${base}auth.js`).then((m) => (modReady = m)));
+
+  function paint(user) {
+    signIn.hidden = Boolean(user);
+    mark.hidden = !user;
+    if (!user) { menu.hidden = true; menu.replaceChildren(); return; }
+    const m = mod && modReady;
+    $("#account-initial").textContent = m ? m.initialOf(user) : "?";
+    mark.title = user.email || "Your account";
+    if (m) menu.innerHTML = m.accountMenu(user);
+    $("#sign-out")?.addEventListener("click", async () => { open(false); (await load()).signOut(); });
+  }
+  paint(null);
+
+  const open = (show) => { menu.hidden = !show; mark.setAttribute("aria-expanded", String(show)); };
+  mark.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
+  menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { open(false); mark.focus(); } });
+  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest("#account")) open(false); });
+
+  // Intent, not load: reaching for the button is enough to have the sign-in ready by the time it is pressed. A
+  // phone has no hover, so the press itself is the first signal there — pointerdown still lands before the click.
+  const warm = () => load().then((m) => m.warm());
+  for (const signal of ["pointerenter", "pointerdown", "focus"]) signIn.addEventListener(signal, warm, { once: true });
+  signIn.addEventListener("click", async () => (await load()).open());
+
+  // Two reasons to load it without being asked: this is the page a provider sends people back to, or this browser
+  // was signed in here before. The hint is read straight from storage, not from auth.js, so that asking the
+  // question costs an anonymous visitor nothing.
+  const landing = $("#auth-landing");
+  const returning = (() => { try { return localStorage.getItem("hologram-models-hub.account") === "1"; } catch { return false; } })();
+  if (landing || returning) {
+    load().then(async (m) => {
+      m.onChange(paint);
+      try {
+        const user = await m.restore();
+        if (!landing) return;
+        if (user) location.replace(base);
+        else landing.textContent = "That sign-in link did not work. Try again from any page.";
+      } catch { if (landing) landing.textContent = "Something went wrong signing you in. Try again from any page."; }
+    }).catch(() => {});
+  }
 }

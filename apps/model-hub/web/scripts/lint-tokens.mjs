@@ -30,7 +30,7 @@ lines.forEach((line, i) => {
   for (const [, name] of line.matchAll(/var\((--[a-z0-9-]+)/g)) if (!defined.has(name)) problems.push(`${at} undefined ${name}`);
 });
 
-for (const file of ["build.mjs", "src/render.mjs", "src/app.js", "src/overview.mjs", "src/braille.mjs", "src/landing.mjs"]) {
+for (const file of ["build.mjs", "src/render.mjs", "src/app.js", "src/auth.js", "src/overview.mjs", "src/braille.mjs", "src/landing.mjs"]) {
   const src = await read(file);
   if (/style="/.test(src)) problems.push(`${file} inline style attribute`);
   if (/#[0-9a-f]{6}\b/i.test(src.replace(/\/\/.*$/gm, ""))) problems.push(`${file} hex color`);

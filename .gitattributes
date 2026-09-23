@@ -2,3 +2,7 @@ scripts/*.sh text eol=lf
 tools/componentize-py/*.patch text eol=lf -whitespace
 # Vendored code, audited by checksum (scripts/check-kappa-pin.sh): never convert line endings.
 third_party/** -text
+
+# Vendored browser code, audited by checksum (apps/model-hub/web/scripts/vendor-privy.mjs --check): never convert
+# line endings, or the committed bytes stop matching the hash that vouches for them.
+apps/model-hub/web/vendor/** -text

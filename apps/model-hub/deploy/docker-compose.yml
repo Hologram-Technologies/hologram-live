@@ -83,6 +83,33 @@ services:
       default:
         aliases: [hub-resolve]
 
+  # Sign-in. Only people who chose to sign in ever reach it: every read surface of the hub stays anonymous. It
+  # verifies the Privy access token itself (ES256, no npm dependencies, like hub-resolve) and keeps one small record
+  # per person, keyed by a hash of their Privy identifier.
+  account:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ["node", "/app/hub-account.mjs"]
+    environment:
+      HUB_ACCOUNT_STATE: /state
+      PRIVY_VERIFICATION_KEY_FILE: /run/privy-key.pem
+    # PRIVY_APP_ID only. The key is a file next to it, because a PEM does not survive an env file intact.
+    # With neither, the service answers /api/account/health and refuses the rest, so the hub still starts.
+    env_file:
+      - ./privy.env
+    volumes:
+      - ./bin/hub-account.mjs:/app/hub-account.mjs:ro
+      - ./privy-verification-key.pem:/run/privy-key.pem:ro
+      - ./state/account:/state
+    mem_limit: 96m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "5" }
+    networks:
+      default:
+        aliases: [hub-account]
+
 networks:
   default:
     name: twenty_default

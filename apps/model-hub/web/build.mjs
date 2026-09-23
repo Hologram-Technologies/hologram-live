@@ -21,6 +21,10 @@ const HIGHLIGHT = process.env.HIGHLIGHT || "seal";
 // The root is the landing page, so the browse table moves under the prefix its model pages already use.
 const BROWSE = `${base}models/`;
 const REPO = "https://github.com/Hologram-Technologies/hologram-live/tree/main/apps/model-hub";
+// The repository the hero's star badge counts and links to. scripts/data.mjs bakes the count into
+// models.json; a build whose fetch failed, or an offline build off a copied data/, ships the badge without a
+// number and the page fills it in from the public API on load.
+const STAR_REPO = process.env.MODEL_HUB_REPO || "Hologram-Technologies/hologram-live";
 const INDEX = "https://github.com/humuhumu33/hologram-api";
 // The one base URL every dialect answers on, whatever prefix this build is served under.
 const ENDPOINT = "https://hub.uor.foundation";
@@ -29,6 +33,7 @@ const data = JSON.parse(await readFile(join(SITE, "data", "models.json"), "utf8"
 const models = R.prepare(data.models, data.snapshot);
 const archivePath = join(SITE, "data", "archive.json");
 const archive = existsSync(archivePath) ? JSON.parse(await readFile(archivePath, "utf8")) : null;
+const starRepo = { name: STAR_REPO, url: `https://github.com/${STAR_REPO}`, stars: data.repo?.name === STAR_REPO ? data.repo.stars : null };
 
 // The header pill. With an archive it opens every captured day; the Wayback idea, one control.
 function indexPill() {
@@ -129,7 +134,7 @@ ${home ? "" : `<div class="veil" aria-hidden="true"></div>\n`}<div class="shell"
   <div class="top-end">
     ${home ? `<nav class="top-nav" aria-label="Sections"><a href="${BROWSE}">Models${R.icon.grid}</a><a href="${base}registry/">Registry${R.icon.box}</a><a href="${base}llms.txt">Docs${R.icon.file}</a></nav>` : ""}
     ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
+    ${home ? "" : `<a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>`}
     ${themeSwitch}
     ${accountControl()}
   </div>
@@ -146,7 +151,7 @@ const home = page({
   title: "Hologram Models Hub",
   description: "Discover, use and share self-verifying models, skills and artifacts.",
   home: true,
-  body: landing({ base, models, endpoint: ENDPOINT }),
+  body: landing({ base, models, endpoint: ENDPOINT, repo: starRepo }),
 });
 
 // ---- browse

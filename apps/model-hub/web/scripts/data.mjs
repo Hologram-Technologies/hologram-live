@@ -18,6 +18,8 @@ const API = process.env.HOLOGRAM_API || "https://humuhumu33.github.io/hologram-a
 // Models whose bytes are stored on a Hologram registry, published as models/<owner>/<name>:<revision>.
 const HUB = process.env.MODEL_HUB_REGISTRY || "hub.uor.foundation";
 const LIMIT = Number(process.argv[process.argv.indexOf("--limit") + 1]) || 500;
+// The repository whose stars the landing hero shows. Public metadata, one unauthenticated call per build.
+const REPO = process.env.MODEL_HUB_REPO || "Hologram-Technologies/hologram-live";
 // The Hugging Face token goes to huggingface.co and nowhere else: never to the hub, the address index or a gateway.
 const headersFor = (url) => (process.env.HF_TOKEN && /^https:\/\/huggingface\.co\//.test(url) ? { authorization: `Bearer ${process.env.HF_TOKEN}` } : {});
 
@@ -216,15 +218,19 @@ async function main() {
   for (const m of models) m.avatar = avatarOf.get(m.org) || null;
 
   const addressed = models.filter((m) => m.state === "addressed");
+  // Baked so the hero badge is right on first paint. A failure here costs one build's freshness and nothing
+  // else: the page refreshes the count from the same public API in the viewer's browser.
+  const repoMeta = await get(`https://api.github.com/repos/${REPO}`, "json", 2);
   const out = {
     snapshot: new Date().toISOString().slice(0, 10),
     source: { trending: `${HF}/api/models?sort=trendingScore`, index: "https://humuhumu33.github.io/hologram-api/v1/index.json" },
     totals: { models: models.length, addressed: addressed.length, weightBytes: addressed.reduce((s, m) => s + (m.weightBytes || 0), 0) },
+    repo: { name: REPO, url: `https://github.com/${REPO}`, stars: typeof repoMeta?.stargazers_count === "number" ? repoMeta.stargazers_count : null },
     models,
   };
   await mkdir(DATA, { recursive: true });
   await writeFile(join(DATA, "models.json"), JSON.stringify(out));
-  console.log(`${models.length} trending · ${addressed.length} addressed · ${avatars.filter(Boolean).length}/${orgs.length} avatars`);
+  console.log(`${models.length} trending · ${addressed.length} addressed · ${avatars.filter(Boolean).length}/${orgs.length} avatars · ${out.repo.stars == null ? "stars unavailable" : `${out.repo.stars} stars`}`);
   const unindexed = models.filter((m) => m.state === "pending").map((m) => m.id);
   await writeFile(join(DATA, "pending.txt"), unindexed.join("\n") + "\n");
 }

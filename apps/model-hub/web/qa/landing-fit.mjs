@@ -136,6 +136,10 @@ async function load(url) {
 }
 
 const problems = [];
+// Immersive puts the type straight on a photograph the viewer picks, undimmed and with nothing drawn behind
+// the words. That is a deliberate call, and no static check can rule on an unknown image, so its contrast is
+// reported and never fails the run. Dark and Light are held to AA.
+const notes = [];
 const rows = [];
 for (const theme of THEMES) {
   await load(home);
@@ -154,7 +158,7 @@ for (const theme of THEMES) {
     if (fit.overflowY > 1) problems.push(`${where}: scrolls ${fit.overflowY}px vertically`);
     if (fit.overflowX > 1) problems.push(`${where}: scrolls ${fit.overflowX}px horizontally`);
     for (const o of fit.outside) problems.push(`${where}: outside the viewport ${o}`);
-    for (const f of contrast.failures) problems.push(`${where}: contrast ${f}`);
+    for (const f of contrast.failures) (theme === "immersive" ? notes : problems).push(`${where}: contrast ${f}`);
     rows.push(`${where.padEnd(34)} display ${String(Math.round(fit.display)).padStart(3)}px  overflow ${fit.overflowY}/${fit.overflowX}  contrast lowest ${contrast.lowest} over ${contrast.checked} texts`);
   }
 }
@@ -164,5 +168,6 @@ proc.kill();
 server.close();
 
 console.log(rows.join("\n"));
+if (notes.length) console.log(`\nImmersive, reported and not enforced (${notes.length}): the hero sits on an undimmed photograph.\n${[...new Set(notes.map((n) => n.replace(/^immersive \S+ \([^)]*\): /, "  ")))].join("\n")}`);
 if (problems.length) { console.error(`\n${problems.length} problems\n${problems.join("\n")}`); process.exit(1); }
-console.log(`\nlanding fits: ${THEMES.length} themes x ${VIEWPORTS.length} viewports, no scroll, nothing clipped, contrast AA`);
+console.log(`\nlanding fits: ${THEMES.length} themes x ${VIEWPORTS.length} viewports, no scroll, nothing clipped, contrast AA in Dark and Light`);

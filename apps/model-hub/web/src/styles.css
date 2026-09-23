@@ -183,9 +183,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 /* ---- landing: one hero, one screen, no scroll.
    The shell becomes the viewport: header, hero, logo strip, and nothing below the fold to reach. */
 :root[data-page="landing"], :root[data-page="landing"] body { height: 100%; overflow: hidden; }
+/* height: 100% and not 100svh. The percentage chains from html and body, which are the viewport itself, so
+   it cannot disagree with the window the way a viewport unit can; a shell one pixel taller than the window
+   pushes the strip past the bottom edge, where overflow: hidden then hides it. */
 :root[data-page="landing"] .shell {
   display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
-  height: 100svh; padding-bottom: 0;
+  height: 100%; padding-bottom: 0;
 }
 
 .land {
@@ -238,9 +241,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 /* Over a photo the figure only adds noise, and floating text loses its ground: the hero takes the glass every
    other surface already uses in Immersive, and the strip steps back further. */
 :root[data-theme="immersive"] .land-art { display: none; }
-/* No slab on the hero: the wallpaper itself steps back instead, so the type sits on the photo with nothing
-   drawn around it. The strip keeps a band, which is the only thing that makes it read over a bright sky. */
-:root[data-theme="immersive"][data-page="landing"] { --hh-veil: 68%; }
+/* Nothing is drawn around the hero in Immersive and the photograph is not dimmed: no slab, no header plate,
+   the wallpaper at the same strength the application shows it. Legibility comes from a shadow under the type,
+   which costs the picture nothing. The strip keeps a band, the one thing that makes it read over a bright sky. */
+:root[data-theme="immersive"][data-page="landing"] .top { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+:root[data-theme="immersive"] .land-copy { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
+:root[data-theme="immersive"][data-page="landing"] .top .brand, :root[data-theme="immersive"][data-page="landing"] .top-end { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
 :root[data-theme="immersive"] .land-sub { color: var(--hh-text); }
 :root[data-theme="immersive"] .land-marquee { background: color-mix(in srgb, var(--background) 45%, transparent); }
 :root[data-theme="immersive"] .land-track img { opacity: .4; }

@@ -137,9 +137,11 @@ fi
 # the TLS conversations happen between the two containers on the network.
 docker build -q -t swap/hello:v1 "$work" > /dev/null
 skopeo() {
+  # --mount, not -v: the destination path carries the port's colon, which
+  # -v would read as the mode separator.
   docker run --rm --name swap-client --network swap_default \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    -v "$work/path/ca.crt:/etc/containers/certs.d/registry:5000/ca.crt" \
+    --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+    --mount type=bind,src="$work/path/ca.crt",dst=/etc/containers/certs.d/registry:5000/ca.crt \
     quay.io/skopeo/stable:latest "$@"
 }
 skopeo copy -q --dest-creds gate:gate-password --dest-tls-verify \

@@ -130,6 +130,9 @@ jobs:
       - name: Publish server release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks the repository out, so `gh` has no git remote
+          # to infer from and exits "not a git repository". Name it.
+          GH_REPO: ${{ github.repository }}
         run: |
           version="${GITHUB_REF_NAME#server-v}"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then

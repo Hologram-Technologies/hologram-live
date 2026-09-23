@@ -59,4 +59,18 @@ mod tests {
             "live"
         );
     }
+
+    #[test]
+    fn resource_key_changes_the_assignment() {
+        let nodes = vec![node("alpha"), node("bravo"), node("charlie")];
+        let owners = (0..64)
+            .map(|index| {
+                owner(&format!("file:{index}"), &nodes)
+                    .unwrap()
+                    .node_id
+                    .clone()
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert!(owners.len() > 1, "ownership should spread independent keys");
+    }
 }

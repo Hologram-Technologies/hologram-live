@@ -213,6 +213,21 @@ impl AppState {
         &self.inner.nodes
     }
 
+    /// Selects the live owner for mutable distributed state.
+    ///
+    /// The local node participates only when it has an explicitly advertised
+    /// endpoint. That prevents an unrouteable member from being selected for
+    /// work that another node must be able to forward to it.
+    pub fn mutable_owner(&self, resource: &str) -> Result<Option<NodeRecord>> {
+        let mut nodes = self.nodes().list()?;
+        if let Some(endpoint) = self.inner.config.cluster.advertise_endpoint.as_ref() {
+            let local = self.local_node_record(endpoint.trim_end_matches('/').to_owned());
+            nodes.retain(|node| node.node_id != local.node_id);
+            nodes.push(local);
+        }
+        Ok(crate::ownership::owner(resource, &nodes).cloned())
+    }
+
     pub(crate) fn cluster_token(&self) -> Option<&str> {
         self.inner.cluster_token.as_deref()
     }

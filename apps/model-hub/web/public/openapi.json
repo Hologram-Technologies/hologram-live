@@ -1166,23 +1166,23 @@
      "Discovery"
     ],
     "operationId": "getDescriptor",
-    "summary": "The hub descriptor, or the website",
-    "description": "One URL, two readers. Ask for `application/json` and the hub answers the descriptor at `/.well-known/model-hub.json`, which names today's catalog address and where everything else lives. Ask for anything else and it answers the website.",
+    "summary": "The hub, answered three ways",
+    "description": "One URL, three readers, chosen by `Accept`.\n\nA browser sends `text/html` and gets the website. A caller that asks for `application/json` by name gets the\ndescriptor, which points at today's catalog address and at everything else here. Anything else — `*/*`, which\nis what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually\nasks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.\n\nSo `curl hub.uor.foundation` is the shortest useful thing an agent can be told about this service.",
     "parameters": [
      {
       "name": "Accept",
       "in": "header",
       "required": false,
-      "description": "Send `application/json` for the descriptor.",
+      "description": "`text/html` for the site, `application/json` for the descriptor, anything else for the brief.",
       "schema": {
        "type": "string"
       },
-      "example": "application/json"
+      "example": "*/*"
      }
     ],
     "responses": {
      "200": {
-      "description": "The descriptor, or the website's HTML.",
+      "description": "The website, the descriptor or the brief, depending on what was asked for.",
       "content": {
        "application/json": {
         "schema": {
@@ -1210,6 +1210,12 @@
           "model-hub.model": "one revision of one model: id, revision, license, files[{path,size,sha256}], prev",
           "model-hub.source": "one place the bytes of one revision can be fetched: ipfs, http or hologram (chunks on any Hologram Server)"
          }
+        }
+       },
+       "text/markdown": {
+        "schema": {
+         "type": "string",
+         "description": "The same bytes as `/agent.md`."
         }
        },
        "text/html": {
@@ -1419,6 +1425,48 @@
      "path": "/.well-known/agent-card.json",
      "status": 200,
      "contentType": "application/json"
+    }
+   }
+  },
+  "/agent.md": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getAgentBrief",
+    "summary": "The whole hub, for the agent that just arrived",
+    "description": "One screen of plain markdown: what this is, the one line that switches an existing tool over, the three requests that use it directly, and the rule that makes the bytes safe. It is what `GET /` answers to anything that is not a browser, and it ends with a check the reader can run to confirm the rest. The last line is a canary: a fetcher that summarises drops it, and an agent that cannot see it knows to fetch this path again verbatim.",
+    "responses": {
+     "200": {
+      "description": "Markdown, a few hundred lines at most.",
+      "content": {
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/agent.md",
+     "status": 200,
+     "contentType": "text/markdown"
     }
    }
   },
@@ -1705,17 +1753,17 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-23T19:35:50.667Z",
+           "checked": "2026-09-23T20:13:21.350Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-23T19:35:51.908Z",
+           "checked": "2026-09-23T20:13:23.313Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-23T19:35:51.981Z",
+           "checked": "2026-09-23T20:13:23.387Z",
            "reason": "verified"
           }
          },

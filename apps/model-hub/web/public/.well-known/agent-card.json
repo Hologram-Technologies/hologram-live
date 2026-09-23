@@ -37,6 +37,7 @@
     "getOpenapi",
     "getWellKnownOpenapi",
     "getAgentCard",
+    "getAgentBrief",
     "getDocs",
     "getLlmsTxt",
     "getArchive",

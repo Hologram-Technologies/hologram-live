@@ -74,6 +74,9 @@ async function main() {
     // discovery
     ["root.html", "/", {}],
     ["root.descriptor", "/", { headers: { accept: "application/json" } }],
+    // What curl, node fetch and python requests all send. This is the one an arriving agent actually makes.
+    ["root.brief", "/", { headers: { accept: "*/*" } }],
+    ["brief", "/agent.md", { headers: CORS }],
     ["descriptor", "/.well-known/model-hub.json", { headers: CORS }],
     ["llms", "/llms.txt", { headers: CORS }],
     ["openapi", "/openapi.json", { headers: CORS }],

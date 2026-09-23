@@ -7,6 +7,7 @@ Everything needed to rebuild `https://hub.uor.foundation` on one Linux host with
 | `/` | Model Hub static site (`apps/model-hub/web`, built with `BASE=/`) |
 | `/v2/*`, `/_*` | Kappa Registry (OCI distribution). Reads are public; writes need the registry bearer token |
 | `/openapi.json`, `/.well-known/openapi.json` | One OpenAPI 3.1 document describing every dialect of the endpoint. Built into the site by `web/scripts/openapi.build.mjs`; `/docs` renders it |
+| `/agent.md` | The whole hub on one screen for an arriving agent. `GET /` answers it to anything that is not a browser and is not asking for JSON, so `curl hub.uor.foundation` is a usable answer rather than 77 KB of markup |
 
 ## Layout on the host (`/root/hub`)
 

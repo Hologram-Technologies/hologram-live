@@ -24,6 +24,7 @@ test -f "$WEB/public/openapi.json" || { echo "build the document first: (cd $WEB
 mkdir -p "$WORK/site/.well-known"
 cp "$WEB/public/openapi.json" "$WORK/site/openapi.json"
 cp "$WEB/public/robots.txt" "$WORK/site/robots.txt"
+cp "$WEB/public/agent.md" "$WORK/site/agent.md"
 cp "$WEB/public/.well-known/agent-card.json" "$WORK/site/.well-known/agent-card.json"
 printf '{"format":"hologram.model-hub.descriptor/v1","catalog":"blake3:%064d"}\n' 0 > "$WORK/site/.well-known/model-hub.json"
 printf '# guide\n' > "$WORK/site/llms.txt"
@@ -84,10 +85,13 @@ for c in rehearse-stub rehearse-site rehearse-front; do
 done
 
 fails=0
-check() { # name method path expected-status [grep-pattern]
+check() { # name method path expected-status [grep-pattern] [extra curl args...]
 	local name=$1 method=$2 path=$3 want=$4 pattern=${5:-}
+	shift 5 2>/dev/null || shift $#
 	local out code
-	out=$(curl -s -o "$WORK/body" -D "$WORK/head" -w '%{http_code}' -X "$method" -H 'accept: application/json' "http://127.0.0.1:$PORT$path" || true)
+	# No default Accept: curl would send both headers and the first one would decide the answer, which is exactly
+	# the thing under test here. Each case states the Accept it means.
+	out=$(curl -s -o "$WORK/body" -D "$WORK/head" -w '%{http_code}' -X "$method" "$@" "http://127.0.0.1:$PORT$path" || true)
 	code=$out
 	if [ "$code" != "$want" ]; then echo "FAIL $name: $path answered $code, expected $want"; fails=$((fails + 1)); return; fi
 	if [ -n "$pattern" ] && ! grep -qi -- "$pattern" "$WORK/head" "$WORK/body"; then
@@ -95,6 +99,18 @@ check() { # name method path expected-status [grep-pattern]
 	fi
 	echo "ok   $name: $path -> $code${pattern:+ (${pattern})}"
 }
+
+# The three readers of the bare name. `check` sends Accept: application/json by default, so each case overrides it.
+echo "== one URL, three readers"
+check "a browser gets the page"    GET / 200 "<title>site</title>"       -H "accept: text/html,application/xhtml+xml"
+check "json by name: descriptor"   GET / 200 "descriptor/v1"             -H "accept: application/json"
+check "curl gets the brief"        GET / 200 "# hub.uor.foundation"      -H "accept: */*"
+check "no Accept at all: brief"    GET / 200 "Hash what arrives"         -H "accept:"
+check "an unfurler still gets html" GET / 200 "<title>site</title>"      -H "accept: */*" -A "Slackbot-LinkExpanding 1.0"
+check "the front door is cors-open" GET / 200 "access-control-allow-origin: \*" -H "accept: */*"
+check "the brief by its own path"  GET /agent.md 200 "# hub.uor.foundation" -H "accept: */*"
+# The document promises text/markdown here; a file server that guessed octet-stream would make agents download it.
+check "the brief is markdown"      GET /agent.md 200 "content-type: text/markdown" -H "accept: */*"
 
 echo "== what the change adds"
 check "openapi from the site"      GET /openapi.json                  200 '"openapi": "3.1.0"'
@@ -113,7 +129,7 @@ check "models still on resolve"    GET /api/models                    200 'hub-r
 check "resolve still on resolve"   GET /a/b/resolve/main/c.json       200 'hub-resolve'
 check "mcp still on resolve"       GET /mcp                           200 'hub-resolve /mcp'
 check "registry still on kappa"    GET /v2/                           200 'kappa'
-check "descriptor still rewrites"  GET /                              200 'hologram.model-hub.descriptor/v1'
+check "descriptor still rewrites"  GET /                              200 'hologram.model-hub.descriptor/v1' -H "accept: application/json"
 check "llms.txt still served"      GET /llms.txt                      200 '# guide'
 # A write under /v2/<owner>/<name>/ never reaches the registry: the @ollama matcher sends it to the read-only
 # shim, which refuses anything but GET and HEAD. The token gate guards the hub's own namespace and /v2/ itself.

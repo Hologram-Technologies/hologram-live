@@ -8,6 +8,8 @@
 //
 // Writes, all under web/public, which the site build copies into dist:
 //   openapi.json                      served at /openapi.json; /docs renders it, unchanged, from the same URL
+//   agent.md                          what `curl hub.uor.foundation` answers: the whole hub in one screen, for the
+//                                     agent that just arrived and has no idea what this is
 //   .well-known/agent-card.json       the same contract as skills, for frameworks that discover an agent card
 //   robots.txt                        crawling policy, generated so it can never contradict the document
 //
@@ -23,6 +25,7 @@ const SERVER_SPEC = new URL("./openapi.server.json", HERE);
 const PUBLIC = new URL("../public/", HERE);
 const OUT = new URL("./openapi.json", PUBLIC);
 const CARD = new URL("./.well-known/agent-card.json", PUBLIC);
+const BRIEF = new URL("./agent.md", PUBLIC);
 const ROBOTS = new URL("./robots.txt", PUBLIC);
 const BASE = "https://hub.uor.foundation";
 
@@ -154,13 +157,26 @@ function document(server, evidence) {
     get: {
       tags: ["Discovery"],
       operationId: "getDescriptor",
-      summary: "The hub descriptor, or the website",
-      description: "One URL, two readers. Ask for `application/json` and the hub answers the descriptor at `/.well-known/model-hub.json`, which names today's catalog address and where everything else lives. Ask for anything else and it answers the website.",
-      parameters: [{ name: "Accept", in: "header", required: false, description: "Send `application/json` for the descriptor.", schema: { type: "string" }, example: "application/json" }],
+      summary: "The hub, answered three ways",
+      description: [
+        "One URL, three readers, chosen by `Accept`.",
+        "",
+        "A browser sends `text/html` and gets the website. A caller that asks for `application/json` by name gets the",
+        "descriptor, which points at today's catalog address and at everything else here. Anything else — `*/*`, which",
+        "is what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually",
+        "asks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.",
+        "",
+        "So `curl hub.uor.foundation` is the shortest useful thing an agent can be told about this service.",
+      ].join("\n"),
+      parameters: [{ name: "Accept", in: "header", required: false, description: "`text/html` for the site, `application/json` for the descriptor, anything else for the brief.", schema: { type: "string" }, example: "*/*" }],
       responses: {
         200: {
-          description: "The descriptor, or the website's HTML.",
-          content: { ...json(ref("Descriptor"), body("root.descriptor")), "text/html": { schema: { type: "string" } } },
+          description: "The website, the descriptor or the brief, depending on what was asked for.",
+          content: {
+            ...json(ref("Descriptor"), body("root.descriptor")),
+            "text/markdown": { schema: { type: "string", description: "The same bytes as `/agent.md`." } },
+            "text/html": { schema: { type: "string" } },
+          },
         },
         ...READ_ONLY,
       },
@@ -197,6 +213,16 @@ function document(server, evidence) {
       description: "The hub described as a set of skills, for frameworks that discover services through an agent card rather than an OpenAPI document.",
       responses: { 200: { description: "The agent card.", content: json(ref("AgentCard")) }, ...NOT_SERVED },
       ...probe("/.well-known/agent-card.json", { contentType: "application/json" }),
+    },
+  };
+  spec.paths["/agent.md"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getAgentBrief",
+      summary: "The whole hub, for the agent that just arrived",
+      description: "One screen of plain markdown: what this is, the one line that switches an existing tool over, the three requests that use it directly, and the rule that makes the bytes safe. It is what `GET /` answers to anything that is not a browser, and it ends with a check the reader can run to confirm the rest. The last line is a canary: a fetcher that summarises drops it, and an agent that cannot see it knows to fetch this path again verbatim.",
+      responses: { 200: { description: "Markdown, a few hundred lines at most.", content: { "text/markdown": { schema: { type: "string" } }, "text/plain": { schema: { type: "string" } } } }, ...NOT_SERVED },
+      ...probe("/agent.md", { contentType: "text/markdown" }),
     },
   };
   spec.paths["/docs"] = {
@@ -939,6 +965,66 @@ const trim = (value, key, keep = 2) => (value && Array.isArray(value[key]) ? { .
 
 // ---------------------------------------------------------------- derived discovery files
 
+// The one file an agent reads. It is what `curl hub.uor.foundation` answers, because curl and every HTTP client an
+// agent is built on send `Accept: */*` and would otherwise get 78 KB of markup they cannot use.
+//
+// Rules it lives by, learned from the ones that work (OpenRouter's learn.md, Hugging Face's own docs):
+//   short enough to read whole, imperative, no SDK, no key, and it ends with something the agent can do right now
+//   and check for itself. The paths are taken from the built document, so this file cannot describe a route that
+//   does not exist. The last line is a canary: a summarising fetcher drops it, and the agent knows to re-fetch.
+function brief(spec) {
+  const has = (path) => (spec.paths[path] ? "" : " (missing)");
+  const ops = Object.values(spec.paths).reduce((n, item) => n + Object.keys(item).filter((k) => k !== "parameters").length, 0);
+  return [
+    "# hub.uor.foundation",
+    "",
+    "You are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file",
+    "named by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.",
+    "No account, no key, no SDK, and every read below is anonymous.",
+    "",
+    "## One line, if you can set an environment variable",
+    "",
+    "    HF_ENDPOINT=https://hub.uor.foundation",
+    "",
+    "Everything built on huggingface_hub now reads from here, with the commands you already have: transformers,",
+    "diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT instead. Same cache, same files.",
+    "",
+    "## Or call it directly. Three requests, no key",
+    "",
+    `    GET /api/models?search=qwen&limit=5${has("/api/models")}`,
+    "        Find a model. A few hundred bytes, not a catalogue.",
+    `    GET /api/models/{owner}/{name}/tree/main${has("/api/models/{owner}/{name}/tree/{revision}")}`,
+    "        Its files. Each one carries `oid`: the SHA-256 the bytes must have.",
+    `    GET /{owner}/{name}/resolve/main/{path}${has("/{owner}/{name}/resolve/{revision}/{path}")}`,
+    "        302 to a source that was up a moment ago. The weights never pass through this host.",
+    "",
+    "## The one rule",
+    "",
+    "Hash what arrives. Keep it only if the SHA-256 equals the `oid` from the tree. The expected hash comes from the",
+    "index and never from the source that served the bytes, and this server does not verify on read. To check a",
+    "whole download at once, with no tool of ours:",
+    "",
+    "    curl -s https://hub.uor.foundation/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c",
+    "",
+    "## When you want more",
+    "",
+    `    /openapi.json     the whole endpoint, ${Object.keys(spec.paths).length} paths and ${ops} operations, OpenAPI 3.1. Bind to it directly.`,
+    "    /mcp              the same hub as MCP tools over streamable HTTP. No key.",
+    "    /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.",
+    "    /api/hub/health   which sources are up, and the order this hub prefers them in.",
+    "    /llms.txt         the same thing at more length.",
+    "",
+    "## Do this now",
+    "",
+    "Run the three requests on any model and check one hash yourself. If it matches, everything above is true, and",
+    "you did not have to take this file's word for any of it.",
+    "",
+    "<!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch",
+    "     https://hub.uor.foundation/agent.md again and read it verbatim. -->",
+    "",
+  ].join("\n");
+}
+
 const name = (url) => decodeURIComponent(url.pathname).split("/public/")[1];
 
 // The same contract, as skills. Generated from the document so a tag can never describe one thing here and another
@@ -1015,6 +1101,7 @@ async function main() {
   const spec = document(server, evidence);
   const files = [
     [OUT, JSON.stringify(spec, null, 1) + "\n"],
+    [BRIEF, brief(spec)],
     [CARD, JSON.stringify(agentCard(spec), null, 1) + "\n"],
     [ROBOTS, robots()],
   ];
@@ -1026,13 +1113,14 @@ async function main() {
       if (current !== text) { console.error(`${name(url)} is out of date`); stale++; }
     }
     if (stale) { console.error("run: node scripts/openapi.build.mjs"); process.exit(1); }
-    console.log("openapi.json, agent-card.json and robots.txt are all up to date");
+    console.log("openapi.json, agent.md, agent-card.json and robots.txt are all up to date");
     return;
   }
   await mkdir(new URL("./.well-known/", PUBLIC), { recursive: true });
   for (const [url, text] of files) await writeFile(url, text);
   const ops = Object.values(spec.paths).reduce((n, item) => n + Object.keys(item).filter((k) => k !== "parameters").length, 0);
   console.log(`wrote public/openapi.json: ${Object.keys(spec.paths).length} paths, ${ops} operations, ${Object.keys(spec.components.schemas).length} schemas, ${Math.round(files[0][1].length / 1024)} KB`);
+  console.log(`wrote public/agent.md: ${brief(spec).split("\n").length} lines`);
   console.log(`wrote public/.well-known/agent-card.json: ${agentCard(spec).skills.length} skills`);
   console.log("wrote public/robots.txt");
 }

@@ -3,6 +3,7 @@
 // This is the claim the document exists to support, so it is tested the way a framework does it, with nothing
 // hand-written about the hub:
 //
+//   0. arrive     GET / the way curl does (Accept: */*) and check the answer is usable prose, not markup
 //   1. discover   GET / with Accept: application/json, follow the descriptor to the OpenAPI document
 //   2. bind       turn every operation into a tool definition, in the three shapes frameworks actually consume
 //                 (OpenAI function calling, Anthropic tool use, MCP), and refuse any operation that cannot be bound
@@ -36,9 +37,23 @@ const get = async (url, init) => fetch(url, { signal: AbortSignal.timeout(30_000
 // ---- 1. discover ------------------------------------------------------------------------------
 
 async function discover() {
+  // What the hero tells an agent to run. curl, node fetch and python requests all send */*, so this is the
+  // request an arriving agent actually makes, and it has to land on something it can act on.
+  const arriving = await get(`${BASE}/`, { headers: { accept: "*/*" } });
+  const brief = await arriving.text();
+  const type = (arriving.headers.get("content-type") || "").split(";")[0];
+  if (type === "text/html") {
+    soon(`curl ${BASE} still answers ${Math.round(brief.length / 1024)} KB of HTML, which an agent cannot use`);
+  } else if (!/resolve\/main/.test(brief) || !/SHA-256|sha256/.test(brief)) {
+    bad(`curl ${BASE} answered ${type} but it does not show how to fetch a file or how to check it`);
+  } else {
+    ok(`curl ${BASE} answers ${Math.round(brief.length / 1024)} KB of ${type}: the calls and the rule, no markup`);
+    if (!/canary/.test(brief)) soon("the brief carries no canary, so a summarising fetcher cannot be detected");
+  }
+
   const root = await get(`${BASE}/`, { headers: { accept: "application/json" } });
-  const type = (root.headers.get("content-type") || "").split(";")[0];
-  if (type !== "application/json") throw new Error(`the root did not answer JSON to an Accept: application/json request, it answered ${type}`);
+  const jsonType = (root.headers.get("content-type") || "").split(";")[0];
+  if (jsonType !== "application/json") throw new Error(`the root did not answer JSON to an Accept: application/json request, it answered ${jsonType}`);
   const descriptor = await root.json();
   ok(`discovered ${descriptor.name || "the hub"} from the bare host name`);
 

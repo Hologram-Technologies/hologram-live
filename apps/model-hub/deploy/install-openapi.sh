@@ -45,6 +45,7 @@ preconditions() {
 	grep -q '"openapi": "3.1.0"' "$SITE/openapi.json" || die "$SITE/openapi.json is not an OpenAPI 3.1 document"
 	grep -q '"title": "Hologram Model Hub"' "$SITE/openapi.json" || die "$SITE/openapi.json is not the hub's document: the site build is older than this change"
 	[ -f "$SITE/robots.txt" ] || die "$SITE/robots.txt is missing: the site build is older than this change"
+	[ -f "$SITE/agent.md" ] || die "$SITE/agent.md is missing: the site build is older than this change, and the bare name would answer markup to an arriving agent"
 	[ -f "$SITE/.well-known/agent-card.json" ] || die "$SITE/.well-known/agent-card.json is missing: the site build is older than this change"
 	[ -n "$CADDY" ] || CADDY=$(caddy_container)
 }
@@ -117,6 +118,7 @@ verify() {
 	probe "well-known alias"    /.well-known/openapi.json     200 '"openapi": "3.1.0"'
 	probe "agent card"          /.well-known/agent-card.json  200 'Hologram Model Hub'
 	probe "robots"              /robots.txt                   200 'Disallow: /via/'
+	probe "the brief"           /agent.md                     200 'Hash what arrives'
 	probe "docs still render"   /docs                         200 'openapi.json'
 	probe "health untouched"    /healthz                      200 'ready'
 	probe "capabilities"        /api/v1/capabilities          200 'operations'

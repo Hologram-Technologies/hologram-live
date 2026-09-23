@@ -239,10 +239,14 @@ function publicKeyFromEnv() {
   } else {
     pem = process.env.PRIVY_VERIFICATION_KEY || "";
   }
-  // A PEM is several lines. Pasted into an env file its newlines become \n, and a file written on Windows carries
-  // carriage returns. Both are the same key, so neither is allowed to be the reason sign-in is down.
+  // The same key arrives in three shapes and all three are the same key, so none of them is allowed to be the
+  // reason sign-in is down: pasted into an env file its newlines become \n, written on Windows it carries carriage
+  // returns, and read from Privy's own app endpoint it has no line breaks at all — which openssl refuses outright
+  // ("DECODER routines::unsupported"). Strip the armour, rewrap the base64 at 64 columns, put it back.
   pem = pem.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
   if (!pem) return null;
+  const body = pem.replace(/-----(BEGIN|END) [A-Z ]+-----/g, "").replace(/\s+/g, "");
+  if (body) pem = `-----BEGIN PUBLIC KEY-----\n${(body.match(/.{1,64}/g) || []).join("\n")}\n-----END PUBLIC KEY-----\n`;
   let key;
   try {
     key = createPublicKey(pem);

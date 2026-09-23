@@ -151,7 +151,7 @@ pushed=$(skopeo inspect --creds gate:gate-password --tls-verify --format '{{.Dig
 skopeo copy -q --src-creds gate:gate-password --src-tls-verify \
   docker://registry:5000/swap/hello:v1 docker-daemon:swap/hello:v2 \
   || { docker compose -f "$compose" -p swap down -v > /dev/null 2>&1 || true; fail "skopeo pull through the TLS compose file"; }
-pulled=$(skopeo inspect --format '{{.Digest}}' docker-daemon:swap/hello:v2)
+pulled=$(docker inspect --format '{{index .RepoDigests 0}}' swap/hello:v2 | sed 's/.*@//')
 [ "$pulled" = "$pushed" ] || fail "the digest pulled differs from the one pushed"
 docker image rm swap/hello:v1 swap/hello:v2 > /dev/null
 took=$(( $(date +%s) - started ))

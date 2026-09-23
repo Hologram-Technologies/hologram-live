@@ -4,7 +4,11 @@ name: gates
 # outside, with a tool we did not write. Path-filtered like registry-os.
 on:
   push:
-    branches: ["registry/**"]
+    # `main` is NOT path-filtered: a release is cut from a commit, not from a
+    # path, and `scripts/check-gates.sh` refuses a tag whose commit no gate has
+    # judged. A filtered push would leave exactly those commits unjudged.
+    branches: ["main", "registry/**"]
+  merge_group:
   pull_request:
     paths:
       - "src/oci_store/**"

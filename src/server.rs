@@ -10,7 +10,7 @@ use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use scalar_api_reference::{get_asset_with_mime, scalar_html};
 use serde_json::json;
@@ -75,6 +75,17 @@ where
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(routers.open);
+    // Registry mode keeps administrative routes on its Unix socket, but
+    // cluster joins are authenticated by their independent signed proof and
+    // must be reachable by other registry frontends.
+    let public = if registry_mode {
+        public.route(
+            crate::cluster::JOIN_PATH,
+            post(crate::modules::control_plane::join_cluster),
+        )
+    } else {
+        public
+    };
 
     // A certificate that cannot be read stops the start before anything binds.
     #[cfg(feature = "oci")]
@@ -119,6 +130,7 @@ where
             );
         }
     }
+    let cluster_task = crate::cluster::spawn(state.clone());
     let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
         // the module API and gRPC, shutdown included, live on the socket.
@@ -151,6 +163,10 @@ where
             .await
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };
+    if let Some(cluster_task) = cluster_task {
+        cluster_task.abort();
+        let _ = cluster_task.await;
+    }
     state.chat().engine().shutdown().await;
     state.plugins().shutdown().await;
     let audit = state.audit().flush().await;

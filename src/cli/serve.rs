@@ -12,6 +12,12 @@ pub struct ServeArgs {
     reference: Option<String>,
     #[arg(long)]
     listen: Option<String>,
+    /// Public origin this server advertises to cluster peers.
+    #[arg(long, value_name = "URL")]
+    advertise: Option<String>,
+    /// Existing Hologram server to join. May be repeated.
+    #[arg(long = "join", value_name = "URL")]
+    join: Vec<String>,
     /// Serve the Docker-compatible registry from the reference registry's
     /// configuration file (`config.yml`), with `REGISTRY_*` variables over it.
     /// Only the system and registry modules run.
@@ -138,6 +144,7 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
             hologram_live::registry_compat::apply(settings, &mut config);
             config.modules.enabled = vec![
                 "dev.hologram.live.system".to_owned(),
+                "dev.hologram.live.control-plane".to_owned(),
                 hologram_live::modules::oci::MODULE_ID.to_owned(),
             ];
             // AppState::build opens the plugin host and the inference engine in
@@ -152,9 +159,22 @@ pub async fn run(cli: Cli, args: ServeArgs, tracing: TracingHandle) -> Result<()
     };
     #[cfg(not(feature = "oci"))]
     let (mut config, _) = helpers::load(&cli)?;
+    let uses_default_cluster_endpoint = config.cluster.advertise_endpoint.as_deref()
+        == Some(hologram_live::config::DEFAULT_CLUSTER_ENDPOINT);
     if let Some(listen) = args.listen {
         config.server.listen = listen;
+        if args.advertise.is_none() && uses_default_cluster_endpoint {
+            if let Ok(address) = config.server.listen.parse::<std::net::SocketAddr>() {
+                if address.ip().is_loopback() {
+                    config.cluster.advertise_endpoint = Some(format!("http://{address}"));
+                }
+            }
+        }
     }
+    if let Some(advertise) = args.advertise {
+        config.cluster.advertise_endpoint = Some(advertise);
+    }
+    config.cluster.seeds.extend(args.join);
     config.validate()?;
     let listen = config.server.listen.clone();
     let mut declared: Vec<String> = config

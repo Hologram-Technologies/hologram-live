@@ -37,6 +37,7 @@ async fn heartbeat(cli: &Cli, node_id: String) -> Result<()> {
         node_id,
         version: env!("CARGO_PKG_VERSION").to_owned(),
         operations,
+        endpoint: String::new(),
         last_seen_millis: util::now_millis(),
     };
     helpers::expect_accepted(

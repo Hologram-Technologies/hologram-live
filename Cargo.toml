@@ -43,7 +43,7 @@ bytes = { version = "1", optional = true }
 # The reference registry's config.yml, read into a flat key table (src/registry_compat).
 yaml-rust2 = { version = "0.13", optional = true, default-features = false }
 bcrypt = { version = "0.19", optional = true }
-getrandom = { version = "0.4", optional = true }
+getrandom = "0.4"
 base64 = { version = "0.23", optional = true }
 # TLS on the registry's listener (http.tls). ring only: aws-lc stays out of the graph.
 tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12", "logging"] }
@@ -118,7 +118,7 @@ llamacpp = ["dep:encoding_rs", "dep:llama-cpp-2"]
 llamacpp-cuda = ["llamacpp", "llama-cpp-2/cuda"]
 llamacpp-metal = ["llamacpp", "llama-cpp-2/metal"]
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
-oci = ["dep:jsonwebtoken", "dep:ring", "dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:getrandom", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
+oci = ["dep:jsonwebtoken", "dep:ring", "dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
 ring = ["dep:ring"]
 
 [[test]]

@@ -6,6 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const DEFAULT_CLUSTER_ENDPOINT: &str = "http://127.0.0.1:11435";
 /// Oldest `schema_version` this build can read and upgrade in place.
 /// Anything older is refused rather than guessed at.
 const MINIMUM_SUPPORTED_SCHEMA_VERSION: u32 = 1;
@@ -110,6 +111,8 @@ pub struct AppConfig {
     pub plugins: PluginsConfig,
     #[serde(default)]
     pub registry: RegistryConfig,
+    #[serde(default)]
+    pub cluster: ClusterConfig,
     /// Started from a registry configuration (`registry serve config.yml`):
     /// the public listener carries only `/v2/` and the public system pages,
     /// and administration moves to [`AppConfig::admin_socket`] (ADR 028).
@@ -121,6 +124,33 @@ pub struct AppConfig {
     #[cfg(feature = "oci")]
     #[serde(skip)]
     pub tls: Option<crate::tls::TlsSettings>,
+}
+
+/// Seed-based Hologram server membership.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ClusterConfig {
+    pub advertise_endpoint: Option<String>,
+    pub seeds: Vec<String>,
+    pub token_env: String,
+    pub heartbeat_interval_secs: u64,
+    pub request_timeout_secs: u64,
+    pub node_ttl_secs: u64,
+    pub max_peers: usize,
+}
+
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            advertise_endpoint: Some(DEFAULT_CLUSTER_ENDPOINT.to_owned()),
+            seeds: Vec::new(),
+            token_env: "HOLOGRAM_CLUSTER_TOKEN".to_owned(),
+            heartbeat_interval_secs: 15,
+            request_timeout_secs: 5,
+            node_ttl_secs: 60,
+            max_peers: 64,
+        }
+    }
 }
 
 /// Selects which `RegistryProvider` backs object storage.
@@ -327,6 +357,7 @@ impl Default for AppConfig {
             holo: HoloConfig::default(),
             plugins: PluginsConfig::default(),
             registry: RegistryConfig::default(),
+            cluster: ClusterConfig::default(),
             registry_mode: false,
             #[cfg(feature = "oci")]
             tls: None,
@@ -746,6 +777,51 @@ impl AppConfig {
         self.validate_holo_resident()?;
         self.validate_plugins()?;
         self.validate_registry()?;
+        self.validate_cluster()?;
+        Ok(())
+    }
+
+    fn validate_cluster(&self) -> Result<()> {
+        if self.cluster.token_env.trim().is_empty() {
+            return Err(LiveError::Config(
+                "cluster.token_env must not be empty".to_owned(),
+            ));
+        }
+        if !self.cluster.seeds.is_empty() && self.cluster.advertise_endpoint.is_none() {
+            return Err(LiveError::Config(
+                "cluster.advertise_endpoint is required when cluster.seeds is not empty".to_owned(),
+            ));
+        }
+        if let Some(endpoint) = &self.cluster.advertise_endpoint {
+            validate_cluster_endpoint(endpoint)?;
+        }
+        for endpoint in &self.cluster.seeds {
+            validate_cluster_endpoint(endpoint)?;
+        }
+        if let Ok(token) = env::var(&self.cluster.token_env) {
+            if token.len() < 32 {
+                return Err(LiveError::Config(format!(
+                    "{} must contain at least 32 bytes",
+                    self.cluster.token_env
+                )));
+            }
+            if self.auth_token().as_deref() == Some(token.as_str()) {
+                return Err(LiveError::Config(
+                    "the cluster token must be different from the user authentication token"
+                        .to_owned(),
+                ));
+            }
+        }
+        if self.cluster.heartbeat_interval_secs == 0
+            || self.cluster.request_timeout_secs == 0
+            || self.cluster.node_ttl_secs == 0
+            || self.cluster.max_peers == 0
+            || self.cluster.node_ttl_secs <= self.cluster.heartbeat_interval_secs
+        {
+            return Err(LiveError::Config(
+                "cluster intervals, timeout, TTL, and max_peers must be valid".to_owned(),
+            ));
+        }
         Ok(())
     }
 
@@ -846,7 +922,11 @@ impl AppConfig {
     }
 
     fn validate_registry_mode(&self) -> Result<()> {
-        let allowed = ["dev.hologram.live.system", "dev.hologram.live.oci"];
+        let allowed = [
+            "dev.hologram.live.system",
+            "dev.hologram.live.control-plane",
+            "dev.hologram.live.oci",
+        ];
         if let Some(extra) = self
             .modules
             .enabled
@@ -879,6 +959,10 @@ impl AppConfig {
 
     pub fn auth_token(&self) -> Option<String> {
         env::var(&self.auth.token_env).ok()
+    }
+
+    pub fn cluster_token(&self) -> Option<String> {
+        env::var(&self.cluster.token_env).ok()
     }
 
     fn apply_environment(&mut self) -> Result<()> {
@@ -953,6 +1037,34 @@ fn validate_endpoint(endpoint: &str, local: bool) -> Result<()> {
     Err(LiveError::Config(format!(
         "{kind} endpoint must use HTTPS unless it is loopback: {endpoint}"
     )))
+}
+
+pub(crate) fn validate_cluster_endpoint(endpoint: &str) -> Result<()> {
+    let parsed = reqwest::Url::parse(endpoint)
+        .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| LiveError::Config(format!("cluster endpoint has no host: {endpoint}")))?;
+    let loopback = host == "localhost"
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    if parsed.scheme() != "https" && !(parsed.scheme() == "http" && loopback) {
+        return Err(LiveError::Config(format!(
+            "cluster endpoint must use HTTPS unless it is loopback: {endpoint}"
+        )));
+    }
+    if parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err(LiveError::Config(format!(
+            "cluster endpoint must be a credential-free origin: {endpoint}"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

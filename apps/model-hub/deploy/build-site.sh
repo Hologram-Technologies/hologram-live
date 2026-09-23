@@ -31,7 +31,9 @@ docker run --rm \
 
 NEW="$SRC/apps/model-hub/web/dist"
 test -f "$NEW/index.html"
-test "$(find "$NEW/models" -name index.html | wc -l)" -ge 400
+# mindepth 3 counts model pages only: models/index.html is the browse table, not a model.
+test "$(find "$NEW/models" -mindepth 3 -name index.html | wc -l)" -ge 400
+test -f "$NEW/models/index.html"
 
 rm -rf "$HUB/site.next"
 cp -a "$NEW" "$HUB/site.next"
@@ -54,4 +56,4 @@ mkdir -p "$HUB/site/archive"
 # site and resolve mount directories inside ./site; after the swap they must look again.
 docker compose -f "$HUB/docker-compose.yml" restart site resolve >/dev/null
 rm -rf "$HUB/site.prev"
-echo "== $(date -u +%FT%TZ) build ok: $(find "$HUB/site/models" -name index.html | wc -l) model pages"
+echo "== $(date -u +%FT%TZ) build ok: $(find "$HUB/site/models" -mindepth 3 -name index.html | wc -l) model pages"

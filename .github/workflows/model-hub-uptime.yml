@@ -31,6 +31,7 @@ jobs:
             [ "$code" = 200 ] || fail="$fail $1=$code"
           }
           check site https://hub.uor.foundation/
+          check browse https://hub.uor.foundation/models/
           check model-page https://hub.uor.foundation/models/hexgrad/Kokoro-82M/
           check registry https://hub.uor.foundation/v2/
           check index-tags https://hub.uor.foundation/v2/model-hub/index/tags/list

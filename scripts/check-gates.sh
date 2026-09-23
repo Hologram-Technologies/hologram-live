@@ -29,8 +29,19 @@ fi
 # commit exists in the repository being released.
 SHA=$(gh api "repos/$REPO/commits/$SHA" --jq .sha)
 
+# Pushing the tag triggers workflows on this same commit: `ci` has an
+# unqualified `on: push`, so it fires for the tag too. Those runs are the
+# release's own shadow, not the evidence it asks about, and waiting on them
+# would mean a tag could never publish. A tag-triggered run carries the tag
+# as its head_branch, so exclude it by name.
+SELF=${GITHUB_REF_NAME:-}
+
 runs=$(gh api --paginate "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
-  --jq '.workflow_runs[] | [.name, .status, (.conclusion // "pending"), .created_at, (.html_url)] | @tsv')
+  --jq '.workflow_runs[] | [.name, .status, (.conclusion // "pending"), .created_at, (.html_url), (.head_branch // "")] | @tsv')
+
+if [ -n "$SELF" ]; then
+  runs=$(printf '%s\n' "$runs" | awk -F'\t' -v self="$SELF" '$6 != self')
+fi
 
 failed=0
 for name in $REQUIRED; do

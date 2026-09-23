@@ -476,4 +476,19 @@ mod tests {
         let signature = sign("cluster secret", &timestamp, body);
         assert!(verify("cluster secret", &timestamp, &signature, body).is_err());
     }
+
+    #[test]
+    fn peer_object_paths_do_not_replace_the_advertised_origin() {
+        let url = cluster_url("https://node.example:11435", OBJECTS_PATH).expect("inventory URL");
+        assert_eq!(
+            url.as_str(),
+            "https://node.example:11435/api/v1/cluster/objects"
+        );
+        let object = cluster_url(
+            "https://node.example:11435",
+            "/api/v1/cluster/objects/blake3:abc",
+        )
+        .expect("object URL");
+        assert_eq!(object.path(), "/api/v1/cluster/objects/blake3:abc");
+    }
 }

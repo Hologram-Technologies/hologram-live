@@ -21,7 +21,6 @@ const EVIDENCE = new URL("./evidence.json", import.meta.url);
 const KNOWN_ABSENT = {
   "/api/v1": "reserved: the object API lives under /api/v1/objects and the bare prefix is deliberately closed",
   "/hologram.live.v1.HologramLive/Handshake": "gRPC is closed at the edge; system.shutdown travels on it",
-  "/registry/": "the site navigation links it but nothing serves it (open defect)",
   "/wallpapers/": "the site links it but nothing serves it (open defect)",
 };
 

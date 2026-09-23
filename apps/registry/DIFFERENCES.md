@@ -63,6 +63,14 @@ need because its index is local; `validation.disabled: true`, which is what this
 fetches a foreign layer; and `compatibility.schema1`, because schema 1 manifests are refused whatever it says.
 `validation.disabled: false` is refused by name, because the check it asks for is not built.
 
+**Tokens.** `auth.token` validates bearer tokens as the reference does, from `realm`, `service`, `issuer` and a
+`jwks` key set; `rootcertbundle` is refused by name, with `jwks` named as the way to say the same thing. Where the
+reference stops there and expects a separate token server, `auth.token.local` makes this registry its own:
+`/auth/token` gives an anonymous client a pull-only token and a client with a password everything `auth.htpasswd`
+allows, and `/auth/jwks.json` publishes the key it signs with. That is what lets one host serve anonymous pulls and
+authenticated pushes at once. With a password file alone the reference protects reads as well as writes, and a
+registry whose `/v2/` answers 200 never teaches skopeo or podman to log in, so they cannot push to it at all.
+
 **Behind a proxy.** `http.host` is what an absolute `Location` is built on, in place of the request's host;
 `http.relativeurls` sends the path alone. Without either, `Location` is built from the request's host and
 `X-Forwarded-Proto`, as the reference's is.

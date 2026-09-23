@@ -78,7 +78,7 @@ export function landing({ base, models, endpoint }) {
   return `<main class="land" id="land">
   <div class="land-art" aria-hidden="true">${art()}</div>
   <div class="land-copy">
-    <h1 class="land-title"><span>Every model.</span><span>Proven by its bytes.</span></h1>
+    <h1 class="land-title"><span>The Open Platform</span><span>for Sovereign AI</span></h1>
     <p class="land-sub">Point any tool at <b>${esc(host)}</b>. Every file arrives checked.</p>
     <div class="land-actions">
       <button type="button" class="button primary" data-copy="HF_ENDPOINT=${esc(endpoint)}">Copy the endpoint${icon.copy}</button>

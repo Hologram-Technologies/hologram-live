@@ -122,7 +122,6 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
   <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"><span class="hub">Models Hub</span></a>
   <div class="top-end">
     ${search ? `<form class="field compact top-search" action="${base}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    ${indexPill()}
     <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
     ${themeSwitch}
     ${accountControl()}
@@ -150,7 +149,7 @@ const browse = page({
   </aside>
   <section class="panel" id="results" aria-label="Models">
     <div class="results-head">
-    <div class="head"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span></div>
+    <div class="head"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}</div>
     <div class="bar">
       <label class="field search">${R.icon.search}<input id="q" type="search" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models"></label>
       <button type="button" class="open-filters" id="open-filters">${R.icon.sliders}Filters</button>
@@ -288,7 +287,7 @@ function modelPage(m, files, ov, readme) {
     title: `${m.name} · Hologram Models Hub`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
     search: true,
-    body: `<a class="back" href="${base}">${R.icon.left}Models</a>
+    body: `<div class="head back-row"><a class="back" href="${base}">${R.icon.left}Models</a>${indexPill()}</div>
 <section class="panel">
   <div class="hero">
     ${R.avatar(m, base)}

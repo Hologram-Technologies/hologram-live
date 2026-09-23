@@ -169,25 +169,12 @@ const reg = {
   },
 };
 
-// The four features, read from what our registry allows. OPTIONS only: the page never writes to find out.
+// Deleting is the only thing on this page that changes the registry, so the page asks whether it is
+// allowed before it offers the button. OPTIONS only: it never writes to find out.
 let canDelete = false;
 async function probe(sample) {
-  const set = (cap, state, word) => {
-    const li = document.querySelector(`[data-cap="${cap}"]`);
-    if (!li) return;
-    li.dataset.state = state;
-    li.querySelector("b").textContent = word;
-  };
-  const [uploads, manifests, catalogue] = await Promise.all([
-    sample ? reg.allows(`/v2/${sample}/blobs/uploads/`) : [],
-    sample ? reg.allows(`/v2/${sample}/manifests/latest`) : [],
-    reg.allows("/v2/_catalog"),
-  ]);
-  set("pull", manifests.includes("GET") ? "ready" : "off", manifests.includes("GET") ? "open to anyone" : "not served");
-  set("discovery", catalogue.includes("GET") ? "ready" : "off", catalogue.includes("GET") ? "open to anyone" : "not served");
-  set("push", uploads.includes("POST") ? "token" : "off", uploads.includes("POST") ? "with a token" : "not served");
-  set("management", manifests.includes("DELETE") ? "token" : "off", manifests.includes("DELETE") ? "with a token" : "turned off");
-  canDelete = manifests.includes("DELETE");
+  if (!sample) return;
+  canDelete = (await reg.allows(`/v2/${sample}/manifests/latest`)).includes("DELETE");
 }
 
 // Our repositories become rows like any other, read at load rather than baked into yesterday's file.

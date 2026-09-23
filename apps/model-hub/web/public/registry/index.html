@@ -38,18 +38,8 @@ h1,h2,p,ul{margin:0}ul{list-style:none;padding:0}
 .pill{height:26px;display:inline-flex;align-items:center;padding:0 10px;border-radius:7px;background:var(--fill);font-size:13.5px;color:var(--dim)}
 .lead p{margin-left:auto;font-size:13px;color:var(--faint)}
 
-.caps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-bottom:20px;
-  background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.caps li{background:var(--surface);padding:13px 16px;display:flex;flex-direction:column;gap:6px}
-.caps .k{font-size:12.5px;color:var(--dim)}
-.caps .v{display:flex;align-items:center;gap:8px;font-size:13.5px}
-.caps .v b{font-weight:400}
 .dot{width:7px;height:7px;border-radius:999px;background:var(--faint);flex:none}
 .dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}
-.caps li[data-state="ready"] .dot{background:var(--ok)}
-.caps li[data-state="token"] .dot{background:var(--brand)}
-.caps li[data-state="off"] .v b{color:var(--faint)}
-@media (max-width:900px){.caps{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .card.ours{border-color:rgba(233,59,1,.35)}
 .cols{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
 @media (min-width:1024px){.cols{grid-template-columns:minmax(18.75rem,23.75rem) minmax(0,1fr)}}
@@ -166,13 +156,6 @@ h1,h2,p,ul{margin:0}ul{list-style:none;padding:0}
 
 <main class="wrap">
   <div class="lead"><h1>Registry</h1><span class="pill" id="count">…</span><p id="prov"></p></div>
-
-  <ul class="caps" id="caps" aria-label="What our registry answers">
-    <li data-cap="pull"><span class="k">OCI Pull</span><span class="v"><i class="dot"></i><b>…</b></span></li>
-    <li data-cap="push"><span class="k">OCI Push</span><span class="v"><i class="dot"></i><b>…</b></span></li>
-    <li data-cap="discovery"><span class="k">OCI Content Discovery</span><span class="v"><i class="dot"></i><b>…</b></span></li>
-    <li data-cap="management"><span class="k">OCI Content Management</span><span class="v"><i class="dot"></i><b>…</b></span></li>
-  </ul>
 
   <div class="cols">
     <aside class="rail" id="rail"></aside>

@@ -13,6 +13,39 @@ git push origin server-v1.0.0
 
 The `release-server` workflow tests the server and publishes standalone `hologram` archives for Linux, macOS, and Windows, plus `SHA256SUMS`. These archives do not contain the desktop application.
 
+### Before you push the tag
+
+A tag names **one commit**, and the release refuses to publish unless every gate is green on **that** commit (`FR-017`). The first job runs:
+
+```bash
+./scripts/check-gates.sh <sha>
+```
+
+Run it yourself first, on the commit you are about to tag:
+
+```bash
+./scripts/check-gates.sh "$(git rev-parse origin/main)"
+```
+
+It refuses three ways, and only one of them means something is wrong:
+
+| It says | What it means | What to do |
+|---|---|---|
+| `gate <name>: failure` | a gate is red on this commit | **stop.** Fix it. The date moves before a red tag does |
+| `gate <name>: queued/in_progress, not completed` | the gates are still running | **wait.** A tag pushed now is refused, correctly and uselessly |
+| `gate <name>: NO RUN` | no gate has ever judged this commit | **stop.** An absent gate blocks nothing, so it is treated as a refusal |
+
+Two things that catch people out:
+
+- **A merge landing between your check and your tag invalidates the check.** Re-read `origin/main` and re-run the script immediately before tagging, and tag the sha you checked, not the branch: `git tag server-v1.0.0 <sha>`.
+- **Green somewhere in the history is not green here.** The script asks the Actions API for the newest run of each required workflow on that exact sha.
+
+The required workflows are `gates`, `registry-os` and `ci`; override with `RELEASE_GATES` only to *add* one.
+
+### The registry image
+
+The image is a separate train: `release-registry.yml` publishes to GHCR on a `registry-v*` tag, and gates the image (`check-image.sh` and the deployment-guide swap) before pushing anything. It also takes a `workflow_dispatch` with a version, which **builds and gates and publishes nothing** — use that as a dry run before any real image tag.
+
 ## Desktop application
 
 The desktop version must match in:

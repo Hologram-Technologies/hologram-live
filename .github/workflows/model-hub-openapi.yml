@@ -75,6 +75,16 @@ jobs:
       - name: A framework can bind to the live document
         run: node qa/openapi/bind.mjs
 
+      # The planes are published on different schedules, so they can drift: a site build that is not followed by a
+      # publish leaves the dialects a day ahead of the object plane. Nothing prevented that; this catches it the
+      # next morning instead of a caller catching it with a hash that does not match.
+      - name: The dialects and the object plane still agree
+        run: node qa/openapi/agree.mjs --n 20
+
+      # The one property everything else rests on: an object name is the BLAKE3 of its bytes.
+      - name: Objects still hash to their own addresses
+        run: node qa/openapi/objects.mjs --n 8
+
       - name: Keep the recording when something fails
         if: failure()
         uses: actions/upload-artifact@v4

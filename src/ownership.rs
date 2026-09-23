@@ -98,12 +98,9 @@ mod tests {
     fn placement_requires_the_advertised_operation() {
         let mut capable = node("capable");
         capable.operations.push("holo.run".to_owned());
-        let selected = owner_for_operation(
-            "holo:sample",
-            &[node("ineligible"), capable],
-            Some("holo.run"),
-        )
-        .expect("capable node");
+        let nodes = [node("ineligible"), capable];
+        let selected =
+            owner_for_operation("holo:sample", &nodes, Some("holo.run")).expect("capable node");
         assert_eq!(selected.node_id, "capable");
     }
 }

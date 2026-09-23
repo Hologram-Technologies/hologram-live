@@ -102,6 +102,8 @@ const FIT = `(() => {
   };
 })()`;
 
+const varFlag = process.argv.indexOf("--variants");
+const VARIANTS = varFlag > 0 ? process.argv[varFlag + 1].split(",") : [];
 const shotFlag = process.argv.indexOf("--shoot");
 const shots = shotFlag > 0 ? process.argv[shotFlag + 1] : null;
 if (shots) await mkdir(shots, { recursive: true });
@@ -155,8 +157,12 @@ for (const theme of THEMES) {
     const contrast = await cdp.evaluate(contrastSrc);
     const where = `${theme} ${w}x${h} (${label})`;
     if (shots && SHOOT.some(([sw, sh]) => sw === w && sh === h)) {
-      const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
-      await writeFile(join(shots, `landing-${theme}-${w}x${h}.png`), Buffer.from(data, "base64"));
+      // --variants shoots the same shape once per highlight treatment, for a side by side comparison.
+      for (const v of VARIANTS.length ? VARIANTS : [null]) {
+        if (v) { await cdp.evaluate(`document.documentElement.dataset.highlight = ${JSON.stringify(v)}`); await sleep(1100); }
+        const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
+        await writeFile(join(shots, `landing-${theme}-${w}x${h}${v ? `-${v}` : ""}.png`), Buffer.from(data, "base64"));
+      }
     }
     if (fit.theme !== theme) problems.push(`${where}: theme did not apply (${fit.theme})`);
     if (fit.overflowY > 1) problems.push(`${where}: scrolls ${fit.overflowY}px vertically`);

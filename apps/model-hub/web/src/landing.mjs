@@ -93,7 +93,7 @@ export function landing({ base, models, endpoint }) {
   <div class="land-art" aria-hidden="true">${art()}</div>
   <div class="land-copy">
     <h1 class="land-title"><span>The Open Platform</span><span>for Sovereign AI</span></h1>
-    <p class="land-sub">Discover, use and share self-verifying models, skills and artifacts.</p>
+    <p class="land-sub">Discover, use and share <b class="hl">self-verifying</b><span class="hl-seal">${icon.seal}</span> models, skills and artifacts.</p>
     <div class="land-actions">
       <a class="button primary" href="${base}models/">Browse ${count(models.length)} models${icon.right}</a>
       <button type="button" class="land-second copy" data-copy="HF_ENDPOINT=${esc(endpoint)}" title="Copy HF_ENDPOINT=${esc(endpoint)}" aria-label="Copy the endpoint">${esc(endpoint.replace(/^https:\/\//, ""))}${icon.copy}</button>

@@ -16,6 +16,8 @@ const SITE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(SITE, "dist");
 const KIT = join(SITE, "vendor", "hologram-brand-kit");
 const base = process.env.BASE || "/";
+// Which treatment the highlighted word gets. One build carries them all; this picks the one that ships.
+const HIGHLIGHT = process.env.HIGHLIGHT || "seal";
 // The root is the landing page, so the browse table moves under the prefix its model pages already use.
 const BROWSE = `${base}models/`;
 const REPO = "https://github.com/Hologram-Technologies/hologram-live/tree/main/apps/model-hub";
@@ -102,7 +104,7 @@ const themeSwitch = `<div class="appearance">
 const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "styles.css"];
 
 const page = ({ title, description, body, search = false, model = "", home = false }) => `<!doctype html>
-<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

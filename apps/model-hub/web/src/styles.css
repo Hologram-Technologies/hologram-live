@@ -232,7 +232,62 @@ ul { list-style: none; margin: 0; padding: 0; }
 .land-title { font-family: var(--font-display); font-size: var(--hh-display); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: .95; }
 .land-title span { display: block; }
 .land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--hh-lead); color: var(--hh-text-dim); }
-.land-sub b { font-family: var(--font-mono); font-weight: var(--weight-normal); color: var(--hh-text); }
+/* ---- the highlighted word.
+   The subline carries one claim and the word "self-verifying" is it. Seven treatments live here at once,
+   chosen by data-highlight on <html>; HIGHLIGHT= at build time picks the one that ships. The word inherits
+   its size from the line in every one of them, so none of these changes the hero's height. */
+.hl { font-family: inherit; font-weight: inherit; font-style: normal; color: var(--hh-text); }
+.hl-seal { display: none; }
+
+/* 1. bright — the word at full strength against a dimmed line. Nothing added, nothing spent. */
+:root[data-highlight="bright"] .hl { color: var(--hh-text); }
+
+/* 2. mono — the same colour as the line, set in the face the endpoint uses, so it reads as a term of art
+      rather than as emphasis. */
+:root[data-highlight="mono"] .hl { font-family: var(--font-mono); color: var(--hh-text); letter-spacing: var(--tracking-normal); }
+
+/* 3. dots — the address field's own dots, laid under the word as a rule. The claim is underlined by the
+      thing that makes it true. */
+:root[data-highlight="dots"] .hl {
+  color: var(--hh-text); padding-bottom: var(--space-2);
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: var(--space-2) var(--space-2);
+  background-repeat: repeat-x; background-position: left bottom;
+}
+
+/* 4. seal — the mark the catalogue already uses for a verified source, at the line's own size. */
+:root[data-highlight="seal"] .hl { color: var(--hh-text); }
+:root[data-highlight="seal"] .hl-seal { display: inline-flex; margin-left: var(--space-2); vertical-align: middle; color: var(--hh-ok); }
+:root[data-highlight="seal"] .hl-seal .i { width: var(--hh-icon); height: var(--hh-icon); }
+
+/* 5. accent — the brand hue on the word. This is the page's SECOND saturated moment, so the button's
+      chevron steps back to neutral and the page still spends one. */
+:root[data-highlight="accent"] .hl { color: var(--hh-accent); font-weight: var(--weight-medium); }
+:root[data-highlight="accent"] .button.primary .i { color: var(--hh-primary-text); }
+
+/* 6. bracket — hairline marks around the word, drawn the way the figure's planes are drawn. Colourless. */
+:root[data-highlight="bracket"] .hl { position: relative; color: var(--hh-text); padding: 0 var(--space-3); }
+:root[data-highlight="bracket"] .hl::before,
+:root[data-highlight="bracket"] .hl::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: var(--space-2);
+  border: 1px solid var(--hh-line-focus);
+}
+:root[data-highlight="bracket"] .hl::before { left: 0; border-right: 0; }
+:root[data-highlight="bracket"] .hl::after { right: 0; border-left: 0; }
+
+/* 7. resolve — the dots draw themselves under the word once, on arrival, and stop. A check completing,
+      not an animation running. Reduced motion gets the finished state and no draw. */
+:root[data-highlight="resolve"] .hl { position: relative; color: var(--hh-text); padding-bottom: var(--space-2); }
+:root[data-highlight="resolve"] .hl::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: var(--space-1); width: 100%;
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: var(--space-2) var(--space-2);
+  background-repeat: repeat-x; background-position: left bottom;
+  animation: hl-draw 900ms cubic-bezier(.2, .8, .2, 1) 200ms both;
+}
+@keyframes hl-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@media (prefers-reduced-motion: reduce) { :root[data-highlight="resolve"] .hl::after { animation: none; } }
+
 .land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-6); }
 .land-second { font-family: var(--font-mono); font-size: var(--hh-lead); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }

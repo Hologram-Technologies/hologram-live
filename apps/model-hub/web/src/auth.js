@@ -128,15 +128,15 @@ let dialog = null;
 function build() {
   if (dialog) return dialog;
   dialog = document.createElement("dialog");
-  dialog.className = "sheet";
+  dialog.className = "auth-sheet";
   dialog.id = "sign-in";
   dialog.innerHTML = `
-    <form method="dialog" class="sheet-close"><button type="submit" class="control square" aria-label="Close">${icon.close}</button></form>
-    <div class="sheet-head">
+    <form method="dialog" class="auth-close"><button type="submit" class="control square" aria-label="Close">${icon.close}</button></form>
+    <div class="auth-head">
       <h2>Sign in</h2>
       <p>New here? This makes your account. There is nothing else to fill in, and no password to keep.</p>
     </div>
-    <div class="sheet-body" id="sign-in-body">
+    <div class="auth-body" id="sign-in-body">
       <div class="providers">${PROVIDERS.map(([k, label, mark]) => `<button type="button" class="provider" data-provider="${k}">${mark}<span class="label">Continue with ${label}</span></button>`).join("")}</div>
       <div class="or"><span>or</span></div>
       <form class="email-step" id="email-step" novalidate>
@@ -149,9 +149,9 @@ function build() {
         <button type="submit" class="button primary" id="code-go">Sign in</button>
         <div class="code-foot"><button type="button" class="link" id="code-again">Send another code</button><button type="button" class="link" id="code-back">Use a different email</button></div>
       </form>
-      <p class="sheet-error" id="sign-in-error" role="alert" hidden></p>
+      <p class="auth-error" id="sign-in-error" role="alert" hidden></p>
     </div>
-    <p class="sheet-foot">The hub stays open without an account: every model, every dialect, every download works signed out.</p>`;
+    <p class="auth-foot">The hub stays open without an account: every model, every dialect, every download works signed out.</p>`;
   document.body.append(dialog);
   wire();
   return dialog;

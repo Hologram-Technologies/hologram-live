@@ -68,7 +68,9 @@ const walletOf = (user) =>
 
 function adopt(user) {
   current = user ? { id: user.id, email: whoOf(user), wallet: walletOf(user), photo: photoOf(user) } : null;
-  write(SEEN, user ? "1" : null);
+  // The hint carries the initial so the next page can draw the mark before this module is even fetched.
+  // An older browser holding the previous "1" still reads as signed in; it just has no letter until we load.
+  write(SEEN, user ? JSON.stringify({ i: initialOf(current) }) : null);
   announce();
   if (user) record().catch(() => {});
   return current;
@@ -118,7 +120,8 @@ export async function restore() {
     return adopt(null);
   }
 }
-export const wasSignedIn = () => read(SEEN) === "1";
+// Any hint at all means this browser was signed in here: the current shape is {i}, older ones stored "1".
+export const wasSignedIn = () => Boolean(read(SEEN));
 
 export async function signOut() {
   const p = await client();

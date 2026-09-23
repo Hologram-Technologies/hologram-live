@@ -244,6 +244,15 @@ ul { list-style: none; margin: 0; padding: 0; }
 .sign-in:active { transform: scale(.97); }
 .sign-in .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-accent-text); stroke-width: 2; }
 
+/* Which of the two controls shows is decided before the first paint, from the hint in storage, so a signed-in
+   person never sees "Sign in" flash on the way to their own mark. The letter rides in on a custom property for
+   the same reason; chrome.js keeps both in step once it has the real session. */
+:root { --hh-account-initial: ""; }
+#account-button { display: none; }
+#account-initial::before { content: var(--hh-account-initial); }
+:root[data-account="in"] #sign-in-button { display: none; }
+:root[data-account="in"] #account-button { display: grid; }
+
 /* Signed in: the same circle the Sign in control was, still wearing the brand colour, now carrying one letter —
    or the person's own picture when the provider they used gave us one. */
 .account-mark {

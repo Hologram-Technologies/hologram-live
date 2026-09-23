@@ -90,15 +90,18 @@ function account() {
   // The module handle is kept the moment it resolves: paint() runs from its own change events and must not wait.
   const load = () => (mod ??= import(`${base}auth.js`).then((m) => (modReady = m)));
 
+  const root = document.documentElement;
   function paint(user) {
-    signIn.hidden = Boolean(user);
-    mark.hidden = !user;
-    if (!user) { menu.hidden = true; menu.replaceChildren(); return; }
+    // The same switch the pre-paint threw, now that the session is known for certain: signing in or out in this
+    // tab moves the control at once, and a hint that turns out to be stale gives the Sign in control back.
+    if (user) root.setAttribute("data-account", "in");
+    else root.removeAttribute("data-account");
+    if (!user) { root.style.removeProperty("--hh-account-initial"); menu.hidden = true; menu.replaceChildren(); return; }
     const m = mod && modReady;
     // A picture when the provider gave one, the brand mark with their initial when it did not. The photo is
     // dropped if it fails to load, so a broken image never stands where a person's mark should be.
-    const initial = m ? m.initialOf(user) : "?";
-    $("#account-initial").textContent = initial;
+    const initial = m ? m.initialOf(user) : "";
+    root.style.setProperty("--hh-account-initial", JSON.stringify(initial));
     mark.classList.toggle("has-photo", Boolean(user.photo));
     let img = mark.querySelector("img");
     if (user.photo) {
@@ -110,7 +113,8 @@ function account() {
     if (m) menu.innerHTML = m.accountMenu(user);
     $("#sign-out")?.addEventListener("click", async () => { open(false); (await load()).signOut(); });
   }
-  paint(null);
+  // No paint(null) here on purpose: the markup and the pre-paint already say which control belongs on screen, and
+  // calling it would throw a returning person back to "Sign in" until Privy answered — the very flash this avoids.
 
   const open = (show) => { menu.hidden = !show; mark.setAttribute("aria-expanded", String(show)); };
   mark.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
@@ -127,16 +131,25 @@ function account() {
   // was signed in here before. The hint is read straight from storage, not from auth.js, so that asking the
   // question costs an anonymous visitor nothing.
   const landing = $("#auth-landing");
-  const returning = (() => { try { return localStorage.getItem("hologram-models-hub.account") === "1"; } catch { return false; } })();
+  const returning = (() => { try { return Boolean(localStorage.getItem("hologram-models-hub.account")); } catch { return false; } })();
   if (landing || returning) {
     load().then(async (m) => {
-      m.onChange(paint);
+      // Subscribe only once the session is settled. onChange fires immediately with whatever it holds, which is
+      // nobody until Privy has answered — subscribing first would paint the signed-out control over the one the
+      // pre-paint correctly put there, which is the flash all of this exists to remove.
+      let user = null;
       try {
-        const user = await m.restore();
-        if (!landing) return;
-        if (user) location.replace(base);
-        else landing.textContent = "That sign-in link did not work. Try again from any page.";
-      } catch { if (landing) landing.textContent = "Something went wrong signing you in. Try again from any page."; }
+        user = await m.restore();
+      } catch {
+        // The SDK could not be reached. The hint says this browser was signed in, and nothing has disproved it,
+        // so leave the mark where it is rather than flipping to "Sign in" over a network failure.
+        if (landing) landing.textContent = "Something went wrong signing you in. Try again from any page.";
+        return;
+      }
+      m.onChange(paint);
+      if (!landing) return;
+      if (user) location.replace(base);
+      else landing.textContent = "That sign-in link did not work. Try again from any page.";
     }).catch(() => {});
   }
 }

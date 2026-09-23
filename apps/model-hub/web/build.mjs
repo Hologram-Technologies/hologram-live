@@ -85,7 +85,7 @@ const privy = process.env.PRIVY_APP_ID && privyStamp
 // actually signed in, so nobody downloads an account they do not have.
 const accountControl = () => privy ? `<div class="account" id="account">
       <button type="button" class="sign-in" id="sign-in-button" title="Sign in">${R.icon.user}<span class="label">Sign in</span></button>
-      <button type="button" class="account-mark" id="account-button" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Your account"><span id="account-initial" aria-hidden="true"></span></button>
+      <button type="button" class="account-mark" id="account-button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Your account"><span id="account-initial" aria-hidden="true"></span></button>
       <div class="menu" id="account-menu" role="menu" aria-label="Your account" hidden></div>
     </div>` : "";
 
@@ -109,7 +109,11 @@ const topNav = (current = "") => `<nav class="top-nav" aria-label="Sections">${S
 const prepaint = `(function(){var s={};try{s=JSON.parse(localStorage.getItem("hologram-models-hub.theme"))||{}}catch(e){}
 var m=["dark","light","immersive"].indexOf(s.mode)>=0?s.mode:"dark",w=${JSON.stringify(WALLPAPERS.map((w) => w.key))}.indexOf(s.wallpaper)>=0?s.wallpaper:"alps",r=document.documentElement;
 r.setAttribute("data-theme",m);r.setAttribute("data-wallpaper",w);r.classList.toggle("dark",m!=="light");
-if(m==="immersive"){var l=document.createElement("link");l.rel="preload";l.as="image";l.href="${base}wallpapers/"+w+".jpg";document.head.appendChild(l)}})();`;
+if(m==="immersive"){var l=document.createElement("link");l.rel="preload";l.as="image";l.href="${base}wallpapers/"+w+".jpg";document.head.appendChild(l)}
+// Someone signed in here before: say so now, not after auth.js has loaded and Privy has answered. Otherwise
+// every page they open shows "Sign in" for a moment first.
+var a=null;try{a=JSON.parse(localStorage.getItem("hologram-models-hub.account"))}catch(e){}
+if(a){r.setAttribute("data-account","in");if(a.i)r.style.setProperty("--hh-account-initial",JSON.stringify(a.i))}})();`;
 
 const themeSwitch = `<div class="appearance">
       <button type="button" id="theme-button" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" aria-label="Theme" title="Theme">${THEMES.map(([k, , ic]) => R.icon[ic].replace('class="i"', `class="i" data-for="${k}"`)).join("")}</button>

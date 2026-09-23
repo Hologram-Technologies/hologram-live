@@ -1,0 +1,20 @@
+# Licence policy. `cargo deny check licenses` is blocking in CI: the crate is
+# `MIT OR Apache-2.0`, and nothing may enter the graph that cannot ship under
+# both without a recorded exception.
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "BSL-1.0",
+]
+confidence-threshold = 0.9

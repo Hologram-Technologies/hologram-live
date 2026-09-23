@@ -16,7 +16,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  # Hard links, one copy of the binary: argv[0] picks the command line.
  && ln /out/usr/local/bin/hologram /out/bin/registry \
  && ln /out/usr/local/bin/hologram /out/entrypoint.sh \
- && install -m 0644 apps/registry/config.yml /out/etc/distribution/config.yml
+ && install -m 0644 apps/registry/config.yml /out/etc/distribution/config.yml \
+ # FR-S14: both licence texts inside the image, where an operator looks.
+ && install -m 0644 -D LICENSE-MIT /out/licenses/LICENSE-MIT \
+ && install -m 0644 -D LICENSE-APACHE /out/licenses/LICENSE-APACHE
 
 # Root, as the reference, so a volume's ownership is the same. The data inside
 # is not: a reference volume is imported, not opened (README, `oci import`).

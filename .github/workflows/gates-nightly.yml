@@ -1,0 +1,131 @@
+name: gates-nightly
+
+# The slow half of the gates, and the only place they judge the artefact rather
+# than the source: conformance and the image checks run against the published
+# image, not a build of the working tree. `1.0.0` needs three green nights
+# (SC-006), and the first cannot be later than Monday 28 September.
+
+on:
+  schedule:
+    # 02:00 UTC, after the day's merges have settled.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Image to judge. Empty builds one from this commit."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: gates-nightly
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: The published image, judged from outside
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      ref: ${{ steps.pick.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Which image this night judges
+        id: pick
+        env:
+          ASKED: ${{ inputs.image }}
+        run: |
+          # The default is what an operator would pull today. If it is not
+          # published yet, say so and fall back to a build of this commit,
+          # rather than passing a night on nothing.
+          ref=${ASKED:-ghcr.io/hologram-technologies/registry:latest}
+          if docker pull -q "$ref" >/dev/null 2>&1; then
+            echo "judging the published image $ref"
+          else
+            echo "::warning title=No published image::$ref could not be pulled; building this commit instead. A night that does not judge a published image does not count towards SC-006."
+            ref=hologram-registry:nightly
+            docker build -f apps/registry/Dockerfile -t "$ref" .
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Metadata, surface, push and pull, clean stop, restart
+        run: apps/registry/gates/image/check-image.sh "${{ steps.pick.outputs.ref }}"
+      - name: The deployment guide, with only the image changed
+        env:
+          SWAP_TRUST: sudo
+        run: apps/registry/gates/clients/compose-swap.sh "${{ steps.pick.outputs.ref }}"
+
+  conformance:
+    name: OCI conformance against the image
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # opencontainers/distribution-spec v1.1.1, by digest, as gate A pins it.
+      CONFORMANCE_IMAGE: ghcr.io/opencontainers/distribution-spec/conformance@sha256:609201aab0905b1e90ded490e5f0dbaadc9a4bef98aca4cd38ff308f588ed27a
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the registry from the image
+        run: |
+          ref='${{ needs.image.outputs.ref }}'
+          if [ "$ref" = hologram-registry:nightly ]; then
+            docker build -f apps/registry/Dockerfile -t "$ref" .
+          fi
+          docker run -d --name nightly -p 127.0.0.1:5000:5000 \
+            -e REGISTRY_STORAGE_DELETE_ENABLED=true "$ref"
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:5000/v2/ >/dev/null && exit 0
+            sleep 1
+          done
+          docker logs nightly
+          exit 1
+      - name: Every category
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/report" && chmod 0777 "$RUNNER_TEMP/report"
+          docker run --rm --network host \
+            -v "$RUNNER_TEMP/report:/report" \
+            -e OCI_ROOT_URL=http://127.0.0.1:5000 \
+            -e OCI_NAMESPACE=myorg/myrepo \
+            -e OCI_CROSSMOUNT_NAMESPACE=myorg/other \
+            -e OCI_TEST_PULL=1 -e OCI_TEST_PUSH=1 \
+            -e OCI_TEST_CONTENT_DISCOVERY=1 -e OCI_TEST_CONTENT_MANAGEMENT=1 \
+            -e OCI_HIDE_SKIPPED_WORKFLOWS=1 -e OCI_REPORT_DIR=/report \
+            "$CONFORMANCE_IMAGE" | tee "$RUNNER_TEMP/report/conformance.log"
+      - name: Verdict
+        if: always()
+        run: |
+          {
+            echo '### Conformance against the image'
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/report/conformance.log" \
+              | grep -E 'Ran [0-9]+ of|Passed|\[FAIL\]' || echo 'no verdict: the suite did not run'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: The registry's log, when the suite failed
+        if: failure()
+        run: docker logs nightly | tail -n 80
+
+  memory:
+    name: 2 GiB stays under the ceiling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gates-nightly
+      - name: Through the store, and through the router
+        # Both are #[ignore] by default: each moves 2 GiB, which is a night's
+        # work, not a commit's. The printed peak is the measurement SC-007
+        # rests on; read it in the log rather than trusting the assertion.
+        run: |
+          cargo test --locked --features oci --test oci_store -- --ignored --nocapture
+          cargo test --locked --features oci --test oci_memory -- --ignored --nocapture

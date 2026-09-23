@@ -57,6 +57,19 @@ hub.uor.foundation {
 		}
 	}
 
+	# An address is blake3: and 64 hex characters. Anything else under this prefix is a client error, and it has to
+	# refuse in the shape the document promises rather than falling through to the catch-all's text/plain.
+	@object_malformed {
+		path /api/v1/objects/*
+		not path_regexp ^/api/v1/objects/blake3:[0-9a-f]{64}$
+		not path /api/v1/objects/search
+	}
+	handle @object_malformed {
+		header Content-Type "application/json"
+		header Access-Control-Allow-Origin "*"
+		respond `{"code":"LIVE_BAD_REQUEST","message":"an object address is blake3: followed by 64 hexadecimal characters"}` 400
+	}
+
 	@read {
 		method GET HEAD
 		path /healthz /docs /docs/scalar.js /api/v1/capabilities /api/v1/modules
@@ -129,6 +142,9 @@ hub.uor.foundation {
 			not header User-Agent *facebookexternalhit*
 		}
 		rewrite @arriving /agent.md
+		# Three representations chosen by Accept means caches have to be told, or one caller's answer is served to
+		# the next caller who asked for something else. Silent, intermittent, and invisible from here.
+		header / Vary Accept
 		# The front door has to be readable from another origin, or a browser-resident agent cannot start at all.
 		header / Access-Control-Allow-Origin "*"
 		header /agent.md Access-Control-Allow-Origin "*"

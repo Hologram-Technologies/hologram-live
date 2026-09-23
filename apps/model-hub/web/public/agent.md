@@ -17,6 +17,10 @@ diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT in
         Find a model. A few hundred bytes, not a catalogue.
     GET /api/models/{owner}/{name}/tree/main
         Its files. Each one carries `oid`: the SHA-256 the bytes must have.
+        Read that field carefully if you already know this dialect. Hugging Face puts a 40-character git
+        blob SHA-1 in `oid` and hides the SHA-256 inside `lfs` on large files only. Here `oid` is always
+        the SHA-256 of the file, 64 characters, for every file large or small. The length tells you which
+        one you are holding.
     GET /{owner}/{name}/resolve/main/{path}
         302 to a source that was up a moment ago. The weights never pass through this host.
 
@@ -28,12 +32,26 @@ whole download at once, with no tool of ours:
 
     curl -s https://hub.uor.foundation/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c
 
+What that proves exactly: the bytes you received are the bytes this index names, so no mirror, CDN or network
+in between altered them without you noticing. It is not independent ground truth, because the index and the
+checksum file come from the same host. If you want a check that does not rest on trusting this host, fetch the
+same file again through a different source and compare the two for yourself:
+
+    curl -sI https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source
+    curl -sL https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | sha256sum
+
+`/via/huggingface`, `/via/modelscope` and `/via/ipfs` each pin one source and refuse rather than falling back,
+so two of them agreeing is two unrelated hosts agreeing and not one host repeating itself. A source that does
+not hold the file answers 404 and names the ones that do.
+
 ## When you want more
 
     /openapi.json     the whole endpoint, 43 paths and 45 operations, OpenAPI 3.1. Bind to it directly.
     /mcp              the same hub as MCP tools over streamable HTTP. No key.
     /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.
-    /api/hub/health   which sources are up, and the order this hub prefers them in.
+    /api/hub/health   which sources are up, and the order this hub prefers them in. Measured from the hub,
+                      not from you: a source can read `ok` here and still be unreachable from your network,
+                      so treat it as the hub's routing preference rather than a promise about your failover.
     /docs/            the documentation: quickstart, the concepts, one page per dialect, the reference. Each page also at /docs/<page>.md.
     /llms.txt         the same thing at more length, and the index of every docs page.
 

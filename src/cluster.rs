@@ -120,6 +120,7 @@ async fn run(state: AppState) {
         tracing::error!("cluster token disappeared after configuration validation");
         return;
     };
+    crate::util::install_crypto_provider();
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(config.request_timeout_secs))
         .build()

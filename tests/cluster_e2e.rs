@@ -38,7 +38,7 @@ fn start(port: u16, seed: Option<u16>, token: &str) -> Server {
         .unwrap_or_default();
     config.cluster.heartbeat_interval_secs = 1;
     config.cluster.node_ttl_secs = 3;
-    config.cluster.token_env = "HOLOGRAM_CLUSTER_E2E_TOKEN".to_owned();
+    "HOLOGRAM_CLUSTER_E2E_TOKEN".clone_into(&mut config.cluster.token_env);
     std::fs::create_dir_all(&config.paths.config_dir).unwrap();
     let file = config.paths.config_dir.join("live.toml");
     std::fs::write(&file, toml::to_string_pretty(&config).unwrap()).unwrap();
@@ -66,6 +66,7 @@ fn start(port: u16, seed: Option<u16>, token: &str) -> Server {
 
 #[test]
 fn authenticated_peers_replicate_an_immutable_object() {
+    hologram_live::util::install_crypto_provider();
     let first = start(
         port(),
         None,

@@ -1,8 +1,8 @@
 //! Authenticated seed-based server membership for Hologram nodes.
 //!
-//! Registry content replication remains the responsibility of Kappa Registry.
-//! This layer discovers live Hologram frontends and deliberately does not retry
-//! an in-flight OCI mutation against another authority.
+//! This layer discovers live Hologram frontends, reconciles immutable
+//! content, and deliberately does not retry an in-flight mutable mutation
+//! against another authority.
 
 use crate::app::AppState;
 use crate::config::validate_cluster_endpoint;
@@ -17,11 +17,14 @@ use std::time::Duration;
 use tokio::task::{JoinHandle, JoinSet};
 
 pub const JOIN_PATH: &str = "/api/v1/cluster/join";
+pub const OBJECTS_PATH: &str = "/api/v1/cluster/objects";
+pub const OBJECT_PATH: &str = "/api/v1/cluster/objects/{id}";
 pub const TIMESTAMP_HEADER: &str = "x-hologram-cluster-timestamp";
 pub const SIGNATURE_HEADER: &str = "x-hologram-cluster-signature";
 const SIGNING_CONTEXT: &str = "dev.hologram.live.cluster-join.v1";
 const MAX_CLOCK_SKEW_MILLIS: u64 = 30_000;
 pub const MAX_JOIN_BYTES: usize = 1024 * 1024;
+const MAX_REPLICATION_BYTES: usize = 32 * 1024 * 1024;
 pub const TOKEN_FILE: &str = "cluster.token";
 
 pub fn load_or_create_token(config: &crate::config::AppConfig) -> Result<String> {
@@ -167,6 +170,9 @@ async fn run(state: AppState) {
                                     tracing::warn!(%error, peer = %endpoint, "failed to persist peer heartbeat");
                                 }
                             }
+                            if let Err(error) = replicate_peer(&state, &client, &endpoint, &token).await {
+                                tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
+                            }
                             for peer in response.peers {
                                 if peers.len() >= config.max_peers {
                                     break;
@@ -273,6 +279,102 @@ fn sign(token: &str, timestamp: &str, body: &[u8]) -> String {
     hasher.update(b"\n");
     hasher.update(body);
     hasher.finalize().to_hex().to_string()
+}
+
+async fn replicate_peer(
+    state: &AppState,
+    client: &reqwest::Client,
+    endpoint: &str,
+    token: &str,
+) -> Result<()> {
+    let inventory_url = cluster_url(endpoint, OBJECTS_PATH)?;
+    let response = signed_get(client, inventory_url, token).await?;
+    let inventory: Vec<crate::protocol::ObjectMetadata> =
+        response.json().await.map_err(|error| {
+            LiveError::Protocol(format!(
+                "decode cluster object inventory from {endpoint}: {error}"
+            ))
+        })?;
+    for metadata in inventory.into_iter().take(state.config().cluster.max_peers) {
+        let id = metadata.id.clone();
+        let registry = state.registry().clone();
+        let present = tokio::task::spawn_blocking(move || registry.get_object(&id).is_ok())
+            .await
+            .map_err(|error| LiveError::Conflict(format!("join cluster object lookup: {error}")))?;
+        if present {
+            continue;
+        }
+        let url = cluster_url(endpoint, &format!("{OBJECTS_PATH}/{}", metadata.id))?;
+        let response = signed_get(client, url, token).await?;
+        if !response.status().is_success() {
+            return Err(LiveError::Transport(format!(
+                "fetch cluster object {} from {endpoint}: HTTP {}",
+                metadata.id,
+                response.status()
+            )));
+        }
+        let media_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_owned();
+        let filename = response
+            .headers()
+            .get("x-hologram-object-filename")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let mut bytes = Vec::new();
+        let mut response = response;
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
+            LiveError::Transport(format!("read cluster object {}: {error}", metadata.id))
+        })? {
+            if bytes.len().saturating_add(chunk.len()) > MAX_REPLICATION_BYTES {
+                return Err(LiveError::Capability(format!(
+                    "cluster object {} exceeds {MAX_REPLICATION_BYTES} byte transfer bound",
+                    metadata.id
+                )));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let registry = state.registry().clone();
+        let kind = metadata.kind;
+        let expected = metadata.id;
+        let stored = tokio::task::spawn_blocking(move || {
+            registry.put_object(kind, media_type, filename, &bytes)
+        })
+        .await
+        .map_err(|error| LiveError::Conflict(format!("join cluster object import: {error}")))??;
+        if stored.id != expected {
+            return Err(LiveError::Protocol(format!(
+                "cluster object digest mismatch: expected {expected}, got {}",
+                stored.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn cluster_url(endpoint: &str, path: &str) -> Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(endpoint)
+        .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
+    url.set_path(path);
+    Ok(url)
+}
+
+async fn signed_get(
+    client: &reqwest::Client,
+    url: reqwest::Url,
+    token: &str,
+) -> Result<reqwest::Response> {
+    let timestamp = now_millis().to_string();
+    client
+        .get(url)
+        .header(TIMESTAMP_HEADER, &timestamp)
+        .header(SIGNATURE_HEADER, sign(token, &timestamp, &[]))
+        .send()
+        .await
+        .map_err(|error| LiveError::Transport(format!("send cluster replication request: {error}")))
 }
 
 fn normalize_endpoint(endpoint: &str) -> String {

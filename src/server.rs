@@ -75,17 +75,22 @@ where
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(routers.open);
-    // Registry mode keeps administrative routes on its Unix socket, but
-    // cluster joins are authenticated by their independent signed proof and
-    // must be reachable by other registry frontends.
-    let public = if registry_mode {
-        public.route(
+    // Cluster routes authenticate their own signed requests. They are public
+    // only in routing terms: user credentials and administrative capability
+    // are not accepted there.
+    let public = public
+        .route(
             crate::cluster::JOIN_PATH,
             post(crate::modules::control_plane::join_cluster),
         )
-    } else {
-        public
-    };
+        .route(
+            crate::cluster::OBJECTS_PATH,
+            get(crate::modules::control_plane::list_cluster_objects),
+        )
+        .route(
+            crate::cluster::OBJECT_PATH,
+            get(crate::modules::control_plane::get_cluster_object),
+        );
 
     // A certificate that cannot be read stops the start before anything binds.
     #[cfg(feature = "oci")]

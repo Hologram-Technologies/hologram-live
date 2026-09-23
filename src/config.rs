@@ -279,7 +279,7 @@ pub struct UpdateConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct InferenceConfig {
-    /// echo | weightc | ollama | llamacpp | vllm
+    /// echo | weightc | ollama | llamacpp | candle | burn | vllm
     pub engine: String,
     /// Imported model id (weightc) or upstream model name (Ollama/vLLM).
     pub default_model: String,
@@ -287,8 +287,16 @@ pub struct InferenceConfig {
     pub ollama_endpoint: String,
     pub vllm_endpoint: String,
     pub vllm_token_env: String,
-    /// Local GGUF file used by the feature-gated llama.cpp engine.
+    /// Local weights file used by feature-gated in-process engines: GGUF for
+    /// llama.cpp/Candle, or a Burn named-MPK checkpoint.
     pub model_path: String,
+    /// Tokenizer used by in-process Rust engines. Candle expects tokenizer.json;
+    /// Burn expects the Llama 3 tokenizer.model BPE file.
+    pub tokenizer_path: String,
+    /// Concrete model implementation selected by engines that cannot infer it
+    /// from the checkpoint. Candle currently accepts `llama`; Burn accepts
+    /// `llama3.2-1b`, `llama3.2-3b`, `llama3.1-8b`, or `llama3-8b`.
+    pub model_architecture: String,
     pub n_ctx: u32,
     pub n_gpu_layers: u32,
     /// Maximum number of in-process llama.cpp contexts decoding at once.
@@ -465,6 +473,8 @@ impl Default for InferenceConfig {
             vllm_endpoint: "http://127.0.0.1:8000".to_owned(),
             vllm_token_env: "VLLM_API_KEY".to_owned(),
             model_path: String::new(),
+            tokenizer_path: String::new(),
+            model_architecture: String::new(),
             n_ctx: 4096,
             n_gpu_layers: 0,
             llamacpp_max_concurrent_requests: 1,
@@ -732,9 +742,40 @@ impl AppConfig {
                     ));
                 }
             }
+            "candle" => {
+                validate_compiled_local_engine(
+                    cfg!(feature = "candle"),
+                    "candle",
+                    &self.inference,
+                    true,
+                )?;
+                if !matches!(self.inference.model_architecture.as_str(), "llama") {
+                    return Err(LiveError::Config(
+                        "candle currently requires inference.model_architecture = \"llama\""
+                            .to_owned(),
+                    ));
+                }
+            }
+            "burn" => {
+                validate_compiled_local_engine(
+                    cfg!(feature = "burn"),
+                    "burn",
+                    &self.inference,
+                    false,
+                )?;
+                if !matches!(
+                    self.inference.model_architecture.as_str(),
+                    "llama3.2-1b" | "llama3.2-3b" | "llama3.1-8b" | "llama3-8b"
+                ) {
+                    return Err(LiveError::Config(
+                        "burn inference.model_architecture must be llama3.2-1b, llama3.2-3b, llama3.1-8b, or llama3-8b"
+                            .to_owned(),
+                    ));
+                }
+            }
             other => {
                 return Err(LiveError::Config(format!(
-                    "unsupported inference.engine {other:?}; expected echo, weightc, ollama, llamacpp, or vllm"
+                    "unsupported inference.engine {other:?}; expected echo, weightc, ollama, llamacpp, candle, burn, or vllm"
                 )))
             }
         }
@@ -1071,6 +1112,35 @@ pub(crate) fn validate_cluster_endpoint(endpoint: &str) -> Result<()> {
     {
         return Err(LiveError::Config(format!(
             "cluster endpoint must be a credential-free origin: {endpoint}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_compiled_local_engine(
+    compiled: bool,
+    engine: &str,
+    inference: &InferenceConfig,
+    accepts_imported_model: bool,
+) -> Result<()> {
+    if !compiled {
+        return Err(LiveError::Config(format!(
+            "inference.engine {engine:?} needs a build with --features {engine}"
+        )));
+    }
+    if inference.model_path.trim().is_empty()
+        && (!accepts_imported_model || inference.default_model.trim().is_empty())
+    {
+        let source = if accepts_imported_model {
+            "inference.model_path or an imported inference.default_model"
+        } else {
+            "inference.model_path"
+        };
+        return Err(LiveError::Config(format!("{engine} requires {source}")));
+    }
+    if inference.tokenizer_path.trim().is_empty() {
+        return Err(LiveError::Config(format!(
+            "{engine} requires inference.tokenizer_path"
         )));
     }
     Ok(())
@@ -1573,6 +1643,8 @@ path = "/usr/local/bin/plugin"
         assert_eq!(config.inference.vllm_endpoint, "http://127.0.0.1:8000");
         assert_eq!(config.inference.vllm_token_env, "VLLM_API_KEY");
         assert!(config.inference.model_path.is_empty());
+        assert!(config.inference.tokenizer_path.is_empty());
+        assert!(config.inference.model_architecture.is_empty());
         assert_eq!(config.inference.n_ctx, 4096);
         assert_eq!(config.inference.n_gpu_layers, 0);
         assert_eq!(config.inference.llamacpp_max_concurrent_requests, 1);
@@ -1629,6 +1701,38 @@ path = "/usr/local/bin/plugin"
         config.inference.engine = "vllm".to_owned();
         config.inference.default_model = "org/model".to_owned();
         config.validate().expect("vllm config");
+    }
+
+    #[test]
+    fn candle_requires_its_feature_and_explicit_model_contract() {
+        let mut config = AppConfig::default();
+        config.inference.engine = "candle".to_owned();
+        config.inference.model_path = "/models/model.gguf".to_owned();
+        config.inference.tokenizer_path = "/models/tokenizer.json".to_owned();
+        config.inference.model_architecture = "llama".to_owned();
+        let result = config.validate();
+        if cfg!(feature = "candle") {
+            result.expect("compiled Candle configuration");
+        } else {
+            let error = result.expect_err("featureless build must reject Candle");
+            assert!(error.to_string().contains("--features candle"), "{error}");
+        }
+    }
+
+    #[test]
+    fn burn_requires_its_feature_and_explicit_model_contract() {
+        let mut config = AppConfig::default();
+        config.inference.engine = "burn".to_owned();
+        config.inference.model_path = "/models/model.mpk".to_owned();
+        config.inference.tokenizer_path = "/models/tokenizer.model".to_owned();
+        config.inference.model_architecture = "llama3.2-1b".to_owned();
+        let result = config.validate();
+        if cfg!(feature = "burn") {
+            result.expect("compiled Burn configuration");
+        } else {
+            let error = result.expect_err("featureless build must reject Burn");
+            assert!(error.to_string().contains("--features burn"), "{error}");
+        }
     }
 
     #[test]

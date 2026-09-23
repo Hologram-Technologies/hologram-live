@@ -1,11 +1,16 @@
 //! Inference engine boundary.
 //!
-//! The daemon never executes model weights in-process. Chat (and later the
-//! OpenAI/Ollama-compatible modules) call an [`InferenceEngine`]; engines
-//! either echo locally or delegate to an external engine — the `weightc`
-//! one-shot CLI over `.wcpu` artifact directories, or an Ollama-compatible
-//! HTTP endpoint.
+//! By default the daemon does not execute model weights in-process. Chat (and
+//! later the OpenAI/Ollama-compatible modules) call an [`InferenceEngine`];
+//! engines either echo locally or delegate to an external engine — the
+//! `weightc` one-shot CLI over `.wcpu` artifact directories, or an
+//! Ollama-compatible HTTP endpoint. Opt-in `llamacpp`, `candle`, and `burn`
+//! features add local inference engines.
 
+#[cfg(feature = "burn")]
+mod burn;
+#[cfg(feature = "candle")]
+mod candle;
 mod echo;
 #[cfg(feature = "llamacpp")]
 mod llamacpp;
@@ -13,6 +18,10 @@ mod ollama;
 mod vllm;
 mod weightc;
 
+#[cfg(feature = "burn")]
+pub use burn::BurnEngine;
+#[cfg(feature = "candle")]
+pub use candle::CandleEngine;
 pub use echo::EchoEngine;
 #[cfg(feature = "llamacpp")]
 pub use llamacpp::LlamaCppEngine;
@@ -200,6 +209,24 @@ pub fn engine_from_config(
         ))),
         "ollama" => Ok(Arc::new(OllamaEngine::new(config)?)),
         "vllm" => Ok(Arc::new(VllmEngine::new(config)?)),
+        #[cfg(feature = "candle")]
+        "candle" => {
+            let resolved = resolve_local_model(config, &catalog, "candle")?;
+            Ok(Arc::new(CandleEngine::new(&resolved)?))
+        }
+        #[cfg(not(feature = "candle"))]
+        "candle" => Err(LiveError::Config(
+            "inference.engine \"candle\" needs a build with --features candle".to_owned(),
+        )),
+        #[cfg(feature = "burn")]
+        "burn" => {
+            let resolved = resolve_local_model(config, &catalog, "burn")?;
+            Ok(Arc::new(BurnEngine::new(&resolved)?))
+        }
+        #[cfg(not(feature = "burn"))]
+        "burn" => Err(LiveError::Config(
+            "inference.engine \"burn\" needs a build with --features burn".to_owned(),
+        )),
         #[cfg(feature = "llamacpp")]
         "llamacpp" => {
             let mut resolved = config.clone();
@@ -222,9 +249,29 @@ pub fn engine_from_config(
             "inference.engine \"llamacpp\" needs a build with --features llamacpp".to_owned(),
         )),
         other => Err(LiveError::Config(format!(
-            "unsupported inference.engine {other:?}; expected echo, weightc, ollama, llamacpp, or vllm"
+            "unsupported inference.engine {other:?}; expected echo, weightc, ollama, llamacpp, candle, burn, or vllm"
         ))),
     }
+}
+
+fn resolve_local_model(
+    config: &InferenceConfig,
+    catalog: &ModelCatalog,
+    engine: &str,
+) -> Result<InferenceConfig> {
+    let mut resolved = config.clone();
+    if resolved.model_path.trim().is_empty() {
+        if resolved.default_model.trim().is_empty() {
+            return Err(LiveError::Config(format!(
+                "{engine} requires inference.model_path or an imported inference.default_model"
+            )));
+        }
+        resolved.model_path = catalog
+            .artifact_file(&resolved.default_model)?
+            .display()
+            .to_string();
+    }
+    Ok(resolved)
 }
 
 pub(crate) fn elapsed_millis(started: Instant) -> u64 {

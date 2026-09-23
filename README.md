@@ -127,13 +127,15 @@ The response comes from the inference engine selected in `live.toml`:
 
 ```toml
 [inference]
-engine = "echo"            # echo | weightc | ollama | llamacpp | vllm
-default_model = ""         # imported id (weightc/llamacpp) or served name (Ollama/vLLM)
+engine = "echo"            # echo | weightc | ollama | llamacpp | candle | burn | vllm
+default_model = ""         # imported id or remote served-model name
 weightc_path = "weightc"
 ollama_endpoint = "http://127.0.0.1:11434"
 vllm_endpoint = "http://127.0.0.1:8000"
 vllm_token_env = "VLLM_API_KEY"
-model_path = ""            # local GGUF file (llamacpp)
+model_path = ""            # GGUF (llamacpp/candle) or named-MPK checkpoint (burn)
+tokenizer_path = ""        # tokenizer.json (candle) or tokenizer.model (burn)
+model_architecture = ""    # candle: llama; burn: a supported Llama 3 variant
 n_ctx = 4096
 n_gpu_layers = 0
 llamacpp_max_concurrent_requests = 1
@@ -146,10 +148,16 @@ The default `echo` engine repeats the user message; it needs no model and no ext
 
 `llamacpp` loads a local GGUF model in-process and streams decoded pieces with exact token counts. Set `model_path` directly, or import a GGUF file and put its returned `blake3:...` id in `default_model`. It is off by default because it builds native C++ code and gives model execution the daemon's crash boundary. Build it with `cargo build --release --features llamacpp`; use `llamacpp-metal` or `llamacpp-cuda` for the corresponding GPU backend. These builds require CMake, Clang, and a C++ compiler.
 
+`candle` is the Rust-native local GGUF alternative. The initial adapter supports Candle's quantized Llama-family implementation, requires a matching Hugging Face `tokenizer.json`, streams native deltas, and reports exact token counts. Set `model_architecture = "llama"`; use `--features candle` for CPU, `candle-metal` for Apple GPUs, or `candle-cuda` for NVIDIA GPUs. Candle is not a universal GGUF dispatcher: unsupported model families fail during startup instead of being guessed.
+
+`burn` uses Tracel's Burn-LM Llama implementation on CPU. It requires a Burn named-MPK checkpoint, the matching Llama 3 `tokenizer.model`, and one of `llama3.2-1b`, `llama3.2-3b`, `llama3.1-8b`, or `llama3-8b` in `model_architecture`. Build with `--features burn`. Burn generation is currently buffered, so streaming API responses honestly report `x-hologram-stream: emulated`; GGUF files are not Burn checkpoints.
+
 Run the live acceptance gate against real engines before releasing an inference build. It starts an isolated Hologram server and checks model discovery, buffered and native-streaming OpenAI/Ollama requests, usage, cancellation, and llama.cpp context overflow:
 
 ```bash
 ./scripts/check-inference-engine.sh llamacpp /models/tiny.gguf
+HOLOGRAM_TOKENIZER_PATH=/models/tokenizer.json HOLOGRAM_MODEL_ARCHITECTURE=llama ./scripts/check-inference-engine.sh candle /models/tiny.gguf
+HOLOGRAM_TOKENIZER_PATH=/models/tokenizer.model HOLOGRAM_MODEL_ARCHITECTURE=llama3.2-1b ./scripts/check-inference-engine.sh burn /models/llama3.2-1b.mpk
 VLLM_ENDPOINT=http://127.0.0.1:8000 ./scripts/check-inference-engine.sh vllm org/model
 ```
 

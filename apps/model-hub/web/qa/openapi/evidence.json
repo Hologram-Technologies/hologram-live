@@ -1,5 +1,5 @@
 {
- "probed_at": "2026-09-23T21:39:30.700Z",
+ "probed_at": "2026-09-23T22:02:24.672Z",
  "base": "https://hub.uor.foundation",
  "sample": {
   "model": "sentence-transformers/all-MiniLM-L6-v2",
@@ -12,25 +12,27 @@
    "id": "root.html",
    "method": "GET",
    "path": "/",
-   "ms": 177,
+   "ms": 87,
    "status": 200,
    "headers": {
-    "content-type": "text/html; charset=utf-8",
-    "etag": "\"dln0nd2dzwet1p83-gzip\"",
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dln0njxihkvx1pc-gzip\"",
+    "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\" data-page=\"landing\" data-highlight=\"seal\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Hologram Models Hub</title>\n<meta name=\"description\" content=\"Discover, use and share self-verifying models, skills and artifacts.\">\n<meta property=\"og:…",
+   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
    "error": null
   },
   {
    "id": "root.descriptor",
    "method": "GET",
    "path": "/",
-   "ms": 97,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json",
     "etag": "\"dln0nkyxsii2uz-gzip\"",
+    "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
    "body": {
@@ -65,22 +67,24 @@
    "ms": 89,
    "status": 200,
    "headers": {
-    "content-type": "text/html; charset=utf-8",
-    "etag": "\"dln0nd2dzwet1p83-gzip\"",
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dln0njxihkvx1pc-gzip\"",
+    "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\" data-page=\"landing\" data-highlight=\"seal\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Hologram Models Hub</title>\n<meta name=\"description\" content=\"Discover, use and share self-verifying models, skills and artifacts.\">\n<meta property=\"og:…",
+   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
    "error": null
   },
   {
    "id": "brief",
    "method": "GET",
    "path": "/agent.md",
-   "ms": 92,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
     "etag": "\"dln0njxihkvx1pc-gzip\"",
+    "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
    "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
@@ -90,7 +94,7 @@
    "id": "descriptor",
    "method": "GET",
    "path": "/.well-known/model-hub.json",
-   "ms": 103,
+   "ms": 95,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -127,7 +131,7 @@
    "id": "llms",
    "method": "GET",
    "path": "/llms.txt",
-   "ms": 114,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -142,7 +146,7 @@
    "id": "openapi",
    "method": "GET",
    "path": "/openapi.json",
-   "ms": 112,
+   "ms": 177,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -4400,7 +4404,7 @@
    "id": "wellknown.openapi",
    "method": "GET",
    "path": "/.well-known/openapi.json",
-   "ms": 99,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -8657,7 +8661,7 @@
    "id": "agentcard",
    "method": "GET",
    "path": "/.well-known/agent-card.json",
-   "ms": 122,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -8742,7 +8746,7 @@
    "id": "robots",
    "method": "GET",
    "path": "/robots.txt",
-   "ms": 106,
+   "ms": 83,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -8757,7 +8761,7 @@
    "id": "docs",
    "method": "GET",
    "path": "/docs",
-   "ms": 293,
+   "ms": 249,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
@@ -8772,7 +8776,7 @@
    "id": "archive",
    "method": "GET",
    "path": "/archive.json",
-   "ms": 92,
+   "ms": 84,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -8834,7 +8838,7 @@
    "id": "pins",
    "method": "GET",
    "path": "/pins.json",
-   "ms": 90,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -9369,7 +9373,7 @@
    "id": "healthz",
    "method": "GET",
    "path": "/healthz",
-   "ms": 88,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -9388,7 +9392,7 @@
    "id": "hub.health",
    "method": "GET",
    "path": "/api/hub/health",
-   "ms": 88,
+   "ms": 94,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9400,17 +9404,17 @@
     "sources": {
      "huggingface.co": {
       "ok": true,
-      "checked": "2026-09-23T21:39:06.302Z",
+      "checked": "2026-09-23T22:02:06.716Z",
       "reason": "verified"
      },
      "modelscope.cn": {
       "ok": true,
-      "checked": "2026-09-23T21:39:07.504Z",
+      "checked": "2026-09-23T22:02:08.215Z",
       "reason": "verified"
      },
      "ipfs": {
       "ok": true,
-      "checked": "2026-09-23T21:39:07.586Z",
+      "checked": "2026-09-23T22:02:08.291Z",
       "reason": "verified"
      }
     },
@@ -9426,7 +9430,7 @@
    "id": "models.list",
    "method": "GET",
    "path": "/api/models?limit=2&sort=downloads",
-   "ms": 113,
+   "ms": 90,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9510,7 +9514,7 @@
    "id": "models.search",
    "method": "GET",
    "path": "/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&limit=2",
-   "ms": 104,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9591,7 +9595,7 @@
    "id": "models.info",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 111,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9629,7 +9633,7 @@
    "id": "models.info.revision",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-   "ms": 92,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9667,7 +9671,7 @@
    "id": "models.refs",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/refs",
-   "ms": 91,
+   "ms": 94,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9692,7 +9696,7 @@
    "id": "models.tree",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
-   "ms": 165,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9727,7 +9731,7 @@
    "id": "models.missing",
    "method": "GET",
    "path": "/api/models/nobody/not-a-real-model-xyz",
-   "ms": 174,
+   "ms": 119,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9746,7 +9750,7 @@
    "id": "models.revision.wrong",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/0000000",
-   "ms": 91,
+   "ms": 87,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9765,7 +9769,7 @@
    "id": "models.readonly",
    "method": "POST",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 98,
+   "ms": 86,
    "status": 405,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9784,7 +9788,7 @@
    "id": "resolve",
    "method": "HEAD",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 96,
+   "ms": 90,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -9821,7 +9825,7 @@
    "id": "resolve.entry.missing",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/not-a-file.bin",
-   "ms": 87,
+   "ms": 86,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9840,7 +9844,7 @@
    "id": "via.ipfs",
    "method": "HEAD",
    "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 276,
+   "ms": 252,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -9860,7 +9864,7 @@
    "id": "via.huggingface",
    "method": "HEAD",
    "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 102,
+   "ms": 88,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -9880,7 +9884,7 @@
    "id": "via.list",
    "method": "GET",
    "path": "/via/ipfs/api/models?limit=1",
-   "ms": 265,
+   "ms": 271,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9929,7 +9933,7 @@
    "id": "xet",
    "method": "HEAD",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
-   "ms": 299,
+   "ms": 260,
    "status": 307,
    "headers": {
     "cache-control": "no-store",
@@ -9943,7 +9947,7 @@
    "id": "objects.get",
    "method": "HEAD",
    "path": "/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-   "ms": 154,
+   "ms": 107,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.hologram.model-hub.catalog.v1+json",
@@ -9958,7 +9962,7 @@
    "id": "objects.list.anon",
    "method": "GET",
    "path": "/api/v1/objects",
-   "ms": 273,
+   "ms": 263,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -9971,7 +9975,7 @@
    "id": "objects.search.anon",
    "method": "GET",
    "path": "/api/v1/objects/search?q=qwen",
-   "ms": 280,
+   "ms": 253,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -9984,7 +9988,7 @@
    "id": "objects.missing",
    "method": "GET",
    "path": "/api/v1/objects/blake3:0000000000000000000000000000000000000000000000000000000000000000",
-   "ms": 131,
+   "ms": 86,
    "status": 404,
    "headers": {
     "content-type": "application/json",
@@ -10002,7 +10006,7 @@
    "id": "capabilities",
    "method": "GET",
    "path": "/api/v1/capabilities",
-   "ms": 110,
+   "ms": 82,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10068,7 +10072,7 @@
    "id": "modules",
    "method": "GET",
    "path": "/api/v1/modules",
-   "ms": 118,
+   "ms": 83,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10109,7 +10113,7 @@
    "id": "api.v1.bare",
    "method": "GET",
    "path": "/api/v1",
-   "ms": 87,
+   "ms": 81,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -10121,7 +10125,7 @@
    "id": "oci.base",
    "method": "GET",
    "path": "/v2/",
-   "ms": 98,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10133,7 +10137,7 @@
    "id": "oci.catalog",
    "method": "GET",
    "path": "/v2/_catalog",
-   "ms": 108,
+   "ms": 96,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10151,7 +10155,7 @@
    "id": "oci.manifest.docker",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 104,
+   "ms": 92,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10173,7 +10177,7 @@
    "id": "oci.manifest.modelpack",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 233,
+   "ms": 171,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.oci.image.manifest.v1+json",
@@ -10236,7 +10240,7 @@
    "id": "oci.tags",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/tags/list",
-   "ms": 91,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10256,7 +10260,7 @@
    "id": "oci.index.tags",
    "method": "GET",
    "path": "/v2/model-hub/index/tags/list",
-   "ms": 92,
+   "ms": 83,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10273,7 +10277,7 @@
    "id": "account.health",
    "method": "GET",
    "path": "/api/account/health",
-   "ms": 91,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10289,7 +10293,7 @@
    "id": "account.me.anon",
    "method": "GET",
    "path": "/api/account/me",
-   "ms": 97,
+   "ms": 89,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10304,7 +10308,7 @@
    "id": "account.me.patch.anon",
    "method": "PATCH",
    "path": "/api/account/me",
-   "ms": 90,
+   "ms": 81,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10319,7 +10323,7 @@
    "id": "account.saved.anon",
    "method": "POST",
    "path": "/api/account/saved",
-   "ms": 104,
+   "ms": 99,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10334,7 +10338,7 @@
    "id": "account.saved.delete.anon",
    "method": "DELETE",
    "path": "/api/account/saved/a%2Fb",
-   "ms": 102,
+   "ms": 85,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10349,7 +10353,7 @@
    "id": "account.request.anon",
    "method": "POST",
    "path": "/api/account/request",
-   "ms": 117,
+   "ms": 85,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10364,7 +10368,7 @@
    "id": "account.publisher.anon",
    "method": "POST",
    "path": "/api/account/publisher-request",
-   "ms": 93,
+   "ms": 87,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10379,7 +10383,7 @@
    "id": "account.unknown.anon",
    "method": "GET",
    "path": "/api/account/nope",
-   "ms": 92,
+   "ms": 84,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10394,7 +10398,7 @@
    "id": "mcp.get",
    "method": "GET",
    "path": "/mcp",
-   "ms": 97,
+   "ms": 84,
    "status": 405,
    "headers": {
     "access-control-allow-origin": "*",
@@ -10406,7 +10410,7 @@
    "id": "mcp.initialize",
    "method": "POST",
    "path": "/mcp",
-   "ms": 104,
+   "ms": 82,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10438,7 +10442,7 @@
    "id": "mcp.tools.list",
    "method": "POST",
    "path": "/mcp",
-   "ms": 96,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10549,7 +10553,7 @@
    "id": "mcp.tools.call",
    "method": "POST",
    "path": "/mcp",
-   "ms": 105,
+   "ms": 90,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10607,7 +10611,7 @@
    "id": "preflight.models",
    "method": "OPTIONS",
    "path": "/api/models",
-   "ms": 88,
+   "ms": 84,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*",
@@ -10619,7 +10623,7 @@
    "id": "preflight.objects",
    "method": "OPTIONS",
    "path": "/api/v1/objects",
-   "ms": 94,
+   "ms": 82,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*"
@@ -10630,7 +10634,7 @@
    "id": "closed.grpc",
    "method": "POST",
    "path": "/hologram.live.v1.HologramLive/Handshake",
-   "ms": 90,
+   "ms": 80,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -10642,7 +10646,7 @@
    "id": "nav.wallpapers",
    "method": "GET",
    "path": "/wallpapers/",
-   "ms": 85,
+   "ms": 96,
    "status": 404,
    "headers": {},
    "error": null

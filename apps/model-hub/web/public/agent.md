@@ -17,6 +17,10 @@ diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT in
         Find a model. A few hundred bytes, not a catalogue.
     GET /api/models/{owner}/{name}/tree/main
         Its files. Each one carries `oid`: the SHA-256 the bytes must have.
+        Read that field carefully if you already know this dialect. Hugging Face puts a 40-character git
+        blob SHA-1 in `oid` and hides the SHA-256 inside `lfs` on large files only. Here `oid` is always
+        the SHA-256 of the file, 64 characters, for every file large or small. The length tells you which
+        one you are holding.
     GET /{owner}/{name}/resolve/main/{path}
         302 to a source that was up a moment ago. The weights never pass through this host.
 
@@ -28,12 +32,26 @@ whole download at once, with no tool of ours:
 
     curl -s https://hub.uor.foundation/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c
 
+What that proves exactly: the bytes you received are the bytes this index names, so no mirror, CDN or network
+in between altered them without you noticing. It is not independent ground truth, because the index and the
+checksum file come from the same host. If you want a check that does not rest on trusting this host, fetch the
+same file again through a different source and compare the two for yourself:
+
+    curl -sI https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source
+    curl -sL https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | sha256sum
+
+Check that header first, every time. `/via/<source>` is a preference and it fails open: when the named source
+does not hold the file, the hub falls back to one that does and says so only in `X-Hub-Source`. Skip the check
+and you can end up comparing Hugging Face against Hugging Face and calling it agreement.
+
 ## When you want more
 
     /openapi.json     the whole endpoint, 39 paths and 41 operations, OpenAPI 3.1. Bind to it directly.
     /mcp              the same hub as MCP tools over streamable HTTP. No key.
     /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.
-    /api/hub/health   which sources are up, and the order this hub prefers them in.
+    /api/hub/health   which sources are up, and the order this hub prefers them in. Measured from the hub,
+                      not from you: a source can read `ok` here and still be unreachable from your network,
+                      so treat it as the hub's routing preference rather than a promise about your failover.
     /llms.txt         the same thing at more length.
 
 ## Do this now

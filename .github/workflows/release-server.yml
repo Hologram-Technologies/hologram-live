@@ -62,7 +62,21 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - name: Build standalone server
-        run: cargo build --release --locked --package hologram-live --bin hologram --target ${{ matrix.target }}
+        # `oci` is off by default, and it is the registry. Without it every
+        # released binary answers no `/v2/` at all, which is the product.
+        run: cargo build --release --locked --features oci --package hologram-live --bin hologram --target ${{ matrix.target }}
+      - name: The binary carries the registry
+        # Asks the binary, not the workflow text: the `oci` subcommand exists
+        # only under `--features oci`, so dropping the flag fails this step.
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: ./target/${{ matrix.target }}/release/hologram oci --help
+      - name: The binary carries the registry (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          & "target/${{ matrix.target }}/release/hologram.exe" oci --help
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: Package Unix binary
         if: matrix.archive == 'tar'
         shell: bash

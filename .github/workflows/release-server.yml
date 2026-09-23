@@ -84,6 +84,145 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  image:
+    # The product is an image: the drop-in claim is a one-line image-name
+    # change. Built on native runners, because the Dockerfile compiles the
+    # binary and QEMU would turn a Rust build into hours.
+    needs: [verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push this architecture by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/registry/Dockerfile
+          platforms: ${{ matrix.platform }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=registry-image-${{ matrix.platform }}
+          cache-to: type=gha,scope=registry-image-${{ matrix.platform }},mode=max
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/registry,push-by-digest=true,name-canonical=true,push=true
+      - name: Record the digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+        env:
+          digest: ${{ steps.build.outputs.digest }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image-digest-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  image-publish:
+    needs: image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      GHCR: ghcr.io/${{ github.repository_owner }}/registry
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: image-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: One manifest list over both architectures
+        id: list
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          version="${GITHUB_REF_NAME#server-v}"
+          tags="--tag $GHCR:$version"
+          # `latest` only for a real release: a release candidate carries a
+          # hyphen and must never become the tag people pull by default.
+          case "$version" in
+            *-*) ;;
+            *) tags="$tags --tag $GHCR:latest" ;;
+          esac
+          # shellcheck disable=SC2046
+          docker buildx imagetools create $tags $(printf "$GHCR@sha256:%s " *)
+          digest=$(docker buildx imagetools inspect "$GHCR:$version" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign the manifest, keyless
+        run: cosign sign --yes "$GHCR@${{ steps.list.outputs.digest }}"
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.GHCR }}
+          subject-digest: ${{ steps.list.outputs.digest }}
+          push-to-registry: true
+      - name: The published image, judged from outside
+        # The same checks the `image` gate runs, against what was actually
+        # published rather than a locally built copy: metadata against the
+        # reference's, `/v2/` public and the module API not, push and pull,
+        # `docker stop` under 8 s, and a restart on the same volume.
+        run: |
+          # check-image.sh inspects the image, so it must be local first.
+          docker pull -q "$GHCR@${{ steps.list.outputs.digest }}"
+          apps/registry/gates/image/check-image.sh "$GHCR@${{ steps.list.outputs.digest }}"
+      - name: Also publish to Docker Hub, when its token exists
+        # The organisation and token are not in this repository's secrets yet.
+        # Absence is a visible skip, never a silent one and never a failure.
+        if: env.DOCKERHUB_USERNAME != ''
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          hub="docker.io/$DOCKERHUB_USERNAME/registry"
+          version="${{ steps.list.outputs.version }}"
+          tags="--tag $hub:$version"
+          case "$version" in
+            *-*) ;;
+            *) tags="$tags --tag $hub:latest" ;;
+          esac
+          docker buildx imagetools create $tags "$GHCR@${{ steps.list.outputs.digest }}"
+      - name: Docker Hub was skipped
+        if: env.DOCKERHUB_USERNAME == ''
+        run: |
+          echo "::warning title=Docker Hub not published::DOCKERHUB_USERNAME is unset, so this release exists on GHCR only. Set DOCKERHUB_USERNAME and DOCKERHUB_TOKEN to publish the short image name."
+      - name: What was published
+        run: |
+          {
+            echo "### Image"
+            echo ""
+            echo "- \`$GHCR:${{ steps.list.outputs.version }}\`"
+            echo "- digest \`${{ steps.list.outputs.digest }}\`"
+            echo "- signed keyless; provenance attested"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   publish:
     needs: build
     runs-on: ubuntu-24.04

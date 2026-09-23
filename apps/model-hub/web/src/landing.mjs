@@ -59,14 +59,16 @@ export const art = () => `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMid
 // recognises them. Each one is checked against the catalogue before it is drawn, so the strip cannot claim a
 // family the hub does not hold, and the marks are the same avatars the model cards already show.
 const FAMILIES = [
-  "meta-llama", "Qwen", "deepseek-ai", "mistralai", "google", "microsoft", "openai", "nvidia",
-  "stabilityai", "black-forest-labs", "BAAI", "CohereLabs", "facebook", "sentence-transformers",
+  ["meta-llama", "Llama"], ["Qwen", "Qwen"], ["deepseek-ai", "DeepSeek"], ["mistralai", "Mistral AI"],
+  ["google", "Gemma"], ["microsoft", "Phi"], ["openai", "Whisper"], ["nvidia", "NVIDIA"],
+  ["stabilityai", "Stability AI"], ["black-forest-labs", "FLUX"], ["BAAI", "BGE"],
+  ["CohereLabs", "Cohere"], ["sentence-transformers", "Sentence Transformers"],
 ];
 
 function marquee(base, models) {
   const avatars = new Map();
   for (const m of models) if (m.avatar && !avatars.has(m.org)) avatars.set(m.org, m.avatar);
-  const items = FAMILIES.filter((org) => avatars.has(org)).map((org) => `<li><img src="${base}avatars/${esc(avatars.get(org))}" alt="" width="28" height="28" loading="lazy" decoding="async"><span>${esc(org)}</span></li>`).join("");
+  const items = FAMILIES.filter(([org]) => avatars.has(org)).map(([org, label]) => `<li><img src="${base}avatars/${esc(avatars.get(org))}" alt="" width="36" height="36" loading="lazy" decoding="async"><span>${esc(label)}</span></li>`).join("");
   // Two identical runs: the track slides exactly half its width, so the loop has no seam.
   return `<div class="land-marquee" aria-hidden="true"><div class="land-track"><ul>${items}</ul><ul>${items}</ul></div></div>`;
 }

@@ -218,8 +218,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 .land-track { display: flex; width: max-content; animation: land-slide 64s linear infinite; }
 .land-track ul { display: flex; align-items: center; gap: var(--space-16); padding-right: var(--space-16); }
-.land-track li { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); white-space: nowrap; color: var(--hh-text-dim); }
-.land-track img { width: var(--space-8); height: var(--space-8); border-radius: var(--radius-sm); filter: grayscale(1); opacity: .55; }
+.land-track li { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); white-space: nowrap; color: var(--hh-text-dim); }
+/* The marks are the orgs' own avatars, and several are dark artwork on transparency: on the warm dark ground
+   they would disappear. A light plate under each one, in the dark themes only, keeps the strip monochrome and
+   readable the way the reference strip is. */
+.land-track img { width: var(--space-10); height: var(--space-10); border-radius: 50%; object-fit: cover; filter: grayscale(1); opacity: .75; }
+:root.dark .land-track img { background: var(--hh-text); }
 @keyframes land-slide { to { transform: translateX(-50%); } }
 
 @media (min-width: 720px) { :root { --hh-lead: var(--text-xl); } }

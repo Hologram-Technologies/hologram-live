@@ -194,8 +194,8 @@ ul { list-style: none; margin: 0; padding: 0; }
   height: 100%; padding-bottom: var(--hh-strip);
 }
 
-/* Centred on the header itself, not between the brand and the controls, so it stays put whatever they weigh. */
-.top-nav { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: var(--space-8); font-family: var(--font-mono); font-size: var(--text-sm); }
+/* Sits at the end of the row, immediately before the icons. */
+.top-nav { display: flex; align-items: center; gap: var(--space-8); font-family: var(--font-mono); font-size: var(--text-sm); }
 .top-nav a { color: var(--hh-text-dim); transition: color var(--hh-ease); }
 .top-nav a:hover { color: var(--hh-text); }
 @media (max-width: 860px) { .top-nav { display: none; } }

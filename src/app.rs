@@ -219,13 +219,30 @@ impl AppState {
     /// endpoint. That prevents an unrouteable member from being selected for
     /// work that another node must be able to forward to it.
     pub fn mutable_owner(&self, resource: &str) -> Result<Option<NodeRecord>> {
+        self.cluster_owner(resource, None)
+    }
+
+    /// Selects a reachable node that advertises a required operation.
+    pub fn capable_owner(
+        &self,
+        resource: &str,
+        required_operation: &str,
+    ) -> Result<Option<NodeRecord>> {
+        self.cluster_owner(resource, Some(required_operation))
+    }
+
+    fn cluster_owner(
+        &self,
+        resource: &str,
+        required_operation: Option<&str>,
+    ) -> Result<Option<NodeRecord>> {
         let mut nodes = self.nodes().list()?;
         if let Some(endpoint) = self.inner.config.cluster.advertise_endpoint.as_ref() {
             let local = self.local_node_record(endpoint.trim_end_matches('/').to_owned());
             nodes.retain(|node| node.node_id != local.node_id);
             nodes.push(local);
         }
-        Ok(crate::ownership::owner(resource, &nodes).cloned())
+        Ok(crate::ownership::owner_for_operation(resource, &nodes, required_operation).cloned())
     }
 
     pub(crate) fn cluster_token(&self) -> Option<&str> {

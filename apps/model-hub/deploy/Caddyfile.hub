@@ -85,6 +85,17 @@ hub.uor.foundation {
 		}
 	}
 
+	# Sign-in, for people who chose to. Declared BEFORE @server_other, which 404s every other /api/ path.
+	# No Access-Control-Allow-Origin: unlike every read surface here, this one answers its own origin only.
+	# Authorization is NOT stripped on this route (it carries the visitor's own Privy token, not a Hugging Face one).
+	@account path /api/account /api/account/*
+	handle @account {
+		request_body {
+			max_size 16KB
+		}
+		reverse_proxy hub-account:8091
+	}
+
 	@server_other path /api/* /v1/* /hologram.live.v1.HologramLive/*
 	handle @server_other {
 		respond "not found" 404

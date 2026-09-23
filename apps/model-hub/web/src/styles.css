@@ -174,6 +174,9 @@ ul { list-style: none; margin: 0; padding: 0; }
   .brand { gap: var(--space-2); }
   .brand .hub { font-size: var(--text-sm); margin-left: 0; padding-left: var(--space-2); }
   .top-end { gap: var(--space-2); }
+  /* the same room the index control takes: the mark alone says it */
+  #sign-in-button .label { display: none; }
+  #sign-in-button { width: var(--hh-control); padding: 0; justify-content: center; }
 }
 
 /* ---- browse: filters | results */
@@ -612,3 +615,65 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 .img-alt { color: var(--hh-text-dim); font-size: var(--text-sm); }
 .ov-provenance { font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.6; }
 .ov-provenance .copy { font-family: var(--font-mono); }
+
+/* ---- sign-in (src/auth.js)
+   One door. The control in the header is a control like the others; the sheet it opens borrows the popover,
+   the field and the two buttons that the rest of the site already uses, so signing in never looks like a
+   different product bolted on. Every value here resolves to the brand kit. */
+.account { position: relative; }
+#sign-in-button { white-space: nowrap; }
+#sign-in-button .i { color: var(--hh-text-dim); }
+#sign-in-button:hover .i { color: var(--hh-text); }
+.account-mark { font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--hh-text); background: var(--hh-fill); }
+.account-mark:hover { background: var(--hh-fill); }
+.account-who { display: grid; gap: var(--space-1); padding: var(--space-3); border-bottom: 1px solid var(--hh-line); margin-bottom: var(--space-1); }
+.account-who .label { font-size: var(--text-xs); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--hh-text-faint); }
+.account-who b { font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; }
+.menu .account-wallet, .menu #sign-out {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%;
+  height: var(--hh-control); padding: 0 var(--space-3); border-radius: var(--radius-md);
+  text-align: left; transition: background var(--hh-ease);
+}
+.menu .account-wallet:hover, .menu #sign-out:hover, .menu .account-wallet:focus-visible, .menu #sign-out:focus-visible { background: var(--hh-fill); outline: 0; }
+.menu .account-wallet .i, .menu #sign-out .i { color: var(--hh-text-dim); }
+.menu .account-wallet .label { flex: 1; display: grid; }
+.menu .account-wallet .sub { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-dim); }
+
+.sheet {
+  width: min(24rem, calc(100vw - 2 * var(--hh-gutter))); padding: var(--hh-pad);
+  background: var(--hh-popover); color: var(--hh-text);
+  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-xl);
+  box-shadow: 0 var(--space-4) var(--space-12) var(--hh-shadow);
+  font-family: var(--font-sans); font-size: var(--text-base);
+}
+.sheet::backdrop { background: var(--hh-shadow); backdrop-filter: blur(var(--space-1)); }
+.sheet[open] { animation: menu-in 200ms cubic-bezier(.2, .8, .2, 1); }
+.sheet-close { position: absolute; top: var(--space-3); right: var(--space-3); }
+.sheet-head { display: grid; gap: var(--space-2); margin-bottom: var(--hh-pad); padding-right: var(--space-8); }
+.sheet-head h2 { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); }
+.sheet-head p { font-size: var(--text-sm); line-height: 1.43; color: var(--hh-text-dim); }
+.sheet-body { display: grid; gap: var(--space-4); }
+.sheet-foot { margin-top: var(--hh-pad); padding-top: var(--space-4); border-top: 1px solid var(--hh-line); font-size: var(--text-xs); line-height: 1.5; color: var(--hh-text-faint); }
+.sheet-error { font-size: var(--text-sm); line-height: 1.43; color: var(--hh-bad); }
+
+.providers { display: grid; gap: var(--space-2); }
+.provider {
+  display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+  height: var(--hh-field); padding: 0 var(--space-4);
+  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md);
+  font-size: var(--text-sm); font-weight: var(--weight-medium);
+  transition: border-color var(--hh-ease), background var(--hh-ease);
+}
+.provider:hover { border-color: var(--hh-line-focus); background: var(--hh-wash); }
+.provider .mark { width: var(--space-5); height: var(--space-5); }
+/* The way in that worked last time, offered first. */
+.provider.preferred { border-color: var(--hh-line-focus); background: var(--hh-fill); }
+.or { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-xs); color: var(--hh-text-faint); }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--hh-line); }
+.email-step, .code-step { display: grid; gap: var(--space-3); }
+.email-step .button, .code-step .button { justify-content: center; }
+.code-sent { font-size: var(--text-sm); line-height: 1.43; color: var(--hh-text-dim); }
+.code-step .field input { font-family: var(--font-mono); font-size: var(--text-xl); letter-spacing: var(--tracking-caps); text-align: center; }
+.code-foot { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.code-foot .link { color: var(--hh-text-dim); }
+.code-foot .link:hover { color: var(--hh-text); }

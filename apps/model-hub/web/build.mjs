@@ -57,6 +57,25 @@ const WALLPAPERS = [
 ];
 const THEMES = [["dark", "Dark", "moon"], ["light", "Light", "sun"], ["immersive", "Immersive", "image"]];
 
+// ---- sign-in
+//
+// Two public ids and the name of the vendored bundle. With no app id the control is not built at all, so a build
+// without sign-in configured produces exactly the site that was there before it existed.
+const privyStamp = existsSync(join(SITE, "vendor", "privy", "VENDORED.json"))
+  ? JSON.parse(await readFile(join(SITE, "vendor", "privy", "VENDORED.json"), "utf8"))
+  : null;
+const privy = process.env.PRIVY_APP_ID && privyStamp
+  ? { appId: process.env.PRIVY_APP_ID, clientId: process.env.PRIVY_CLIENT_ID || "", bundle: `vendor/privy/${privyStamp.file}` }
+  : null;
+
+// Signed out, this is one button and nothing else. The menu it becomes is built by the browser once somebody is
+// actually signed in, so nobody downloads an account they do not have.
+const accountControl = () => privy ? `<div class="account" id="account">
+      <button type="button" class="control" id="sign-in-button" title="Sign in">${R.icon.user}<span class="label">Sign in</span></button>
+      <button type="button" class="control square account-mark" id="account-button" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Your account"><span id="account-initial" aria-hidden="true"></span></button>
+      <div class="menu" id="account-menu" role="menu" aria-label="Your account" hidden></div>
+    </div>` : "";
+
 // Runs before first paint: Dark for first visits, the saved choice after that. No flash.
 const prepaint = `(function(){var s={};try{s=JSON.parse(localStorage.getItem("hologram-models-hub.theme"))||{}}catch(e){}
 var m=["dark","light","immersive"].indexOf(s.mode)>=0?s.mode:"dark",w=${JSON.stringify(WALLPAPERS.map((w) => w.key))}.indexOf(s.wallpaper)>=0?s.wallpaper:"alps",r=document.documentElement;
@@ -89,6 +108,7 @@ const page = ({ title, description, body, search = false, model = "" }) => `<!do
 <meta name="color-scheme" content="dark light">
 <script>${prepaint}</script>
 <script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>
+${privy ? `<script type="application/json" id="privy">${JSON.stringify(privy)}</script>` : ""}
 <link rel="icon" href="${base}logos/Hologram_Logomark_White.svg" type="image/svg+xml">
 <link rel="preload" href="${base}fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="${base}fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -104,6 +124,7 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
     ${search ? `<form class="field compact top-search" action="${base}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
     ${indexPill()}
     <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
+    ${accountControl()}
     ${themeSwitch}
   </div>
 </header>
@@ -327,6 +348,19 @@ for (const m of models) {
 const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
 for (const f of ["app.js", "render.mjs", "braille.mjs", "zip.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+if (privy) {
+  await cp(join(SITE, "src", "auth.js"), join(DIST, "auth.js"));
+  await mkdir(join(DIST, "vendor", "privy"), { recursive: true });
+  await cp(join(SITE, "vendor", "privy", privyStamp.file), join(DIST, "vendor", "privy", privyStamp.file));
+  // Where a provider sends people back. It finishes the sign-in and returns them to the page they left, so the
+  // round trip reads as one step rather than as a visit to somewhere else.
+  await mkdir(join(DIST, "auth"), { recursive: true });
+  await writeFile(join(DIST, "auth", "index.html"), page({
+    title: "Signing you in · Hologram Models Hub",
+    description: "Finishing sign-in.",
+    body: `<section class="panel browse"><div class="empty"><p id="auth-landing">Signing you in…</p><a class="link" href="${base}">All models</a></div></section>`,
+  }));
+}
 await mkdir(join(DIST, "kit"), { recursive: true });
 for (const f of ["hologram-warm.css", "hologram-gap-tokens.css"]) await cp(join(KIT, f), join(DIST, "kit", f));
 await cp(join(KIT, "fonts"), join(DIST, "fonts"), { recursive: true });

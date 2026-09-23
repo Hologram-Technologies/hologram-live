@@ -37,21 +37,32 @@ let current = null;
 export const onChange = (fn) => { listeners.add(fn); fn(current); };
 const announce = () => { for (const fn of listeners) fn(current); };
 
-// The address of a wallet Privy made for this person. Shown back to its owner, trusted for nothing.
+// A person is a list of linked accounts, and each kind names its own fields: an email account carries `address`,
+// an OAuth account carries `email`, and GitHub may carry only a `username`. Taken from the SDK's own types rather
+// than guessed, because guessing here shows someone "your account" instead of their name and looks broken.
+const accounts = (user) => user?.linked_accounts || [];
+const nameOf = (a) => (a.type === "email" ? a.address : a.email || a.username || null);
+// Whoever they actually came in as, in the order the sheet offers.
+const whoOf = (user) => {
+  for (const type of ["email", "google_oauth", "github_oauth"]) {
+    const found = accounts(user).filter((a) => a.type === type).map(nameOf).find(Boolean);
+    if (found) return found;
+  }
+  return accounts(user).map(nameOf).find(Boolean) || null;
+};
+
+// The address of the Ethereum wallet Privy made for this person. Shown back to its owner, trusted for nothing —
+// and the Ethereum one specifically, since that is the only shape the service will store.
 const walletOf = (user) =>
-  (user?.linked_accounts || []).find((a) => a.type === "wallet" && (a.wallet_client_type === "privy" || a.connector_type === "embedded"))?.address || null;
+  accounts(user).find((a) => a.type === "wallet" && a.connector_type === "embedded" && a.chain_type === "ethereum")?.address || null;
 
 function adopt(user) {
-  current = user ? { id: user.id, email: emailOf(user), wallet: walletOf(user) } : null;
+  current = user ? { id: user.id, email: whoOf(user), wallet: walletOf(user) } : null;
   write(SEEN, user ? "1" : null);
   announce();
   if (user) record().catch(() => {});
   return current;
 }
-
-const emailOf = (user) =>
-  user?.email?.address || (user?.linked_accounts || []).find((a) => a.type === "email" || a.type === "google_oauth" || a.type === "github_oauth")?.address
-  || (user?.linked_accounts || []).find((a) => a.type === "github_oauth")?.username || null;
 
 // ---- our own side
 export async function api(path, options = {}) {
@@ -187,7 +198,11 @@ function wire() {
         working(true, b, "Opening…");
         const p = await guard(client());
         sessionStorage.setItem("hologram-models-hub.return", location.href);
-        const url = await guard(p.auth.oauth.generateURL(b.dataset.provider, `${location.origin}${base}auth/`));
+        // 0.76.2 answers {url}; the published example assigns the result directly, which navigates to
+        // "[object Object]". Take either shape, and refuse anything that is not an address we can open.
+        const answer = await guard(p.auth.oauth.generateURL(b.dataset.provider, `${location.origin}${base}auth/`));
+        const url = typeof answer === "string" ? answer : answer?.url;
+        if (!/^https:\/\//.test(url || "")) throw new Error("That sign-in could not be started. Try another way in.");
         location.assign(url);
       } catch (err) { working(false, b); fail(err); }
     });

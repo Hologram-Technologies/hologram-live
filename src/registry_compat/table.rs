@@ -63,7 +63,9 @@ table! {
     "storage.maintenance.uploadpurging" => Supported,
     "storage.maintenance.readonly" => Supported,
     "storage.delete.enabled" => Supported,
-    "storage.cache.blobdescriptor" => Ignored("the index is local; there is nothing to cache (the value redis is refused)"),
+    "storage.cache.blobdescriptor" => Ignored("the index is local; there is nothing to cache"),
+    // Harbor's own registry sets the old name for it, with a redis section.
+    "storage.cache.layerinfo" => Ignored("the index is local; there is nothing to cache"),
     "storage.cache.blobdescriptorsize" => Ignored("the index is local; there is nothing to cache"),
     "storage.redirect" => Refused(V12),
     "storage.tag.concurrencylimit" => Ignored("tunes the reference's tag lookup"),
@@ -98,7 +100,7 @@ table! {
     "http.h2c.enabled" => Ignored("h2c is always on; the server's gRPC needs it"),
 
     "notifications" => Refused(V12),
-    "redis" => Refused("is not supported: it shares a cache between replicas, and v1 is one writer"),
+    "redis" => Ignored("names a cache the reference shares between replicas; this registry keeps its own index and reads nothing from redis"),
 
     "health.storagedriver" => Supported,
     "health.file" => Refused(V11),
@@ -106,7 +108,12 @@ table! {
     "health.tcp" => Refused(V11),
 
     "proxy" => Refused(V11),
+    // Manifest validation is the reference's check of foreign layer URLs
+    // against an allow list. This registry does not fetch foreign layers,
+    // so `disabled: true` (what Harbor sets) is what it already does.
+    "validation.disabled" => Supported,
     "validation" => Refused(V11),
+    "compatibility.schema1" => Ignored("schema 1 manifests are refused however this is set: no client has pushed one since 2017"),
 }
 
 /// The entry for `key`: the longest table key that is `key` itself or a

@@ -57,6 +57,9 @@ grep -q "^registry " <<<"$version" || fail "/bin/registry --version: $version"
 gc=$(docker run --rm "$ours" garbage-collect --dry-run /etc/distribution/config.yml 2>&1) \
   || fail "garbage-collect through the entry point: $gc"
 grep -q "blobs marked, 0 blobs and 0 manifests eligible for deletion" <<<"$gc" || fail "garbage-collect: $gc"
+# The Helm chart's job writes the flag with a value, as cobra takes it.
+gc=$(docker run --rm "$ours" garbage-collect --delete-untagged=true /etc/distribution/config.yml 2>&1)   || fail "garbage-collect --delete-untagged=true, the Helm chart's form: $gc"
+grep -q "blobs marked, 0 blobs and 0 manifests eligible for deletion" <<<"$gc" || fail "garbage-collect: $gc"
 echo "surface: /v2/ in public, the module API is not, only 5000 published, hologram on the path"
 
 # The image's own default file turns on the debug listener (:5001) with

@@ -813,21 +813,19 @@ function themeSwitch() {
 // anonymous visit downloads none of it.
 function account() {
   const box = $("#account"), signIn = $("#sign-in-button"), mark = $("#account-button"), menu = $("#account-menu");
-  let mod = null;
-  const load = () => (mod ??= import(`${base}auth.js`));
+  let mod = null, modReady = null;
+  // The module handle is kept the moment it resolves: paint() runs from its own change events and must not wait.
+  const load = () => (mod ??= import(`${base}auth.js`).then((m) => (modReady = m)));
 
-  const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
   function paint(user) {
     signIn.hidden = Boolean(user);
     mark.hidden = !user;
     if (!user) { menu.hidden = true; menu.replaceChildren(); return; }
-    $("#account-initial").textContent = (user.email || "?").trim()[0].toUpperCase();
+    const m = mod && modReady;
+    $("#account-initial").textContent = m ? m.initialOf(user) : "?";
     mark.title = user.email || "Your account";
-    menu.innerHTML = `
-      <div class="account-who"><span class="label">Signed in</span><b>${R.esc(user.email || "your account")}</b></div>
-      ${user.wallet ? `<button type="button" class="copy account-wallet" data-copy="${R.esc(user.wallet)}" title="Copy your wallet address">${R.icon.seal}<span class="label">Wallet<span class="sub">${R.esc(short(user.wallet))}</span></span>${R.icon.copy}</button>` : ""}
-      <button type="button" role="menuitem" id="sign-out">${R.icon.reset}<span class="label">Sign out</span></button>`;
-    $("#sign-out").addEventListener("click", async () => { open(false); (await load()).signOut(); });
+    if (m) menu.innerHTML = m.accountMenu(user);
+    $("#sign-out")?.addEventListener("click", async () => { open(false); (await load()).signOut(); });
   }
   paint(null);
 

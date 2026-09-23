@@ -71,8 +71,8 @@ const privy = process.env.PRIVY_APP_ID && privyStamp
 // Signed out, this is one button and nothing else. The menu it becomes is built by the browser once somebody is
 // actually signed in, so nobody downloads an account they do not have.
 const accountControl = () => privy ? `<div class="account" id="account">
-      <button type="button" class="control" id="sign-in-button" title="Sign in">${R.icon.user}<span class="label">Sign in</span></button>
-      <button type="button" class="control square account-mark" id="account-button" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Your account"><span id="account-initial" aria-hidden="true"></span></button>
+      <button type="button" class="sign-in" id="sign-in-button" title="Sign in">${R.icon.user}<span class="label">Sign in</span></button>
+      <button type="button" class="account-mark" id="account-button" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Your account"><span id="account-initial" aria-hidden="true"></span></button>
       <div class="menu" id="account-menu" role="menu" aria-label="Your account" hidden></div>
     </div>` : "";
 
@@ -124,8 +124,8 @@ ${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
     ${search ? `<form class="field compact top-search" action="${base}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
     ${indexPill()}
     <a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>
-    ${accountControl()}
     ${themeSwitch}
+    ${accountControl()}
   </div>
 </header>
 ${archive ? `<div class="archive-banner" id="archive-banner" role="status" hidden>${R.icon.calendar}<span>Viewing the index of <b id="archive-banner-date"></b>. Every file shown was checked against its address.</span><button type="button" class="link" data-at="latest">Back to latest</button></div>` : ""}

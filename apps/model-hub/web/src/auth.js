@@ -7,7 +7,7 @@
 // One door, one step. There is no separate "create an account": the same email that signs an existing person in
 // makes a new person's account, because a second path would only ask people to remember which one they used.
 
-import { icon } from "./render.mjs";
+import { esc, icon } from "./render.mjs";
 
 const base = document.documentElement.dataset.base;
 const cfg = JSON.parse(document.getElementById("privy")?.textContent || "null");
@@ -266,3 +266,22 @@ export function open() {
   (read(LAST) === "email" ? $("#sign-in-email") : first)?.focus();
 }
 export const close = () => dialog?.close();
+
+// ---- the signed-in menu
+//
+// Lives here rather than in app.js so that what a signed-in person sees is written next to what signing in means,
+// and so it can be rendered against any person without one existing.
+export const initialOf = (user) => (user?.email || "?").trim().charAt(0).toUpperCase() || "?";
+export const shortAddress = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+export const accountMenu = (user) => `
+  <div class="account-who">
+    <span class="label">Signed in</span>
+    <b title="${esc(user.email || "")}">${esc(user.email || "your account")}</b>
+  </div>
+  <div class="account-rows">
+    ${user.wallet ? `<button type="button" role="menuitem" class="account-row copy" data-copy="${esc(user.wallet)}" title="Copy your wallet address">
+      ${icon.seal}<span class="label">Wallet<span class="sub">${esc(shortAddress(user.wallet))}</span></span>${icon.copy}
+    </button>` : `<div class="account-row quiet">${icon.seal}<span class="label">Wallet<span class="sub">Not set up yet</span></span></div>`}
+    <button type="button" role="menuitem" class="account-row" id="sign-out">${icon.reset}<span class="label">Sign out</span></button>
+  </div>`;

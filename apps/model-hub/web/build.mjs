@@ -149,7 +149,7 @@ const browse = page({
   </aside>
   <section class="panel" id="results" aria-label="Models">
     <div class="results-head">
-    <div class="head">${indexPill()}<h1>Models</h1><span class="pill" id="total">${r.results.length}</span></div>
+    <div class="head"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}</div>
     <div class="bar">
       <label class="field search">${R.icon.search}<input id="q" type="search" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models"></label>
       <button type="button" class="open-filters" id="open-filters">${R.icon.sliders}Filters</button>

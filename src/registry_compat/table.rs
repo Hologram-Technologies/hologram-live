@@ -75,6 +75,15 @@ table! {
     "storage.tag.concurrencylimit" => Ignored("tunes the reference's tag lookup"),
 
     "auth.htpasswd" => Supported,
+    "auth.token.realm" => Supported,
+    "auth.token.service" => Supported,
+    "auth.token.issuer" => Supported,
+    "auth.token.jwks" => Supported,
+    // The reference validates tokens and expects a token server to issue
+    // them. `local` makes this registry its own (DIFFERENCES.md).
+    "auth.token.local" => Supported,
+    "auth.token.rootcertbundle" => Refused("is not read: point auth.token.jwks at a key set instead"),
+    "auth.token.autoredirect" => Refused(NOT_BUILT),
     "auth.token" => Refused(V11),
     "auth.silly" => Refused("is for tests only"),
 

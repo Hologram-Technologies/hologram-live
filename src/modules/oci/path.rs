@@ -132,6 +132,20 @@ pub fn query_param(query: Option<&str>, name: &str) -> Option<String> {
     })
 }
 
+/// Every value of `name`: a token request may ask for several scopes, one
+/// `scope=` each, as `docker push` does when it mounts from another
+/// repository.
+pub fn query_params(query: Option<&str>, name: &str) -> Vec<String> {
+    let Some(query) = query else { return Vec::new() };
+    query
+        .split('&')
+        .filter_map(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            (key == name).then(|| percent_decode(value, true)).flatten()
+        })
+        .collect()
+}
+
 fn percent_decode(raw: &str, slash_allowed: bool) -> Option<String> {
     if !raw.contains('%') {
         return Some(raw.to_owned());

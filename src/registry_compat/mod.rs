@@ -365,6 +365,16 @@ fn drain_timeout(text: &str) -> Option<std::time::Duration> {
     crate::modules::oci::debug::go_duration(text)
 }
 
+/// Where the server keeps its own state on the volume, as `apply` sets it:
+/// `<rootdirectory>/live/state`.
+#[must_use]
+pub fn state_dir() -> PathBuf {
+    let root = installed()
+        .and_then(|settings| settings.get("storage.filesystem.rootdirectory"))
+        .unwrap_or("/var/lib/registry");
+    PathBuf::from(root.trim()).join("live/state")
+}
+
 /// A header value as the reference writes it in YAML: a list, `[nosniff]`,
 /// sent as one comma-joined value.
 pub fn header_value(value: &str) -> &str {

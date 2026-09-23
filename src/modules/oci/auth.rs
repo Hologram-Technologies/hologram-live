@@ -89,6 +89,17 @@ impl Htpasswd {
     /// when the file cannot be read.
     pub async fn authenticate(self: &Arc<Self>, headers: &HeaderMap) -> Result<String, Denied> {
         let (user, password) = basic(headers).ok_or(Denied::Challenge)?;
+        self.check(&user, &password).await
+    }
+
+    /// The same check, for a caller that already has the pair: the token
+    /// issuer reads them from its own request.
+    ///
+    /// # Errors
+    ///
+    /// [`Denied::Challenge`] when the pair is not in the file.
+    pub async fn check(self: &Arc<Self>, user: &str, password: &str) -> Result<String, Denied> {
+        let (user, password) = (user.to_owned(), password.to_owned());
         let (entries, version) = self.entries()?;
         let remembered = (user.clone(), *blake3::keyed_hash(&self.key, password.as_bytes()).as_bytes());
         {
@@ -158,7 +169,7 @@ impl Htpasswd {
 }
 
 /// `Authorization: Basic …`, read as Go's `Request.BasicAuth` reads it.
-fn basic(headers: &HeaderMap) -> Option<(String, String)> {
+pub(crate) fn basic(headers: &HeaderMap) -> Option<(String, String)> {
     let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
     let (scheme, encoded) = value.split_at_checked(6)?;
     if !scheme.eq_ignore_ascii_case("basic ") {
@@ -233,6 +244,10 @@ fn provision(path: &Path) -> std::io::Result<()> {
 /// `detail`: pull for reads, pull and push for writes, delete; pull on the
 /// source of a mount; `registry:catalog:*` for the catalogue; nothing for the
 /// base route.
+pub(crate) fn access_detail(method: &Method, scope: &Scope, query: Option<&str>) -> Value {
+    access_records(method, scope, query)
+}
+
 fn access_records(method: &Method, scope: &Scope, query: Option<&str>) -> Value {
     let record = |kind: &str, name: &str, action: &str| {
         json!({ "Type": kind, "Class": "", "Name": name, "Action": action })

@@ -1177,6 +1177,8 @@ heartbeat_interval_secs = 15
 request_timeout_secs = 5
 node_ttl_secs = 60
 max_peers = 64
+replication_max_objects_per_round = 1000
+replication_max_object_bytes = 536870912
 ```
 
 When the environment variable named by `token_env` is absent, Hologram creates

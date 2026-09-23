@@ -1,10 +1,10 @@
 use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
-use crate::protocol::{operation, NodeRecord, ObjectMetadata, OperationKind};
+use crate::protocol::{operation, NodeRecord, ObjectPage, ObjectQuery, OperationKind};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse};
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -133,10 +133,11 @@ pub async fn join_cluster(
 pub async fn list_cluster_objects(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<Vec<ObjectMetadata>>, HttpError> {
+    Query(query): Query<ObjectQuery>,
+) -> Result<Json<ObjectPage>, HttpError> {
     verify_cluster_request(&state, &headers, &[])?;
     let registry = state.registry().clone();
-    let objects = tokio::task::spawn_blocking(move || registry.list_objects(None))
+    let objects = tokio::task::spawn_blocking(move || registry.search(&query))
         .await
         .map_err(|error| crate::error::LiveError::Conflict(format!("join cluster inventory: {error}")))??;
     Ok(Json(objects))

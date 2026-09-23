@@ -137,6 +137,10 @@ pub struct ClusterConfig {
     pub request_timeout_secs: u64,
     pub node_ttl_secs: u64,
     pub max_peers: usize,
+    /// Maximum immutable objects fetched from one peer per heartbeat round.
+    pub replication_max_objects_per_round: usize,
+    /// Maximum bytes accepted for one immutable object transfer.
+    pub replication_max_object_bytes: u64,
 }
 
 impl Default for ClusterConfig {
@@ -149,6 +153,8 @@ impl Default for ClusterConfig {
             request_timeout_secs: 5,
             node_ttl_secs: 60,
             max_peers: 64,
+            replication_max_objects_per_round: 1_000,
+            replication_max_object_bytes: 512 * 1024 * 1024,
         }
     }
 }
@@ -816,10 +822,13 @@ impl AppConfig {
             || self.cluster.request_timeout_secs == 0
             || self.cluster.node_ttl_secs == 0
             || self.cluster.max_peers == 0
+            || self.cluster.replication_max_objects_per_round == 0
+            || self.cluster.replication_max_object_bytes == 0
             || self.cluster.node_ttl_secs <= self.cluster.heartbeat_interval_secs
         {
             return Err(LiveError::Config(
-                "cluster intervals, timeout, TTL, and max_peers must be valid".to_owned(),
+                "cluster intervals, timeout, TTL, peer, and replication bounds must be valid"
+                    .to_owned(),
             ));
         }
         Ok(())

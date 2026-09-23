@@ -40,6 +40,7 @@ impl LiveModule for ControlPlaneModule {
     fn router(&self) -> Router<AppState> {
         Router::new()
             .route("/api/v1/nodes", get(list_nodes))
+            .route("/api/v1/nodes/owner", get(get_mutable_owner))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {
@@ -49,7 +50,7 @@ impl LiveModule for ControlPlaneModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_nodes, join_cluster),
+    paths(list_nodes, get_mutable_owner, join_cluster),
     components(schemas(NodeRecord, ClusterJoinRequest, ClusterJoinResponse)),
     tags((name = "control-plane", description = "Node inventory"))
 )]
@@ -68,6 +69,39 @@ pub async fn list_nodes(State(state): State<AppState>) -> Result<Json<Vec<NodeRe
             crate::error::LiveError::Conflict(format!("join node listing: {error}"))
         })??;
     Ok(Json(records))
+}
+
+#[derive(serde::Deserialize)]
+pub struct OwnerQuery {
+    resource: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/nodes/owner",
+    params(("resource" = String, Query, description = "Stable mutable resource key")),
+    responses((status = 200, body = NodeRecord), (status = 404, description = "No reachable owner"))
+)]
+pub async fn get_mutable_owner(
+    State(state): State<AppState>,
+    Query(query): Query<OwnerQuery>,
+) -> Result<Json<NodeRecord>, HttpError> {
+    if query.resource.is_empty() || query.resource.len() > 4_096 {
+        return Err(HttpError(crate::error::LiveError::Protocol(
+            "resource must be between 1 and 4096 bytes".to_owned(),
+        )));
+    }
+    let owner = tokio::task::spawn_blocking(move || state.mutable_owner(&query.resource))
+        .await
+        .map_err(|error| {
+            crate::error::LiveError::Conflict(format!("select mutable owner: {error}"))
+        })??
+        .ok_or_else(|| {
+            HttpError(crate::error::LiveError::NotFound(
+                "no reachable cluster owner".to_owned(),
+            ))
+        })?;
+    Ok(Json(owner))
 }
 
 #[utoipa::path(

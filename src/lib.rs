@@ -42,6 +42,7 @@ pub mod nodes;
 pub mod observability;
 #[cfg(feature = "oci")]
 pub mod oci_store;
+pub mod ownership;
 pub mod plugin;
 pub mod process;
 pub mod protocol;

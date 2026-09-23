@@ -43,7 +43,7 @@ bytes = { version = "1", optional = true }
 # The reference registry's config.yml, read into a flat key table (src/registry_compat).
 yaml-rust2 = { version = "0.13", optional = true, default-features = false }
 bcrypt = { version = "0.19", optional = true }
-getrandom = { version = "0.4", optional = true }
+getrandom = "0.4"
 base64 = { version = "0.23", optional = true }
 # TLS on the registry's listener (http.tls). ring only: aws-lc stays out of the graph.
 tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12", "logging"] }
@@ -53,7 +53,6 @@ kappa-core = { path = "third_party/kappa/crates/kappa-core", optional = true, de
 kappa-store-redb = { path = "third_party/kappa/crates/kappa-store-redb", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
 fs4 = "1.1"
-getrandom = "0.4"
 hyper-util = { version = "0.1", features = ["tokio"] }
 kameo = "0.22"
 encoding_rs = { version = "0.8", optional = true }

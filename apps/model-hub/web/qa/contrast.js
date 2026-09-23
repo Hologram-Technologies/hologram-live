@@ -15,10 +15,12 @@
   const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 
   const immersive = root.dataset.theme === "immersive";
+  // The page decides how much ground covers the wallpaper; the landing lays on more than the app does.
+  const veil = (parseFloat(getComputedStyle(root).getPropertyValue("--hh-veil")) || 22) / 100;
   const ground = parse(getComputedStyle(root).backgroundColor);
   const scrimColor = parse(getComputedStyle(root).getPropertyValue("--background").trim() ? getComputedStyle(root).backgroundColor : "rgb(0,0,0)");
   const bases = immersive
-    ? [[255, 255, 255, 1], [0, 0, 0, 1]].map((photo) => over([scrimColor[0], scrimColor[1], scrimColor[2], 0.22], photo))
+    ? [[255, 255, 255, 1], [0, 0, 0, 1]].map((photo) => over([scrimColor[0], scrimColor[1], scrimColor[2], veil], photo))
     : [ground[3] ? ground : [255, 255, 255, 1]];
 
   const layers = (el) => { const out = []; for (let e = el; e && e !== root; e = e.parentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c[3] > 0) out.push(c); } return out.reverse(); };

@@ -11,6 +11,32 @@ if ($("#browse")) browse();
 if ($("[data-verify]")) model();
 copyButtons();
 if ($("#archive")) archive();
+if ($("#gh-stars")) stars();
+
+// The hero's star count is baked into the page by the build, so the badge is right on first paint and never
+// flashes an empty slot. This keeps it honest between nightly builds: one unauthenticated call to GitHub's
+// public API, cached for the session so a reader moving around the site does not spend the rate limit, and
+// every failure leaves the built number exactly where it was.
+function stars() {
+  const n = $("#gh-stars"), badge = n.closest(".land-badge"), repo = badge.dataset.repo;
+  const KEY = `hologram-models-hub.stars.${repo}`;
+  const show = (value) => {
+    if (!Number.isFinite(value)) return;
+    n.textContent = R.count(value);
+    badge.setAttribute("aria-label", `Star ${repo} on GitHub, ${value} star${value === 1 ? "" : "s"}`);
+  };
+  let cached = null;
+  try { cached = JSON.parse(sessionStorage.getItem(KEY)); } catch {}
+  if (cached && Date.now() - cached.at < 600_000) return show(cached.stars);
+  fetch(`https://api.github.com/repos/${repo}`, { headers: { accept: "application/vnd.github+json" } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((body) => {
+      if (typeof body?.stargazers_count !== "number") return;
+      show(body.stargazers_count);
+      try { sessionStorage.setItem(KEY, JSON.stringify({ stars: body.stargazers_count, at: Date.now() })); } catch {}
+    })
+    .catch(() => {});
+}
 if ($("#account")) account();
 
 async function browse() {

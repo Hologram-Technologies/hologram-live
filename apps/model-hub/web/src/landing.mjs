@@ -2,9 +2,11 @@
 //
 // The figure is the hub's own signature, not decoration: the braille address cells a model page draws for its
 // manifest, scaled up into a field and masked away from the type. It is neutral on purpose. The brand accent is
-// spent exactly once on this page, inside the primary action, per the kit's once per view rule.
+// spent twice on this page and nowhere else: the star in the badge above the headline, and the chevron inside
+// the primary action. It fills a mark both times and never sits behind words.
 
 import { esc, icon } from "./render.mjs";
+import { heroBadge } from "./hero-badge.mjs";
 
 // Deterministic: the same field every build, so a rebuild is a no-op in the diff and in the cache.
 const seeded = (seed) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -81,10 +83,11 @@ function marquee(base, models) {
 // says something like "487+". Under a hundred it just says the number.
 const count = (n) => (n < 100 ? `${n}` : `${Math.floor(n / 100) * 100}+`);
 
-export function landing({ base, models, endpoint }) {
+export function landing({ base, models, endpoint, repo }) {
   return `<main class="land" id="land">
   <div class="land-art" aria-hidden="true">${art()}</div>
   <div class="land-copy">
+    ${heroBadge({ repo })}
     <h1 class="land-title"><span>The Open Platform</span><span>for Sovereign AI</span></h1>
     <p class="land-sub">Discover, use and share self-verifying models, skills and artifacts.</p>
     <div class="land-actions">

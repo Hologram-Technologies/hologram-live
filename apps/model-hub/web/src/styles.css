@@ -224,6 +224,27 @@ ul { list-style: none; margin: 0; padding: 0; }
 @keyframes land-drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(1.6%, -1.2%, 0); } }
 
 .land-copy { display: grid; justify-items: center; }
+
+/* ---- the star badge above the headline.
+   The page's own capsule: the control language of every other button here, the count behind a hairline, and
+   the star in brand orange. The accent fills a mark and never sits behind words, because white on it is
+   4.14:1, under AA. The count is empty until it exists, so a build that could not reach GitHub shows the
+   label and no hollow number; app.js fills it in and the tally appears. */
+.land-badge {
+  display: inline-flex; align-items: center; gap: var(--space-3);
+  height: var(--hh-control); padding: 0 var(--space-4);
+  border: 1px solid var(--hh-line); border-radius: var(--hh-control);
+  font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim);
+  transition: color var(--hh-ease), border-color var(--hh-ease);
+}
+.land-badge .lead, .land-badge .tally { display: inline-flex; align-items: center; gap: var(--space-2); }
+.land-badge .i { width: var(--hh-icon); height: var(--hh-icon); }
+.land-badge .tally { padding-left: var(--space-3); border-left: 1px solid var(--hh-line); }
+.land-badge .tally:has(.n:empty) { display: none; }
+.land-badge .star { fill: var(--hh-accent); stroke: var(--hh-accent); }
+.land-badge .n { font-weight: var(--weight-medium); color: var(--hh-text); }
+.land-badge:hover { color: var(--hh-text); border-color: var(--hh-line-focus); }
+.land-badge + .land-title { margin-top: var(--space-6); }
 .land-title { font-family: var(--font-display); font-size: var(--hh-display); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: .95; }
 .land-title span { display: block; }
 .land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--hh-lead); color: var(--hh-text-dim); }
@@ -253,7 +274,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 @media (max-height: 680px) {
   :root[data-page="landing"] .shell { padding-bottom: 0; }
   .land { padding: var(--space-4) 0; }
-  .land-sub, .land-actions { margin-top: var(--space-4); }
+  .land-sub, .land-actions, .land-badge + .land-title { margin-top: var(--space-4); }
   .land-marquee { display: none; }
 }
 @media (max-width: 480px) { .land-track ul { gap: var(--space-10); padding-right: var(--space-10); } }

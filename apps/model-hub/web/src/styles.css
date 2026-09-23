@@ -39,7 +39,12 @@
   --hh-display: clamp(var(--text-3xl), min(8.5vw, 11svh), calc(var(--text-6xl) * 1.3));
   --hh-lead: var(--text-lg);
   /* The pinned strip: one mark plus the air above and below it. The landing reserves exactly this. */
-  --hh-strip: calc(var(--space-10) + var(--space-6) * 2);
+  --hh-strip-mark: var(--space-10);
+  --hh-strip-top: var(--space-6);
+  --hh-strip-bottom: var(--space-10);
+  --hh-strip-gap: var(--space-16);
+  --hh-strip-label: var(--text-xl);
+  --hh-strip: calc(var(--hh-strip-mark) + var(--hh-strip-top) + var(--hh-strip-bottom));
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -235,25 +240,40 @@ ul { list-style: none; margin: 0; padding: 0; }
 /* The strip on the bottom edge: two identical runs, sliding exactly half the track, so the loop has no seam. */
 .land-marquee {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 8;
-  overflow: hidden; padding-block: var(--space-6);
+  overflow: hidden; padding-block: var(--hh-strip-top) var(--hh-strip-bottom);
   -webkit-mask-image: linear-gradient(to right, transparent, var(--hh-text) 10%, var(--hh-text) 90%, transparent);
   mask-image: linear-gradient(to right, transparent, var(--hh-text) 10%, var(--hh-text) 90%, transparent);
 }
 .land-track { display: flex; width: max-content; animation: land-slide 64s linear infinite; }
-.land-track ul { display: flex; align-items: center; gap: var(--space-16); padding-right: var(--space-16); }
-.land-track li { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); white-space: nowrap; color: var(--hh-text-dim); }
+.land-track ul { display: flex; align-items: center; gap: var(--hh-strip-gap); padding-right: var(--hh-strip-gap); }
+.land-track li { display: flex; }
+/* Each mark is a link into the catalogue, so it needs a target big enough to hit and a hover that says so. */
+.land-track a { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-display); font-size: var(--hh-strip-label); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); white-space: nowrap; color: var(--hh-text-dim); transition: color var(--hh-ease); }
+.land-track a:hover { color: var(--hh-text); }
+.land-track a:hover img { opacity: 1; filter: none; }
+/* A moving target is a bad target: the run stops while a pointer is over it, or while a link has focus. */
+.land-marquee:hover .land-track, .land-marquee:focus-within .land-track { animation-play-state: paused; }
 /* The marks are the orgs' own avatars, and several are dark artwork on transparency: on the warm dark ground
    they would disappear. A light plate under each one, in the dark themes only, keeps the strip monochrome and
    readable the way the reference strip is. */
-.land-track img { width: var(--space-10); height: var(--space-10); border-radius: 50%; object-fit: cover; filter: grayscale(1); opacity: .75; }
+.land-track img { width: var(--hh-strip-mark); height: var(--hh-strip-mark); border-radius: 50%; object-fit: cover; filter: grayscale(1); opacity: .75; transition: opacity var(--hh-ease), filter var(--hh-ease); }
 :root.dark .land-track img { background: var(--hh-text); }
 @keyframes land-slide { to { transform: translateX(-50%); } }
 
-@media (min-width: 720px) { :root { --hh-lead: var(--text-xl); } }
-@media (max-height: 680px) {
-  :root[data-page="landing"] .shell { padding-bottom: 0; }
+@media (min-width: 720px) and (min-height: 700px) { :root { --hh-lead: var(--text-xl); } }
+@media (max-height: 820px) {
+  :root { --hh-strip-mark: var(--space-8); --hh-strip-top: var(--space-4); --hh-strip-bottom: var(--space-6); --hh-strip-gap: var(--space-12); --hh-strip-label: var(--text-lg); }
   .land { padding: var(--space-4) 0; }
   .land-sub, .land-actions { margin-top: var(--space-4); }
+}
+@media (max-height: 620px) {
+  :root { --hh-strip-mark: var(--space-6); --hh-strip-top: var(--space-3); --hh-strip-bottom: var(--space-4); --hh-strip-gap: var(--space-10); --hh-strip-label: var(--text-sm); --hh-lead: var(--text-base); }
+  .land { padding: var(--space-3) 0; }
+  .land-sub, .land-actions { margin-top: var(--space-3); }
+}
+/* Below this there is no room for a hero and a strip both; the hero is the page, so the strip goes. */
+@media (max-height: 460px) {
+  :root[data-page="landing"] .shell { padding-bottom: 0; }
   .land-marquee { display: none; }
 }
 @media (max-width: 480px) { .land-track ul { gap: var(--space-10); padding-right: var(--space-10); } }

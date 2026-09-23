@@ -24,6 +24,10 @@ const VIEWPORTS = [
   [768, 1024, "tablet"],
   [1440, 700, "short laptop"],
   [1600, 808, "laptop at 125%"],
+  [1600, 655, "desktop at 150%"],
+  [1280, 600, "short window"],
+  [1024, 500, "very short window"],
+  [360, 640, "small android"],
   [2000, 1010, "wide desktop"],
   [1440, 900, "laptop"],
   [1920, 1080, "desktop"],
@@ -31,7 +35,7 @@ const VIEWPORTS = [
 ];
 const THEMES = ["dark", "light", "immersive"];
 // --shoot <dir> writes one PNG per theme at these shapes, the evidence a review asks for.
-const SHOOT = [[390, 844], [1440, 900]];
+const SHOOT = [[390, 844], [1440, 900], [1600, 655]];
 
 const TYPES = { html: "text/html", js: "text/javascript", mjs: "text/javascript", css: "text/css", json: "application/json", svg: "image/svg+xml", woff2: "font/woff2", jpg: "image/jpeg", png: "image/png" };
 

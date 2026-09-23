@@ -14,7 +14,7 @@
 //! see `team/app2` or `team/app/sub`.
 
 use super::{now_ms, Digest, OciStore, OciStoreError, RepoName, UploadId};
-use redb::{ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::ops::Bound;
 
@@ -329,6 +329,30 @@ impl OciStore {
         Ok(repos.get(repo.as_str()).map_err(io)?.is_some())
     }
 
+    /// How many repositories the volume has.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database cannot be read.
+    pub(crate) fn repo_count(&self) -> Result<u64, OciStoreError> {
+        let txn = self.links.begin_read().map_err(io)?;
+        txn.open_table(REPOS).map_err(io)?.len().map_err(io)
+    }
+
+    /// How many objects the registry stored: the recorded ones, and on a
+    /// volume not yet backfilled, what the backfill would record.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database cannot be read.
+    pub(crate) fn object_count(&self) -> Result<u64, OciStoreError> {
+        let recorded = {
+            let txn = self.links.begin_read().map_err(io)?;
+            txn.open_table(OBJECTS).map_err(io)?.len().map_err(io)?
+        };
+        Ok(recorded + self.objects_backfill_plan()?.len() as u64)
+    }
+
     /// One page of repository names in lexical order, after `after`.
     ///
     /// # Errors
@@ -567,12 +591,6 @@ impl OciStore {
 }
 
 impl OciStore {
-    /// Fill `OBJECTS` from the links of a volume written before it existed:
-    /// every linked digest is an object the registry put there. Once.
-    ///
-    /// # Errors
-    ///
-    /// `Io` when the database refuses.
     /// What [`OciStore::objects_backfill`] would add, without writing: every
     /// linked digest not yet recorded, when the backfill has not run.
     ///
@@ -604,6 +622,12 @@ impl OciStore {
             .collect()
     }
 
+    /// Fill `OBJECTS` from the links of a volume written before it existed:
+    /// every linked digest is an object the registry put there. Once.
+    ///
+    /// # Errors
+    ///
+    /// `Io` when the database refuses.
     pub(crate) fn objects_backfill(&self) -> Result<(), OciStoreError> {
         let txn = self.links.begin_write().map_err(io)?;
         {

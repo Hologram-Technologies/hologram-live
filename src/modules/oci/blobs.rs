@@ -102,10 +102,13 @@ fn refuse_range(digest: &Digest, text: &'static str) -> Response {
 
 /// `len` bytes of `reader` from `start`, read a chunk at a time off the runtime.
 fn body(reader: Box<dyn BlobRead>, start: u64, len: u64) -> Body {
-    Body::from_stream(ReaderStream::with_capacity(
-        AsyncBlob::new(reader, start, len),
-        CHUNK,
-    ))
+    let chunks = ReaderStream::with_capacity(AsyncBlob::new(reader, start, len), CHUNK);
+    Body::from_stream(tokio_stream::StreamExt::map(chunks, |chunk| {
+        if let Ok(bytes) = &chunk {
+            super::metrics::served(bytes.len() as u64);
+        }
+        chunk
+    }))
 }
 
 fn header(value: &str) -> Result<HeaderValue, OciError> {

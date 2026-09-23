@@ -5,10 +5,86 @@
 //! The `handler` label is the route's name, never the raw path: repository
 //! names must not become label values.
 
+use crate::oci_store::OciStore;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::sync::{Mutex, PoisonError};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock, PoisonError, Weak};
 use std::time::Duration;
+
+/// How often the volume gauges are read again (`operations.md` section 3).
+const REFRESH: Duration = Duration::from_mins(1);
+
+/// Bytes the registry took in through uploads, and served from blob `GET`s.
+static UPLOAD_BYTES: AtomicU64 = AtomicU64::new(0);
+static SERVED_BYTES: AtomicU64 = AtomicU64::new(0);
+/// Pushes whose bytes did not hash to the digest given.
+static MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+/// The volume, as last read: set by [`watch_store`].
+struct Volume {
+    store: Weak<OciStore>,
+    path: String,
+    reading: Mutex<Option<(crate::oci_store::Usage, u64)>>,
+}
+
+static VOLUME: OnceLock<Volume> = OnceLock::new();
+
+/// `n` more bytes taken in by an upload.
+pub fn uploaded(n: u64) {
+    UPLOAD_BYTES.fetch_add(n, Ordering::Relaxed);
+}
+
+/// `n` more bytes of a blob sent.
+pub fn served(n: u64) {
+    SERVED_BYTES.fetch_add(n, Ordering::Relaxed);
+}
+
+/// Count a push the store refused because its bytes did not match its digest.
+pub fn count_mismatch(error: &crate::oci_store::OciStoreError) {
+    if matches!(error, crate::oci_store::OciStoreError::DigestMismatch { .. }) {
+        MISMATCHES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Read the volume now and then every minute, on the blocking pool, until the
+/// store is dropped: the store gauges and the free space of `path`.
+pub fn watch_store(store: Weak<OciStore>, path: PathBuf) {
+    let volume = VOLUME.get_or_init(|| Volume {
+        store: store.clone(),
+        path: path.display().to_string(),
+        reading: Mutex::new(None),
+    });
+    let mut ticks = tokio::time::interval(REFRESH);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    tokio::spawn(async move {
+        loop {
+            ticks.tick().await;
+            let Some(store) = volume.store.upgrade() else { return };
+            let path = path.clone();
+            let read = tokio::task::spawn_blocking(move || {
+                let usage = store.usage()?;
+                let free = fs4::available_space(&path)
+                    .map_err(|error| crate::oci_store::OciStoreError::Io(format!("free space of {}: {error}", path.display())))?;
+                Ok::<_, crate::oci_store::OciStoreError>((usage, free))
+            })
+            .await;
+            match read {
+                Ok(Ok(reading)) => {
+                    *volume.reading.lock().unwrap_or_else(PoisonError::into_inner) = Some(reading);
+                }
+                Ok(Err(error)) => tracing::warn!(%error, "the volume gauges were not read"),
+                Err(_) => return,
+            }
+        }
+    });
+}
+
+/// Prometheus quotes `\`, `"` and newlines in a label value.
+fn label(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+}
 
 /// The default Prometheus buckets, in seconds.
 const BUCKETS: [f64; 11] = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0];
@@ -151,6 +227,39 @@ pub fn render() -> String {
             let _ = writeln!(out, "registry_http_request_duration_seconds_count{{{labels}}} {}", histogram.count);
         }
     });
+    let counters = [
+        ("hologram_oci_upload_bytes_total", "Bytes taken in by blob uploads.", &UPLOAD_BYTES),
+        ("hologram_oci_blob_bytes_served_total", "Bytes of blobs sent.", &SERVED_BYTES),
+        ("hologram_oci_digest_mismatch_total", "Pushes refused because the bytes did not match the digest.", &MISMATCHES),
+    ];
+    for (name, help, value) in counters {
+        let _ = writeln!(out, "# HELP {name} {help}");
+        let _ = writeln!(out, "# TYPE {name} counter");
+        let _ = writeln!(out, "{name} {}", value.load(Ordering::Relaxed));
+    }
+    if let Some(volume) = VOLUME.get() {
+        if let Some(store) = volume.store.upgrade() {
+            let _ = writeln!(out, "# HELP hologram_oci_uploads_in_progress Upload sessions open now.");
+            let _ = writeln!(out, "# TYPE hologram_oci_uploads_in_progress gauge");
+            let _ = writeln!(out, "hologram_oci_uploads_in_progress {}", store.uploads_in_progress());
+        }
+        let reading = *volume.reading.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((usage, free)) = reading {
+            let gauges = [
+                ("hologram_oci_store_blobs", "Objects the registry stored, read once a minute.", usage.objects),
+                ("hologram_oci_store_bytes", "Bytes under the blob root, read once a minute.", usage.bytes),
+                ("hologram_oci_repositories", "Repositories, read once a minute.", usage.repositories),
+            ];
+            for (name, help, value) in gauges {
+                let _ = writeln!(out, "# HELP {name} {help}");
+                let _ = writeln!(out, "# TYPE {name} gauge");
+                let _ = writeln!(out, "{name} {value}");
+            }
+            let _ = writeln!(out, "# HELP hologram_disk_free_bytes Bytes free to this process on the volume, read once a minute.");
+            let _ = writeln!(out, "# TYPE hologram_disk_free_bytes gauge");
+            let _ = writeln!(out, "hologram_disk_free_bytes{{path=\"{}\"}} {free}", label(&volume.path));
+        }
+    }
     out.push_str(&crate::tls::metrics_text());
     out
 }

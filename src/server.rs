@@ -112,6 +112,12 @@ where
     #[cfg(feature = "oci")]
     if registry_mode {
         crate::modules::oci::debug::start_checks(&state.config().paths.state_dir);
+        if let Some(store) = state.oci_store() {
+            crate::modules::oci::metrics::watch_store(
+                std::sync::Arc::downgrade(store),
+                state.config().paths.data_dir.clone(),
+            );
+        }
     }
     let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
@@ -184,6 +190,8 @@ async fn serve_registry_mode(
     let public_state = state.clone();
     #[cfg(feature = "oci")]
     let public_state_drain = state.config().server.graceful_shutdown_secs;
+    #[cfg(feature = "oci")]
+    let public_state_limit = state.clone();
     let public = async move {
         let shutdown = async move { public_state.wait_shutdown().await };
         #[cfg(feature = "oci")]
@@ -193,13 +201,44 @@ async fn serve_registry_mode(
         }
         #[cfg(not(feature = "oci"))]
         let _ = tls;
-        axum::serve(public_listener, public)
-            .with_graceful_shutdown(shutdown)
+        let served = axum::serve(public_listener, public).with_graceful_shutdown(shutdown);
+        let served = std::future::IntoFuture::into_future(served);
+        #[cfg(feature = "oci")]
+        let served = bounded_drain(
+            served,
+            public_state_limit,
+            std::time::Duration::from_secs(public_state_drain),
+        );
+        served
             .await
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };
     let admin = admin::serve(state.clone(), admin_listener, admin);
     tokio::try_join!(public, admin, debug).map(|_| ())
+}
+
+/// The plain listener's drain, bounded as the TLS listener's is: once the
+/// stop is asked for, open requests get `limit` (`http.draintimeout`), then
+/// the process stops without them.
+#[cfg(feature = "oci")]
+async fn bounded_drain(
+    served: impl std::future::Future<Output = std::io::Result<()>>,
+    state: AppState,
+    limit: std::time::Duration,
+) -> std::io::Result<()> {
+    let deadline = async move {
+        state.wait_shutdown().await;
+        tokio::time::sleep(limit).await;
+    };
+    tokio::select! {
+        result = served => result,
+        () = deadline => {
+            if !limit.is_zero() {
+                tracing::warn!(seconds = limit.as_secs(), "requests still open after the drain; stopping without them");
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Join the HTTP routes and the gRPC service into the one router the listener serves.

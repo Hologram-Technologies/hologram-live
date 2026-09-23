@@ -224,7 +224,7 @@ async fn finish(
     claimed: Digest,
 ) -> Result<Response, OciError> {
     let asked = claimed.clone();
-    blocking(move || store.upload_finish(&id, &claimed)).await?;
+    blocking(move || store.upload_finish(&id, &claimed).inspect_err(super::metrics::count_mismatch)).await?;
     created(repo, &asked)
 }
 

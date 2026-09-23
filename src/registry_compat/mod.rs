@@ -172,6 +172,9 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
             Ok(_) => Ok(()),
             Err(reason) => refuse(&reason),
         },
+        ("http.draintimeout", text) if drain_timeout(text).is_none() => {
+            refuse("is not a duration: write it as the reference does, 60s or 1m")
+        }
         ("storage.cache.blobdescriptor", "redis") => {
             refuse("redis is not supported: v1 is one writer")
         }
@@ -186,6 +189,20 @@ fn check(key: &str, value: &str, pending: &mut Vec<String>) -> Result<()> {
             _ => Ok(()),
         },
     }
+}
+
+/// `http.draintimeout`: a Go duration, zero included (`0s`, `0`).
+fn drain_timeout(text: &str) -> Option<std::time::Duration> {
+    let text = text.trim();
+    let zero = text.bytes().any(|byte| byte.is_ascii_digit())
+        && text
+            .bytes()
+            .all(|byte| matches!(byte, b'0' | b'.') || byte.is_ascii_alphabetic())
+        && !text.bytes().any(|byte| matches!(byte, b'1'..=b'9'));
+    if zero {
+        return Some(std::time::Duration::ZERO);
+    }
+    crate::modules::oci::debug::go_duration(text)
 }
 
 /// A header value as the reference writes it in YAML: a list, `[nosniff]`,
@@ -360,6 +377,15 @@ pub fn apply(settings: RegistrySettings, config: &mut AppConfig) {
     config.paths.state_dir = root.join("live/state");
     config.paths.cache_dir = root.join("live/cache");
     config.tracing = tracing_config(&settings, std::mem::take(&mut config.tracing));
+    // The reference drains open requests for `http.draintimeout` on a stop
+    // signal; without it, it stops at once (`registry/registry.go`,
+    // `ListenAndServe`). Whole seconds, rounded up; checked when loaded.
+    config.server.graceful_shutdown_secs = settings
+        .get("http.draintimeout")
+        .and_then(drain_timeout)
+        .map_or(0, |drain| {
+            drain.as_secs() + u64::from(drain.subsec_nanos() > 0)
+        });
     if let (Some(certificate), Some(key)) = (
         settings.get("http.tls.certificate"),
         settings.get("http.tls.key"),
@@ -448,6 +474,7 @@ mod tests {
         match key {
             "log.formatter" => "json",
             "storage.cache.blobdescriptor" => "inmemory",
+            "http.draintimeout" => "60s",
             _ => "x",
         }
     }
@@ -575,6 +602,26 @@ health:
         .expect_err("unknown key")
         .to_string();
         assert!(error.contains("storage.mystery"), "{error}");
+    }
+
+    /// `http.draintimeout`: the reference drains for it on a stop signal, and
+    /// without it stops at once (`registry/registry.go`, `ListenAndServe`).
+    #[test]
+    fn draintimeout_bounds_the_drain_and_defaults_to_none() {
+        let drain = |yaml: &str| {
+            let mut config = AppConfig::default();
+            apply(load_text(yaml, &[]).expect("loads"), &mut config);
+            config.server.graceful_shutdown_secs
+        };
+        assert_eq!(drain("version: 0.1\n"), 0, "no drain unless asked");
+        assert_eq!(drain("http:\n  draintimeout: 60s\n"), 60);
+        assert_eq!(drain("http:\n  draintimeout: 1m30s\n"), 90);
+        assert_eq!(drain("http:\n  draintimeout: 1500ms\n"), 2, "rounded up");
+        assert_eq!(drain("http:\n  draintimeout: 0s\n"), 0);
+        let error = load_text("http:\n  draintimeout: soon\n", &[])
+            .expect_err("not a duration")
+            .to_string();
+        assert!(error.contains("http.draintimeout"), "{error}");
     }
 
     /// `http.tls` as the deployment guide sets it: both files, or neither;

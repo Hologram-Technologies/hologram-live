@@ -375,7 +375,7 @@ impl Hasher {
 /// at the upper levels (a stray file, an operator's note) is passed over: it
 /// holds no blob, and must not stop the run. An upload's staging file lives
 /// outside this tree.
-fn leaf_directories(root: &Path) -> Result<Vec<(String, PathBuf)>, OciStoreError> {
+pub(crate) fn leaf_directories(root: &Path) -> Result<Vec<(String, PathBuf)>, OciStoreError> {
     let io = |path: &Path, error: std::io::Error| {
         OciStoreError::Io(format!("read {}: {error}", path.display()))
     };

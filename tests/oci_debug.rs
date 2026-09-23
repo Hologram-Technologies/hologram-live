@@ -152,3 +152,97 @@ fn metrics_count_requests_by_route_never_by_repository() {
     assert_eq!(request(server.public, "GET", "/metrics").0, 404);
     assert_eq!(request(server.public, "GET", "/debug/health").0, 404);
 }
+
+/// One exchange with a body.
+fn send(port: u16, method: &str, path: &str, body: &[u8]) -> (u16, Vec<u8>) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(20)))
+        .expect("timeout");
+    write!(stream, "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).expect("send");
+    stream.write_all(body).expect("body");
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).expect("read");
+    let split = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("a head");
+    let status = String::from_utf8_lossy(&raw[..split])
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .expect("a status");
+    (status, raw[split + 4..].to_vec())
+}
+
+/// A metric's value from `/metrics`, if it is there.
+fn metric(port: u16, name: &str) -> Option<u64> {
+    let (_, text) = request(port, "GET", "/metrics");
+    text.lines().find_map(|line| {
+        let (key, value) = line.rsplit_once(' ')?;
+        (key == name || key.starts_with(&format!("{name}{{"))).then(|| value.parse().ok())?
+    })
+}
+
+/// `operations.md` section 3: bytes in and out, digest mismatches, uploads
+/// open now, and the volume's gauges, read at start and once a minute.
+#[test]
+fn metrics_count_bytes_mismatches_and_the_volume() {
+    let server = start();
+    let bytes = b"bytes the gauges count";
+    let digest = hologram_live::oci_store::Digest::sha256_of(bytes);
+    let (status, _) = send(
+        server.public,
+        "POST",
+        &format!("/v2/team/app/blobs/uploads/?digest={digest}"),
+        bytes,
+    );
+    assert_eq!(status, 201);
+    let (status, body) = send(
+        server.public,
+        "GET",
+        &format!("/v2/team/app/blobs/{digest}"),
+        b"",
+    );
+    assert_eq!((status, body.as_slice()), (200, &bytes[..]));
+    let wrong = hologram_live::oci_store::Digest::sha256_of(b"other bytes");
+    let (status, _) = send(
+        server.public,
+        "POST",
+        &format!("/v2/team/app/blobs/uploads/?digest={wrong}"),
+        bytes,
+    );
+    assert_eq!(status, 400);
+
+    let length = bytes.len() as u64;
+    assert_eq!(
+        metric(server.debug, "hologram_oci_upload_bytes_total"),
+        Some(2 * length)
+    );
+    assert_eq!(
+        metric(server.debug, "hologram_oci_blob_bytes_served_total"),
+        Some(length)
+    );
+    assert_eq!(
+        metric(server.debug, "hologram_oci_digest_mismatch_total"),
+        Some(1)
+    );
+    assert_eq!(
+        metric(server.debug, "hologram_oci_uploads_in_progress"),
+        Some(0)
+    );
+    // The first reading is taken at start.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while metric(server.debug, "hologram_disk_free_bytes").is_none() {
+        assert!(Instant::now() < deadline, "no volume gauges");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(metric(server.debug, "hologram_disk_free_bytes") > Some(0));
+    for name in [
+        "hologram_oci_store_blobs",
+        "hologram_oci_store_bytes",
+        "hologram_oci_repositories",
+    ] {
+        assert!(metric(server.debug, name).is_some(), "{name}");
+    }
+}

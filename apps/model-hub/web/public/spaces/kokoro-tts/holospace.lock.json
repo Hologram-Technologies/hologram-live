@@ -1,57 +1,84 @@
 {
   "format": "hologram.space.lock/v1",
   "id": "kokoro-tts",
-  "root": "sha256:383df588d4de9957470c42ae073fdaea1bfc246550a21d5f4e63be55fde2beca",
+  "root": "sha256:7c68ab3dd7786465c17decb2a77901b4ac871d0f22855d3b58c0673e38849faa",
+  "manifest": "manifest.json",
+  "ipfs": {
+    "recipe": "unixfs-v1-2025",
+    "root": "bafybeibqfcbndvgrhgkjewrx57hthl6dyuz4nuuuokmb3egn5fpbj65omi"
+  },
   "files": {
     "assets/index-DQNH7Ttg.js": {
       "sha256": "830001bebc07b34724101b47e9eec8c394e3ad88a78e2771fb8823fe4c8ea85c",
-      "bytes": 259073
+      "bytes": 259073,
+      "cid": "bafkreiedaaa35pahwndsiea3i7u65sgdstr23cfhrytxd64iep7ezdvilq",
+      "mediaType": "text/javascript"
     },
     "assets/index-DwSiC8qF.css": {
       "sha256": "cda665d147e2400e575d630d7d7ed17ba5e48c06c89b46d900972e2d87f77350",
-      "bytes": 13732
+      "bytes": 13732,
+      "cid": "bafkreignuzs5cr7ciahfoxldbv6x5ul3uxsiybwitndnsaexfywyp53tka",
+      "mediaType": "text/css"
     },
     "assets/worker-BJyeiA2_.js": {
-      "sha256": "762b744d91ec2086bd3629a3da08356dc742aa7b7ea40997a55cd0f5b84f72ca",
-      "bytes": 2129179
+      "sha256": "1e5ce1fcfda4e4464038e79e766c5118ea89a4cd27f3b812c64a7248070d61ce",
+      "bytes": 2137969,
+      "cid": "bafybeiel53bbaqgb4rthrf5adal6tgtis67jp5asrrvotg3mu2xt6d6muu",
+      "mediaType": "text/javascript"
     },
     "hf-logo.svg": {
       "sha256": "942cad1ccda905ac5a659dfd2d78b344fccfb84a8a3ac3721e08f488205638a0",
-      "bytes": 35286
+      "bytes": 35286,
+      "cid": "bafkreieufswrztnjawwfuzm57uwxrm2e7th3qsukhlbxehqi6secavryua",
+      "mediaType": "image/svg+xml"
     },
     "holospace.json": {
-      "sha256": "afaf1557a0b6730c01509d8cff19aa743d33425fe084863342dc8abe1036128b",
-      "bytes": 576
+      "sha256": "78812fc849ea0f24aec9492f4580785636007ab4029a140a6e542dc34bf5aac4",
+      "bytes": 9226,
+      "cid": "bafkreidyqex4qspkb4sk5skjf5cya6cwgyahvnactikau3sufxbux5nkyq",
+      "mediaType": "application/json"
     },
     "icon.svg": {
       "sha256": "872dd0aa4347b5b46a085f2fa5f1d51ea55bda190989657bf71a2b3cf8e4982f",
-      "bytes": 220
+      "bytes": 220,
+      "cid": "bafkreiehfxikuq2hww2gucc7f6s7dvi6uvn5ugijrfsxx5y2fm6przeyf4",
+      "mediaType": "image/svg+xml"
     },
     "index.html": {
-      "sha256": "d8573935943e354034e4ad274974e7644da7e51264f9b3aa73098369c0debee0",
-      "bytes": 1067
-    }
-  },
-  "shared": {
+      "sha256": "6f564aa20dc047a4e4270d6208c03b62d9b4a40fc81c621253973a194be99119",
+      "bytes": 1225,
+      "cid": "bafkreidpkzfkedoai6soijynmiemao3c3g2kid6idrrbeu4xhimux2mrde",
+      "mediaType": "text/html"
+    },
     "runtime/holo-opfs-kappastore.mjs": {
       "sha256": "438e2528a6f04dad1cbc9f1d09828a33aafcf25e95e6b8d16d4c553c42d8ce98",
-      "bytes": 5448
+      "bytes": 5448,
+      "cid": "bafkreicdryssrjxqjwwrzpe7dueyfcrtvl6pexuv424nc3kmku6efwgota",
+      "mediaType": "text/javascript"
     },
     "runtime/holo-spaces-hf-fetch.mjs": {
-      "sha256": "fff64e2aece0d40b77184f43bf70299ceee6f887af9d927c3686539cc2985860",
-      "bytes": 11039
+      "sha256": "4c587387766446847db97380972f3f8c7bc3b9156f61b4beec0417e5a52f1d1d",
+      "bytes": 12896,
+      "cid": "bafkreicmlbzyo5tei2ch3oltqcls6p4mppb3sflpmg2l53aec7s2kly5du",
+      "mediaType": "text/javascript"
     },
     "runtime/ort/transformers-3.3.3/ort-wasm-simd-threaded.jsep.mjs": {
       "sha256": "2004e7fc76dd246901aaec08a7268cfb9832dcafa9e5a889b7f23f990ffe16ab",
-      "bytes": 49241
+      "bytes": 49241,
+      "cid": "bafkreibaatt7y5w5eruqdkxmbctsndh3taznzl5j4wuitn7sh6mq77qwvm",
+      "mediaType": "text/javascript"
     },
     "runtime/ort/transformers-3.3.3/ort-wasm-simd-threaded.jsep.wasm": {
       "sha256": "d7de09721a4bbc4f3c8a8b8824da82475189bda7ebcfd9ac83e5b162a7d7d479",
-      "bytes": 23013109
+      "bytes": 23013109,
+      "cid": "bafybeiegfbb3rycyv65kkqjojacwa2jryu7qxbe7kk64yw6qdtx6qx2vam",
+      "mediaType": "application/wasm"
     },
     "runtime/space.css": {
       "sha256": "9c5d3eb99921178b624089bd9a430063e9f4d608323e9b5832a66adf13c02803",
-      "bytes": 2122
+      "bytes": 2122,
+      "cid": "bafkreie4lu7ltgjbc6fweqejxwnegadd5h2nmcbsh2nvqmvgnlprhqbiam",
+      "mediaType": "text/css"
     }
   }
 }

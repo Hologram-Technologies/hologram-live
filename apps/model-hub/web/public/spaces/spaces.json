@@ -6,14 +6,18 @@
       "name": "Kokoro TTS",
       "task": "Speech",
       "tagline": "Type a sentence, hear it. 82M parameters, on your GPU.",
-      "root": "sha256:383df588d4de9957470c42ae073fdaea1bfc246550a21d5f4e63be55fde2beca",
-      "bytes": 2439133,
-      "files": 7,
+      "root": "sha256:7c68ab3dd7786465c17decb2a77901b4ac871d0f22855d3b58c0673e38849faa",
+      "ipfs": "bafybeibqfcbndvgrhgkjewrx57hthl6dyuz4nuuuokmb3egn5fpbj65omi",
+      "bytes": 25539547,
+      "files": 12,
       "models": [
         "onnx-community/Kokoro-82M-v1.0-ONNX"
       ],
-      "modelHost": "https://huggingface.co",
+      "modelHosts": {
+        "onnx-community/Kokoro-82M-v1.0-ONNX": "https://hub.uor.foundation"
+      },
       "modelBytes": 326054472,
+      "ort": "transformers-3.3.3",
       "source": "https://huggingface.co/spaces/webml-community/kokoro-webgpu",
       "requires": [
         "webgpu",
@@ -26,14 +30,18 @@
       "name": "Remove Background",
       "task": "Image",
       "tagline": "Drop a photo; the subject comes back cut out. RMBG 1.4.",
-      "root": "sha256:5963c1ccea30c44891963cc777b09accea497cc4c13a575ea38e7bbc8d53f0eb",
-      "bytes": 1407092,
-      "files": 7,
+      "root": "sha256:edb9969bfa37e8596e649da046d21a623f9c4166c6463bf8f0bdc26cbeaafd2a",
+      "ipfs": "bafybeihyfrsvi4nldco76z36vjf4pwrf36pjtkakeeqf53lfhjxhxgsg5i",
+      "bytes": 38358276,
+      "files": 12,
       "models": [
         "briaai/RMBG-1.4"
       ],
-      "modelHost": "https://huggingface.co",
+      "modelHosts": {
+        "briaai/RMBG-1.4": "https://huggingface.co"
+      },
       "modelBytes": 176220000,
+      "ort": "onnxruntime-web-1.17.1",
       "source": "https://huggingface.co/spaces/Xenova/remove-background-webgpu",
       "requires": [
         "webgpu",
@@ -46,14 +54,18 @@
       "name": "SmolLM Chat",
       "task": "Chat",
       "tagline": "A 360M-parameter assistant. The whole conversation stays on your device.",
-      "root": "sha256:f8ce3e93e60cd741502caf9ce5ae0e746c6fafc2642847cd4b51d5679002e5f9",
-      "bytes": 1786589,
-      "files": 8,
+      "root": "sha256:490ed91f493b946757ed43fe19078b58d834b7dcc0b26d7141aaf7ccba14ed22",
+      "ipfs": "bafybeifp2f63dzokecabzdwc7dgeru6aknhlzeevkuljx6my5aj6dxzdzu",
+      "bytes": 23089912,
+      "files": 12,
       "models": [
         "HuggingFaceTB/SmolLM-360M-Instruct"
       ],
-      "modelHost": "https://huggingface.co",
+      "modelHosts": {
+        "HuggingFaceTB/SmolLM-360M-Instruct": "https://huggingface.co"
+      },
       "modelBytes": 386700000,
+      "ort": "transformers-3.0.0-alpha.7",
       "source": "https://huggingface.co/spaces/webml-community/smollm-webgpu",
       "requires": [
         "webgpu",

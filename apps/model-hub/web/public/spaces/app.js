@@ -19,6 +19,7 @@ const RUNS = "Runs in this browser", ON_REGISTRY = "On the registry";
 
 let catalog = [], caps = { webgpu: false, opfs: false }, chan = null, current = null;
 const onRegistry = {}; // id → digest, once the registry has answered
+const registryDiffers = {}; // id → digest the registry holds under this name when it is NOT this Space's κ
 const picked = { task: new Set(), marks: new Set(), model: new Set(), publisher: new Set(), needs: new Set(), size: new Set(), origin: new Set() };
 
 async function detect() {
@@ -118,6 +119,7 @@ function card(s) {
   el.type = "button"; el.className = "card"; el.dataset.id = s.id;
   const foot = [`<span title="${s.root}">${short(s.root)}</span>`, `<span>${s.files} files · ${fmtMB(s.bytes)}</span>`];
   if (onRegistry[s.id]) foot.push(`<span title="${onRegistry[s.id]}">on the registry</span>`);
+  else if (registryDiffers[s.id]) foot.push(`<span title="${registryDiffers[s.id]}" style="color:var(--bad)">registry differs</span>`);
   el.innerHTML = `<span class="logo"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${s.iconSvg || ""}</svg></span>
     <span class="tags"><span class="tag">${s.task}</span><span class="tag ${need.length ? "no" : "here"}">${need.length ? "needs " + need.join(" + ") : "runs here"}</span><span class="tag">${fmtMB(s.modelBytes)} model</span></span>
     <h3>${s.name}</h3><p>${s.tagline}</p>
@@ -209,7 +211,9 @@ async function main() {
   const want = new URLSearchParams(location.search).get("open");
   if (want && catalog.some((s) => s.id === want)) open(want);
   // registry presence, per Space: a mark on the card, a chip in the rail, a count in the lead row
-  await Promise.all(catalog.map(async (s) => { const d = await published(s.id); if (d) onRegistry[s.id] = d; }));
+  // the registry's digest must be the card's κ (the manifest digest): the same bytes under the same name,
+  // or it is not this Space — a differing digest is shown as such, never as "on the registry"
+  await Promise.all(catalog.map(async (s) => { const d = await published(s.id); if (d) { if (d === s.root) onRegistry[s.id] = d; else registryDiffers[s.id] = d; } }));
   provenance();
   rail.render();
   render();

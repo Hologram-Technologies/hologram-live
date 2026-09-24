@@ -503,6 +503,22 @@ await writeFile(join(DIST, ".nojekyll"), "");
 // of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
 // one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
 // very same header() and topNav() every other page is built with.
+// Each Space is served exactly as its artifact is laid out: the shared public/spaces/runtime/ (one copy in
+// git) is placed inside every dist/spaces/<id>/runtime/ — the verified fetch, the store, the style and only
+// the ONNX Runtime pin that Space names — so a page that says ./runtime/… finds the same bytes here, on the
+// registry, on IPFS and in the OS.
+{
+  const spacesDir = join(DIST, "spaces");
+  const cat = JSON.parse(await readFile(join(spacesDir, "spaces.json"), "utf8"));
+  for (const s of cat.spaces) {
+    const rt = join(spacesDir, s.id, "runtime");
+    await mkdir(join(rt, "ort"), { recursive: true });
+    for (const f of ["holo-spaces-hf-fetch.mjs", "holo-opfs-kappastore.mjs", "space.css"]) await cp(join(spacesDir, "runtime", f), join(rt, f));
+    await cp(join(spacesDir, "runtime", "ort", s.ort), join(rt, "ort", s.ort), { recursive: true });
+  }
+  await rm(join(spacesDir, "runtime"), { recursive: true, force: true });   // nothing references the shared copy
+}
+
 // The Spaces and Buckets pages ship the same way: their own components, the site's header.
 for (const section of ["registry", "spaces", "buckets"]) {
   const path = join(DIST, section, "index.html");

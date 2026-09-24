@@ -143,7 +143,6 @@
 @media (prefers-reduced-motion: reduce) { :root[data-highlight="resolve"] .hl::after { animation: none; } }
 
 .land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-6); }
-.land-prompt { color: var(--hh-text-dim); margin-right: .5ch; }
 .land-second { font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }
 
@@ -409,9 +408,6 @@
 .facts .ok { color: var(--hh-ok); }
 .facts .dim { color: var(--hh-text-dim); }
 .facts .bad { color: var(--hh-bad); }
-.copy { display: inline-flex; align-items: center; gap: var(--space-2); color: inherit; transition: color var(--hh-ease); }
-.copy .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-text-dim); }
-.copy:hover, .copy:hover .i { color: var(--hh-text); }
 
 .scroll { overflow-x: auto; margin: 0 calc(-1 * var(--hh-pad)); padding: 0 var(--hh-pad); }
 table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }

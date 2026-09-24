@@ -160,7 +160,8 @@ const READ = `(() => {
         below: h ? t.top >= h.top - 1 : null,
         sameLine: h ? Math.abs((t.top + t.height / 2) - (h.top + h.height / 2)) <= Math.max(6, h.height / 2) : null,
         look: [cs.fontFamily, cs.fontSize, cs.borderRadius, cs.borderWidth, Math.round(t.height)].join(" | "),
-        dot: !!tag.querySelector(".dot"),
+        prompt: tag.querySelector(".prompt")?.textContent.trim() || "",
+        icon: !!tag.querySelector("svg"),
       };
     })(),
     lead: (() => {
@@ -173,6 +174,22 @@ const READ = `(() => {
   };
 })()`;
 
+
+// The tag shows the host the page is served from, and this gate serves it from 127.0.0.1:<port>, which is
+// shorter than hub.uor.foundation. That difference is enough for a row that fits here to run off the edge
+// there, and it did. So every section's tag is measured a second time with the line production will show.
+// The text is put back afterwards, so nothing downstream sees the substitution.
+const MEASURE = (line) => `(() => {
+  const tag = document.querySelector(".section-tag");
+  if (!tag) return null;
+  const el = tag.querySelector(".host"), was = el.textContent;
+  el.textContent = ${JSON.stringify(line)};
+  const de = document.documentElement;
+  const out = { width: Math.round(tag.getBoundingClientRect().width), overflow: Math.max(0, de.scrollWidth - de.clientWidth) };
+  el.textContent = was;
+  return out;
+})()`;
+
 const browser = findBrowser();
 if (!browser) { console.log("menu: no Chromium found (set CHROME=<path>); skipped"); process.exit(0); }
 if (!existsSync(join(DIST, "index.html"))) { console.error("menu: build dist first (npm run build)"); process.exit(1); }
@@ -180,6 +197,14 @@ if (!existsSync(join(DIST, "index.html"))) { console.error("menu: build dist fir
 // A build served under a prefix (BASE=/repo/model-hub/) writes that prefix into every page; the paths
 // here are relative to it, so read it back rather than assuming this build was made for the site root.
 const BASE = (/data-base="([^"]*)"/.exec(await readFile(join(DIST, "index.html"), "utf8"))?.[1] || "/").replace(/\/$/, "");
+
+// The endpoint this build was made for, out of the landing's own structured data, so the check follows the
+// build rather than a hostname written down twice.
+const landingHtml = await readFile(join(DIST, "index.html"), "utf8");
+const PROD_HOST = (() => {
+  const m = /"url":"(https?:\/\/[^"]+)"/.exec(landingHtml);
+  return m ? new URL(m[1]).host : "hub.uor.foundation";
+})();
 
 // Any one model page stands for the five hundred: they come out of one template.
 const org = (await readdir(join(DIST, "models"), { withFileTypes: true })).find((d) => d.isDirectory());
@@ -251,7 +276,10 @@ for (const theme of THEMES) {
         else {
           tagged.add(section);
           if (r.tag.section !== section.toLowerCase()) problems.push(`${where}: the tag says ${r.tag.section}, the section is ${section}`);
-          if (!r.tag.dot) problems.push(`${where}: the tag has no liveness dot`);
+          // It has to read as the landing's line: the same prompt, the same copy mark, the same verb.
+          if (r.tag.prompt !== "$") problems.push(`${where}: the tag has no shell prompt`);
+          if (!r.tag.icon) problems.push(`${where}: the tag has no copy mark`);
+          if (!/^\$?\s*curl \S+/.test(r.tag.text)) problems.push(`${where}: the tag reads "${r.tag.text}", not a curl line`);
           // Beside the title where there is room for it. On a phone the row wraps and the tag drops under the
           // heading, which is the row doing its job rather than the tag losing its place; what still has to
           // hold there is that it follows the title, which the markup guarantees. So the geometry is checked
@@ -265,6 +293,12 @@ for (const theme of THEMES) {
           else if (tags.get(key).look !== r.tag.look) {
             problems.push(`${where}: the tag is drawn ${r.tag.look}, on ${tags.get(key).page} it is ${tags.get(key).look}`);
           }
+        }
+        // ...and it has to fit when the host is the real one, not this gate's loopback address.
+        if (r.tag) {
+          const line = r.tag.text.replace(/^\$?\s*curl \S+?(\/.*)$/, `curl ${PROD_HOST}$1`);
+          const m = await cdp.evaluate(MEASURE(line));
+          if (m && m.overflow > 1) problems.push(`${where}: showing "${line}" the page scrolls ${m.overflow}px sideways`);
         }
       } else if (r.tag) problems.push(`${where}: a section tag on a page that is not a section front page`);
 

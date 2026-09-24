@@ -2,9 +2,9 @@
 // page walks it the same way the CLI does, and checks every block it reads against the address
 // that named it. No framework, no CDN. The chrome — header, nav, theme, account — is the site's
 // own, so this file is only ever about buckets.
-import { registry, readBucket, readHistory, readObject, writeObject, digestToCid, cidToDigest, visibilityOf, DEFAULT_QUOTA, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs?v=3'
-import { newKey, keyToText, keyFromText, keyCheck, sealName, ENC } from './lib/crypt.mjs?v=3'
-import { build, objectManifest } from './lib/octree.mjs?v=3'
+import { registry, readBucket, readHistory, readObject, writeObject, digestToCid, cidToDigest, visibilityOf, DEFAULT_QUOTA, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs?v=4'
+import { newKey, keyToText, keyFromText, keyCheck, sealName, ENC } from './lib/crypt.mjs?v=4'
+import { build, objectManifest } from './lib/octree.mjs?v=4'
 
 const reg = registry('')
 // Live follow is served by the bucket service, not by /v2/. Same origin in production; in the
@@ -760,13 +760,27 @@ async function restore (h, r) {
 // A bucket is mutable, so a page looking at one goes stale the moment somebody else writes.
 // The stream says what changed; the page re-reads only then, and says so quietly.
 let live = null
-function follow (owner, name) {
+// Where there is no bucket service, `/api/buckets/…/events` is a 404 — and an EventSource
+// whose endpoint 404s reconnects for as long as the tab is open. So a stream that never
+// opened is closed for good, once, and the page simply does not follow. A stream that did
+// open keeps the browser's reconnection, which is the behaviour worth having.
+let noFollow = false
+function follow (owner, name, cursor = null) {
   if (live) { live.close(); live = null }
-  if (typeof EventSource === 'undefined') return
-  const url = `${EVENTS_BASE}/api/buckets/${owner}/${name}/events`
+  if (noFollow || typeof EventSource === 'undefined') return
+  const url = `${EVENTS_BASE}/api/buckets/${owner}/${name}/events` + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : '')
   let stream
   try { stream = new EventSource(url) } catch { return }
   live = stream
+  let opened = false
+  stream.addEventListener('open', () => { opened = true })
+  stream.addEventListener('ready', () => { opened = true })
+  stream.addEventListener('error', () => {
+    if (opened) return
+    stream.close()
+    if (live === stream) live = null
+    noFollow = true        // no service here; asking again on every bucket would be the same answer
+  })
   stream.addEventListener('changes', async e => {
     const batch = JSON.parse(e.data)
     const words = batch.changes.map(c => `${c.op} ${c.path}`).slice(0, 3).join(', ')
@@ -776,11 +790,10 @@ function follow (owner, name) {
     // After the re-render, not before: painting the table rewrites this line.
     says(`${words}${more} — somebody else wrote to this bucket, and this page caught up without being reloaded.`)
   })
-  stream.addEventListener('reconnect', e => {
-    const { cursor } = JSON.parse(e.data)
-    stream.close()
-    live = new EventSource(`${url}?cursor=${encodeURIComponent(cursor)}`)
-  })
+  // The service recycles a long-lived stream and hands back a cursor. Following it is simply
+  // following again from there — with every listener, which the first version of this quietly
+  // dropped, so a recycled page stopped noticing writes.
+  stream.addEventListener('reconnect', e => follow(owner, name, JSON.parse(e.data).cursor))
   stream.addEventListener('reset', () => { const r = route(); if (r.view === 'browse') renderBrowse(r) })
 }
 

@@ -4,13 +4,13 @@
 // base32, just enough dag-pb and UnixFS to read and write a file DAG, and the walk over the
 // OCI index tree. Object bytes are hashed by `crypto.subtle`, which is native and fast; the
 // index nodes and keys use the shared synchronous sha-256 so the tree is one implementation.
-import { sha256, sha256hex } from './sha256.mjs?v=3'
+import { sha256, sha256hex } from './sha256.mjs?v=4'
 
 export const INDEX_MT = 'application/vnd.oci.image.index.v1+json'
 export const MANIFEST_MT = 'application/vnd.oci.image.manifest.v1+json'
 export const ACCEPT = `${INDEX_MT}, ${MANIFEST_MT}`
 export const CHUNK = 1 << 20
-import { sealBlock, openBlock, sealName, openName, keyCheck } from './crypt.mjs?v=3'
+import { sealBlock, openBlock, sealName, openName, keyCheck } from './crypt.mjs?v=4'
 export const DEFAULT_QUOTA = 50e9
 
 // public, unlisted, or private (= sealed). A head written before the distinction said

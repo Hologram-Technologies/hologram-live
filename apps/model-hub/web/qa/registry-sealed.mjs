@@ -54,8 +54,29 @@ export async function checkSealed(dist) {
   const icons = existsSync(join(REG, "icons")) ? (await readdir(join(REG, "icons"))).length : 0;
   if (icons < 200) fail.push(`only ${icons} vendored covers; expected the icons/ set`);
 
+  // The Buckets page has the same rule and a sharper reason: it hashes what it downloads, so a
+  // hasher or a helper fetched from somebody else's host would put the verification on loan.
+  const BK = join(dist, "buckets");
+  const bucketFiles = ["index.html", "buckets.js", "buckets.css", "lib/buckets-lib.mjs", "lib/octree.mjs", "lib/sha256.mjs"];
+  for (const f of bucketFiles) if (!existsSync(join(BK, f))) fail.push(`missing buckets/${f}`);
+  if (!fail.length) {
+    for (const f of bucketFiles) {
+      const text = await readFile(join(BK, f), "utf8");
+      if (f.endsWith(".html")) {
+        for (const m of text.matchAll(/<(script|link|img|source|iframe)\b[^>]*>/gi)) {
+          const url = /\b(?:src|href)\s*=\s*["']([^"']+)["']/i.exec(m[0])?.[1] || "";
+          if (/^https?:\/\//i.test(url)) fail.push(`buckets/${f} loads ${url}`);
+        }
+      } else {
+        for (const m of text.matchAll(/\b(?:fetch|import|EventSource)\s*\(\s*["'`](https?:\/\/[^"'`]+)/gi)) fail.push(`buckets/${f} fetches ${m[1]}`);
+        for (const m of text.matchAll(/\bfrom\s+["'](https?:\/\/[^"']+)["']/g)) fail.push(`buckets/${f} imports ${m[1]}`);
+        if (/@import\s+(?:url\()?["']?https?:/i.test(text)) fail.push(`buckets/${f} imports a remote stylesheet`);
+      }
+    }
+  }
+
   if (fail.length) throw new Error("registry page is not sealed:\n  " + fail.join("\n  "));
-  return `registry page sealed: ${data.images.length} rows, ${icons} vendored covers, no external load`;
+  return `registry page sealed: ${data.images.length} rows, ${icons} vendored covers, no external load; buckets page sealed: ${bucketFiles.length} files, no external load`;
 }
 
 if (process.argv[1] && process.argv[1].endsWith("registry-sealed.mjs")) {

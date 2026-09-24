@@ -76,7 +76,7 @@ fn start() -> Server {
         port,
         _root: root,
     };
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_mins(1);
     while TcpStream::connect(("127.0.0.1", port)).is_err() {
         assert!(Instant::now() < deadline, "the registry did not start");
         std::thread::sleep(Duration::from_millis(50));
@@ -87,10 +87,9 @@ fn start() -> Server {
 /// The server's resident set, in bytes. Its own, not ours: the whole point is
 /// what the process an operator runs does with a 2 GiB layer.
 fn rss_bytes(pid: u32) -> u64 {
-    let statm = match std::fs::read_to_string(format!("/proc/{pid}/statm")) {
-        Ok(text) => text,
+    let Ok(statm) = std::fs::read_to_string(format!("/proc/{pid}/statm")) else {
         // The process is gone; the last sample stands.
-        Err(_) => return 0,
+        return 0;
     };
     statm
         .split_whitespace()
@@ -148,7 +147,7 @@ fn path_of(location: &str) -> String {
 fn connect(port: u16) -> TcpStream {
     let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream
-        .set_read_timeout(Some(Duration::from_secs(300)))
+        .set_read_timeout(Some(Duration::from_mins(5)))
         .expect("timeout");
     stream
 }

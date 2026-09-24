@@ -2,7 +2,7 @@
 // page walks it the same way the CLI does, and checks every block it reads against the address
 // that named it. No framework, no CDN. The chrome — header, nav, theme, account — is the site's
 // own, so this file is only ever about buckets.
-import { registry, readBucket, readObject, writeObject, digestToCid, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs'
+import { registry, readBucket, readObject, writeObject, digestToCid, cidToDigest, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs'
 import { build, objectManifest } from './lib/octree.mjs'
 
 const reg = registry('')
@@ -102,7 +102,8 @@ async function renderList () {
   $('sub').textContent = 'Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.'
   $('crumbs').hidden = true; $('bar').hidden = true; $('drop').hidden = true
   $('readme').hidden = true; $('cred').hidden = true; $('settings').hidden = true
-  $('head').innerHTML = '<tr><th>Bucket</th><th>Objects</th><th>Size</th><th class="hide">Address of the current state</th></tr>'
+  closeDetail()
+  $('head').innerHTML = '<tr><th>Bucket</th><th>Objects</th><th>Size</th><th class="hide">Created</th><th class="hide">Address of the current state</th></tr>'
   $('rows').replaceChildren()
   state = null
 
@@ -125,7 +126,7 @@ async function renderList () {
     a.href = `#/${owner}/${name}`
     a.innerHTML = `<span class="name">${ICON.bucket}<span>${owner} / <b>${name}</b></span></span>`
     const td = el('td'); td.appendChild(a)
-    tr.append(td, el('td', 'num', '…'), el('td', 'num', ''), el('td', 'addr hide', ''))
+    tr.append(td, el('td', 'num', '…'), el('td', 'num', ''), el('td', 'num hide', ''), el('td', 'addr hide', ''))
     $('rows').appendChild(tr)
     reg.manifest(repo, 'latest').then(head => {
       // Deleting a bucket removes its tag, not its repository, so the catalogue keeps listing
@@ -140,8 +141,10 @@ async function renderList () {
       const ann = head.json.annotations || {}
       tr.children[1].textContent = ann['foundation.uor.bucket.objects'] ?? '?'
       tr.children[2].textContent = human(Number(ann['foundation.uor.bucket.bytes'] || 0))
-      tr.children[3].textContent = short(digestToCid(head.digest, 0x71))
-      tr.children[3].title = head.digest
+      tr.children[3].textContent = (ann['foundation.uor.bucket.created'] || '').slice(0, 10)
+      if (ann['foundation.uor.bucket.visibility'] === 'private') tr.children[0].querySelector('.name').appendChild(el('span', 'pill', 'unlisted'))
+      tr.children[4].textContent = short(digestToCid(head.digest, 0x71))
+      tr.children[4].title = head.digest
     }).catch(() => {})
   }
   says(nextNote || READING); nextNote = null
@@ -214,6 +217,7 @@ function paint (r) {
   }
 
   $('head').innerHTML = '<tr><th>Name</th><th>Size</th><th class="hide">Modified</th><th class="hide">Address</th><th>State</th></tr>'
+  if (detail.key && !state.entries.has(detail.key)) closeDetail()
   const body = $('rows')
   body.replaceChildren()
 
@@ -235,7 +239,7 @@ function paint (r) {
     tr.dataset.key = key
     const button = el('button')
     button.innerHTML = `<span class="name">${ICON.file}<span>${label}</span></span>`
-    button.addEventListener('click', () => download(key, label, tr))
+    button.addEventListener('click', () => openDetail(key, label, tr))
     const td = el('td'); td.appendChild(button)
     const addr = el('td', 'addr hide', short(v.root)); addr.title = v.root
     tr.append(td, el('td', 'num', human(v.size)), el('td', 'num hide', when(v.mtime)), addr, el('td', 'state', ''))
@@ -286,26 +290,93 @@ async function showReadme (entry) {
   }
 }
 
+// ---------------------------------------------------------------- one object
+// What HF shows on a file page, and two things it cannot: the address the bytes answer to,
+// and where those bytes live, as a path anyone can fetch and check without this page.
+const detail = { key: null, tr: null }
+function closeDetail () { detail.key = null; detail.tr = null; $('detail').hidden = true }
+$('detail-close').addEventListener('click', closeDetail)
+
+async function openDetail (key, label, tr) {
+  const entry = state.entries.get(key)
+  detail.key = key; detail.tr = tr
+  const box = $('detail')
+  box.hidden = false
+  $('detail-name').textContent = key
+  $('detail-state').textContent = ''
+  $('detail-state').className = 'state'
+  const digest = cidToDigest(entry.root)
+  const facts = [
+    ['Address', entry.root, 'mono'],
+    ['Digest', digest, 'mono'],
+    ['Size', `${human(entry.size)} (${entry.size.toLocaleString()} bytes)`],
+    ['Modified', when(entry.mtime) || '—'],
+    ['Blocks', '…'],
+    ['Lives at', `/v2/${state.repo}/blobs/${digest}`, 'mono'],
+    ['Named by', `/v2/${state.repo}/manifests/${entry.manifest}`, 'mono']
+  ]
+  const dl = $('detail-facts')
+  dl.replaceChildren()
+  for (const [k, v, cls] of facts) {
+    dl.appendChild(el('dt', null, k))
+    dl.appendChild(el('dd', cls || null, v))
+  }
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  // The block count is the object manifest's layer list: one line per 1 MiB block, plus the
+  // DAG root when there is more than one. Read only when the panel is open.
+  try {
+    const om = await reg.manifest(state.repo, entry.manifest)
+    if (detail.key !== key) return
+    const layers = (om && om.json.layers) || []
+    const blocks = layers.length > 1 ? layers.length - 1 : layers.length
+    dl.children[9].textContent = `${blocks} × up to 1 MiB, each addressed by its own sha-256${layers.length > 1 ? ', joined by one root block' : ''}`
+  } catch {
+    dl.children[9].textContent = 'unknown'
+  }
+}
+
+$('detail-download').addEventListener('click', () => {
+  if (detail.key) download(detail.key, detail.key.split('/').pop(), detail.tr, $('detail-state'))
+})
+$('detail-check').addEventListener('click', async () => {
+  if (!detail.key) return
+  const cell = $('detail-state')
+  cell.className = 'state'; cell.textContent = 'checking…'
+  try {
+    await readObject(reg, state.repo, state.entries.get(detail.key).root, ({ blocks }) => { cell.textContent = `checking… ${blocks} block${blocks === 1 ? '' : 's'}` })
+    cell.className = 'state ok'; cell.textContent = 'verified: every block is what its address names'
+    mark(detail.tr, 'ok', 'verified')
+  } catch (e) {
+    cell.className = 'state bad'; cell.textContent = e.refused ? 'refused: these bytes are not what the address names. Nothing was delivered.' : `failed: ${e.message}`
+    mark(detail.tr, 'bad', e.refused ? 'refused' : 'failed')
+  }
+})
+$('detail-copy').addEventListener('click', async () => {
+  if (!detail.key) return
+  const address = state.entries.get(detail.key).root
+  try { await navigator.clipboard.writeText(address); $('detail-state').className = 'state ok'; $('detail-state').textContent = 'address copied' }
+  catch { $('detail-state').className = 'state'; $('detail-state').textContent = address }
+})
+function mark (tr, cls, text) { if (tr) { tr.children[4].className = 'state ' + cls; tr.children[4].textContent = text } }
+
 // ---------------------------------------------------------------- reading
-async function download (key, label, tr) {
+async function download (key, label, tr, also) {
   const cell = tr.children[4]
   const entry = state.entries.get(key)
-  cell.className = 'state'
-  cell.textContent = 'reading…'
+  const say = (cls, text) => { cell.className = cls; cell.textContent = text; if (also) { also.className = cls; also.textContent = text } }
+  say('state', 'reading…')
   try {
     const bytes = await readObject(reg, state.repo, entry.root, ({ done }) => {
-      cell.textContent = entry.size ? `${Math.round((done / entry.size) * 100)}%` : 'reading…'
+      say('state', entry.size ? `${Math.round((done / entry.size) * 100)}%` : 'reading…')
     })
-    cell.className = 'state ok'
-    cell.textContent = 'verified'
+    say('state ok', 'verified')
     const url = URL.createObjectURL(new Blob([bytes]))
     const a = document.createElement('a')
     a.href = url; a.download = label
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 10000)
   } catch (e) {
-    cell.className = 'state bad'
-    cell.textContent = e.refused ? 'refused' : 'failed'
+    say('state bad', e.refused ? 'refused' : 'failed')
     cell.title = e.message
   }
 }
@@ -468,6 +539,9 @@ async function doUpload (files) {
 
 // Every write publishes a new root: the bucket is a pointer, so nothing is edited in place.
 async function publishRoot (repo, entries, visibility) {
+  // A bucket keeps its birthday. It lives only on the head, so read it before replacing it.
+  const prior = await reg.manifest(repo, 'latest').catch(() => null)
+  const created = (prior && prior.json.annotations && prior.json.annotations['foundation.uor.bucket.created']) || new Date().toISOString()
   const list = entries.map(([key, v]) => [key, {
     manifest: v.manifest, manifestSize: v.manifestSize || 0, root: v.root, size: v.size, mtime: v.mtime
   }])
@@ -483,7 +557,8 @@ async function publishRoot (repo, entries, visibility) {
     'foundation.uor.bucket.objects': String(list.length),
     'foundation.uor.bucket.bytes': String(list.reduce((s, [, v]) => s + v.size, 0)),
     'foundation.uor.bucket.levels': String(tree.levels),
-    'foundation.uor.bucket.visibility': visibility
+    'foundation.uor.bucket.visibility': visibility,
+    'foundation.uor.bucket.created': created
   }
   return reg.putManifest(repo, 'latest', new TextEncoder().encode(JSON.stringify(root)), INDEX_MT, token)
 }

@@ -63,6 +63,20 @@ td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(-
   font-size: var(--text-sm); color: var(--hh-text-dim); }
 .cred .field { flex: 1; min-width: 12rem; }
 
+/* One object, in full: what it is called, what it is, where it lives. Opens under the table
+   when a name is clicked, the way a file page opens on HF, without leaving the listing. */
+.detail { margin-top: var(--space-4); background: var(--hh-surface); border: 1px solid var(--hh-line-strong);
+  border-radius: var(--radius-xl); padding: var(--space-5) var(--space-6); }
+.detail-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.detail-head h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display); min-width: 0; overflow-wrap: anywhere; flex: 1; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-5); margin: 0; }
+.facts dt { color: var(--hh-text-dim); font-size: var(--text-sm); white-space: nowrap; }
+.facts dd { margin: 0; font-size: var(--text-sm); color: var(--hh-text); min-width: 0; overflow-wrap: anywhere; }
+.facts dd.mono { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-dim); }
+.detail-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-top: var(--space-5); }
+.detail-actions .state { margin-left: var(--space-2); }
+
 .readme { margin-top: var(--space-5); background: var(--hh-surface); border: 1px solid var(--hh-line);
   border-radius: var(--radius-xl); padding: var(--space-6); }
 .readme h1, .readme h2, .readme h3 { font-weight: var(--weight-medium);
@@ -105,4 +119,7 @@ td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(-
   th.hide, td.hide { display: none; }
   .panel td, .panel th { padding: var(--space-3); }
   .name span { max-width: 38vw; }
+  .facts { grid-template-columns: 1fr; gap: var(--space-1); }
+  .facts dt { margin-top: var(--space-2); }
+  .detail { padding: var(--space-4); }
 }

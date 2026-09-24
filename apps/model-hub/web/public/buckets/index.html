@@ -56,6 +56,20 @@
     <button type="button" class="button primary" id="cred-save">Use it</button>
   </div>
 
+  <section class="detail" id="detail" hidden aria-live="polite">
+    <div class="detail-head">
+      <h2 id="detail-name"></h2>
+      <button type="button" class="button" id="detail-close" aria-label="Close">Close</button>
+    </div>
+    <dl class="facts" id="detail-facts"></dl>
+    <div class="detail-actions">
+      <button type="button" class="button primary" id="detail-download">Download</button>
+      <button type="button" class="button" id="detail-check">Check</button>
+      <button type="button" class="button" id="detail-copy">Copy address</button>
+      <span class="state" id="detail-state"></span>
+    </div>
+  </section>
+
   <div class="readme" id="readme" hidden></div>
 
   <p class="prov note" id="note"></p>

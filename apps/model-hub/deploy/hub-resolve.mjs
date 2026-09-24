@@ -47,9 +47,72 @@ function refresh() {
 async function model(id) {
   refresh();
   const path = byLower.get(id.toLowerCase());
-  if (!path) return indexed(id);
+  if (!path) return (await indexed(id)) || (await fromHub(id));
   const doc = JSON.parse(await readFile(path, "utf8"));
   doc.id = path.slice(join(DATA, "files").length + 1, -5).replace(/\\/g, "/");
+  return doc;
+}
+
+// ---- the hub's own catalog, as the last word on what this hub has
+//
+// `objects` in the published catalog is cumulative: a model addressed on any past day keeps its model object for
+// ever. `models` is only today's trending rows. So a model that drops off the list keeps a published object full
+// of file hashes and loses every way of being found -- and the dialects, asking a third-party address index that
+// has moved on, answered 404 for something this hub was still holding. A third of the hub was in that state.
+//
+// The catalog is fetched by address, so it is immutable and cacheable; only the descriptor that names today's
+// catalog is mutable, and that is one small file.
+let hub = { at: 0, objects: new Map(), extra: [] };
+async function hubCatalog() {
+  if (Date.now() - hub.at < 600_000) return hub;
+  hub.at = Date.now();
+  try {
+    const d = await (await fetch(`${HUB}/.well-known/model-hub.json`, { signal: AbortSignal.timeout(8000) })).json();
+    const cat = await (await fetch(`${HUB}/api/v1/objects/${d.catalog}`, { signal: AbortSignal.timeout(20_000) })).json();
+
+    hub = {
+      at: Date.now(),
+      objects: new Map(Object.entries(cat.objects || {}).map(([id, e]) => [id.toLowerCase(), { id, ...e }])),
+      // Rows for the models the browse list has forgotten. The facts a browse row carries -- task, parameters,
+      // downloads -- were never published with the object, so these carry only what is certain: the name. They are
+      // flagged, so a client can tell a thin row from a full one rather than inferring it from empty fields.
+      // A thin row for every object. rows() drops the ones that already have a full row; doing that here instead
+      // would miss a model that appears in today's catalog without being addressed, which falls through both.
+      extra: Object.keys(cat.objects || {}).map((id) => ({
+        _id: "", id, modelId: id, author: id.split("/")[0], sha: "", private: false, gated: false, disabled: false,
+        likes: 0, downloads: 0, trendingScore: 0, tags: [],
+        hologram: { manifest: cat.objects[id].model, listed: false },
+      })),
+    };
+  } catch { /* the hub did not answer itself: keep whatever was cached */ }
+  return hub;
+}
+
+// Build the internal document from the hub's own published model object: the revision and every file hash, which
+// is all a redirect needs. IPFS is offered when the pin matches the same revision, exactly as elsewhere.
+async function fromHub(id) {
+  const { objects } = await hubCatalog();
+  const entry = objects.get(id.toLowerCase());
+  if (!entry) return null;
+  const hit = remote.get(`hub:${id.toLowerCase()}`);
+  if (hit && Date.now() - hit.at < 600_000) return hit.doc;
+  let doc = null;
+  try {
+    const obj = await (await fetch(`${HUB}/api/v1/objects/${entry.model}`, { signal: AbortSignal.timeout(15_000) })).json();
+    if (obj && Array.isArray(obj.files)) {
+      if (Date.now() - pins.at > 600_000) pins = { at: Date.now(), doc: await fetch(PINS, { signal: AbortSignal.timeout(8000) }).then((p) => p.json()).catch(() => pins.doc) };
+      const pin = Object.entries(pins.doc.models || {}).find(([k, v]) => k.toLowerCase() === id.toLowerCase() && v.revision === obj.revision)?.[1];
+      const sources = [{ kind: "huggingface.co", resolve: null, missing: [] }];
+      if (pin) sources.push({ kind: "ipfs", resolve: `${pins.doc.gateway}${pin.root}/`, missing: [] });
+      doc = {
+        id: entry.id, revision: obj.revision, manifest: obj.index_manifest || entry.model, sources,
+        files: obj.files.map((f) => [f.path, f.size, f.sha256.startsWith("sha256:") ? f.sha256 : `sha256:${f.sha256}`, f.weights ? 1 : 0,
+          `https://huggingface.co/${entry.id}/resolve/${obj.revision}/${f.path.split("/").map(encodeURIComponent).join("/")}`]),
+      };
+    }
+  } catch { /* the object did not answer: unknown for now */ }
+  if (remote.size > 500) remote.clear();
+  remote.set(`hub:${id.toLowerCase()}`, { at: Date.now(), doc });
   return doc;
 }
 
@@ -107,11 +170,23 @@ async function probe() {
 }
 probe(); setInterval(probe, 30_000).unref();
 
+// Choosing a source. Without a pin the hub picks the first healthy one in ORDER; with a pin it either honours it
+// or refuses.
+//
+// It used to fall back. A caller who asked for IPFS and got Hugging Face was told only by a response header, which
+// meant the one obvious use of a pin -- fetch the same file through two sources and compare -- quietly degenerated
+// into comparing one host with itself. A pin that silently does the opposite of what was asked is worse than an
+// error, so an unavailable or unknown source is now a refusal with a sentence naming what would have worked.
 function choose(doc, file, via) {
   const have = doc.sources.filter((s) => !s.p2p && !s.pull && ORDER.includes(s.kind) && !(s.missing || []).includes(file[0]));
   have.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
-  const pinned = via && have.find((s) => s.kind === via);
-  if (pinned) return { source: pinned, reason: "asked for" };
+  if (via) {
+    const offer = have.length ? have.map((s) => s.kind).join(", ") : "no source in this hub's index";
+    if (!ORDER.includes(via)) return { denied: { code: "UnknownSource", message: `${via} is not a source this hub knows. It has ${ORDER.join(", ")}; for this file: ${offer}.` } };
+    const pinned = have.find((s) => s.kind === via);
+    if (!pinned) return { denied: { code: "SourceHasNotGotIt", message: `${via} does not hold ${file[0]} of ${doc.id}. This file is on: ${offer}. Drop the /via/ prefix to let the hub choose.` } };
+    return { source: pinned, reason: "asked for" };
+  }
   const alive = have.find((s) => health[s.kind].ok);
   if (alive) return { source: alive, reason: alive === have[0] ? "first choice" : `${have[0].kind} is down` };
   return { source: have[0], reason: "no source passed the last probe" };
@@ -146,7 +221,11 @@ async function rows() {
       })) };
     } catch { catalog.at = Date.now(); }
   }
-  return catalog.rows;
+  const { extra } = await hubCatalog();
+  if (!extra.length) return catalog.rows;
+  // Today's rows win where both exist: they carry the facets, and a thin row would otherwise mask a full one.
+  const listed = new Set(catalog.rows.map((r) => r.id));
+  return catalog.rows.concat(extra.filter((r) => !listed.has(r.id)));
 }
 const SORTS = { downloads: "downloads", likes: "likes", trendingScore: "trendingScore", trending_score: "trendingScore", createdAt: "createdAt", created_at: "createdAt" };
 async function list(res, q) {
@@ -158,9 +237,17 @@ async function list(res, q) {
   if (task) out = out.filter((m) => m.pipeline_tag === task);
   if (library) out = out.filter((m) => m.library_name === library);
   for (const tag of q.getAll("filter").flatMap((f) => f.split(","))) out = out.filter((m) => m.tags.some((t) => t.toLowerCase() === tag.toLowerCase()));
-  const key = SORTS[q.get("sort") || "trendingScore"] || "trendingScore", up = q.get("direction") === "1";
+  // The document states `minimum: 1, maximum: 500` and an enum of sort keys. Silently defaulting a bad value means
+  // a client coding against those constraints never sees the error it is handling, and ships the bug anyway.
+  const sortParam = q.get("sort");
+  if (sortParam !== null && !SORTS[sortParam]) return refuse(res, 400, "BadParameter", `sort must be one of ${Object.keys(SORTS).join(", ")}.`);
+  const limitParam = q.get("limit");
+  if (limitParam !== null && !/^\d+$/.test(limitParam)) return refuse(res, 400, "BadParameter", "limit must be a whole number between 1 and 500.");
+  const limitValue = limitParam === null ? 50 : Number(limitParam);
+  if (limitParam !== null && (limitValue < 1 || limitValue > 500)) return refuse(res, 400, "BadParameter", "limit must be between 1 and 500.");
+  const key = SORTS[sortParam || "trendingScore"], up = q.get("direction") === "1";
   out = [...out].sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * (up ? 1 : -1));
-  const limit = Math.min(500, Math.max(1, Number(q.get("limit")) || 50));
+  const limit = limitValue;
   return json(res, 200, out.slice(0, limit), { "access-control-allow-origin": "*", "x-total-count": String(out.length) });
 }
 
@@ -317,7 +404,7 @@ async function ollama(req, res, id, kind, ref) {
 // Weights never travel through a tool result: resolve_file returns URLs, the expected SHA-256 (from the index, never
 // from a source) and the exact commands that hand the file to an engine.
 const MCP_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"];
-const HUB = "https://hub.uor.foundation";
+const HUB = process.env.HUB || "https://hub.uor.foundation";  // the hub asking itself: its own object plane is the backstop under every dialect
 const TOOLS = [
   { name: "search_models", title: "Search models",
     description: "Find open models in the hub's index. Every result has all of its files addressed by SHA-256. Returns id, task, library, licence, parameters, weight size, downloads and where the bytes live.",
@@ -357,14 +444,21 @@ async function callTool(name, a = {}) {
   if (!doc) return toolError(`${a.id || "(no id)"} is not in the hub's index. search_models lists what is; Hugging Face has the rest.`);
   const ggufs = doc.files.filter((f) => /\.gguf$/i.test(f[0]) && !/mmproj|imatrix/i.test(f[0]));
   if (name === "get_model") {
-    const files = doc.files.map((f) => ({ path: f[0], size: f[1], sha256: hex(f[2]) }));
-    return toolResult({ id: doc.id, revision: doc.revision, purl: `pkg:huggingface/${doc.id}@${doc.revision}`, files_total: files.length, bytes_total: files.reduce((s, f) => s + f.size, 0), files: files.slice(0, 200), files_truncated: files.length > 200, gguf_quants: [...new Set(ggufs.map((f) => quantOf(f[0])).filter(Boolean))], sources: sourcesOf(doc), sha256sums: `${HUB}/${doc.id}/resolve/main/SHA256SUMS`, download_all: [`export HF_ENDPOINT=${HUB}`, `hf download ${doc.id}`] });
+    // Truncating at 200 is fine; truncating alphabetically is not, because the tail of a model directory is where
+    // the tokenizer and config files live and those are the ones a caller cannot proceed without. Keep the small
+    // text files that make a model usable, then fill the rest with the largest weights.
+    const ESSENTIAL = /(^|\/)(config|tokenizer|tokenizer_config|special_tokens_map|generation_config|preprocessor_config|vocab|merges|added_tokens|chat_template)[^/]*$|\.(json|txt|model|py|md)$/i;
+    const all = doc.files.map((f) => ({ path: f[0], size: f[1], sha256: hex(f[2]) }));
+    const essential = all.filter((f) => ESSENTIAL.test(f.path));
+    const rest = all.filter((f) => !ESSENTIAL.test(f.path)).sort((a, b) => b.size - a.size);
+    const files = all.length > 200 ? [...essential, ...rest].slice(0, 200).sort((a, b) => a.path.localeCompare(b.path)) : all;
+    return toolResult({ id: doc.id, revision: doc.revision, purl: `pkg:huggingface/${doc.id}@${doc.revision}`, files_total: all.length, bytes_total: all.reduce((s, f) => s + f.size, 0), files, files_truncated: all.length > files.length, files_truncated_note: all.length > files.length ? `showing ${files.length} of ${all.length}: every config and tokenizer file, then the largest weights. The full list is at ${HUB}/api/models/${doc.id}/tree/main.` : undefined, gguf_quants: [...new Set(ggufs.map((f) => quantOf(f[0])).filter(Boolean))], sources: sourcesOf(doc), sha256sums: `${HUB}/${doc.id}/resolve/main/SHA256SUMS`, download_all: [`export HF_ENDPOINT=${HUB}`, `hf download ${doc.id}`] });
   }
   if (name === "resolve_file") {
     const entry = a.path ? doc.files.find((f) => f[0] === a.path) : a.quant ? pickGguf(doc, String(a.quant)).file : null;
     if (!entry) return toolError(a.path ? `${a.path} is not a file of ${doc.id} at ${doc.revision}. get_model lists the files.` : a.quant ? `${doc.id} has no single-file GGUF for ${a.quant}. It has: ${[...new Set(ggufs.map((f) => quantOf(f[0])).filter(Boolean))].join(", ") || "no GGUF files"}.` : "Give a path or a quant.");
     const have = doc.sources.filter((s) => !s.p2p && !s.pull && ORDER.includes(s.kind) && !(s.missing || []).includes(entry[0]));
-    const { source } = choose(doc, entry, null);
+    const { source } = choose(doc, entry, null); // no pin here: this tool reports every source and lets the caller pick
     const url = `${HUB}/${doc.id}/resolve/${doc.revision}/${encodePath(entry[0])}`, name0 = entry[0].split("/").pop(), isGguf = /\.gguf$/i.test(entry[0]);
     return toolResult({ id: doc.id, revision: doc.revision, path: entry[0], size: entry[1], sha256: hex(entry[2]),
       url, url_note: "Redirects to a source that is up right now; supports Range. No credentials needed.", served_by_now: source.kind,
@@ -463,7 +557,8 @@ http.createServer(async (req, res) => {
         return res.end(req.method === "HEAD" ? undefined : text);
       }
       if (!entry) return refuse(res, 404, "EntryNotFound", `${file[3]} is not in ${doc.id} at ${doc.revision}.`);
-      const { source, reason } = choose(doc, entry, via);
+      const { source, reason, denied } = choose(doc, entry, via);
+      if (denied) return refuse(res, 404, denied.code, denied.message);
       const location = urlFor(doc, source, entry);
       if (req.method === "GET" || reason !== "first choice") console.log(JSON.stringify({ t: new Date().toISOString(), model: doc.id, file: entry[0], method: req.method, source: source.kind, reason }));
       res.writeHead(302, { location, "x-repo-commit": doc.revision, "x-linked-etag": `"${hex(entry[2])}"`, "x-linked-size": String(entry[1]), etag: `"${hex(entry[2])}"`, "accept-ranges": "bytes", "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });

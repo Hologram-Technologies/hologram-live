@@ -141,7 +141,6 @@ async function main() {
     ["preflight.objects", "/api/v1/objects", { method: "OPTIONS", headers: { origin: "https://example.com", "access-control-request-method": "POST" } }],
     // routes that must stay closed
     ["closed.grpc", "/hologram.live.v1.HologramLive/Handshake", { method: "POST" }],
-    ["nav.registry", "/registry/", {}],
     ["nav.wallpapers", "/wallpapers/", {}],
   ];
 

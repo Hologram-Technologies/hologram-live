@@ -290,6 +290,10 @@
       "type": "integer",
       "description": "Parameter count, when it is known."
      },
+     "listed": {
+      "type": "boolean",
+      "description": "Absent or true on a model the current browse list carries, which is a row with the full facts. `false` on a model the browse list has forgotten: the hub still holds its bytes and serves every dialect for it, but the task, parameter count and download figures were never published with the object, so they are absent rather than zero."
+     },
      "context": {
       "type": "integer",
       "description": "Context length, when it is known."
@@ -297,9 +301,15 @@
      "sources": {
       "type": "array",
       "items": {
-       "type": "string"
+       "type": "string",
+       "enum": [
+        "Hugging Face",
+        "ModelScope",
+        "IPFS",
+        "P2P"
+       ]
       },
-      "description": "Which sources hold these bytes today."
+      "description": "Which sources hold these bytes today, in display spelling. Three vocabularies describe the same sources and nothing else maps between them, so map here: `Hugging Face` is `huggingface.co` in `/api/hub/health` and `X-Hub-Source`, and `huggingface` in a `/via/` prefix; `ModelScope` is `modelscope.cn` and `modelscope`; `IPFS` is `ipfs` in both. `P2P` is a fourth source that appears on a few rows and has no health entry and no `/via/` token — `/via/p2p/` is not a route."
      }
     }
    },
@@ -447,7 +457,7 @@
      "oid": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
-      "description": "The SHA-256 of the file's bytes. This is the expected hash."
+      "description": "The SHA-256 of the file's bytes, 64 hex characters, and the value a download must be checked against. **This differs from Hugging Face**, whose `oid` is a 40-character git blob SHA-1 and which carries the SHA-256 only inside `lfs`, only on large files. Here every file reports its SHA-256 in this field; the length is the tell. A client written against Hugging Face's meaning will read a perfectly good hash as an unusable one."
      },
      "size": {
       "type": "integer"
@@ -457,7 +467,7 @@
      },
      "lfs": {
       "type": "object",
-      "description": "Present on large files, for clients that branch on it.",
+      "description": "Present on large files, for clients that branch on it. Its `oid` repeats the SHA-256 above rather than differing from it.",
       "properties": {
        "oid": {
         "type": "string",
@@ -537,7 +547,8 @@
        ],
        "properties": {
         "ok": {
-         "type": "boolean"
+         "type": "boolean",
+         "description": "Whether the hub reached it on its last probe."
         },
         "checked": {
          "type": "string",
@@ -545,7 +556,7 @@
         },
         "reason": {
          "type": "string",
-         "description": "Why the hub believes it, in one word."
+         "description": "Why the hub believes it, in one word. `verified` means the hub fetched bytes and they hashed correctly — from the hub's network."
         }
        }
       }
@@ -1739,8 +1750,8 @@
      "Health"
     ],
     "operationId": "getSourceHealth",
-    "summary": "Which byte sources are up",
-    "description": "The result of the hub's own periodic probe of every source it can redirect to, and the order it prefers them in. A file request is sent to the first source in `order` that is `ok`.",
+    "summary": "Which byte sources are up, as seen from the hub",
+    "description": "The result of the hub's own periodic probe of every source it can redirect to, and the order it prefers them in. A file request is sent to the first source in `order` that is `ok`.\n\n**This is measured from the hub, not from you.** A source reported `ok` here can still be unreachable from the network you are on — `ipfs.filebase.io` in particular is blocked or TLS-terminated on some networks while the hub reaches it fine. Read this as the hub's routing preference, not as a promise about your own failover. If failover matters to you, test a `/via/{source}` fetch from where your code will actually run.",
     "responses": {
      "200": {
       "description": "Per-source liveness and the preference order.",
@@ -1753,17 +1764,17 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-23T20:13:21.350Z",
+           "checked": "2026-09-23T23:47:07.147Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-23T20:13:23.313Z",
+           "checked": "2026-09-23T23:47:08.149Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-23T20:13:23.387Z",
+           "checked": "2026-09-23T23:47:08.232Z",
            "reason": "verified"
           }
          },
@@ -1812,7 +1823,7 @@
     ],
     "operationId": "listModels",
     "summary": "Search the index",
-    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row carrying the facts Hugging Face has no field for: the index address of the model, how many files it has, how many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the whole catalog object costs 364 KB, so search here rather than there.",
+    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**This route lists everything the hub holds**, not only what is trending today. Rows for models on the\ncurrent browse list carry the full facts — task, parameters, library, downloads, licence. Models the browse\nlist has forgotten, but whose bytes this hub has published and still serves, appear as thin rows: the name,\nthe index address, and `hologram.listed: false`. The facts a browse row carries were never published with\nthe object, so a thin row says so rather than reporting zeros as if they were measurements. Filter on\n`hologram.listed` if you want one kind or the other.\n\nQuery parameters are checked rather than coerced: a `limit` outside 1–500 or one that is not a whole number,\nand a `sort` outside the enum, each refuse with `400 BadParameter` and a sentence saying what is allowed.",
     "parameters": [
      {
       "name": "search",
@@ -1933,9 +1944,9 @@
           "private": false,
           "gated": false,
           "disabled": false,
-          "likes": 6111,
+          "likes": 6112,
           "downloads": 251354399,
-          "trendingScore": 423,
+          "trendingScore": 422,
           "createdAt": "2022-03-02T00:00:00.000Z",
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",
@@ -1968,7 +1979,7 @@
           "disabled": false,
           "likes": 3368,
           "downloads": 45461966,
-          "trendingScore": 63,
+          "trendingScore": 64,
           "createdAt": "2022-03-02T00:00:00.000Z",
           "pipeline_tag": "fill-mask",
           "library_name": "transformers",
@@ -1991,6 +2002,33 @@
           }
          }
         ]
+       }
+      }
+     },
+     "400": {
+      "description": "A parameter is outside what this operation accepts.",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "limit must be between 1 and 500."
+        }
        }
       }
      },
@@ -2091,7 +2129,7 @@
       "description": "The model is gated on Hugging Face. The hub serves public models only and will not proxy a gate.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2118,7 +2156,7 @@
       "description": "Not in the index. The request is recorded and considered for the next index run.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2204,7 +2242,7 @@
       "description": "Either the model is not indexed, or it is indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2291,7 +2329,7 @@
       "description": "Not in the index.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2400,7 +2438,7 @@
       "description": "Not in the index, or indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2500,7 +2538,7 @@
       "description": "Not in the index, or indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2723,7 +2761,7 @@
       "description": "The model is not indexed, the revision is not the indexed one, or the file is not in it.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2761,7 +2799,7 @@
     ],
     "operationId": "resolveFileVia",
     "summary": "A URL for one file, from the source you name",
-    "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging Face is up, and refuses rather than falling back. The prefix works in front of any Models or Files route, not only this one.",
+    "description": "The caller states the policy and the hub executes it: `/via/ipfs/...` serves from IPFS even when Hugging\nFace is up. The prefix works in front of any Models or Files route, not only this one.\n\n**A pin is a constraint, not a hint.** If the named source does not hold the file this refuses with\n`404 SourceHasNotGotIt`, naming the sources that do; an unrecognised source name refuses with\n`404 UnknownSource`. It does not quietly serve you something else. That matters most for the obvious use of\na pin — fetching the same file through two sources and comparing them — which is worthless if one fetch can\nsilently come from the other's host.\n\n`X-Hub-Source` still names who served, and on this route it will always equal the source you asked for.\nDrop the prefix to let the hub choose by health and order.",
     "parameters": [
      {
       "name": "source",
@@ -2832,7 +2870,7 @@
       }
      },
      "302": {
-      "description": "Redirect to the named source.",
+      "description": "Redirect to a source. Check `X-Hub-Source`: it names who actually served, which is not always the source you asked for.",
       "headers": {
        "location": {
         "description": "Where the bytes are.",
@@ -2842,7 +2880,36 @@
         }
        },
        "x-hub-source": {
-        "description": "The source you named.",
+        "description": "Who actually served: `huggingface.co`, `modelscope.cn` or `ipfs`. Compare it against the source you named; a different value means the hub fell back.",
+        "schema": {
+         "type": "string",
+         "enum": [
+          "huggingface.co",
+          "modelscope.cn",
+          "ipfs"
+         ]
+        }
+       },
+       "etag": {
+        "description": "The SHA-256 the bytes must have, quoted. Returned here exactly as on the unprefixed route.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-linked-etag": {
+        "description": "The same SHA-256, quoted.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-linked-size": {
+        "description": "The size in bytes.",
+        "schema": {
+         "type": "integer"
+        }
+       },
+       "x-repo-commit": {
+        "description": "The revision this file belongs to.",
         "schema": {
          "type": "string"
         }
@@ -2850,10 +2917,10 @@
       }
      },
      "404": {
-      "description": "Unknown model, revision or file; or the named source does not hold this file.",
+      "description": "Unknown model, revision or file; `SourceHasNotGotIt` when the named source does not hold this file, naming the ones that do; or `UnknownSource` when the source name is not one this hub knows. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2871,7 +2938,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+         "error": "modelscope does not hold config.json of BAAI/bge-base-en-v1.5. This file is on: huggingface.co. Drop the /via/ prefix to let the hub choose."
         }
        }
       }
@@ -3330,7 +3397,7 @@
     ],
     "operationId": "callMcp",
     "summary": "The Model Context Protocol server",
-    "description": "Streamable HTTP, stateless, anonymous, `POST` only. Protocol versions `2026-07-28`, `2025-11-25`,\n`2025-06-18` and `2025-03-26` are accepted. Three tools: `search_models` finds one, `get_model` lists its\nfiles with sizes and hashes, `resolve_file` gives a URL, the SHA-256 it must have, and the command that\nhands the file to an engine.\n\nWeight bytes never travel in a tool result: the tool returns the instruction, the agent's shell or engine\ndoes the download.",
+    "description": "Streamable HTTP, stateless, anonymous, `POST` only. Protocol versions `2026-07-28`, `2025-11-25`,\n`2025-06-18` and `2025-03-26` are accepted. Three tools: `search_models` finds one, `get_model` lists its\nfiles with sizes and hashes, `resolve_file` gives a URL, the SHA-256 it must have, and the command that\nhands the file to an engine.\n\nWeight bytes never travel in a tool result: the tool returns the instruction, the agent's shell or engine\ndoes the download.\n\n`get_model` returns at most 200 files. When a model has more it keeps every config, tokenizer and other\nsmall text file first, fills the remainder with the largest weights, and sets `files_truncated` and\n`files_truncated_note`; `files_total` always counts the whole model. It truncates by usefulness rather than\nalphabetically, because the tail of a model directory is where the tokenizer lives and a caller cannot\nproceed without it. For the complete list use `listModelFiles`.",
     "requestBody": {
      "required": true,
      "description": "A JSON-RPC 2.0 request.",
@@ -4361,6 +4428,20 @@
         "schema": {
          "type": "string",
          "format": "binary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "The path is not an address. An address is `blake3:` followed by 64 hexadecimal characters; anything else under this prefix is refused at the edge rather than passed to the server.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiError"
+        },
+        "example": {
+         "code": "LIVE_BAD_REQUEST",
+         "message": "an object address is blake3: followed by 64 hexadecimal characters"
         }
        }
       }

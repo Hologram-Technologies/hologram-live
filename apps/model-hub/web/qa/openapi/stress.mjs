@@ -159,19 +159,26 @@ async function run() {
     ["models.q.direction", "sort=downloads&direction=1&limit=5", (r) => ({ ok: r.json.every((m, i, a) => !i || a[i - 1].downloads <= m.downloads), note: "ascending" })],
   ]) await check(id, "models", "happy", `/api/models?${q}`, { path: `/api/models?${q}` }, test);
 
+  // Two different contracts. limit and sort are documented with a range and an enum, so a bad value must refuse.
+  // Everything else is free-form input the route should absorb: an unknown parameter, an empty or hostile search
+  // term, unicode. Absorbing those is correct; coercing a documented constraint was not.
   for (const [id, q, expectation] of [
-    ["models.b.limit0", "limit=0", "documented minimum is 1"],
+    ["models.b.limit0", "limit=0", "below the documented minimum of 1"],
     ["models.b.limitneg", "limit=-5", "negative"],
-    ["models.b.limitbig", "limit=99999", "documented maximum is 500"],
+    ["models.b.limitbig", "limit=99999", "above the documented maximum of 500"],
     ["models.b.limitabc", "limit=abc", "not a number"],
     ["models.b.sortbogus", "sort=bogus", "outside the documented enum"],
-    ["models.b.unknownparam", "nonsense=1", "unknown parameter"],
-    ["models.b.empty", "search=", "empty search"],
-    ["models.b.unicode", "search=" + encodeURIComponent("模型"), "unicode search"],
-    ["models.b.inject", "search=" + encodeURIComponent("' OR 1=1--"), "injection-shaped input"],
-    ["models.b.long", "search=" + "a".repeat(2000), "2 KB search term"],
   ]) await check(id, "models", "boundary", `${q} — ${expectation}`, { path: `/api/models?${q}` },
-    (r) => ({ ok: r.status === 200 || r.status === 400, note: `${r.status}, ${Array.isArray(r.json) ? r.json.length + " rows" : "non-array"} (constraints are advisory)` }));
+    (r) => ({ ok: r.status === 400 && r.headers["x-error-code"] === "BadParameter", note: `${r.status} ${r.headers["x-error-code"] || "silently defaulted"}` }));
+
+  for (const [id, q, expectation] of [
+    ["models.b.unknownparam", "nonsense=1", "an unknown parameter is ignored, not an error"],
+    ["models.b.empty", "search=", "an empty search is every row"],
+    ["models.b.unicode", "search=" + encodeURIComponent("模型"), "unicode is a search term like any other"],
+    ["models.b.inject", "search=" + encodeURIComponent("' OR 1=1--"), "injection-shaped input is literal text"],
+    ["models.b.long", "search=" + "a".repeat(2000), "a 2 KB search term is absorbed"],
+  ]) await check(id, "models", "boundary", `${q.slice(0, 40)} — ${expectation}`, { path: `/api/models?${q}` },
+    (r) => ({ ok: r.status === 200 && Array.isArray(r.json), note: `${r.status}, ${Array.isArray(r.json) ? r.json.length + " rows" : "non-array"}` }));
 
   await check("models.info", "models", "happy", "getModel", { path: `/api/models/${M}` }, (r) => ({ ok: r.json?.id === M, note: `${r.json?.siblings?.length} siblings` }));
   await check("models.info.rev", "models", "happy", "getModelAtRevision", { path: `/api/models/${M}/revision/${REV}` }, (r) => r.json?.sha === REV);
@@ -225,13 +232,17 @@ async function run() {
         const asked = src === "huggingface" ? "huggingface.co" : src === "modelscope" ? "modelscope.cn" : "ipfs";
         return { ok: got === asked, note: got === asked ? `honoured (${got})` : `FELL BACK to ${got} without error` };
       });
-  // A model the named source does not hold: this is where the pin silently becomes a preference.
-  for (const [id, src, expect] of [["files.via.miss.ms", "modelscope", "modelscope.cn"], ["files.via.miss.ipfs", "ipfs", "ipfs"]])
-    await check(id, "files", "consistency", `/via/${src} on a model that source may not hold`, { path: `/via/${src}/BAAI/bge-base-en-v1.5/resolve/main/config.json`, method: "HEAD" },
-      (r) => { const got = r.headers["x-hub-source"] || ""; return { ok: got === expect, note: got === expect ? `honoured (${got})` : `FELL BACK to ${got} with no error and no signal but this header` }; });
+  // A model the named source does not hold. A pin is a constraint, so this must refuse rather than quietly serve
+  // something else; the refusal names the sources that would have worked.
+  for (const [id, src] of [["files.via.miss.ms", "modelscope"], ["files.via.miss.ipfs", "ipfs"]])
+    await check(id, "files", "consistency", `/via/${src} on a model that source may not hold`, { path: `/via/${src}/BAAI/bge-base-en-v1.5/resolve/main/config.json` },
+      (r) => {
+        if (r.status === 302) return { ok: r.headers["x-hub-source"] === (src === "modelscope" ? "modelscope.cn" : src), note: r.headers["x-hub-source"] === (src === "modelscope" ? "modelscope.cn" : src) ? `honoured (${r.headers["x-hub-source"]})` : `FELL BACK to ${r.headers["x-hub-source"]}` };
+        return { ok: r.status === 404 && r.headers["x-error-code"] === "SourceHasNotGotIt", note: `${r.status} ${r.headers["x-error-code"] || ""} — ${(r.json && r.json.error || "").slice(0, 60)}` };
+      });
 
   await check("files.via.bogus", "files", "boundary", "/via/bogus is accepted and ignored", { path: `/via/bogus/${M}/resolve/main/${F}`, method: "HEAD" },
-    (r) => ({ ok: r.status >= 400, note: r.status === 302 ? `accepted, served ${r.headers["x-hub-source"]}` : `${r.status}` }));
+    (r) => ({ ok: r.status === 404 && r.headers["x-error-code"] === "UnknownSource", note: r.status === 302 ? `accepted, served ${r.headers["x-hub-source"]}` : `${r.status} ${r.headers["x-error-code"] || ""}` }));
   await check("files.via.caps", "files", "boundary", "/via/HuggingFace (capitals)", { path: `/via/HuggingFace/${M}/resolve/main/${F}`, method: "HEAD" },
     (r) => ({ ok: true, note: `${r.status} ${r.headers["x-error-code"] || "(bare edge 404, not the documented shape)"}` }));
 

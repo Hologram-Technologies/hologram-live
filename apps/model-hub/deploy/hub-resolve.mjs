@@ -47,9 +47,72 @@ function refresh() {
 async function model(id) {
   refresh();
   const path = byLower.get(id.toLowerCase());
-  if (!path) return indexed(id);
+  if (!path) return (await indexed(id)) || (await fromHub(id));
   const doc = JSON.parse(await readFile(path, "utf8"));
   doc.id = path.slice(join(DATA, "files").length + 1, -5).replace(/\\/g, "/");
+  return doc;
+}
+
+// ---- the hub's own catalog, as the last word on what this hub has
+//
+// `objects` in the published catalog is cumulative: a model addressed on any past day keeps its model object for
+// ever. `models` is only today's trending rows. So a model that drops off the list keeps a published object full
+// of file hashes and loses every way of being found -- and the dialects, asking a third-party address index that
+// has moved on, answered 404 for something this hub was still holding. A third of the hub was in that state.
+//
+// The catalog is fetched by address, so it is immutable and cacheable; only the descriptor that names today's
+// catalog is mutable, and that is one small file.
+let hub = { at: 0, objects: new Map(), extra: [] };
+async function hubCatalog() {
+  if (Date.now() - hub.at < 600_000) return hub;
+  hub.at = Date.now();
+  try {
+    const d = await (await fetch(`${HUB}/.well-known/model-hub.json`, { signal: AbortSignal.timeout(8000) })).json();
+    const cat = await (await fetch(`${HUB}/api/v1/objects/${d.catalog}`, { signal: AbortSignal.timeout(20_000) })).json();
+
+    hub = {
+      at: Date.now(),
+      objects: new Map(Object.entries(cat.objects || {}).map(([id, e]) => [id.toLowerCase(), { id, ...e }])),
+      // Rows for the models the browse list has forgotten. The facts a browse row carries -- task, parameters,
+      // downloads -- were never published with the object, so these carry only what is certain: the name. They are
+      // flagged, so a client can tell a thin row from a full one rather than inferring it from empty fields.
+      // A thin row for every object. rows() drops the ones that already have a full row; doing that here instead
+      // would miss a model that appears in today's catalog without being addressed, which falls through both.
+      extra: Object.keys(cat.objects || {}).map((id) => ({
+        _id: "", id, modelId: id, author: id.split("/")[0], sha: "", private: false, gated: false, disabled: false,
+        likes: 0, downloads: 0, trendingScore: 0, tags: [],
+        hologram: { manifest: cat.objects[id].model, listed: false },
+      })),
+    };
+  } catch { /* the hub did not answer itself: keep whatever was cached */ }
+  return hub;
+}
+
+// Build the internal document from the hub's own published model object: the revision and every file hash, which
+// is all a redirect needs. IPFS is offered when the pin matches the same revision, exactly as elsewhere.
+async function fromHub(id) {
+  const { objects } = await hubCatalog();
+  const entry = objects.get(id.toLowerCase());
+  if (!entry) return null;
+  const hit = remote.get(`hub:${id.toLowerCase()}`);
+  if (hit && Date.now() - hit.at < 600_000) return hit.doc;
+  let doc = null;
+  try {
+    const obj = await (await fetch(`${HUB}/api/v1/objects/${entry.model}`, { signal: AbortSignal.timeout(15_000) })).json();
+    if (obj && Array.isArray(obj.files)) {
+      if (Date.now() - pins.at > 600_000) pins = { at: Date.now(), doc: await fetch(PINS, { signal: AbortSignal.timeout(8000) }).then((p) => p.json()).catch(() => pins.doc) };
+      const pin = Object.entries(pins.doc.models || {}).find(([k, v]) => k.toLowerCase() === id.toLowerCase() && v.revision === obj.revision)?.[1];
+      const sources = [{ kind: "huggingface.co", resolve: null, missing: [] }];
+      if (pin) sources.push({ kind: "ipfs", resolve: `${pins.doc.gateway}${pin.root}/`, missing: [] });
+      doc = {
+        id: entry.id, revision: obj.revision, manifest: obj.index_manifest || entry.model, sources,
+        files: obj.files.map((f) => [f.path, f.size, f.sha256.startsWith("sha256:") ? f.sha256 : `sha256:${f.sha256}`, f.weights ? 1 : 0,
+          `https://huggingface.co/${entry.id}/resolve/${obj.revision}/${f.path.split("/").map(encodeURIComponent).join("/")}`]),
+      };
+    }
+  } catch { /* the object did not answer: unknown for now */ }
+  if (remote.size > 500) remote.clear();
+  remote.set(`hub:${id.toLowerCase()}`, { at: Date.now(), doc });
   return doc;
 }
 
@@ -158,7 +221,11 @@ async function rows() {
       })) };
     } catch { catalog.at = Date.now(); }
   }
-  return catalog.rows;
+  const { extra } = await hubCatalog();
+  if (!extra.length) return catalog.rows;
+  // Today's rows win where both exist: they carry the facets, and a thin row would otherwise mask a full one.
+  const listed = new Set(catalog.rows.map((r) => r.id));
+  return catalog.rows.concat(extra.filter((r) => !listed.has(r.id)));
 }
 const SORTS = { downloads: "downloads", likes: "likes", trendingScore: "trendingScore", trending_score: "trendingScore", createdAt: "createdAt", created_at: "createdAt" };
 async function list(res, q) {
@@ -337,7 +404,7 @@ async function ollama(req, res, id, kind, ref) {
 // Weights never travel through a tool result: resolve_file returns URLs, the expected SHA-256 (from the index, never
 // from a source) and the exact commands that hand the file to an engine.
 const MCP_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"];
-const HUB = "https://hub.uor.foundation";
+const HUB = process.env.HUB || "https://hub.uor.foundation";  // the hub asking itself: its own object plane is the backstop under every dialect
 const TOOLS = [
   { name: "search_models", title: "Search models",
     description: "Find open models in the hub's index. Every result has all of its files addressed by SHA-256. Returns id, task, library, licence, parameters, weight size, downloads and where the bytes live.",

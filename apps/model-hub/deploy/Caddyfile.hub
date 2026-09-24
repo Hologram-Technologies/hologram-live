@@ -21,6 +21,10 @@ hub.uor.foundation {
 
 	encode zstd gzip
 
+	# ⚠ The live host has moved past this block and it has not been reconciled: there, /v2 goes to hub-registry
+	# (Hologram Registry 1.0.0) with `basic_auth` as user `publisher` rather than a bearer token, and /_* is a
+	# separate handler still pointing at kappa for the days published before the switch. Diff the running
+	# Caddyfile before changing anything here. Recorded 2026-09-24 while testing the write paths.
 	@registry path /v2 /v2/* /_*
 	handle @registry {
 		@write {

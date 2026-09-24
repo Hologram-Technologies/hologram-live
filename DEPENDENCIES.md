@@ -59,6 +59,8 @@ The feature requires CMake, Clang, and a C++ compiler. `llamacpp-metal` and `lla
 
 The initial backend is CPU-only and consumes Burn named-MPK checkpoints rather than GGUF or raw Safetensors. Burn-LM currently pins Burn 0.18, so this optional graph remains isolated from the default binary and should be upgraded with Burn-LM rather than mixing model/runtime versions locally. Burn-LM's published inference module requires its `pretrained` feature and therefore resolves its download client and cache-directory dependencies; Hologram calls only the local `load_*` APIs and performs no model download.
 
+The optional Burn graph includes unmodified `colored` and `option-ext` source files under MPL-2.0. `deny.toml` records exceptions for exactly those two crates; MPL-2.0 is not admitted globally, and the default build resolves neither dependency.
+
 ## Optional: the registry (`--features oci`)
 
 Off by default. A stock build pulls none of these; `scripts/check-product-boundaries.sh` holds that line. ADR 025 is

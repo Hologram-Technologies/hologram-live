@@ -20,3 +20,13 @@ allow = [
     "BSL-1.0",
 ]
 confidence-threshold = 0.9
+exceptions = [
+    # Burn 0.18 uses colored only for tensor diagnostics. It remains an
+    # unmodified, off-by-default transitive dependency; MPL-2.0's obligations
+    # stay scoped to that crate's own source files.
+    { allow = ["MPL-2.0"], crate = "colored" },
+    # Burn-LM's cache-directory helper reaches option-ext through dirs. The
+    # server calls only local checkpoint APIs, but the published crate enables
+    # this graph. Keep the exception exact instead of admitting MPL globally.
+    { allow = ["MPL-2.0"], crate = "option-ext" },
+]

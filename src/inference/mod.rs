@@ -254,6 +254,7 @@ pub fn engine_from_config(
     }
 }
 
+#[cfg(any(feature = "candle", feature = "burn"))]
 fn resolve_local_model(
     config: &InferenceConfig,
     catalog: &ModelCatalog,

@@ -182,7 +182,6 @@ async function renderList () {
   document.title = 'Buckets · Hologram Models Hub'
   $('title').textContent = 'Buckets'
   $('sub').hidden = true; $('sub').textContent = ''
-  $('host').textContent = location.host + '/v2/buckets/'
   $('count').hidden = false; $('count').textContent = '…'
   $('crumbs').hidden = true; $('bar').hidden = true; $('drop').hidden = true
   $('readme').hidden = true; $('cred').hidden = true; $('settings').hidden = true
@@ -194,8 +193,8 @@ async function renderList () {
 
   const mine = ++renderSeq
   let repos = []
-  try { repos = (await reg.catalogue()).filter(r => r.startsWith('buckets/')); $('dot').className = 'dot ok' }
-  catch { $('dot').className = 'dot bad' }
+  // The dot beside the title is the section tag's (chrome.js): it asks this section's address itself.
+  try { repos = (await reg.catalogue()).filter(r => r.startsWith('buckets/')) } catch {}
   if (mine !== renderSeq) return
   $('count').textContent = String(repos.length)
   $('empty').hidden = repos.length > 0
@@ -242,8 +241,6 @@ async function renderBrowse (r) {
   const repo = `buckets/${r.owner}/${r.name}`
   document.title = `${r.owner}/${r.name} · Buckets`
   $('title').innerHTML = `<span class="owner">${r.owner} /</span> ${r.name}`
-  $('host').textContent = `${location.host}/v2/${repo}/`
-  $('dot').className = 'dot'
   $('sub').hidden = false
   $('crumbs').hidden = false
   $('bar').hidden = false
@@ -262,7 +259,6 @@ async function renderBrowse (r) {
   }
   if (!state) {
     $('sub').textContent = 'No such bucket.'
-    $('dot').className = 'dot bad'
     $('rows').replaceChildren()
     $('empty').hidden = false
     $('empty').textContent = 'This bucket does not exist.'
@@ -272,7 +268,6 @@ async function renderBrowse (r) {
   const ann = state.annotations
   $('count').hidden = false
   $('count').textContent = `${state.entries.size} object${state.entries.size === 1 ? '' : 's'} · ${human(state.bytes)} of ${human(state.quota)}`
-  $('dot').className = 'dot ok'
   $('sub').textContent = `${state.visibility}${state.encrypted ? ' — names and bytes are sealed; the key is in this browser' : ''} · state ${short(digestToCid(state.head, 0x71))}`
   $('sub').title = state.head
   $('drop').hidden = state.locked

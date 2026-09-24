@@ -410,12 +410,15 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
   background: linear-gradient(color-mix(in srgb, var(--background) var(--hh-veil), transparent), color-mix(in srgb, var(--background) var(--hh-veil), transparent)), var(--hh-wallpaper) center / cover no-repeat, var(--background);
 }
 :root[data-theme="immersive"] .panel,
-:root[data-theme="immersive"] .top,
 :root[data-theme="immersive"] .menu,
 :root[data-theme="immersive"] .sort [role="listbox"],
 :root[data-theme="immersive"] .sheet-footer { -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
+/* Over a photograph the header draws no plate, on every page, as the landing has always done: the row sits
+   on the picture and its words take a shadow instead, which costs the picture nothing. On the pages that
+   scroll, the veil above the row is what keeps content from colliding with it. */
+:root[data-theme="immersive"] .top { background: none; }
+:root[data-theme="immersive"] .top .brand, :root[data-theme="immersive"] .top-end, :root[data-theme="immersive"] .top-nav { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
 @media (max-width: 960px) {
-  :root[data-theme="immersive"] .top.menu-open { -webkit-backdrop-filter: none; backdrop-filter: none; }
   :root[data-theme="immersive"] .top-menu { background: color-mix(in srgb, var(--background) 78%, transparent); -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
 }
 :root[data-theme="immersive"] .veil {

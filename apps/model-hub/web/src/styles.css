@@ -206,12 +206,11 @@
 /* Over a photo the figure only adds noise, and floating text loses its ground: the hero takes the glass every
    other surface already uses in Immersive, and the strip steps back further. */
 :root[data-theme="immersive"] .land-art { display: none; }
-/* Nothing is drawn around the hero in Immersive and the photograph is not dimmed: no slab, no header plate,
-   the wallpaper at the same strength the application shows it. Legibility comes from a shadow under the type,
-   which costs the picture nothing. The strip keeps a band, the one thing that makes it read over a bright sky. */
-:root[data-theme="immersive"][data-page="landing"] .top { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Nothing is drawn around the hero in Immersive and the photograph is not dimmed: no slab, the wallpaper at
+   the same strength the application shows it. Legibility comes from a shadow under the type, which costs the
+   picture nothing. (The header draws no plate either, on every page now: chrome.css.) The strip keeps a
+   band, the one thing that makes it read over a bright sky. */
 :root[data-theme="immersive"] .land-copy { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
-:root[data-theme="immersive"][data-page="landing"] .top .brand, :root[data-theme="immersive"][data-page="landing"] .top-end, :root[data-theme="immersive"][data-page="landing"] .top-nav { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
 :root[data-theme="immersive"] .land-sub { color: var(--hh-text); }
 :root[data-theme="immersive"] .land-marquee { background: color-mix(in srgb, var(--background) 45%, transparent); }
 :root[data-theme="immersive"] .land-track img { opacity: .4; }

@@ -132,6 +132,22 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 .panel { background: var(--hh-surface); border-radius: var(--radius-lg); padding: var(--hh-pad); }
 
+/* ---- the lead: what a section page says first.
+   One row above the columns on every catalogue page — Models, Registry, Spaces — in the same order: the
+   section's name, how many of its things are listed, the address they are read from with a dot for whether
+   it answered, and at the end of the row one line of provenance saying where those things came from. Three
+   pages, one row, so crossing between them moves nothing. Built pages write it in build.mjs; the pages that
+   ship as their own files write the same markup, and qa/menu.mjs holds them to it. */
+.lead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-8) 0 var(--space-5); }
+.lead h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
+.lead .prov { margin-left: auto; font-size: var(--text-sm); color: var(--hh-text-faint); }
+/* The address. A chip the height of the count beside it, in the mono the address is written in. On the Models
+   page it is the index control, which opens the day list; there its dot is drawn by .status. */
+.endpoint { display: inline-flex; align-items: center; gap: var(--space-2); height: var(--hh-control); padding: 0 var(--space-3); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim); white-space: nowrap; }
+.dot { width: var(--space-2); height: var(--space-2); border-radius: 50%; background: var(--hh-text-faint); flex: none; }
+.dot.ok { background: var(--hh-ok); }
+.dot.bad { background: var(--hh-bad); }
+
 /* ---- header */
 .top {
   position: sticky; top: var(--space-6); z-index: 10;

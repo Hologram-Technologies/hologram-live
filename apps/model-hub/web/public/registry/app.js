@@ -1,6 +1,8 @@
 // The Images page. Same shape as the models page: facets on the left, search and sort on top, a card grid.
 // It reads one static file. There is no query service, because the index is a file and filtering is a filter.
 
+import { createRail, ICONS as I } from "../lib/rail.mjs";
+
 const $ = (id) => document.getElementById(id);
 const PAGE = 60;
 let data = null;
@@ -480,147 +482,34 @@ function render() {
   $("more").hidden = rows.length <= shown;
 }
 
-// Icons, one per facet: the models rail puts a small mark on every chip so it reads at a glance.
-const I = {
-  grid: '<svg class="i" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
-  tag: '<svg class="i" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 11V5a1 1 0 0 1 1-1h6l8 8-7 7-8-8Z"/></svg>',
-  layers: '<svg class="i" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m12 4 8 4-8 4-8-4 8-4Z"/><path d="m4 14 8 4 8-4"/></svg>',
-  chip: '<svg class="i" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/></svg>',
-  box: '<svg class="i" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 8l8-4 8 4v8l-8 4-8-4V8Z"/><path d="M4 8l8 4 8-4M12 12v8"/></svg>',
-  seal: '<svg class="i" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.2-2.8 7.6-7 9-4.2-1.4-7-4.8-7-9V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>',
-  search: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#757371" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>',
-  sort: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h10M4 12h7M4 17h4"/><path d="m17 8 3-3 3 3M20 5v14"/></svg>',
-  clock: '<svg class="i" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
-  undo: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 12a8 8 0 1 1 2.5 5.8"/><path d="M4 7v5h5"/></svg>',
-};
-
-// Facets grouped into tabs, as the models rail does: what you reach for first on Main, the rest one click away.
-const TABS = [
-  ["Main", I.grid, ["registry", "category", "marks"]],
-  ["Kind", I.layers, ["kind", "architecture"]],
-  ["Publisher", I.seal, ["publisher"]],
-  ["Licence", I.tag, ["license"]],
-  ["Size", I.box, ["repoSize"]],
-  ["Updated", I.clock, ["updated"]],
-];
-const LABEL = { registry: "Registry", category: "Category", marks: "Marks", kind: "Kind",
-  architecture: "Architecture", publisher: "Publisher", license: "Licence",
-  repoSize: "Repository size", updated: "Last updated" };
-const ICON = { registry: I.grid, category: I.tag, marks: I.seal, kind: I.layers, architecture: I.chip,
-  publisher: I.seal, license: I.tag, repoSize: I.box, updated: I.clock };
-const CLAMP_AT = 9;
-const OURS = "Hologram";
-
-let tab = "Main";
-const openFacets = new Set();
-const facetQuery = {};
-const facetAz = {};
-
-function facet(key) {
-  const counts = data.facets[key] || {};
-  const all = Object.keys(counts);
-  if (!all.length) return null;
-  const q = (facetQuery[key] || "").trim().toLowerCase();
-  let names = q ? all.filter((n) => n.toLowerCase().includes(q)) : all.slice();
-  names.sort(facetAz[key] ? (a, b) => a.localeCompare(b) : (a, b) => counts[b] - counts[a]);
+// The rail is the one every catalogue page has (lib/rail.mjs), with the Models rail's grouping: what you
+// reach for first on Main, the rest one click away. Counts come from the index file; the registry's own rows
+// are added to them when they are read live (start, below).
+const rail = createRail({
+  el: $("rail"),
+  tabs: [
+    ["Main", I.grid, ["registry", "category", "marks"]],
+    ["Kind", I.layers, ["kind", "architecture"]],
+    ["Publisher", I.seal, ["publisher"]],
+    ["Licence", I.tag, ["license"]],
+    ["Size", I.box, ["repoSize"]],
+    ["Updated", I.clock, ["updated"]],
+  ],
+  labels: { registry: "Registry", category: "Category", marks: "Marks", kind: "Kind",
+    architecture: "Architecture", publisher: "Publisher", license: "Licence",
+    repoSize: "Repository size", updated: "Last updated" },
+  icons: { registry: I.grid, category: I.tag, marks: I.seal, kind: I.layers, architecture: I.chip,
+    publisher: I.seal, license: I.tag, repoSize: I.box, updated: I.clock },
+  counts: (key) => data.facets[key],
+  picked,
+  onChange: () => { shown = PAGE; render(); },
+  order: {
+    updated: ["Today", "This week", "This month", "This year", "Over a year ago"],
+    repoSize: ["Under 100 MB", "100 MB to 1 GB", "1 to 10 GB", "Over 10 GB"],
+  },
   // Ours leads the registry list however small it is: it is the one whose bytes you can check here.
-  if (key === "registry") names.sort((a, b) => (a === OURS ? -1 : b === OURS ? 1 : 0));
-  if (key === "updated" || key === "repoSize") {
-    const order = ["Today", "This week", "This month", "This year", "Over a year ago",
-      "Under 100 MB", "100 MB to 1 GB", "1 to 10 GB", "Over 10 GB"];
-    names.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  }
-
-  const section = document.createElement("section");
-  section.className = "facet";
-  const many = all.length > 12;
-  section.innerHTML =
-    '<header><h2>' + LABEL[key] + '</h2>' +
-    '<button type="button" class="reset"' + (picked[key].size ? '' : ' disabled') + '>' + I.undo + 'Reset</button></header>' +
-    (many
-      ? '<div class="facet-tools"><label class="field">' + I.search +
-        '<input type="search" placeholder="Filter ' + LABEL[key].toLowerCase() + '" autocomplete="off" aria-label="Filter ' + LABEL[key].toLowerCase() + '"></label>' +
-        '<button type="button" class="square" aria-label="Change order" title="' + (facetAz[key] ? 'Sort by count' : 'Sort A to Z') + '">' + I.sort + '</button></div>'
-      : '') +
-    '<div class="chips"></div>';
-
-  const chips = section.querySelector(".chips");
-  const clamp = names.length > CLAMP_AT && !openFacets.has(key);
-  if (clamp) chips.classList.add("clamped");
-  for (const name of names) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "chip" + (key === "registry" && name === OURS ? " ours" : "");
-    b.setAttribute("aria-pressed", String(picked[key].has(name)));
-    if (key === "registry" && name === OURS) b.title = "Derived from our own registry: these rows carry a digest you can check here";
-    b.innerHTML = ICON[key] + '<span class="label"></span><span class="n">' + counts[name] + '</span>';
-    b.querySelector(".label").textContent = name;
-    b.addEventListener("click", () => {
-      if (picked[key].has(name)) picked[key].delete(name); else picked[key].add(name);
-      shown = PAGE;
-      rail();
-      render();
-    });
-    chips.appendChild(b);
-  }
-  if (clamp) {
-    const more = document.createElement("button");
-    more.type = "button";
-    more.className = "more";
-    more.textContent = "+" + (names.length - CLAMP_AT) + " more";
-    more.addEventListener("click", () => { openFacets.add(key); rail(); });
-    section.appendChild(more);
-  }
-  section.querySelector(".reset").addEventListener("click", () => {
-    picked[key].clear();
-    shown = PAGE;
-    rail();
-    render();
-  });
-  const field = section.querySelector(".facet-tools input");
-  if (field) {
-    field.value = facetQuery[key] || "";
-    field.addEventListener("input", (e) => {
-      facetQuery[key] = e.target.value;
-      openFacets.add(key);
-      rail();
-      const again = document.querySelector('.facet-tools input[data-live="' + key + '"]');
-      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
-    });
-    field.dataset.live = key;
-  }
-  const order = section.querySelector(".facet-tools .square");
-  if (order) order.addEventListener("click", () => { facetAz[key] = !facetAz[key]; rail(); });
-  return section;
-}
-
-function rail() {
-  const el = $("rail");
-  el.innerHTML = "";
-  const tabs = document.createElement("div");
-  tabs.className = "tabs";
-  tabs.setAttribute("role", "tablist");
-  for (const entry of TABS) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "tab";
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", String(entry[0] === tab));
-    b.innerHTML = entry[1] + "<span>" + entry[0] + "</span>";
-    b.addEventListener("click", () => { tab = entry[0]; rail(); });
-    tabs.appendChild(b);
-  }
-  el.appendChild(tabs);
-
-  const sections = document.createElement("div");
-  sections.className = "sections";
-  const keys = (TABS.find((t) => t[0] === tab) || TABS[0])[2];
-  for (const key of keys) {
-    const s = facet(key);
-    if (s) sections.appendChild(s);
-  }
-  el.appendChild(sections);
-}
+  lead: { registry: { value: "Hologram", className: "ours", title: "Derived from our own registry: these rows carry a digest you can check here" } },
+});
 
 (async function start() {
   data = await (await fetch("data/images.json")).json();
@@ -641,7 +530,7 @@ function rail() {
   }
   $("prov").textContent = `${data.totals.here} here, read live · ${data.totals.elsewhere} indexed elsewhere`;
   $("sources").textContent = "Sources: " + Object.keys(data.sources).join(", ") + ".";
-  rail();
+  rail.render();
   render();
   $("q").addEventListener("input", () => { shown = PAGE; render(); });
   $("sheet-close").addEventListener("click", closeSheet);

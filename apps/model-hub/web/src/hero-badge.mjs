@@ -16,7 +16,7 @@ export function heroBadge({ repo }) {
   const n = repo.stars;
   const label = n == null ? `Star ${repo.name} on GitHub` : `Star ${repo.name} on GitHub, ${n} star${n === 1 ? "" : "s"}`;
   return `<a class="land-badge" data-repo="${esc(repo.name)}" href="${esc(repo.url)}" target="_blank" rel="noopener" aria-label="${esc(label)}">
-      <span class="lead">${icon.github}<span class="label">Star on GitHub</span></span>
+      <span class="lockup">${icon.github}<span class="label">Star on GitHub</span></span>
       <span class="tally">${icon.star.replace('class="i"', 'class="i star"')}<b class="n" id="gh-stars">${n == null ? "" : esc(count(n))}</b></span>
     </a>`;
 }

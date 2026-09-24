@@ -15,7 +15,7 @@
 .archive .menu [role="menuitemradio"] { height: auto; min-height: var(--hh-control); padding: var(--space-2) var(--space-3); }
 .archive .menu [role="menuitemradio"] .label { min-width: 0; }
 .archive .menu .sub { display: block; color: var(--hh-text-dim); }
-.archive .menu .lead { color: var(--hh-ok); }
+.archive .menu .latest { color: var(--hh-ok); }
 .archive-month h3 { margin: var(--space-2) var(--space-3) var(--space-1); font-size: var(--text-sm); font-weight: var(--weight-normal); color: var(--hh-text-dim); }
 .archive-older summary { padding: var(--space-2) var(--space-3); color: var(--hh-text-dim); cursor: pointer; }
 .archive-foot { display: flex; gap: var(--space-2); padding: 0 var(--space-3) var(--space-2); }
@@ -27,8 +27,8 @@
 @media (max-width: 720px) {
   /* Narrow enough that hanging the menu off a small control puts it through an edge whichever side it hangs
      from. Anchor it to the row instead: its width is already clamped to the viewport, so left: 0 always fits. */
-  .head { position: relative; }
-  .head .archive { position: static; }
+  .head, .lead { position: relative; }
+  .head .archive, .lead .archive { position: static; }
   /* On a phone the date is more room than the row has: the dot and the chevron still open every day. */
   .archive .status { min-width: var(--hh-control); justify-content: center; }
   .archive .status #archive-label { display: none; }
@@ -73,7 +73,7 @@
   font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim);
   transition: color var(--hh-ease), border-color var(--hh-ease);
 }
-.land-badge .lead, .land-badge .tally { display: inline-flex; align-items: center; gap: var(--space-2); }
+.land-badge .lockup, .land-badge .tally { display: inline-flex; align-items: center; gap: var(--space-2); }
 .land-badge .i { width: var(--hh-icon); height: var(--hh-icon); }
 .land-badge .tally { padding-left: var(--space-3); border-left: 1px solid var(--hh-line); }
 .land-badge .tally:has(.n:empty) { display: none; }
@@ -220,6 +220,9 @@
 /* ---- browse: filters | results */
 .browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); margin-top: var(--space-6); align-items: start; }
 @media (min-width: 1024px) { .browse { grid-template-columns: minmax(18.75rem, 23.75rem) minmax(0, 1fr); } }
+/* Under the lead row the columns start where the row's own air ends, the same distance the Registry and
+   Spaces pages keep; the margin above is for the panels that open with no row (404, signing in). */
+.lead + .browse { margin-top: 0; }
 
 .filters { padding: var(--space-4) var(--space-4) var(--space-12); position: sticky; top: calc(var(--space-16) + var(--space-12)); max-height: calc(100vh - var(--space-16) - var(--space-16)); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--hh-fill) transparent; }
 .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1) 0; padding-bottom: var(--space-4); border-bottom: 1px solid var(--hh-line); }
@@ -267,7 +270,7 @@
 /* The menu hangs from the right of its control, which is what the header wanted. In a content row the control
    sits near the start, so the menu hangs from the left instead and opens into the room the row has — otherwise it
    reaches back across the filters beside it. */
-.head .archive .menu { right: auto; left: 0; }
+.head .archive .menu, .lead .archive .menu { right: auto; left: 0; }
 .back-row { margin-bottom: var(--space-4); }
 .back-row .back { margin: 0; }
 .head h1, .hero h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
@@ -275,6 +278,9 @@
    sideways on a laptop narrow enough to put the filter rail beside a two-column grid. */
 .bar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-3); margin: var(--space-4) 0 var(--space-6); }
 .bar .search { flex: 0 1 40%; min-width: 17.5rem; }
+/* The bar is now the first thing in the results panel — the lead row moved above the columns — so it sits on
+   the panel's own padding, not on a margin that was there to clear a heading. */
+.results-head .bar { margin-top: 0; }
 .open-filters { display: none; }
 .results-head { position: relative; z-index: 5; }
 .sort { position: relative; margin-left: auto; }
@@ -349,7 +355,9 @@
 
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6) var(--space-2); height: var(--space-5); min-width: 0; font-size: var(--text-sm); color: var(--hh-text-dim); white-space: nowrap; overflow: hidden; }
 .meta > span { display: inline-flex; align-items: center; gap: var(--space-1); }
-.meta > span + span::before { content: "Â·"; margin-right: var(--space-1); color: var(--hh-text-faint); }
+/* The middle dot as an escape, not a character: the literal was saved double-encoded once and every card's
+   meta line showed two characters for it, on the live site too. An escape survives any editor and any charset. */
+.meta > span + span::before { content: "\00B7"; margin-right: var(--space-1); color: var(--hh-text-faint); }
 .meta .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
 
 .avatar { width: var(--hh-avatar); height: var(--hh-avatar); border-radius: 50%; object-fit: cover; background: var(--hh-fill); box-shadow: 0 0 0 1px var(--hh-line); }

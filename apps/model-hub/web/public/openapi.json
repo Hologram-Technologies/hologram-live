@@ -1481,6 +1481,112 @@
     }
    }
   },
+  "/models": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getModelsSection",
+    "summary": "The models section, answered two ways",
+    "description": "The site shows this address beside the models heading. A browser gets the browse page; anything else\ngets a brief covering finding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model, is untouched.",
+    "responses": {
+     "200": {
+      "description": "The section brief, or the section's page.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has two representations.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/models",
+     "status": 200,
+     "headers": {
+      "accept": "*/*"
+     },
+     "contentType": "text/markdown"
+    }
+   }
+  },
+  "/registry": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getRegistrySection",
+    "summary": "The registry section, answered two ways",
+    "description": "The site shows this address beside the registry heading. A browser gets the browse page; anything else\ngets a brief covering pulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model, is untouched.\n\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns.",
+    "responses": {
+     "200": {
+      "description": "The section brief, or the section's page.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has two representations.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/registry",
+     "status": 200,
+     "headers": {
+      "accept": "*/*"
+     },
+     "contentType": "text/markdown"
+    }
+   }
+  },
   "/docs": {
    "get": {
     "tags": [

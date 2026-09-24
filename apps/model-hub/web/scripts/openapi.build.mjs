@@ -10,6 +10,8 @@
 //   openapi.json                      served at /openapi.json; /docs renders it, unchanged, from the same URL
 //   agent.md                          what `curl hub.uor.foundation` answers: the whole hub in one screen, for the
 //                                     agent that just arrived and has no idea what this is
+//   models.md, registry.md            the same thing per section: what `curl hub.uor.foundation/models` answers,
+//                                     so a section's chip on the site is a line you can run rather than a name
 //   .well-known/agent-card.json       the same contract as skills, for frameworks that discover an agent card
 //   robots.txt                        crawling policy, generated so it can never contradict the document
 //
@@ -26,6 +28,7 @@ const PUBLIC = new URL("../public/", HERE);
 const OUT = new URL("./openapi.json", PUBLIC);
 const CARD = new URL("./.well-known/agent-card.json", PUBLIC);
 const BRIEF = new URL("./agent.md", PUBLIC);
+const SECTIONS = { models: new URL("./models.md", PUBLIC), registry: new URL("./registry.md", PUBLIC) };
 const ROBOTS = new URL("./robots.txt", PUBLIC);
 const BASE = "https://hub.uor.foundation";
 
@@ -225,6 +228,34 @@ function document(server, evidence) {
       ...probe("/agent.md", { contentType: "text/markdown" }),
     },
   };
+  for (const [name, what] of [["models", "finding a model, proving it and fetching it"], ["registry", "pulling the same models as OCI artifacts"]]) {
+    spec.paths[`/${name}`] = {
+      get: {
+        tags: ["Discovery"],
+        operationId: name === "models" ? "getModelsSection" : "getRegistrySection",
+        summary: `The ${name} section, answered two ways`,
+        description: [
+          `The site shows this address beside the ${name} heading. A browser gets the browse page; anything else`,
+          `gets a brief covering ${what}: the few requests that do the job, in the order you would make them, with`,
+          "the rule that makes the bytes safe.",
+          "",
+          "It adds no API — every route the brief names is already in this document. What was missing was an",
+          "address that gathers them, which the site was already advertising. The trailing slash works either way,",
+          "and a page below the section, such as a single model, is untouched.",
+          name === "registry" ? "\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns." : "",
+        ].filter(Boolean).join("\n"),
+        responses: {
+          200: {
+            description: "The section brief, or the section's page.",
+            headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
+            content: { "text/markdown": { schema: { type: "string" } }, "text/html": { schema: { type: "string" } } },
+          },
+          ...NOT_SERVED,
+        },
+        ...probe(`/${name}`, { headers: { accept: "*/*" }, contentType: "text/markdown" }),
+      },
+    };
+  }
   spec.paths["/docs"] = {
     get: {
       tags: ["Discovery"],
@@ -1079,6 +1110,109 @@ const trim = (value, key, keep = 2) => (value && Array.isArray(value[key]) ? { .
 
 // ---------------------------------------------------------------- derived discovery files
 
+// One brief per section, answered at the section's own URL to anything that is not a browser.
+//
+// The site shows an endpoint beside each section heading. A name is not usable: an agent that follows it gets the
+// browse page, a quarter of a megabyte of markup, which is the same failure the bare host name had. So each
+// section answers the way the root does — the page to a browser, and to everything else the few requests that
+// actually do that section's job, in the order you would make them.
+//
+// This adds no API. Every route named below already existed and is already in the document; what was missing was
+// an address that gathers them, which the site was already advertising.
+function sectionBrief(name) {
+  const common = [
+    "",
+    "## The rule that makes it safe",
+    "",
+    "Hash what arrives. The expected hash comes from the index and never from the source that served the bytes,",
+    "and this server does not verify on read.",
+    "",
+    "## More",
+    "",
+    `    ${BASE}/agent.md        the whole hub in one screen`,
+    `    ${BASE}/openapi.json    every operation, OpenAPI 3.1, bindable directly`,
+    `    ${BASE}/mcp             the same hub as MCP tools, no key`,
+    "",
+    "<!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch",
+    `     ${BASE}/${name} again and read it verbatim. -->`,
+    "",
+  ];
+
+  if (name === "models") {
+    return [
+      "# hub.uor.foundation/models",
+      "",
+      "Open models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and",
+      "every request below is anonymous.",
+      "",
+      "## One line, if you can set an environment variable",
+      "",
+      `    HF_ENDPOINT=${BASE}`,
+      "",
+      "Everything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses",
+      "MODEL_ENDPOINT instead.",
+      "",
+      "## Or four requests",
+      "",
+      "    GET /api/models?search=qwen&filter=gguf&limit=5",
+      "        Find one. A few hundred bytes. This lists everything the hub holds, including models that have",
+      "        fallen off the trending list; those carry `hologram.listed: false` and only their name is certain.",
+      "",
+      "    GET /api/models/{owner}/{name}/tree/main",
+      "        Its files, each with `oid`: the SHA-256 the bytes must have. This is the only place an expected",
+      "        hash may come from. Note it is a 64-character SHA-256, where Hugging Face puts a 40-character git",
+      "        blob SHA-1 in the same field.",
+      "",
+      "    GET /{owner}/{name}/resolve/main/{path}",
+      "        302 to a source that was up a moment ago, carrying the expected hash in `ETag` and the server in",
+      "        `X-Hub-Source`. No weight byte passes through this host.",
+      "",
+      "    GET /{owner}/{name}/resolve/main/SHA256SUMS",
+      "        The whole model's checksums, synthesised, so `sha256sum -c` checks a download with no tool of ours.",
+      "",
+      "## Choosing the source yourself",
+      "",
+      "    GET /via/{huggingface|modelscope|ipfs}/{owner}/{name}/resolve/main/{path}",
+      "        Pins one source. It refuses rather than falling back, so fetching the same file through two of them",
+      "        and comparing is two unrelated hosts agreeing and not one host repeating itself.",
+      "",
+      "    GET /api/hub/health",
+      "        Which sources are up and the order this hub prefers them. Measured from the hub, not from you.",
+      ...common,
+    ].join("\n");
+  }
+
+  return [
+    "# hub.uor.foundation/registry",
+    "",
+    "The same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are",
+    "anonymous; only publishing needs a credential.",
+    "",
+    "## Pull with what you have",
+    "",
+    "    ollama pull hub.uor.foundation/<org>/<name>:<quant>",
+    "        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.",
+    "",
+    "    oras pull hub.uor.foundation/<org>/<name>:latest",
+    "        A CNCF ModelPack artifact: every layer is one file of the model and its digest is that file's",
+    "        SHA-256, which oras, modctl, skopeo and crane all check for you. Lowercase the reference.",
+    "",
+    "    hologram pull hub.uor.foundation/model-hub/index:<YYYY-MM-DD>",
+    "        The hub's own daily index, one tag per day, kept for ever.",
+    "",
+    "## Or speak the protocol",
+    "",
+    "    GET /v2/                                      the distribution version check",
+    "    GET /v2/{owner}/{name}/tags/list              latest, plus one tag per single-file GGUF quantisation",
+    "    GET /v2/{owner}/{name}/manifests/{reference}  ModelPack by Accept, or Ollama's manifest",
+    "    GET /v2/{owner}/{name}/blobs/{digest}         small layers directly, weights as a redirect",
+    "",
+    "The weights are never held here: a blob request for one is a redirect to a source that is up, and the digest",
+    "you verify is the file's own SHA-256.",
+    ...common,
+  ].join("\n");
+}
+
 // The one file an agent reads. It is what `curl hub.uor.foundation` answers, because curl and every HTTP client an
 // agent is built on send `Accept: */*` and would otherwise get 78 KB of markup they cannot use.
 //
@@ -1241,6 +1375,8 @@ async function main() {
   const files = [
     [OUT, JSON.stringify(spec, null, 1) + "\n"],
     [BRIEF, brief(spec)],
+    [SECTIONS.models, sectionBrief("models")],
+    [SECTIONS.registry, sectionBrief("registry")],
     [CARD, JSON.stringify(agentCard(spec), null, 1) + "\n"],
     [ROBOTS, robots()],
   ];
@@ -1260,6 +1396,7 @@ async function main() {
   const ops = Object.values(spec.paths).reduce((n, item) => n + Object.keys(item).filter((k) => k !== "parameters").length, 0);
   console.log(`wrote public/openapi.json: ${Object.keys(spec.paths).length} paths, ${ops} operations, ${Object.keys(spec.components.schemas).length} schemas, ${Math.round(files[0][1].length / 1024)} KB`);
   console.log(`wrote public/agent.md: ${brief(spec).split("\n").length} lines`);
+  for (const [name, url] of Object.entries(SECTIONS)) console.log(`wrote public/${name}.md: ${sectionBrief(name).split("\n").length} lines`);
   console.log(`wrote public/.well-known/agent-card.json: ${agentCard(spec).skills.length} skills`);
   console.log("wrote public/robots.txt");
 }

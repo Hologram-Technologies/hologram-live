@@ -77,6 +77,11 @@ async function main() {
     // What curl, node fetch and python requests all send. This is the one an arriving agent actually makes.
     ["root.brief", "/", { headers: { accept: "*/*" } }],
     ["brief", "/agent.md", { headers: CORS }],
+    // Each section answers the way the root does; the page below a section must not be swallowed by that.
+    ["section.models", "/models", { headers: { accept: "*/*" } }],
+    ["section.models.slash", "/models/", { headers: { accept: "*/*" } }],
+    ["section.models.page", "/models/", { headers: { accept: "text/html" } }],
+    ["section.registry", "/registry", { headers: { accept: "*/*" } }],
     ["descriptor", "/.well-known/model-hub.json", { headers: CORS }],
     ["llms", "/llms.txt", { headers: CORS }],
     ["openapi", "/openapi.json", { headers: CORS }],

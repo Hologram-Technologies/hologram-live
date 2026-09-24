@@ -38,6 +38,8 @@
     "getWellKnownOpenapi",
     "getAgentCard",
     "getAgentBrief",
+    "getModelsSection",
+    "getRegistrySection",
     "getDocs",
     "getDocsIndex",
     "getDocsPage",

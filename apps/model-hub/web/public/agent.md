@@ -48,7 +48,7 @@ not hold the file answers 404 and names the ones that do.
 
 ## When you want more
 
-    /openapi.json     the whole endpoint, 45 paths and 47 operations, OpenAPI 3.1. Bind to it directly.
+    /openapi.json     the whole endpoint, 47 paths and 49 operations, OpenAPI 3.1. Bind to it directly.
     /mcp              the same hub as MCP tools over streamable HTTP. No key.
     /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.
     /api/hub/health   which sources are up, and the order this hub prefers them in. Measured from the hub,

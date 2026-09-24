@@ -36,7 +36,11 @@ const archivePath = join(SITE, "data", "archive.json");
 const archive = existsSync(archivePath) ? JSON.parse(await readFile(archivePath, "utf8")) : null;
 const starRepo = { name: STAR_REPO, url: `https://github.com/${STAR_REPO}`, stars: data.repo?.name === STAR_REPO ? data.repo.stars : null };
 
-// The header pill. With an archive it opens every captured day; the Wayback idea, one control.
+// The index control: with an archive it opens every captured day; the Wayback idea, one control.
+//
+// It is no longer in the lead row — that row carries the section's own address now, as the Registry and
+// Spaces rows do. The control stays in the page, hidden: a link to ?at=<day> must still open that day, and
+// the banner above the results is what says which day you are reading. Hidden, not removed.
 function indexPill() {
   const latest = `Index ${R.day(data.snapshot)}`;
   if (!archive) return `<a class="status endpoint" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
@@ -214,18 +218,17 @@ const home = page({
 const initial = R.parseState("");
 const r = R.query(models, initial);
 const sortMenu = R.SORTS.map(([k, label]) => `<li role="option" data-sort="${k}" aria-selected="${k === initial.sort}">${label}${R.icon.check}</li>`).join("");
-// What the lead row says about the index as a whole, the way the Registry's says how many rows are read live:
-// how many of these models are verified — every file named by its bytes — and how many are not there yet.
-const states = models.reduce((c, m) => ((c[m.state] = (c[m.state] || 0) + 1), c), {});
-const provenance = [[states.addressed, "verified"], [states.pending, "queued"], [states.skipped, "unverified"]]
-  .filter(([n]) => n).map(([n, word]) => `${n.toLocaleString("en-US")} ${word}`).join(" · ");
 const browse = page({
   section: "models",
   title: R.title(initial),
   description: `The ${models.length} trending models on Hugging Face, every file named by its bytes.`,
-  // The lead row is the same row every catalogue page opens with (.lead, chrome.css): name, count, address,
-  // provenance. Here the address is the index control, which is also the way into every earlier day.
-  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}<p class="prov">${provenance}</p></div>
+  // The lead row is the same row every catalogue page opens with (.lead, chrome.css): the section's name, how
+  // many of its things are listed, and the address they are read from. The address is the one an agent would
+  // call, not the name of the page — /models answers this page to a browser and its brief to everything else,
+  // so the row names the route that returns the models themselves. app.js fills it in and asks it whether it
+  // is up, which is what the dot says.
+  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span></div>
+${archive ? `<div class="archive-hidden" hidden>${indexPill()}</div>` : ""}
 <main class="browse" id="browse">
   <aside class="panel filters" aria-label="Filters">
     <button type="button" class="control square close-filters" id="close-filters" aria-label="Close filters">${R.icon.close}</button>
@@ -237,7 +240,6 @@ const browse = page({
     <div class="bar">
       <label class="field search">${R.icon.search}<input id="q" type="search" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models"></label>
       <button type="button" class="open-filters" id="open-filters">${R.icon.sliders}Filters</button>
-      <button type="button" class="switch" id="verified-only" role="switch" aria-checked="false"><span class="track" aria-hidden="true"><span class="thumb"></span></span>Verified only</button>
       <div class="sort">
         <button type="button" id="sort" aria-haspopup="listbox" aria-expanded="false"><span id="sort-label">Trending</span>${R.icon.chevron}</button>
         <ul role="listbox" id="sort-list" aria-label="Sort" hidden>${sortMenu}</ul>

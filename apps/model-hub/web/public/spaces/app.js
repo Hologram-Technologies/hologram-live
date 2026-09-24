@@ -188,10 +188,9 @@ function close() {
   const u = new URL(location.href); u.searchParams.delete("open"); history.replaceState(null, "", u);
 }
 
-// The lead row: how many of these run in this browser, and how many the registry holds.
+// The dot beside the address: whether this registry holds any of these Spaces as artifacts.
 function provenance() {
-  const runs = catalog.filter((s) => !missing(s).length).length, any = Object.keys(onRegistry).length;
-  $("prov").textContent = `${runs} of ${catalog.length} run in this browser · ${any ? `${any} on the registry` : "none on the registry yet"}`;
+  const any = Object.keys(onRegistry).length;
   $("dot").className = "dot" + (any ? " ok" : "");
   $("dot").title = any ? `${any} of ${catalog.length} published` : "not published to the registry yet";
 }

@@ -1,7 +1,7 @@
 // Proves the claim the header makes: every page of this site carries the same top-level menu, and the
 // section you are in is marked, in the accent, legibly. And the claim the catalogue pages make below it:
-// Models, Registry and Spaces each open with the same lead row — name, count, address, provenance — at the
-// same height, in the same face, so crossing between them moves nothing.
+// Models, Registry and Spaces each open with the same lead row — name, count, address — at the same height,
+// in the same face, so crossing between them moves nothing.
 //
 //   node apps/model-hub/web/qa/menu.mjs            (build dist first)
 //   CHROME=/path/to/chrome node .../menu.mjs
@@ -29,7 +29,7 @@ const SECTIONS = ["Models", "Registry", "Spaces", "Docs"];
 
 // One page of every shape the site builds, and the section each belongs to. "" means no section is current:
 // the landing is the front door, it is not inside any of the three. The last field marks a catalogue page:
-// one that opens with the lead row (name · count · address · provenance) above its columns.
+// one that opens with the lead row (name · count · address) above its columns.
 const PAGES = [
   ["landing", "/", ""],
   ["browse", "/models/", "Models", true],
@@ -38,9 +38,9 @@ const PAGES = [
   ["spaces", "/spaces/", "Spaces", true],
   ["not found", "/404.html", ""],
 ];
-// What every catalogue page's lead row is made of, in order. A page that opens with less, or with the same
+// What every catalogue page's lead row is made of, in order, and nothing else. A page that opens with more or
 // parts in another order, moves the reader's eye when they cross into it.
-const LEAD = "name count address provenance";
+const LEAD = "name count address";
 // Wide enough for the menu, and narrow enough to have hidden it. Both are checked.
 const WIDTHS = [2560, 1600, 1440, 1280, 1100, 1024, 900, 861, 860, 768, 390, 320];
 const THEMES = ["dark", "light"];

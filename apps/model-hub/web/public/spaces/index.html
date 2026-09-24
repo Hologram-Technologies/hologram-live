@@ -7,6 +7,11 @@
 <meta name="description" content="Apps that run entirely in your browser, in their own sealed frame, with every model byte verified.">
 <!--chrome:head-->
 <link rel="stylesheet" href="../lib/catalog.css">
+<!-- The same three the Registry page names, for the same reason: the script, the rail it imports and the
+     catalog it reads are found one inside the next, so unnamed they download in single file. -->
+<link rel="modulepreload" href="app.js">
+<link rel="modulepreload" href="../lib/rail.mjs">
+<link rel="preload" as="fetch" href="spaces.json" crossorigin>
 <style>
 /* The catalogue components — the lead row, the rail, the bar, the cards — are the site's own (chrome.css and
    lib/catalog.css, loaded above), so this page and the Registry page are the same page with different rows.
@@ -39,7 +44,7 @@
 <!--chrome:header-->
 
 <main>
-  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span><p class="prov" id="prov"></p></div>
+  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span></div>
 
   <div class="cols">
     <aside class="rail" id="rail"></aside>

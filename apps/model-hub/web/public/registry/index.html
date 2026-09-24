@@ -7,6 +7,15 @@
 <meta name="description" content="Container images from every registry we can read, in one index you can rebuild yourself.">
 <!--chrome:head-->
 <link rel="stylesheet" href="../lib/catalog.css">
+<!-- Everything first paint needs, asked for at once rather than one after another.
+     Measured on the live site before this: app.js 190-478ms, then rail.mjs 479-567 (it is only discovered
+     when app.js is parsed), then the index 568-905 (only once the module graph is ready). Three downloads
+     that do not depend on each other, run in single file, because each one is found by reading the one
+     before. Named here, the browser starts all three while it is still parsing this head.
+     `crossorigin` on the index is what makes the preload match fetch()'s own mode, so it is fetched once. -->
+<link rel="modulepreload" href="app.js">
+<link rel="modulepreload" href="../lib/rail.mjs">
+<link rel="preload" as="fetch" href="data/images.json" crossorigin>
 <style>
 /* The catalogue components — the lead row, the rail, the bar, the cards — are the site's own (chrome.css and
    lib/catalog.css, loaded above), so this page and the Spaces page are the same page with different rows.
@@ -50,7 +59,7 @@
 <!--chrome:header-->
 
 <main>
-  <div class="lead"><h1>Registry</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span><p class="prov" id="prov"></p></div>
+  <div class="lead"><h1>Registry</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span></div>
 
   <div class="cols">
     <aside class="rail" id="rail"></aside>

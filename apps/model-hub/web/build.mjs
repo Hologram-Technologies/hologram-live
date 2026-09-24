@@ -232,7 +232,7 @@ const browse = page({
     <div id="filters-body">${R.filters(r, initial)}</div>
     <div class="sheet-footer"><button type="button" class="button primary" id="sheet-done">Show <span id="sheet-count">${r.results.length}</span> models</button></div>
   </aside>
-  <section class="panel" id="results" aria-label="Models">
+  <section id="results" aria-label="Models">
     <div class="results-head">
     <div class="bar">
       <label class="field search">${R.icon.search}<input id="q" type="search" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models"></label>

@@ -278,9 +278,11 @@
    sideways on a laptop narrow enough to put the filter rail beside a two-column grid. */
 .bar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-3); margin: var(--space-4) 0 var(--space-6); }
 .bar .search { flex: 0 1 40%; min-width: 17.5rem; }
-/* The bar is now the first thing in the results panel — the lead row moved above the columns — so it sits on
-   the panel's own padding, not on a margin that was there to clear a heading. */
-.results-head .bar { margin-top: 0; }
+/* The results stand on the ground, as they do on the Registry and Spaces pages: no slab behind them. The
+   search and the sort are surfaces of their own, the height and radius the other two pages give theirs. */
+.results-head .bar { margin: 0 0 var(--space-4); }
+.bar .search, .sort > button { height: var(--space-12); background: var(--hh-surface); border-color: var(--hh-line-strong); border-radius: var(--radius-lg); }
+.bar .search { padding: 0 var(--space-4); }
 .open-filters { display: none; }
 .results-head { position: relative; z-index: 5; }
 .sort { position: relative; margin-left: auto; }
@@ -321,7 +323,7 @@
 }
 
 /* ---- grid + card */
-.grid { display: grid; gap: var(--space-2); grid-template-columns: minmax(0, 1fr); }
+.grid { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1280px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1600px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
@@ -330,10 +332,11 @@
   display: grid; grid-template-columns: minmax(0, 1fr) var(--hh-avatar); grid-template-rows: var(--hh-tag) auto auto;
   column-gap: var(--space-4); row-gap: var(--space-2);
   padding: var(--space-4);
-  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md);
+  background: var(--hh-surface);
+  border: 1px solid var(--hh-line); border-radius: var(--radius-lg);
   transition: border-color var(--hh-ease), background var(--hh-ease);
 }
-.card:hover { border-color: var(--hh-line-focus); background: var(--hh-wash); }
+.card:hover { border-color: var(--hh-line-strong); }
 .card .tags { grid-area: 1 / 1; }
 .card .title { grid-area: 2 / 1; font-family: var(--font-mono); font-size: var(--text-lg); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .meta { grid-area: 3 / 1; }
@@ -439,17 +442,15 @@ td.addr { color: var(--hh-text-dim); }
 :root:not(.dark) .tag.state.addressed { background: color-mix(in srgb, var(--success) 6%, transparent); }
 :root:not(.dark) .tag.state.skipped { background: transparent; }
 :root[data-theme="immersive"] .tag.state.skipped { background: color-mix(in srgb, var(--destructive) 10%, var(--card)); }
-/* Lighter immersive browse: no slab behind the grid; head, cards and pager each carry their own glass. */
-:root[data-theme="immersive"] #results { background: transparent; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
-:root[data-theme="immersive"] .results-head,
+/* Immersive browse: the search, the sort, the cards and the pager each carry their own glass. */
+:root[data-theme="immersive"] .bar .search,
+:root[data-theme="immersive"] .sort > button,
 :root[data-theme="immersive"] .card,
 :root[data-theme="immersive"] .empty,
 :root[data-theme="immersive"] .pager {
   background: var(--hh-surface);
   -webkit-backdrop-filter: blur(var(--space-3)) saturate(1.3); backdrop-filter: blur(var(--space-3)) saturate(1.3);
 }
-:root[data-theme="immersive"] .results-head { padding: var(--hh-pad); border-radius: var(--radius-lg); margin-bottom: var(--space-2); }
-:root[data-theme="immersive"] .results-head .bar { margin-bottom: 0; }
 :root[data-theme="immersive"] .card { border-color: var(--hh-line-strong); }
 :root[data-theme="immersive"] .card:hover { background: color-mix(in srgb, var(--card) 92%, transparent); }
 :root[data-theme="immersive"] .empty { border-radius: var(--radius-lg); }

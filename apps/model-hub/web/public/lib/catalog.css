@@ -66,15 +66,15 @@
 /* ---- search and sort */
 .bar{display:flex;gap:12px;align-items:center;margin-bottom:16px}
 .search{flex:1;display:flex;align-items:center;gap:12px;height:48px;padding:0 16px;background:var(--surface);color:var(--faint);
-  border:1px solid var(--line2);border-radius:11px}
+  border:1px solid var(--line2);border-radius:10px}
 .search input{flex:1;min-width:0;background:none;border:0;outline:0;font:inherit;font-size:15px;color:var(--text)}
-.sort{height:48px;padding:0 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--dim);font-size:14px}
+.sort{height:48px;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--dim);font-size:14px}
 /* The sort control cannot shrink past its own words, so on a phone it takes a line of its own. */
 @media (max-width:600px){.bar{flex-wrap:wrap}.bar .sort{flex:1}}
 
 /* ---- the grid and the card. min() so a phone narrower than one card gets one column, not a sideways scroll. */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:14px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:16px;display:grid;
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;
   grid-template-columns:40px minmax(0,1fr);grid-template-rows:auto auto 1fr auto;gap:4px 14px;min-height:140px;
   cursor:pointer;text-align:left;color:inherit}
 .card:hover{border-color:var(--line2)}

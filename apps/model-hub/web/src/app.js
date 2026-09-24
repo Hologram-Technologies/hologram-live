@@ -13,6 +13,37 @@ if ($("[data-verify]")) model();
 copyButtons();
 if ($("#archive")) archive();
 if ($("#gh-stars")) stars();
+if ($(".land-track")) strip();
+
+// The strip's slide is a CSS animation, and on some phones it never advances: a compositor that will not run a
+// transform loop on a fixed, masked element, or a device that turns animations off below the page. A reader on
+// such a phone saw a strip that stood still. So, once the page has settled, the track's position is read twice;
+// if the browser has not moved it, the loop is driven by hand at the pace the stylesheet asks for. A hidden
+// window (animations pause there by design), a paused run (a pointer over it, a link with focus) and a reader
+// who asked for reduced motion are all left exactly as they are.
+function strip() {
+  const track = $(".land-track");
+  const x = () => new DOMMatrix(getComputedStyle(track).transform).e;
+  const check = () => {
+    if (document.hidden) { document.addEventListener("visibilitychange", () => setTimeout(check, 1000), { once: true }); return; }
+    const x0 = x();
+    setTimeout(() => {
+      const cs = getComputedStyle(track);
+      if (document.hidden || x() !== x0 || cs.animationPlayState === "paused" || cs.animationName === "none") return;
+      const speed = (track.scrollWidth / 2) / (parseFloat(cs.animationDuration) || 40); // px per second, the same loop
+      track.style.animation = "none";
+      let at = -x0, last = performance.now();
+      const step = (now) => {
+        const half = track.scrollWidth / 2;
+        if (half > 0 && !track.matches(":focus-within, :hover")) { at = (at + ((now - last) / 1000) * speed) % half; track.style.transform = `translateX(${-at}px)`; }
+        last = now;
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }, 1200);
+  };
+  setTimeout(check, 500);
+}
 
 // The hero's star count is baked into the page by the build, so the badge is right on first paint and never
 // flashes an empty slot. This keeps it honest between nightly builds: one unauthenticated call to GitHub's

@@ -221,7 +221,7 @@
 @media (min-width: 1024px) { .browse { grid-template-columns: minmax(18.75rem, 23.75rem) minmax(0, 1fr); } }
 /* Under the lead row the columns start where the row's own air ends, the same distance the Registry and
    Spaces pages keep; the margin above is for the panels that open with no row (404, signing in). */
-.lead + .browse { margin-top: 0; }
+.lead ~ .browse { margin-top: 0; }
 
 .filters { padding: var(--space-4) var(--space-4) var(--space-12); position: sticky; top: calc(var(--space-16) + var(--space-12)); max-height: calc(100vh - var(--space-16) - var(--space-16)); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--hh-fill) transparent; }
 .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1) 0; padding-bottom: var(--space-4); border-bottom: 1px solid var(--hh-line); }

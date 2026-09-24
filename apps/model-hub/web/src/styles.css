@@ -85,7 +85,8 @@
 .land-title span { display: block; }
 /* The line under the headline is set at the site's one text size, the same as the menu above it and the
    actions below it: one size for everything that is not the headline, so the headline is the only scale. */
-.land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--hh-ui); color: var(--hh-text-dim); }
+/* One step above the interface size: this line is the claim under the headline, not a control. */
+.land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--text-lg); color: var(--hh-text-dim); }
 /* ---- the highlighted word.
    The subline carries one claim and the word "self-verifying" is it. Seven treatments live here at once,
    chosen by data-highlight on <html>; HIGHLIGHT= at build time picks the one that ships. The word inherits

@@ -5,13 +5,13 @@
 
 main { display: block; }
 
-.lead { display: flex; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap;
-  padding: var(--space-8) 0 var(--space-2); }
-.lead-main { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
-.lead-end { margin-left: auto; display: flex; gap: var(--space-2); }
-.lead h1 { margin: 0; font-size: var(--text-3xl); font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-display); min-width: 0; overflow-wrap: anywhere; }
+/* The lead row is the site's (.lead in /chrome.css), the same row Models, Registry and Spaces open with.
+   A bucket's name can be long, so the title may break; the owner is dimmed so the name reads first. */
+.lead h1 { min-width: 0; overflow-wrap: anywhere; }
 .lead h1 .owner { color: var(--hh-text-dim); }
+/* What you can do here, on a row of its own under the lead, at the end: New bucket on the list, History
+   and Settings inside a bucket. */
+.actions { display: flex; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; padding-bottom: var(--space-4); }
 /* .pill and .panel come from /chrome.css. This only adds the modifier a full-bleed table
    needs: no padding, a hairline, and clipped corners. */
 .panel.flush { padding: 0; border: 1px solid var(--hh-line); overflow: hidden; }
@@ -105,7 +105,6 @@ td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(-
 /* In immersive the ground is a photograph. Panels get a glass surface from /chrome.css, but
    the lead, the sub-line and the breadcrumbs sit on the bare image, so they need the same help
    any interface over a photo needs. Worth lifting into /chrome.css when these pages merge. */
-:root[data-theme="immersive"] .lead h1,
 :root[data-theme="immersive"] .prov,
 :root[data-theme="immersive"] .crumbs { text-shadow: 0 1px 3px rgb(0 0 0 / 55%); }
 :root[data-theme="immersive"] .prov { color: var(--hh-text); }
@@ -190,9 +189,6 @@ td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(-
 .keybox .row span { font-size: var(--text-sm); color: var(--hh-text-dim); }
 
 @media (max-width: 720px) {
-  .lead { padding: var(--space-6) 0 var(--space-2); }
-  .lead h1 { font-size: var(--text-2xl); }
-  .lead-end { margin-left: 0; width: 100%; }
   .panel.flush { overflow-x: auto; }   /* three columns do not fit 360px; swiping beats hiding the size */
   th.hide, td.hide { display: none; }
   .panel td, .panel th { padding: var(--space-3); }

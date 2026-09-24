@@ -36,6 +36,7 @@ const PAGES = [
   ["model", null, "Models"],           // filled in from dist below: whichever model page is first
   ["registry", "/registry/", "Registry", true],
   ["spaces", "/spaces/", "Spaces", true],
+  ["buckets", "/buckets/", "Buckets", true],
   ["not found", "/404.html", ""],
 ];
 // What every catalogue page's lead row is made of, in order, and nothing else. A page that opens with more or

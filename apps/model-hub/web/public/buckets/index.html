@@ -6,7 +6,7 @@
 <title>Buckets · Hologram Models Hub</title>
 <meta name="description" content="Object storage for models, datasets and checkpoints, where every object carries the address of its own bytes.">
 <!--chrome:head-->
-<link rel="stylesheet" href="buckets.css?v=9">
+<link rel="stylesheet" href="buckets.css?v=10">
 </head>
 <body>
 
@@ -15,18 +15,15 @@
 <!--chrome:header-->
 
 <main>
-  <div class="lead">
-    <div class="lead-main">
-      <h1 id="title">Buckets</h1>
-      <span class="pill" id="count" hidden></span>
-    </div>
-    <div class="lead-end">
-      <button type="button" class="button" id="history-button" hidden>History</button>
-      <button type="button" class="button" id="settings" hidden>Settings</button>
-      <button type="button" class="button primary" id="new-bucket">New bucket</button>
-    </div>
+  <!-- The lead row every catalogue page opens with (.lead, chrome.css): name, count, address. Inside a bucket
+       the name becomes the bucket's, the count its objects, the address its own repository. -->
+  <div class="lead"><h1 id="title">Buckets</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span></div>
+  <div class="actions" id="actions">
+    <button type="button" class="button" id="history-button" hidden>History</button>
+    <button type="button" class="button" id="settings" hidden>Settings</button>
+    <button type="button" class="button primary" id="new-bucket">New bucket</button>
   </div>
-  <p class="prov" id="sub">Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.</p>
+  <p class="prov" id="sub" hidden></p>
 
   <p class="prov linked" id="linked" hidden></p>
   <nav class="crumbs" id="crumbs" hidden aria-label="Breadcrumb"></nav>
@@ -107,6 +104,6 @@
 </dialog>
 </div>
 
-<script type="module" src="buckets.js?v=9"></script>
+<script type="module" src="buckets.js?v=10"></script>
 </body>
 </html>

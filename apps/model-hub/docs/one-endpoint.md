@@ -246,3 +246,22 @@ github.com/docker/model-runner; github.com/openai/openai-openapi; openrouter.ai/
 fallbacks, errors, generation); openresponses.org; modelcontextprotocol.io/specification/2026-07-28;
 github.com/package-url/purl-spec (types/huggingface-definition.json); provider docs for Akash, RunPod, Modal, Baseten,
 Together, Fireworks, Vast, io.net, Nosana. Recordings: `web/qa/hf-dialect/`.
+
+## 11. The documentation
+
+2026-09-23. `/llms.txt` was a hand-maintained file on the host, copied over the site at every build, and the site's
+"Docs" link pointed at it. It could drift from the endpoint and nobody would know. Now `web/docs/*.md` is the one
+source: `build.mjs` writes each page as HTML at `/docs/<slug>/`, as Markdown at `/docs/<slug>.md`, and as one line of
+`/llms.txt`, which leads with the short way (section 6, step 2) and then lists every page. The API reference page is
+generated from `public/openapi.json`, so it cannot name a route that is not described; and `/docs/`, `/docs/{page}/` and
+`/docs/{page}.md` are themselves described in the document, swept by the probe, allowed by `robots.txt` and named in
+`agent.md`, so the surface stays whole. The build refuses a page with a dead link or with nothing to run.
+
+`/docs` (no slash) stays the Hologram Server's Scalar rendering of the document, reached from the reference page.
+Moving it under the documentation is a Caddy change and waits on the host.
+
+The docs were written against the live endpoint on 2026-09-23 and every command in them was run; what they exposed:
+the OpenAPI document declares `source` on `/via/{source}/…` as an enum of three names, but the hub accepts any name and
+silently falls back to the default order (`X-Hub-Source` still tells the truth); `/api/models/{owner}/{name}` carries
+no `hologram` block while the list rows do; and `huggingface_hub` checks size, not hash, so the `SHA256SUMS` check is
+the one that matters for that client.

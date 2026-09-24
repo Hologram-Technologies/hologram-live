@@ -1203,7 +1203,7 @@
          "format": "hologram.model-hub.descriptor/v1",
          "name": "Hologram Model Hub",
          "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-         "catalog": "blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2",
+         "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
          "snapshot": "2026-09-24",
          "fetch": "/api/v1/objects/{id}",
          "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -1288,7 +1288,7 @@
          "format": "hologram.model-hub.descriptor/v1",
          "name": "Hologram Model Hub",
          "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-         "catalog": "blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2",
+         "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
          "snapshot": "2026-09-24",
          "fetch": "/api/v1/objects/{id}",
          "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -1481,6 +1481,166 @@
     }
    }
   },
+  "/models": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getModelsSection",
+    "summary": "The models section, answered two ways",
+    "description": "The site shows this address beside the models heading. A browser gets the browse page; anything else\ngets a brief covering finding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model, is untouched.",
+    "responses": {
+     "200": {
+      "description": "The section brief, or the section's page.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has two representations.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/models",
+     "status": 200,
+     "headers": {
+      "accept": "*/*"
+     },
+     "contentType": "text/markdown"
+    }
+   }
+  },
+  "/registry": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getRegistrySection",
+    "summary": "The registry section, answered two ways",
+    "description": "The site shows this address beside the registry heading. A browser gets the browse page; anything else\ngets a brief covering pulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model, is untouched.\n\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns.",
+    "responses": {
+     "200": {
+      "description": "The section brief, or the section's page.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has two representations.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/registry",
+     "status": 200,
+     "headers": {
+      "accept": "*/*"
+     },
+     "contentType": "text/markdown"
+    }
+   }
+  },
+  "/models/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getModelsPage",
+    "summary": "The models, browsed",
+    "description": "The browse page: every model the hub lists, with its files, sizes and addresses. For people; anything that is not a browser gets the section brief instead of 236 KB of markup. A page below this one, such as a single model, is untouched by that and always answers HTML.",
+    "responses": {
+     "200": {
+      "description": "The page to a browser; to anything else the section brief, the same bytes as `/models`.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has two representations.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/markdown": {
+        "schema": {
+         "type": "string",
+         "description": "The section brief."
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/models/",
+     "status": 200,
+     "headers": {
+      "accept": "text/html"
+     },
+     "contentType": "text/html"
+    }
+   }
+  },
   "/docs": {
    "get": {
     "tags": [
@@ -1515,6 +1675,267 @@
      "path": "/docs",
      "status": 200,
      "contentType": "text/html"
+    }
+   }
+  },
+  "/docs/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDocsIndex",
+    "summary": "The documentation",
+    "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+    "responses": {
+     "200": {
+      "description": "An HTML page.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/docs/",
+     "status": 200,
+     "contentType": "text/html"
+    }
+   }
+  },
+  "/docs/{page}/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDocsPage",
+    "summary": "One documentation page",
+    "description": "The page named by its slug: `quickstart`, `verification`, `addresses`, `sources`, `huggingface`, `ollama`, `oci`, `mcp`, `objects`, `api`, `errors`, `limits`.",
+    "parameters": [
+     {
+      "name": "page",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "The page slug, as listed in `/llms.txt`."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "An HTML page.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No page has that slug.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/docs/quickstart/",
+     "status": 200,
+     "contentType": "text/html"
+    }
+   }
+  },
+  "/docs/{page}.md": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getDocsPageMarkdown",
+    "summary": "One documentation page, as Markdown",
+    "description": "The same page as `/docs/{page}/`, from the same source, with every link resolved to an absolute Markdown twin. `index.md` is the overview.",
+    "parameters": [
+     {
+      "name": "page",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "The page slug, as listed in `/llms.txt`."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Markdown.",
+      "content": {
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No page has that slug.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/docs/quickstart.md",
+     "status": 200,
+     "contentType": "text/markdown"
+    }
+   }
+  },
+  "/registry/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getRegistryPage",
+    "summary": "The hub's own registry, browsed",
+    "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly, and anything that is not a browser gets the section brief instead of the markup.",
+    "responses": {
+     "200": {
+      "description": "The page to a browser; to anything else the section brief, the same bytes as `/registry`.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has two representations.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/markdown": {
+        "schema": {
+         "type": "string",
+         "description": "The section brief."
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/registry/",
+     "status": 200,
+     "headers": {
+      "accept": "text/html"
+     },
+     "contentType": "text/html"
+    }
+   }
+  },
+  "/spaces/": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getSpacesPage",
+    "summary": "Apps that run entirely in the browser, each in its own sealed frame",
+    "description": "Three demo Spaces (speech, image, chat). Every file of a Space is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. A Space published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
+    "responses": {
+     "200": {
+      "description": "An HTML page.",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/spaces/",
+     "status": 200,
+     "contentType": "text/html"
+    }
+   }
+  },
+  "/spaces/spaces.json": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getSpacesCatalog",
+    "summary": "The Spaces catalog: id, sealed root, files, models and their sizes",
+    "description": "`{ format: \"hologram.spaces.catalog/v1\", spaces: [{ id, name, task, tagline, root, bytes, files, models, modelHost, modelBytes, source, requires, entry }] }`. `root` is SHA-256 over the Space's file map; `entry` is the page to open.",
+    "responses": {
+     "200": {
+      "description": "JSON.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/spaces/spaces.json",
+     "status": 200,
+     "contentType": "application/json"
     }
    }
   },
@@ -1764,17 +2185,17 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-24T09:47:05.527Z",
+           "checked": "2026-09-24T10:38:53.861Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-24T09:47:06.622Z",
+           "checked": "2026-09-24T10:38:55.152Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-24T09:47:06.701Z",
+           "checked": "2026-09-24T10:38:55.232Z",
            "reason": "verified"
           }
          },
@@ -1946,7 +2367,7 @@
           "disabled": false,
           "likes": 6114,
           "downloads": 250598416,
-          "trendingScore": 404,
+          "trendingScore": 403,
           "createdAt": "2022-03-02T00:00:00.000Z",
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",
@@ -1977,7 +2398,7 @@
           "private": false,
           "gated": false,
           "disabled": false,
-          "likes": 3617,
+          "likes": 3618,
           "downloads": 37173706,
           "trendingScore": 284,
           "createdAt": "2024-01-27T00:00:00.000Z",
@@ -4384,7 +4805,7 @@
        "type": "string",
        "pattern": "^blake3:[0-9a-f]{64}$"
       },
-      "example": "blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2"
+      "example": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a"
      }
     ],
     "responses": {
@@ -4463,7 +4884,7 @@
     "summary": "One object, by the hash of its bytes",
     "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
     "x-hologram-probe": {
-     "path": "/api/v1/objects/blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2",
+     "path": "/api/v1/objects/blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
      "status": 200,
      "method": "HEAD"
     }

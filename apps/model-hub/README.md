@@ -133,13 +133,26 @@ Every color, size, space, radius and font comes from
 `--success-foreground`, `--muted-foreground-subtle`) come from the kit's open PR #1. `web/scripts/lint-tokens.mjs`
 fails on any literal color, size, radius, font or inline style in the product code.
 
+## The header
+
+One top-level menu — Models, Registry, Docs — on every page of the site, with the section you are in marked
+`aria-current` and drawn in the accent. It is built once, by `topNav()` in `web/build.mjs`, and rendered by
+`header()`, which every generated page uses. The Registry page ships as its own finished file from
+`web/public/registry/`, so the build puts the same `header()` output into it at two marks in that file
+(`<!--chrome:head-->`, `<!--chrome:header-->`) rather than letting a second copy exist. The shared parts of the
+page — the brand aliases, the resets, the shell, the controls, the header, the theme switch, the sign-in — live
+in `web/src/chrome.css` and `web/src/chrome.js`; `web/src/styles.css` is the pages that hang off them.
+
+`npm run menu` walks every page shape at two themes and twelve widths and fails if any of them carries a
+different menu, marks the wrong section, or draws the mark below AA.
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `web/build.mjs` | Static generator: browse page and one page per model |
-| `web/src/` | Rendering, client code, styles, generated brand tokens |
+| `web/build.mjs` | Static generator: landing, browse page, one page per model, and the shared header |
+| `web/src/` | Rendering, client code, styles, generated brand tokens; `chrome.css` + `chrome.js` are the shared header |
 | `web/scripts/` | `data.mjs` (catalog snapshot), `vendor-kit.mjs`, `lint-tokens.mjs` |
 | `web/vendor/hologram-brand-kit/` | Vendored kit CSS, tokens, fonts and logos |
 | `web/public/wallpapers/` | Immersive theme wallpapers |
-| `web/qa/` | Layout, contrast and animation audits used during design review |
+| `web/qa/` | Layout, contrast and animation audits used during design review; `menu.mjs` gates the top-level menu |

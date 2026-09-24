@@ -1,0 +1,57 @@
+{
+  "format": "hologram.space.lock/v1",
+  "id": "kokoro-tts",
+  "root": "sha256:383df588d4de9957470c42ae073fdaea1bfc246550a21d5f4e63be55fde2beca",
+  "files": {
+    "assets/index-DQNH7Ttg.js": {
+      "sha256": "830001bebc07b34724101b47e9eec8c394e3ad88a78e2771fb8823fe4c8ea85c",
+      "bytes": 259073
+    },
+    "assets/index-DwSiC8qF.css": {
+      "sha256": "cda665d147e2400e575d630d7d7ed17ba5e48c06c89b46d900972e2d87f77350",
+      "bytes": 13732
+    },
+    "assets/worker-BJyeiA2_.js": {
+      "sha256": "762b744d91ec2086bd3629a3da08356dc742aa7b7ea40997a55cd0f5b84f72ca",
+      "bytes": 2129179
+    },
+    "hf-logo.svg": {
+      "sha256": "942cad1ccda905ac5a659dfd2d78b344fccfb84a8a3ac3721e08f488205638a0",
+      "bytes": 35286
+    },
+    "holospace.json": {
+      "sha256": "afaf1557a0b6730c01509d8cff19aa743d33425fe084863342dc8abe1036128b",
+      "bytes": 576
+    },
+    "icon.svg": {
+      "sha256": "872dd0aa4347b5b46a085f2fa5f1d51ea55bda190989657bf71a2b3cf8e4982f",
+      "bytes": 220
+    },
+    "index.html": {
+      "sha256": "d8573935943e354034e4ad274974e7644da7e51264f9b3aa73098369c0debee0",
+      "bytes": 1067
+    }
+  },
+  "shared": {
+    "runtime/holo-opfs-kappastore.mjs": {
+      "sha256": "438e2528a6f04dad1cbc9f1d09828a33aafcf25e95e6b8d16d4c553c42d8ce98",
+      "bytes": 5448
+    },
+    "runtime/holo-spaces-hf-fetch.mjs": {
+      "sha256": "fff64e2aece0d40b77184f43bf70299ceee6f887af9d927c3686539cc2985860",
+      "bytes": 11039
+    },
+    "runtime/ort/transformers-3.3.3/ort-wasm-simd-threaded.jsep.mjs": {
+      "sha256": "2004e7fc76dd246901aaec08a7268cfb9832dcafa9e5a889b7f23f990ffe16ab",
+      "bytes": 49241
+    },
+    "runtime/ort/transformers-3.3.3/ort-wasm-simd-threaded.jsep.wasm": {
+      "sha256": "d7de09721a4bbc4f3c8a8b8824da82475189bda7ebcfd9ac83e5b162a7d7d479",
+      "bytes": 23013109
+    },
+    "runtime/space.css": {
+      "sha256": "9c5d3eb99921178b624089bd9a430063e9f4d608323e9b5832a66adf13c02803",
+      "bytes": 2122
+    }
+  }
+}

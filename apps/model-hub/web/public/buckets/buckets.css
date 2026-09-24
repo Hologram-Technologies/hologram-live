@@ -1,0 +1,143 @@
+/* Buckets adds content, not chrome. The header, nav, theme menu, account, buttons, fields and
+   menus all come from the site's own /chrome.css and /tokens.css, so this file only has to
+   describe a listing, a breadcrumb, a drop zone and a README — and it has to do that in the
+   kit's tokens, or light and immersive break. Nothing here invents a colour. */
+
+main { display: block; }
+
+.lead { display: flex; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap;
+  padding: var(--space-8) 0 var(--space-2); }
+.lead-main { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
+.lead-end { margin-left: auto; display: flex; gap: var(--space-2); }
+.lead h1 { margin: 0; font-size: var(--text-3xl); font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display); min-width: 0; overflow-wrap: anywhere; }
+.lead h1 .owner { color: var(--hh-text-dim); }
+/* .pill and .panel come from /chrome.css. This only adds the modifier a full-bleed table
+   needs: no padding, a hairline, and clipped corners. */
+.panel.flush { padding: 0; border: 1px solid var(--hh-line); overflow: hidden; }
+.prov { margin: 0 0 var(--space-5); color: var(--hh-text-dim); font-size: var(--text-sm); }
+.prov.note { margin: var(--space-4) 0 var(--space-12); color: var(--hh-text-faint); }
+
+.crumbs { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  font-size: var(--text-sm); color: var(--hh-text-dim); padding-bottom: var(--space-3); }
+.crumbs a:hover { color: var(--hh-text); }
+.crumbs b { font-weight: var(--weight-normal); color: var(--hh-text); }
+
+.bar { display: flex; gap: var(--space-3); align-items: center; padding-bottom: var(--space-4);
+  flex-wrap: wrap; }
+.bar .field { flex: 1; min-width: 12rem; }
+
+.panel table { width: 100%; border-collapse: collapse; }
+.panel th { text-align: left; font-weight: var(--weight-normal); font-size: var(--text-xs);
+  color: var(--hh-text-dim); padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--hh-line); }
+.panel td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--hh-line);
+  font-size: var(--text-sm); vertical-align: middle; }
+.panel tr:last-child td { border-bottom: 0; }
+.panel tbody tr:hover { background: var(--hh-wash, transparent); }
+td.num { color: var(--hh-text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-faint);
+  white-space: nowrap; }
+.name { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name .i { width: var(--hh-icon-small, 16px); height: var(--hh-icon-small, 16px); flex: none;
+  color: var(--hh-text-faint); fill: none; stroke: currentColor; stroke-width: 1.5; }
+.state { font-size: var(--text-sm); color: var(--hh-text-dim); white-space: nowrap; }
+.state.ok { color: var(--hh-ok); }
+.state.bad { color: var(--hh-bad); }
+.empty { padding: var(--space-8) var(--space-4); text-align: center; color: var(--hh-text-faint);
+  font-size: var(--text-sm); }
+
+.drop { display: block; margin-top: var(--space-4); background: var(--hh-surface);
+  border: 1px dashed var(--hh-line-strong);
+  border-radius: var(--radius-xl); padding: var(--space-6); text-align: center;
+  color: var(--hh-text-dim); font-size: var(--text-sm);
+  transition: border-color 150ms var(--hh-ease, ease), background 150ms var(--hh-ease, ease); }
+.drop.over { border-color: var(--hh-accent); color: var(--hh-text);
+  background: color-mix(in srgb, var(--hh-accent) 8%, transparent); }
+.drop input { display: none; }
+
+.cred { margin-top: var(--space-3); display: flex; gap: var(--space-3); align-items: center;
+  flex-wrap: wrap; background: var(--hh-surface); border: 1px solid var(--hh-line-strong);
+  border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm); color: var(--hh-text-dim); }
+.cred .field { flex: 1; min-width: 12rem; }
+
+/* One object, in full: what it is called, what it is, where it lives. Opens under the table
+   when a name is clicked, the way a file page opens on HF, without leaving the listing. */
+.detail { margin-top: var(--space-4); background: var(--hh-surface); border: 1px solid var(--hh-line-strong);
+  border-radius: var(--radius-xl); padding: var(--space-5) var(--space-6); }
+.detail-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.detail-head h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display); min-width: 0; overflow-wrap: anywhere; flex: 1; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-5); margin: 0; }
+.facts dt { color: var(--hh-text-dim); font-size: var(--text-sm); white-space: nowrap; }
+.facts dd { margin: 0; font-size: var(--text-sm); color: var(--hh-text); min-width: 0; overflow-wrap: anywhere; }
+.facts dd.mono { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-dim); }
+.detail-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-top: var(--space-5); }
+.detail-actions .state { margin-left: var(--space-2); }
+
+.states { width: 100%; border-collapse: collapse; }
+.states td { padding: var(--space-2) var(--space-2); border-bottom: 1px solid var(--hh-line); font-size: var(--text-sm); vertical-align: middle; }
+.states tr:last-child td { border-bottom: 0; }
+.states td.when { white-space: nowrap; color: var(--hh-text); }
+.states td.num { color: var(--hh-text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.states td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-faint); }
+.states td.act { text-align: right; white-space: nowrap; }
+.states .pill { margin-left: var(--space-2); }
+.ask label.choice { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2);
+  font-size: var(--text-sm); color: var(--hh-text); }
+.ask label.choice input { margin-top: 3px; }
+.ask label.choice small { display: block; color: var(--hh-text-dim); }
+.ask label.choice.off { opacity: .55; }
+.ask .key { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; background: var(--hh-fill);
+  padding: var(--space-3); border-radius: var(--radius-md); margin: var(--space-3) 0; user-select: all; }
+.prov.linked a { color: var(--hh-accent-legible); }
+.name .pill { margin-left: var(--space-2); }
+
+.readme { margin-top: var(--space-5); background: var(--hh-surface); border: 1px solid var(--hh-line);
+  border-radius: var(--radius-xl); padding: var(--space-6); }
+.readme h1, .readme h2, .readme h3 { font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display); margin: var(--space-5) 0 var(--space-2); }
+.readme h1 { font-size: var(--text-xl); } .readme h2 { font-size: var(--text-lg); }
+.readme h3 { font-size: var(--text-base); }
+.readme h1:first-child, .readme h2:first-child { margin-top: 0; }
+.readme p { margin: var(--space-2) 0; color: var(--hh-text-dim); font-size: var(--text-sm); }
+.readme li { margin: var(--space-1) 0 var(--space-1) var(--space-5); list-style: disc;
+  color: var(--hh-text-dim); font-size: var(--text-sm); }
+.readme code { font-family: var(--font-mono); font-size: var(--text-xs); background: var(--hh-fill);
+  padding: 1px 5px; border-radius: var(--radius-sm); color: var(--hh-text); }
+.readme a { color: var(--hh-accent-legible); }
+
+/* In immersive the ground is a photograph. Panels get a glass surface from /chrome.css, but
+   the lead, the sub-line and the breadcrumbs sit on the bare image, so they need the same help
+   any interface over a photo needs. Worth lifting into /chrome.css when these pages merge. */
+:root[data-theme="immersive"] .lead h1,
+:root[data-theme="immersive"] .prov,
+:root[data-theme="immersive"] .crumbs { text-shadow: 0 1px 3px rgb(0 0 0 / 55%); }
+:root[data-theme="immersive"] .prov { color: var(--hh-text); }
+
+/* One dialog does New bucket, Settings and Delete: three questions, one shape. */
+.ask { border: 1px solid var(--hh-line-strong); border-radius: var(--radius-xl);
+  background: var(--hh-popover); color: var(--hh-text); padding: var(--space-6);
+  width: min(26rem, calc(100vw - var(--space-8))); box-shadow: 0 24px 60px var(--hh-shadow); }
+.ask::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
+.ask h2 { margin: 0 0 var(--space-2); font-size: var(--text-lg); font-weight: var(--weight-medium); }
+.ask .muted { margin: 0 0 var(--space-4); color: var(--hh-text-dim); font-size: var(--text-sm); }
+.ask .field { width: 100%; margin-bottom: var(--space-3); }
+.ask label.row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);
+  font-size: var(--text-sm); color: var(--hh-text); }
+.ask-foot { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+
+@media (max-width: 720px) {
+  .lead { padding: var(--space-6) 0 var(--space-2); }
+  .lead h1 { font-size: var(--text-2xl); }
+  .lead-end { margin-left: 0; width: 100%; }
+  .panel.flush { overflow-x: auto; }   /* three columns do not fit 360px; swiping beats hiding the size */
+  th.hide, td.hide { display: none; }
+  .panel td, .panel th { padding: var(--space-3); }
+  .name span { max-width: 38vw; }
+  .facts { grid-template-columns: 1fr; gap: var(--space-1); }
+  .facts dt { margin-top: var(--space-2); }
+  .detail { padding: var(--space-4); }
+}

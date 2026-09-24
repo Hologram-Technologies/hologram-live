@@ -1,0 +1,61 @@
+{
+  "format": "hologram.space.lock/v1",
+  "id": "smollm-chat",
+  "root": "sha256:f8ce3e93e60cd741502caf9ce5ae0e746c6fafc2642847cd4b51d5679002e5f9",
+  "files": {
+    "assets/index-DB1xiIWM.css": {
+      "sha256": "5a828103d73c3a82e8dffa67f0dfbab062c6d8aeefd362c8fd17507695760d06",
+      "bytes": 13299
+    },
+    "assets/index-DJnDi8CK.js": {
+      "sha256": "636e83bd9460865647ed0a11f0709e1f392a09259cfab2dbbff22c21d89fb1ef",
+      "bytes": 210762
+    },
+    "assets/worker-ClBgkh03.js": {
+      "sha256": "b2c1ad89f443ff2259d3701c71c10fda109c1e7f8b7e011f839f99d5568ad7ea",
+      "bytes": 707082
+    },
+    "banner.png": {
+      "sha256": "4dfad2e227a78d139c5dc4767f82b2e4c96350644282d601805a89b00d207201",
+      "bytes": 436421
+    },
+    "holospace.json": {
+      "sha256": "b35b06785b5b662414b332264fc20f8a979b07d70e648c2a5f844937853a7649",
+      "bytes": 594
+    },
+    "icon.svg": {
+      "sha256": "e4a4b0b5e56f95326ac16ac8f135f01b8d5f0dccb8bb2380ecd43af92cb22d48",
+      "bytes": 225
+    },
+    "index.html": {
+      "sha256": "47c171bd6615179df6af7214c76de9ed74b005bad9367a8117c45b7639a01897",
+      "bytes": 1199
+    },
+    "logo.png": {
+      "sha256": "3c28aed1f05f06a776baa4a7be540fc48797d8e9547b9a5e0453552110b96462",
+      "bytes": 417007
+    }
+  },
+  "shared": {
+    "runtime/holo-opfs-kappastore.mjs": {
+      "sha256": "438e2528a6f04dad1cbc9f1d09828a33aafcf25e95e6b8d16d4c553c42d8ce98",
+      "bytes": 5448
+    },
+    "runtime/holo-spaces-hf-fetch.mjs": {
+      "sha256": "fff64e2aece0d40b77184f43bf70299ceee6f887af9d927c3686539cc2985860",
+      "bytes": 11039
+    },
+    "runtime/ort/transformers-3.0.0-alpha.7/ort-wasm-simd-threaded.jsep.mjs": {
+      "sha256": "29afc132edee73c4f5e23e6bbebd76fdf76d2ab255fa5fc0dfa8588bd0d4d545",
+      "bytes": 100
+    },
+    "runtime/ort/transformers-3.0.0-alpha.7/ort-wasm-simd-threaded.jsep.wasm": {
+      "sha256": "85576a5fc99abf4dd1fa749074ae47c11d707831429182d177b5171c88ad45ba",
+      "bytes": 21278216
+    },
+    "runtime/space.css": {
+      "sha256": "9c5d3eb99921178b624089bd9a430063e9f4d608323e9b5832a66adf13c02803",
+      "bytes": 2122
+    }
+  }
+}

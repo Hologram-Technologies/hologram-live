@@ -1,0 +1,111 @@
+/* The catalogue pages that ship as their own files — Registry, Spaces — share this one component set:
+   the facet rail, the search and sort bar, the card grid, the tags on a card. It mirrors the Models page's
+   rules one for one, so a reader crossing from Models to Registry to Spaces sees the same rail at the same
+   width, the same chips, the same cards, and nothing moves under them. The palette and the header are the
+   site's own (chrome.css, loaded before this); every name below is a short alias of a site token. A page
+   adds what is its alone — the Registry's details sheet, the Spaces stage — in its own style block. */
+:root{
+  --ground:var(--hh-ground); --surface:var(--hh-surface); --fill:var(--hh-fill);
+  --line:var(--hh-line); --line2:var(--hh-line-strong);
+  --text:var(--hh-text); --dim:var(--hh-text-dim); --faint:var(--hh-text-faint);
+  --ok:var(--hh-ok); --bad:var(--hh-bad); --mono:var(--font-mono);
+}
+
+/* rail | results. minmax(0,1fr), not 1fr: a bare 1fr keeps a min-content floor, and the rail's widest chip
+   then makes the whole page scroll sideways on a phone. */
+.cols{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
+@media (min-width:1024px){.cols{grid-template-columns:minmax(18.75rem,23.75rem) minmax(0,1fr)}}
+
+/* ---- the filter rail, matching the Models page rule for rule */
+.rail{background:var(--surface);border-radius:10px;padding:16px 16px 48px;position:sticky;top:calc(var(--space-16) + var(--space-12));
+  max-height:calc(100vh - var(--space-16) - var(--space-16));overflow:auto;scrollbar-width:thin;scrollbar-color:var(--fill) transparent}
+.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 0;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.tab{display:flex;align-items:center;justify-content:center;gap:4px;height:32px;padding:0;min-width:0;
+  border:1px solid transparent;border-radius:8px;font-size:14px;color:var(--dim);
+  transition:color 150ms cubic-bezier(.4,0,.2,1),background 150ms cubic-bezier(.4,0,.2,1),border-color 150ms cubic-bezier(.4,0,.2,1)}
+.tab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab[aria-selected="true"]{color:var(--text);background:var(--fill);border-color:var(--line2)}
+.sections{display:grid;gap:24px;padding-top:16px}
+.facet{display:grid;gap:12px}
+.facet header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.facet h2{font-size:14px;color:var(--dim);font-weight:400}
+.facet .reset{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--line);
+  border-radius:8px;font-size:14px;color:var(--dim)}
+.facet .reset:hover{color:var(--text);border-color:var(--line2)}
+.facet .reset[disabled]{opacity:.45}
+.facet-tools{display:flex;gap:8px}
+.facet-tools .field{flex:1;display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;
+  border:1px solid var(--line2);border-radius:8px;color:var(--faint)}
+.facet-tools .field input{flex:1;min-width:0;background:none;border:0;outline:0;font:inherit;font-size:14px;color:var(--text)}
+.facet-tools .square{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid var(--line);border-radius:8px;color:var(--dim)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;overflow:hidden;transition:max-height 200ms cubic-bezier(.4,0,.2,1)}
+.chips.clamped{max-height:calc(32px * 3 + 8px * 2)}
+.chip{display:inline-flex;align-items:center;gap:8px;max-width:100%;height:32px;padding:0 4px 0 12px;
+  border:1px solid var(--line2);border-radius:8px;font-size:14px;color:var(--text);
+  transition:border-color 150ms,background 150ms,color 150ms}
+.chip .i{color:var(--dim);flex:none}
+.chip .label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip:hover{border-color:var(--hh-line-focus)}
+/* The one chip that is ours: the rows whose bytes this site can check itself. */
+.chip.ours{border-color:color-mix(in srgb, var(--brand) 50%, transparent);box-shadow:inset 2px 0 0 var(--brand)}
+.chip.ours .i{color:var(--brand)}
+.chip.ours[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--brand-foreground);box-shadow:none}
+.chip.ours[aria-pressed="true"] .i{color:var(--brand-foreground)}
+.chip.ours[aria-pressed="true"] .n{background:color-mix(in srgb, var(--brand-foreground) 22%, transparent);color:var(--brand-foreground)}
+.chip[aria-pressed="true"]{background:var(--text);color:var(--ground);border-color:var(--text)}
+.chip[aria-pressed="true"] .i{color:var(--ground)}
+.chip .n{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:24px;
+  background:var(--fill);color:var(--text);font-family:var(--mono);font-size:12.5px}
+.chip[aria-pressed="true"] .n{background:color-mix(in srgb, var(--ground) 14%, transparent);color:var(--ground)}
+.more{width:100%;height:32px;border:1px solid var(--line);border-radius:8px;color:var(--dim);font-size:14px}
+.more:hover{color:var(--text);border-color:var(--line2)}
+.note{font-size:12.5px;color:var(--faint);border-top:1px solid var(--line);padding-top:14px}
+
+/* ---- search and sort */
+.bar{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+.search{flex:1;display:flex;align-items:center;gap:12px;height:48px;padding:0 16px;background:var(--surface);color:var(--faint);
+  border:1px solid var(--line2);border-radius:10px}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;font:inherit;font-size:15px;color:var(--text)}
+.sort{height:48px;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--dim);font-size:14px}
+/* The sort control cannot shrink past its own words, so on a phone it takes a line of its own. */
+@media (max-width:600px){.bar{flex-wrap:wrap}.bar .sort{flex:1}}
+
+/* ---- the grid and the card. min() so a phone narrower than one card gets one column, not a sideways scroll. */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;
+  grid-template-columns:40px minmax(0,1fr);grid-template-rows:auto auto 1fr auto;gap:4px 14px;min-height:140px;
+  cursor:pointer;text-align:left;color:inherit}
+.card:hover{border-color:var(--line2)}
+.card:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.card .logo{grid-row:1/3;width:40px;height:40px;border-radius:9px;background:var(--ground)}
+.card img.logo{object-fit:contain}
+.card .tags,.card h3,.card p,.card .foot{grid-column:2}
+.card .tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{height:22px;display:inline-flex;align-items:center;padding:0 8px;border-radius:6px;border:1px solid var(--line2);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim)}
+.tag.here{border-color:color-mix(in srgb, var(--ok) 45%, transparent);color:var(--ok)}
+.tag.no{border-color:color-mix(in srgb, var(--bad) 45%, transparent);color:var(--bad)}
+.tag.official{border-color:color-mix(in srgb, var(--brand) 45%, transparent);color:var(--hh-accent-legible)}
+.card h3{font-family:var(--mono);font-size:15px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card p{font-size:12.5px;color:var(--dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .foot{margin-top:auto;display:flex;gap:12px;font-size:12px;color:var(--faint)}
+/* the Models page's mesh behind every card, seeded by the entry's address; lit facets = checkable here */
+.card{position:relative;overflow:hidden;isolation:isolate}
+.art{position:absolute;z-index:-1;top:0;right:0;width:55%;height:100%;pointer-events:none;opacity:.85;
+  -webkit-mask-image:linear-gradient(90deg,transparent,var(--text) var(--space-16));mask-image:linear-gradient(90deg,transparent,var(--text) var(--space-16));
+  transition:opacity var(--hh-ease)}
+.art .facets{fill:var(--text)}
+.art .edges{fill:none;stroke:var(--text);stroke-width:.5;opacity:.07}
+.art.lit .edges{opacity:.14}
+.card:hover .art{opacity:1}
+.empty{padding:40px 0;color:var(--faint);font-size:14px}
+
+.foot-note{margin-top:44px;padding:20px 0 40px;border-top:1px solid var(--line);font-size:13px;color:var(--faint);display:flex;gap:20px;flex-wrap:wrap}
+
+/* Immersive lays a photograph under the whole site; every surface on it is glass, these pages included. */
+:root[data-theme="immersive"] .rail,
+:root[data-theme="immersive"] .card,
+:root[data-theme="immersive"] .search,
+:root[data-theme="immersive"] .sort{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}

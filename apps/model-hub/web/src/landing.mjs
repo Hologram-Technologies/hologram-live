@@ -69,14 +69,21 @@ const FAMILIES = [
 
 function marquee(base, models) {
   const avatars = new Map();
-  for (const m of models) if (m.avatar && !avatars.has(m.org)) avatars.set(m.org, m.avatar);
+  const counts = new Map();
+  for (const m of models) {
+    counts.set(m.org, (counts.get(m.org) || 0) + 1);
+    if (m.avatar && !avatars.has(m.org)) avatars.set(m.org, m.avatar);
+  }
   const present = FAMILIES.filter(([org]) => avatars.has(org));
   // An index without any of them, or a build whose avatar fetches all failed, gets no strip rather than a
   // band with nothing in it.
   if (!present.length) return "";
-  const items = present.map(([org, label]) => `<li><img src="${base}avatars/${esc(avatars.get(org))}" alt="" width="36" height="36" loading="lazy" decoding="async"><span>${esc(label)}</span></li>`).join("");
-  // Two identical runs: the track slides exactly half its width, so the loop has no seam.
-  return `<div class="land-marquee" aria-hidden="true"><div class="land-track"><ul>${items}</ul><ul>${items}</ul></div></div>`;
+  // Each mark opens the catalogue filtered to that publisher. Search runs over the model id, which carries the
+  // org, so the link lands on that publisher's models and never on an empty table.
+  const run = (copy) => present.map(([org, label]) => `<li><a href="${base}models/?q=${encodeURIComponent(org)}"${copy ? ` tabindex="-1"` : ""} title="${esc(label)}: ${counts.get(org)} model${counts.get(org) === 1 ? "" : "s"} on Hologram"><img src="${base}avatars/${esc(avatars.get(org))}" alt="" width="36" height="36" loading="lazy" decoding="async"><span>${esc(label)}</span></a></li>`).join("");
+  // Two identical runs: the track slides exactly half its width, so the loop has no seam. Only the first is
+  // read out and reachable by keyboard; the copy exists to keep the loop continuous.
+  return `<div class="land-marquee"><div class="land-track"><ul aria-label="Model families on Hologram">${run(false)}</ul><ul aria-hidden="true">${run(true)}</ul></div></div>`;
 }
 
 // Rounded down to the hundred and marked open, so the label reads as a size rather than a tally and never
@@ -90,8 +97,8 @@ export function landing({ base, models, endpoint, repo }) {
   <div class="land-art" aria-hidden="true">${art()}</div>
   <div class="land-copy">
     ${heroBadge({ repo })}
-    <h1 class="land-title"><span>The Open Platform</span><span>for Sovereign AI</span></h1>
-    <p class="land-sub">Discover, use and share self-verifying models, skills and artifacts.</p>
+    <h1 class="land-title"><span>The Open Platform</span> <span>for Sovereign AI</span></h1>
+    <p class="land-sub">Discover, use and share <b class="hl">self-verifying</b><span class="hl-seal">${icon.seal}</span> models, skills and artifacts.</p>
     <div class="land-actions">
       <a class="button primary" href="${base}models/">Browse ${count(models.length)} models${icon.right}</a>
       ${/* The whole endpoint in one line. It used to show a domain and copy something else, which meant the

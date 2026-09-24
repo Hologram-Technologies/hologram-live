@@ -9,3 +9,6 @@ apps/model-hub/web/vendor/** -text
 
 # Shell scripts run on the Linux host: a CRLF checkout on Windows would break every one of them.
 apps/model-hub/deploy/*.sh text eol=lf
+
+# Spaces ship sealed: every file is named by its SHA-256 in holospace.lock.json, so no line-ending conversion.
+apps/model-hub/web/public/spaces/** -text

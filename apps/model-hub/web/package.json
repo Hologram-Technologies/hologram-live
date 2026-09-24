@@ -11,7 +11,9 @@
     "openapi:lint": "redocly lint public/openapi.json --config scripts/redocly.yaml",
     "openapi:conformance": "node qa/openapi/probe.mjs && node qa/openapi/conformance.mjs",
     "lint": "node scripts/lint-tokens.mjs",
-    "fit": "node qa/landing-fit.mjs"
+    "fit": "node qa/landing-fit.mjs",
+    "menu": "node qa/menu.mjs",
+    "qa:registry": "node qa/registry-sealed.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",

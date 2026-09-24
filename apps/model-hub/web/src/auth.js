@@ -51,14 +51,26 @@ const whoOf = (user) => {
   return accounts(user).map(nameOf).find(Boolean) || null;
 };
 
+// A picture, if the provider they used actually hands one over. Privy carries `profile_picture_url` on Farcaster,
+// Twitter, Line and custom OAuth accounts — and NOT on google_oauth, github_oauth or email, which are the three
+// ways into this hub. So today this is always null and the mark is a letter; it is written anyway so that turning
+// on such a provider later is a dashboard switch rather than a code change. Nothing is ever fetched from a third
+// party to manufacture one.
+const photoOf = (user) => {
+  const url = accounts(user).map((a) => a.profile_picture_url || a.profile_picture).find(Boolean);
+  return typeof url === "string" && url.startsWith("https://") ? url : null;
+};
+
 // The address of the Ethereum wallet Privy made for this person. Shown back to its owner, trusted for nothing —
 // and the Ethereum one specifically, since that is the only shape the service will store.
 const walletOf = (user) =>
   accounts(user).find((a) => a.type === "wallet" && a.connector_type === "embedded" && a.chain_type === "ethereum")?.address || null;
 
 function adopt(user) {
-  current = user ? { id: user.id, email: whoOf(user), wallet: walletOf(user) } : null;
-  write(SEEN, user ? "1" : null);
+  current = user ? { id: user.id, email: whoOf(user), wallet: walletOf(user), photo: photoOf(user) } : null;
+  // The hint carries the initial so the next page can draw the mark before this module is even fetched.
+  // An older browser holding the previous "1" still reads as signed in; it just has no letter until we load.
+  write(SEEN, user ? JSON.stringify({ i: initialOf(current) }) : null);
   announce();
   if (user) record().catch(() => {});
   return current;
@@ -108,7 +120,8 @@ export async function restore() {
     return adopt(null);
   }
 }
-export const wasSignedIn = () => read(SEEN) === "1";
+// Any hint at all means this browser was signed in here: the current shape is {i}, older ones stored "1".
+export const wasSignedIn = () => Boolean(read(SEEN));
 
 export async function signOut() {
   const p = await client();

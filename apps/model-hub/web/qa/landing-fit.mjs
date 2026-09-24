@@ -24,6 +24,10 @@ const VIEWPORTS = [
   [768, 1024, "tablet"],
   [1440, 700, "short laptop"],
   [1600, 808, "laptop at 125%"],
+  [1600, 655, "desktop at 150%"],
+  [1280, 600, "short window"],
+  [1024, 500, "very short window"],
+  [360, 640, "small android"],
   [2000, 1010, "wide desktop"],
   [1440, 900, "laptop"],
   [1920, 1080, "desktop"],
@@ -31,7 +35,7 @@ const VIEWPORTS = [
 ];
 const THEMES = ["dark", "light", "immersive"];
 // --shoot <dir> writes one PNG per theme at these shapes, the evidence a review asks for.
-const SHOOT = [[390, 844], [1440, 900]];
+const SHOOT = [[390, 844], [1440, 900], [1600, 655]];
 
 const TYPES = { html: "text/html", js: "text/javascript", mjs: "text/javascript", css: "text/css", json: "application/json", svg: "image/svg+xml", woff2: "font/woff2", jpg: "image/jpeg", png: "image/png" };
 
@@ -98,6 +102,8 @@ const FIT = `(() => {
   };
 })()`;
 
+const varFlag = process.argv.indexOf("--variants");
+const VARIANTS = varFlag > 0 ? process.argv[varFlag + 1].split(",") : [];
 const shotFlag = process.argv.indexOf("--shoot");
 const shots = shotFlag > 0 ? process.argv[shotFlag + 1] : null;
 if (shots) await mkdir(shots, { recursive: true });
@@ -151,8 +157,12 @@ for (const theme of THEMES) {
     const contrast = await cdp.evaluate(contrastSrc);
     const where = `${theme} ${w}x${h} (${label})`;
     if (shots && SHOOT.some(([sw, sh]) => sw === w && sh === h)) {
-      const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
-      await writeFile(join(shots, `landing-${theme}-${w}x${h}.png`), Buffer.from(data, "base64"));
+      // --variants shoots the same shape once per highlight treatment, for a side by side comparison.
+      for (const v of VARIANTS.length ? VARIANTS : [null]) {
+        if (v) { await cdp.evaluate(`document.documentElement.dataset.highlight = ${JSON.stringify(v)}`); await sleep(1100); }
+        const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
+        await writeFile(join(shots, `landing-${theme}-${w}x${h}${v ? `-${v}` : ""}.png`), Buffer.from(data, "base64"));
+      }
     }
     if (fit.theme !== theme) problems.push(`${where}: theme did not apply (${fit.theme})`);
     if (fit.overflowY > 1) problems.push(`${where}: scrolls ${fit.overflowY}px vertically`);

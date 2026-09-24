@@ -21,5 +21,4 @@ docker run --rm --network twenty_default --env-file "$HUB/pub.env" \
 	-v "$PUB:/pub" -v "$PUB/data:/data:ro" -v "$HUB/pins.json:/pins.json:ro" -v "$HUB/state:/state" -v "$HUB/site:/site" \
 	-w /pub node:22-alpine sh -c \
 	'[ -d node_modules/hash-wasm ] || npm i --no-save --silent hash-wasm@4.12.0 >/dev/null; node hub.mjs publish /data --pins /pins.json --site /site'
-cp -f "$PUB/llms.txt" "$HUB/site/llms.txt"
 echo "== $(date -u +%FT%TZ) publish ok"

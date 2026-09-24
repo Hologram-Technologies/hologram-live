@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="/">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spaces · Hologram Models Hub</title>
+<meta name="description" content="Apps that run entirely in your browser, in their own sealed frame, with every model byte verified.">
+<!--chrome:head-->
+<link rel="stylesheet" href="../lib/catalog.css">
+<style>
+/* The catalogue components — the lead row, the rail, the bar, the cards — are the site's own (chrome.css and
+   lib/catalog.css, loaded above), so this page and the Registry page are the same page with different rows.
+   What is this page's alone: a Space's icon where a cover would be, and the stage a Space opens on. */
+.card .logo{display:grid;place-items:center;color:var(--text)}
+.card .logo svg{width:26px;height:26px}
+.card .foot{font-family:var(--mono)}
+
+/* the stage: one Space, in its own sealed frame, at the head of the results */
+.stage{display:none;margin-bottom:14px;background:var(--surface);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.stage.on{display:block}
+.stage-bar{display:flex;align-items:center;gap:12px;height:48px;padding:0 8px 0 16px;border-bottom:1px solid var(--line)}
+.stage-bar h2{font-family:var(--mono);font-size:14px;font-weight:400}
+.stage-bar .k{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.stage-bar .status{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim);display:inline-flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage-bar a,.stage-bar button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;color:var(--dim);font-size:13px;background:none}
+.stage-bar a:hover,.stage-bar button:hover{color:var(--text);border-color:var(--line2)}
+.stage iframe{display:block;width:100%;height:min(78vh,860px);border:0;background:var(--ground)}
+.stage .need{padding:40px 24px;color:var(--dim);font-size:14px;max-width:60ch}
+.stage .need b{color:var(--text);font-weight:500}
+@media (max-width:640px){.stage-bar .k{display:none}.stage iframe{height:72vh}}
+
+:root[data-theme="immersive"] .stage{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
+</style>
+</head>
+<body>
+
+<div class="veil" aria-hidden="true"></div>
+<div class="shell">
+<!--chrome:header-->
+
+<main>
+  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span><p class="prov" id="prov"></p></div>
+
+  <div class="cols">
+    <aside class="rail" id="rail"></aside>
+    <section>
+      <div class="bar">
+        <label class="search" for="q">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="q" type="search" placeholder="Search Spaces, or paste a model name or a sha256 root" autocomplete="off">
+        </label>
+        <select class="sort" id="sort">
+          <option value="featured">Featured</option>
+          <option value="name">Name</option>
+          <option value="small">Smallest model</option>
+          <option value="large">Largest model</option>
+        </select>
+      </div>
+
+      <section class="stage" id="stage" aria-live="polite">
+        <div class="stage-bar">
+          <h2 id="s-name"></h2><span class="k" id="s-root"></span>
+          <span class="status" id="s-status"><span class="dot" id="s-dot"></span><span id="s-text">opening…</span></span>
+          <a id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open ↗</a>
+          <button type="button" id="s-close" aria-label="Close">×</button>
+        </div>
+        <div id="s-body"></div>
+      </section>
+
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="empty" hidden>Nothing matches those filters.</p>
+    </section>
+  </div>
+</main>
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -34,6 +34,10 @@ test -f "$NEW/index.html"
 # mindepth 3 counts model pages only: models/index.html is the browse table, not a model.
 test "$(find "$NEW/models" -mindepth 3 -name index.html | wc -l)" -ge 400
 test -f "$NEW/models/index.html"
+# The Registry page ships with the site and must carry its own hasher and its own covers;
+# build.mjs runs qa/registry-sealed.mjs itself, which proves it loads nothing from another origin.
+test -f "$NEW/registry/index.html"
+test -f "$NEW/registry/vendor/blake3.umd.min.js"
 
 rm -rf "$HUB/site.next"
 cp -a "$NEW" "$HUB/site.next"
@@ -50,7 +54,8 @@ mkdir -p "$HUB/site/.well-known"
 # The MCP registry checks domain ownership at /.well-known/mcp-registry-auth (a public key, nothing secret).
 [ -f "$HUB/mcp-registry-auth" ] && cp -f "$HUB/mcp-registry-auth" "$HUB/site/.well-known/mcp-registry-auth"
 [ -f "$HUB/state/model-hub.json" ] && cp -f "$HUB/state/model-hub.json" "$HUB/site/.well-known/model-hub.json"
-[ -f "$HUB/pub/llms.txt" ] && cp -f "$HUB/pub/llms.txt" "$HUB/site/llms.txt"
+# /llms.txt is built with the site from web/docs (build.mjs): nothing on the host overrides it. If /root/hub/pub/llms.txt
+# still exists from before 2026-09-23, delete it; it is not read.
 # The site container mounts ./archive on /srv/archive; the mount point must exist inside the read-only site.
 mkdir -p "$HUB/site/archive"
 # site and resolve mount directories inside ./site; after the swap they must look again.

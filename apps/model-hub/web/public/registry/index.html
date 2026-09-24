@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="/">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registry · Hologram Models Hub</title>
+<meta name="description" content="Container images from every registry we can read, in one index you can rebuild yourself.">
+<!--chrome:head-->
+<link rel="stylesheet" href="../lib/catalog.css">
+<style>
+/* The catalogue components — the lead row, the rail, the bar, the cards — are the site's own (chrome.css and
+   lib/catalog.css, loaded above), so this page and the Spaces page are the same page with different rows.
+   What is this page's alone: the mark on a row that is ours, and the details sheet a card opens. */
+.card.ours{border-color:color-mix(in srgb, var(--brand) 35%, transparent)}
+
+.scrim{position:fixed;inset:0;background:var(--hh-shadow);z-index:40}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);z-index:41;background:var(--surface);
+  border-left:1px solid var(--line);padding:24px;overflow:auto;display:flex;flex-direction:column;gap:18px}
+.sheet .x{position:absolute;top:14px;right:16px;width:32px;height:32px;border-radius:8px;color:var(--dim);font-size:20px;line-height:1}
+.sheet .x:hover{color:var(--text);background:var(--fill)}
+.sheet-head{display:flex;gap:14px;align-items:flex-start;padding-right:36px}
+.sheet .cover{width:48px;height:48px;border-radius:10px;object-fit:contain;background:var(--ground);flex:none}
+.sheet h2{font-family:var(--mono);font-size:17px;font-weight:500;word-break:break-all}
+.sheet .muted{font-size:13px;color:var(--dim);margin-top:6px}
+.sheet .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0}
+.sheet .facts div{min-width:0}
+.sheet .facts dt{font-size:11.5px;color:var(--faint)}
+.sheet .facts dd{margin:3px 0 0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis}
+.sheet-foot{margin-top:auto;display:flex;gap:10px;flex-wrap:wrap}
+.btn{height:40px;display:inline-flex;align-items:center;padding:0 16px;border:1px solid var(--line2);
+  border-radius:9px;font-size:14px;color:var(--text)}
+.btn:hover{border-color:var(--brand);color:var(--brand)}
+.cmdbox{display:flex;flex-direction:column;gap:6px}
+.cmdbox .lbl{font-size:12px;color:var(--faint)}
+.cmdline{display:flex;align-items:center;gap:8px;padding:10px 10px;background:var(--ground);
+  border:1px solid var(--line);border-radius:9px}
+.cmdline code{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;overflow:auto;white-space:nowrap}
+.copy{height:28px;padding:0 10px;border-radius:7px;background:var(--fill);font-size:12.5px;color:var(--dim);flex:none}
+.copy:hover{color:var(--text)}
+#more{margin:18px auto 0;display:block;width:auto;height:40px;padding:0 18px;border:1px solid var(--line2);border-radius:9px;color:var(--dim);font-size:14px}
+.here-word{color:var(--ok);font-weight:400}
+
+:root[data-theme="immersive"] .sheet{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
+</style>
+</head>
+<body>
+
+<div class="veil" aria-hidden="true"></div>
+<div class="shell">
+<!--chrome:header-->
+
+<main>
+  <div class="lead"><h1>Registry</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span><p class="prov" id="prov"></p></div>
+
+  <div class="cols">
+    <aside class="rail" id="rail"></aside>
+    <section>
+      <div class="bar">
+        <label class="search" for="q">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="q" type="search" placeholder="Search, or paste a reference like nginx:1.27 or a sha256 digest" autocomplete="off">
+        </label>
+        <select class="sort" id="sort">
+          <option value="pulls">Most pulled</option>
+          <option value="stars">Most starred</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
+      <p id="resolved" class="empty" hidden></p>
+      <div class="grid" id="grid"></div>
+      <button class="more" id="more" hidden>Show more</button>
+      <p class="empty" id="empty" hidden>Nothing matches those filters.</p>
+    </section>
+  </div>
+
+  <footer class="foot-note">
+    <span>Rows marked <b class="here-word">HERE</b> are derived from our own registry and carry a digest you can check.</span>
+    <span id="sources"></span>
+  </footer>
+</main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="sheet" id="sheet" hidden aria-label="Details">
+  <button class="x" id="sheet-close" aria-label="Close">&#215;</button>
+  <div class="sheet-head">
+    <img class="cover" id="s-logo" alt="">
+    <div style="min-width:0">
+      <div class="tags" id="s-tags"></div>
+      <h2 id="s-name"></h2>
+      <p class="muted" id="s-desc"></p>
+    </div>
+  </div>
+  <div class="cmdbox" id="s-cmdbox">
+    <span class="lbl" id="s-cmdlabel">Pull it</span>
+    <div class="cmdline"><code id="s-cmd"></code><button class="copy" id="s-copy">Copy</button></div>
+  </div>
+  <dl class="facts" id="s-facts"></dl>
+  <div class="sheet-foot">
+    <a class="btn" id="s-home" target="_blank" rel="noopener">Open on source</a>
+    <a class="btn" id="s-here" hidden>Check it here</a>
+  </div>
+</aside>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

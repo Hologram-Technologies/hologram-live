@@ -4,6 +4,8 @@
 //                                  Git Bash: prefix MSYS_NO_PATHCONV=1)
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { checkSealed } from "./qa/registry-sealed.mjs";
+import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,14 +13,16 @@ import * as R from "./src/render.mjs";
 import * as B from "./src/braille.mjs";
 import { overview, metaDescription } from "./src/overview.mjs";
 import { landing } from "./src/landing.mjs";
+import * as D from "./src/docs.mjs";
 
 const SITE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(SITE, "dist");
 const KIT = join(SITE, "vendor", "hologram-brand-kit");
 const base = process.env.BASE || "/";
+// Which treatment the highlighted word gets. One build carries them all; this picks the one that ships.
+const HIGHLIGHT = process.env.HIGHLIGHT || "seal";
 // The root is the landing page, so the browse table moves under the prefix its model pages already use.
 const BROWSE = `${base}models/`;
-const REPO = "https://github.com/Hologram-Technologies/hologram-live/tree/main/apps/model-hub";
 // The repository the hero's star badge counts and links to. scripts/data.mjs bakes the count into
 // models.json; a build whose fetch failed, or an offline build off a copied data/, ships the badge without a
 // number and the page fills it in from the public API on load.
@@ -36,7 +40,7 @@ const starRepo = { name: STAR_REPO, url: `https://github.com/${STAR_REPO}`, star
 // The header pill. With an archive it opens every captured day; the Wayback idea, one control.
 function indexPill() {
   const latest = `Index ${R.day(data.snapshot)}`;
-  if (!archive) return `<a class="status" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
+  if (!archive) return `<a class="status endpoint" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
   const days = [...archive.days].sort((a, b) => b.date.localeCompare(a.date));
   const months = new Map();
   for (const d of days) {
@@ -49,9 +53,9 @@ function indexPill() {
   const groups = [...months].map(([key, list], i) => `<div class="archive-month"${i >= 3 ? " data-older" : ""}><h3>${monthName(key)}</h3>${list.map(row).join("")}</div>`);
   const older = groups.length > 3 ? `<details class="archive-older"><summary>Older</summary>${groups.slice(3).join("")}</details>` : "";
   return `<div class="archive" id="archive">
-      <button type="button" class="status" id="archive-button" aria-haspopup="menu" aria-expanded="false" aria-controls="archive-menu" title="Every day's index is stored on IPFS. Open any day."><span id="archive-label">${latest}</span>${R.icon.chevron}</button>
+      <button type="button" class="status endpoint" id="archive-button" aria-haspopup="menu" aria-expanded="false" aria-controls="archive-menu" title="Every day's index is stored on IPFS. Open any day."><span id="archive-label">${latest}</span>${R.icon.chevron}</button>
       <div class="menu" id="archive-menu" role="menu" aria-label="Index history" hidden>
-        <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i lead"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
+        <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i latest"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
         <div class="archive-days">${groups.slice(0, 3).join("")}${older}</div>
         <p class="menu-note">Each day's index is saved on IPFS and verified in your browser. Today opens at once; older days can take a minute the first time.</p>
         <div class="archive-foot"><button type="button" class="copy" id="archive-cid" data-copy="" title="Copy this day's IPFS address">CID${R.icon.copy}</button><button type="button" class="copy" id="archive-pull" data-copy="" title="Copy the hologram pull command for the current index">hologram pull${R.icon.copy}</button></div>
@@ -61,9 +65,9 @@ function indexPill() {
 }
 
 const WALLPAPERS = [
-  { key: "alps", name: "Alpine Dawn", by: "Unsplash", url: "https://unsplash.com/?utm_source=Hologram&utm_medium=referral" },
-  { key: "galaxy", name: "Galaxy", by: "Tiago Ferreira", url: "https://unsplash.com/@tiago_f_ferreira?utm_source=Hologram&utm_medium=referral" },
-  { key: "aurora", name: "Aurora", by: "Lightscape", url: "https://unsplash.com/@lightscape?utm_source=Hologram&utm_medium=referral" },
+  { key: "alps", name: "Alpine Dawn" },
+  { key: "galaxy", name: "Galaxy" },
+  { key: "aurora", name: "Aurora" },
 ];
 const THEMES = [["dark", "Dark", "moon"], ["light", "Light", "sun"], ["immersive", "Immersive", "image"]];
 
@@ -82,15 +86,37 @@ const privy = process.env.PRIVY_APP_ID && privyStamp
 // actually signed in, so nobody downloads an account they do not have.
 const accountControl = () => privy ? `<div class="account" id="account">
       <button type="button" class="sign-in" id="sign-in-button" title="Sign in">${R.icon.user}<span class="label">Sign in</span></button>
-      <button type="button" class="account-mark" id="account-button" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Your account"><span id="account-initial" aria-hidden="true"></span></button>
+      <button type="button" class="account-mark" id="account-button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Your account"><span id="account-initial" aria-hidden="true"></span></button>
       <div class="menu" id="account-menu" role="menu" aria-label="Your account" hidden></div>
     </div>` : "";
+
+// ---- the top-level menu
+//
+// One list, one renderer, one place to add a section. Every page this build writes carries it, and the
+// Registry page — which ships as its own finished file from public/ — has the same markup put into it at
+// the end of this build, so no page of the site can be left holding a different menu.
+const SECTIONS = [
+  ["models", "Models", "grid", BROWSE],
+  ["registry", "Registry", "box", `${base}registry/`],
+  ["spaces", "Spaces", "cpu", `${base}spaces/`],
+  ["buckets", "Buckets", "bucket", `${base}buckets/`],
+  ["docs", "Docs", "file", `${base}docs/`],
+];
+// `current` is the section the page belongs to. It marks that one link aria-current, which the stylesheet
+// draws in the brand colour: where you are, said once in the row and once to a screen reader.
+const topNav = (current = "") => `<nav class="top-nav" aria-label="Sections">${SECTIONS
+  .map(([key, label, mark, href]) => `<a href="${href}"${key === current ? ' aria-current="page"' : ""}>${label}${R.icon[mark]}</a>`)
+  .join("")}</nav>`;
 
 // Runs before first paint: Dark for first visits, the saved choice after that. No flash.
 const prepaint = `(function(){var s={};try{s=JSON.parse(localStorage.getItem("hologram-models-hub.theme"))||{}}catch(e){}
 var m=["dark","light","immersive"].indexOf(s.mode)>=0?s.mode:"dark",w=${JSON.stringify(WALLPAPERS.map((w) => w.key))}.indexOf(s.wallpaper)>=0?s.wallpaper:"alps",r=document.documentElement;
 r.setAttribute("data-theme",m);r.setAttribute("data-wallpaper",w);r.classList.toggle("dark",m!=="light");
-if(m==="immersive"){var l=document.createElement("link");l.rel="preload";l.as="image";l.href="${base}wallpapers/"+w+".jpg";document.head.appendChild(l)}})();`;
+if(m==="immersive"){var l=document.createElement("link");l.rel="preload";l.as="image";l.href="${base}wallpapers/"+w+".jpg";document.head.appendChild(l)}
+// Someone signed in here before: say so now, not after auth.js has loaded and Privy has answered. Otherwise
+// every page they open shows "Sign in" for a moment first.
+var a=null;try{a=JSON.parse(localStorage.getItem("hologram-models-hub.account"))}catch(e){}
+if(a){r.setAttribute("data-account","in");if(a.i)r.style.setProperty("--hh-account-initial",JSON.stringify(a.i))}})();`;
 
 const themeSwitch = `<div class="appearance">
       <button type="button" id="theme-button" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" aria-label="Theme" title="Theme">${THEMES.map(([k, , ic]) => R.icon[ic].replace('class="i"', `class="i" data-for="${k}"`)).join("")}</button>
@@ -99,15 +125,49 @@ const themeSwitch = `<div class="appearance">
         <div class="walls" id="walls">
           <h3>Wallpaper</h3>
           <div class="wall-row" role="group" aria-label="Wallpaper">${WALLPAPERS.map((w) => `<button type="button" class="wall" role="menuitemradio" data-wallpaper="${w.key}" aria-checked="false" aria-label="${w.name}" title="${w.name}"><img src="${base}wallpapers/${w.key}-thumb.jpg" alt="" width="320" height="198" decoding="async"></button>`).join("")}</div>
-          <p class="credit" id="wall-credit"></p>
         </div>
       </div>
     </div>`;
 
-const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "styles.css"];
+const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "chrome.css", "styles.css"];
 
-const page = ({ title, description, body, search = false, model = "", home = false }) => `<!doctype html>
-<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
+// The header, one definition for the whole site, and the same row on every page: the brand lockup is the
+// wordmark alone, because the menu beside it is what says where you are, and nothing here changes between the
+// landing and the pages behind it. The repository is reached from the hero's star badge, not from this row.
+//
+// Everything after the brand lives in one group, .top-menu. Wide, the group is laid out as the row it always
+// was (display: contents). Narrow, the same group becomes a sheet under the header, and one control stands in
+// for it at the end of the row: the menu button. Same markup, same ids, same controls; only the layout folds.
+const header = ({ section = "", search = false } = {}) => `<header class="top">
+  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
+  <div class="top-end">
+    <div class="top-menu" id="top-menu">
+      ${topNav(section)}
+      ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
+      <div class="top-tools">
+        ${themeSwitch}
+        ${accountControl()}
+      </div>
+    </div>
+    <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="top-menu" aria-label="Menu" title="Menu">${R.icon.menu}${R.icon.close}</button>
+  </div>
+</header>`;
+
+// Everything the header needs in <head>, for a page that is not written by page(): the no-flash theme
+// script, the data the theme menu reads, the kit and chrome stylesheets, and the module that wires the two
+// controls up. The Registry page's own stylesheet loads after these and keeps its own component rules.
+const chromeHead = [
+  `<script>${prepaint}</script>`,
+  `<script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>`,
+  ...(privy ? [`<script type="application/json" id="privy">${JSON.stringify(privy)}</script>`] : []),
+  `<link rel="preload" href="${base}fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>`,
+  `<link rel="preload" href="${base}fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>`,
+  ...["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.css", "chrome.css"].map((f) => `<link rel="stylesheet" href="${base}${f}">`),
+  `<script type="module">import { mountChrome } from "${base}chrome.js"; mountChrome();</script>`,
+].join("\n");
+
+const page = ({ title, description, body, search = false, model = "", home = false, section = "", styles = [] }) => `<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -131,21 +191,12 @@ ${privy ? `<script type="application/json" id="privy">${JSON.stringify(privy)}</
 <link rel="icon" href="${base}logos/Hologram_Logomark_White.svg" type="image/svg+xml">
 <link rel="preload" href="${base}fonts/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="${base}fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
-${STYLES.map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
+${[...STYLES, ...styles].map((s) => `<link rel="stylesheet" href="${base}${s}">`).join("\n")}
 <script type="module" src="${base}app.js"></script>
 </head>
 <body>
 ${home ? "" : `<div class="veil" aria-hidden="true"></div>\n`}<div class="shell">
-<header class="top">
-  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16">${home ? "" : `<span class="hub">Models Hub</span>`}</a>
-  <div class="top-end">
-    ${home ? `<nav class="top-nav" aria-label="Sections"><a href="${BROWSE}">Models${R.icon.grid}</a><a href="${base}registry/">Registry${R.icon.box}</a><a href="${base}llms.txt">Docs${R.icon.file}</a></nav>` : ""}
-    ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    ${home ? "" : `<a class="github" href="${REPO}" aria-label="GitHub" title="GitHub">${R.icon.github}</a>`}
-    ${themeSwitch}
-    ${accountControl()}
-  </div>
-</header>
+${header({ section, search })}
 ${archive ? `<div class="archive-banner" id="archive-banner" role="status" hidden>${R.icon.calendar}<span>Viewing the index of <b id="archive-banner-date"></b>. Every file shown was checked against its address.</span><button type="button" class="link" data-at="latest">Back to latest</button></div>` : ""}
 ${body}
 </div>
@@ -165,18 +216,26 @@ const home = page({
 const initial = R.parseState("");
 const r = R.query(models, initial);
 const sortMenu = R.SORTS.map(([k, label]) => `<li role="option" data-sort="${k}" aria-selected="${k === initial.sort}">${label}${R.icon.check}</li>`).join("");
+// What the lead row says about the index as a whole, the way the Registry's says how many rows are read live:
+// how many of these models are verified — every file named by its bytes — and how many are not there yet.
+const states = models.reduce((c, m) => ((c[m.state] = (c[m.state] || 0) + 1), c), {});
+const provenance = [[states.addressed, "verified"], [states.pending, "queued"], [states.skipped, "unverified"]]
+  .filter(([n]) => n).map(([n, word]) => `${n.toLocaleString("en-US")} ${word}`).join(" · ");
 const browse = page({
+  section: "models",
   title: R.title(initial),
   description: `The ${models.length} trending models on Hugging Face, every file named by its bytes.`,
-  body: `<main class="browse" id="browse">
+  // The lead row is the same row every catalogue page opens with (.lead, chrome.css): name, count, address,
+  // provenance. Here the address is the index control, which is also the way into every earlier day.
+  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}<p class="prov">${provenance}</p></div>
+<main class="browse" id="browse">
   <aside class="panel filters" aria-label="Filters">
     <button type="button" class="control square close-filters" id="close-filters" aria-label="Close filters">${R.icon.close}</button>
     <div id="filters-body">${R.filters(r, initial)}</div>
     <div class="sheet-footer"><button type="button" class="button primary" id="sheet-done">Show <span id="sheet-count">${r.results.length}</span> models</button></div>
   </aside>
-  <section class="panel" id="results" aria-label="Models">
+  <section id="results" aria-label="Models">
     <div class="results-head">
-    <div class="head"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}</div>
     <div class="bar">
       <label class="field search">${R.icon.search}<input id="q" type="search" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models"></label>
       <button type="button" class="open-filters" id="open-filters">${R.icon.sliders}Filters</button>
@@ -235,6 +294,11 @@ function modelPage(m, files, ov, readme) {
     files?.sources?.length ? fact("Sources", String(files.sources.length)) : "",
     m.revision ? fact("Revision", copy(m.revision, m.revision.slice(0, 12))) : "",
     m.manifest ? fact("Manifest", copy(m.manifest, R.shortAddress(m.manifest))) : "",
+    // A model card may name the buckets its checkpoints and data live in (`buckets:` in the
+    // card's YAML, HF's own field). Each becomes a link, and the bucket page links back.
+    bucketsOf(readme).length
+      ? fact("Buckets", bucketsOf(readme).map((b) => `<a href="${base}buckets/#/${R.esc(b)}">${R.esc(b)}</a>`).join(", "))
+      : "",
   ].join("");
 
   let filesPanel, downloadMenu = "";
@@ -310,6 +374,7 @@ function modelPage(m, files, ov, readme) {
   }
 
   return page({
+    section: "models",
     model: m.id,
     title: `${m.name} · Hologram Models Hub`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
@@ -359,6 +424,7 @@ await writeFile(join(DIST, "404.html"), page({
   body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${BROWSE}">All models</a></div></section>`,
 }));
 
+const bucketLinks = {};   // "owner/name" -> [model id, …], written for the Buckets page
 for (const m of models) {
   const filesPath = join(SITE, "data", "files", m.org, `${m.name}.json`);
   const files = existsSync(filesPath) ? JSON.parse(await readFile(filesPath, "utf8")) : null;
@@ -370,12 +436,34 @@ for (const m of models) {
   const dir = join(DIST, "models", m.org, m.name);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "index.html"), modelPage(m, files, ov, readme));
+  for (const b of bucketsOf(readme)) (bucketLinks[b] ??= []).push(m.id);
 }
 
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
 const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "render.mjs", "braille.mjs", "zip.mjs", "styles.css", "tokens.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "chrome.js", "render.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+
+// ---- the documentation
+//
+// web/docs/*.md, one file per page, becomes /docs/<slug>/ for a reader, /docs/<slug>.md for an agent, and one line
+// each in /llms.txt, the index every agent fetches first. The API reference page is generated from the same
+// OpenAPI document the endpoint is held to, so it cannot name a route that is not described. The build refuses a
+// page that links to nothing or has nothing to run (D.check, after public/ is copied in).
+const spec = JSON.parse(await readFile(join(SITE, "public", "openapi.json"), "utf8"));
+const docPages = D.render(await D.load(join(SITE, "docs")), { base, spec });
+for (const p of docPages) {
+  await mkdir(dirname(join(DIST, p.path)), { recursive: true });
+  await writeFile(join(DIST, p.path), page({
+    title: p.slug === "index" ? "Docs · Hologram Models Hub" : `${p.title} · Docs · Hologram Models Hub`,
+    description: p.description,
+    section: "docs",
+    styles: ["docs.css"],
+    body: `<main class="docs">${D.sidebar(docPages, p.slug, base)}${D.article(p, docPages, base)}</main>`,
+  }));
+  await writeFile(join(DIST, "docs", `${p.slug}.md`), D.twin(p, { endpoint: ENDPOINT }));
+}
+await writeFile(join(DIST, "llms.txt"), D.llms(docPages, { endpoint: ENDPOINT, spec, snapshot: data.snapshot, models: models.length }));
 if (privy) {
   await cp(join(SITE, "src", "auth.js"), join(DIST, "auth.js"));
   await mkdir(join(DIST, "vendor", "privy"), { recursive: true });
@@ -406,4 +494,30 @@ if (archive) {
 }
 await writeFile(join(DIST, ".nojekyll"), "");
 
-console.log(`built ${models.length} model pages + browse at base ${base} → ${DIST}`);
+// ---- the Registry page gets the same header as everything else
+//
+// It ships as its own finished file rather than through page(), because it carries its own component set,
+// its own covers and its own hasher. What it must not carry is its own idea of the header: a second copy
+// of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
+// one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
+// very same header() and topNav() every other page is built with.
+// The Spaces and Buckets pages ship the same way: their own components, the site's header.
+for (const section of ["registry", "spaces", "buckets"]) {
+  const path = join(DIST, section, "index.html");
+  let html = await readFile(path, "utf8");
+  for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {
+    if (!html.includes(mark)) throw new Error(`${section}/index.html lost ${mark}: the shared header has nowhere to go`);
+  }
+  html = html.replace("<!--chrome:head-->", chromeHead).replace("<!--chrome:header-->", header({ section }));
+  await writeFile(path, html);
+}
+
+// The Registry page ships from public/. It carries its own covers and its own hasher, and this
+// refuses to build a copy that would fetch either from somebody else.
+await writeFile(join(DIST, "buckets", "links.json"), JSON.stringify(bucketLinks));
+console.log(await checkBucketLinks(DIST, models.length));
+console.log(await checkSealed(DIST));
+// Every link in the docs lands on something this build ships, and every page has something to run.
+console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));
+
+console.log(`built ${models.length} model pages + browse + ${docPages.length} docs pages at base ${base} → ${DIST}`);

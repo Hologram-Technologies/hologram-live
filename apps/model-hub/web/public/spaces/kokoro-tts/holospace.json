@@ -1,0 +1,26 @@
+{
+  "format": "hologram.space/v1",
+  "id": "kokoro-tts",
+  "name": "Kokoro TTS",
+  "task": "Speech",
+  "tagline": "Type a sentence, hear it. 82M parameters, on your GPU.",
+  "entry": "index.html",
+  "space": {
+    "source": "https://huggingface.co/spaces/webml-community/kokoro-webgpu",
+    "sdk": "static",
+    "models": [
+      "onnx-community/Kokoro-82M-v1.0-ONNX"
+    ],
+    "modelHost": "https://huggingface.co",
+    "modelBytes": 326054472
+  },
+  "requires": [
+    "webgpu",
+    "opfs"
+  ],
+  "capabilities": {
+    "storage": [
+      "holo-space:kokoro-tts"
+    ]
+  }
+}

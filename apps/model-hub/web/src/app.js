@@ -1,10 +1,11 @@
 import * as R from "./render.mjs";
 import * as B from "./braille.mjs";
+import { mountChrome } from "./chrome.js";
 
 const base = document.documentElement.dataset.base;
 const $ = (s, el = document) => el.querySelector(s);
 
-themeSwitch();
+mountChrome();
 B.play();
 let view = null; // set by browse(): lets the archive swap the catalog under the same interface
 if ($("#browse")) browse();
@@ -12,6 +13,37 @@ if ($("[data-verify]")) model();
 copyButtons();
 if ($("#archive")) archive();
 if ($("#gh-stars")) stars();
+if ($(".land-track")) strip();
+
+// The strip's slide is a CSS animation, and on some phones it never advances: a compositor that will not run a
+// transform loop on a fixed, masked element, or a device that turns animations off below the page. A reader on
+// such a phone saw a strip that stood still. So, once the page has settled, the track's position is read twice;
+// if the browser has not moved it, the loop is driven by hand at the pace the stylesheet asks for. A hidden
+// window (animations pause there by design), a paused run (a pointer over it, a link with focus) and a reader
+// who asked for reduced motion are all left exactly as they are.
+function strip() {
+  const track = $(".land-track");
+  const x = () => new DOMMatrix(getComputedStyle(track).transform).e;
+  const check = () => {
+    if (document.hidden) { document.addEventListener("visibilitychange", () => setTimeout(check, 1000), { once: true }); return; }
+    const x0 = x();
+    setTimeout(() => {
+      const cs = getComputedStyle(track);
+      if (document.hidden || x() !== x0 || cs.animationPlayState === "paused" || cs.animationName === "none") return;
+      const speed = (track.scrollWidth / 2) / (parseFloat(cs.animationDuration) || 40); // px per second, the same loop
+      track.style.animation = "none";
+      let at = -x0, last = performance.now();
+      const step = (now) => {
+        const half = track.scrollWidth / 2;
+        if (half > 0 && !track.matches(":focus-within, :hover")) { at = (at + ((now - last) / 1000) * speed) % half; track.style.transform = `translateX(${-at}px)`; }
+        last = now;
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }, 1200);
+  };
+  setTimeout(check, 500);
+}
 
 // The hero's star count is baked into the page by the build, so the badge is right on first paint and never
 // flashes an empty slot. This keeps it honest between nightly builds: one unauthenticated call to GitHub's
@@ -37,7 +69,6 @@ function stars() {
     })
     .catch(() => {});
 }
-if ($("#account")) account();
 
 async function browse() {
   const data = await fetch(`${base}data/models.json`).then((r) => r.json());
@@ -765,121 +796,4 @@ function copyButtons() {
       setTimeout(() => { const now = b.querySelector(".i"); if (now && was) now.outerHTML = was; }, 1300);
     } catch {}
   });
-}
-
-// Dark, Light, Immersive. Dark for first visits; the choice is kept on this device.
-function themeSwitch() {
-  const KEY = "hologram-models-hub.theme";
-  const root = document.documentElement, button = $("#theme-button"), menu = $("#theme-menu");
-  if (!button) return;
-  const walls = JSON.parse($("#wallpapers").textContent);
-  const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-  let warmed = false;
-
-  function sync() {
-    const mode = root.dataset.theme, wall = root.dataset.wallpaper;
-    for (const b of menu.querySelectorAll("[data-theme-mode]")) b.setAttribute("aria-checked", String(b.dataset.themeMode === mode));
-    for (const b of menu.querySelectorAll("button.wall")) b.setAttribute("aria-checked", String(mode === "immersive" && b.dataset.wallpaper === wall));
-    const w = walls.find((x) => x.key === wall);
-    $("#walls").classList.toggle("on", mode === "immersive");
-    $("#wall-credit").innerHTML = w ? `${w.name}, photo by <a href="${w.url}" target="_blank" rel="noopener">${w.by}</a> on Unsplash` : "";
-  }
-
-  function apply(mode, wallpaper = root.dataset.wallpaper) {
-    const run = () => {
-      root.dataset.theme = mode;
-      root.dataset.wallpaper = wallpaper;
-      root.classList.toggle("dark", mode !== "light");
-      try { localStorage.setItem(KEY, JSON.stringify({ mode, wallpaper })); } catch {}
-      sync();
-    };
-    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (document.startViewTransition && !calm && !document.hidden) {
-      const t = document.startViewTransition(run);
-      for (const p of [t.ready, t.finished, t.updateCallbackDone]) p?.catch(() => {});
-    } else run();
-  }
-
-  // Full size wallpapers load the moment the menu opens, so Immersive appears instantly.
-  function warm() {
-    if (warmed) return;
-    warmed = true;
-    for (const w of walls) { const img = new Image(); img.decoding = "async"; img.src = `${base}wallpapers/${w.key}.jpg`; }
-  }
-
-  const items = () => [...menu.querySelectorAll('[role="menuitemradio"]')];
-  function open(show, focusFirst) {
-    menu.hidden = !show;
-    button.setAttribute("aria-expanded", String(show));
-    if (show) { warm(); sync(); if (focusFirst) (menu.querySelector('[aria-checked="true"]') || items()[0]).focus(); }
-  }
-
-  button.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden, e.detail === 0); });
-  button.addEventListener("pointerenter", warm, { once: true });
-  menu.addEventListener("click", (e) => {
-    const mode = e.target.closest("button[data-theme-mode]"), wall = e.target.closest("button.wall");
-    if (mode) apply(mode.dataset.themeMode);
-    else if (wall) apply("immersive", wall.dataset.wallpaper);
-  });
-  menu.addEventListener("keydown", (e) => {
-    const list = items(), i = list.indexOf(document.activeElement);
-    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
-    if (step) { e.preventDefault(); list[(i + step + list.length) % list.length].focus(); }
-    if (e.key === "Escape") { open(false); button.focus(); }
-  });
-  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".appearance")) open(false); });
-  window.addEventListener("storage", (e) => { if (e.key === KEY) { const s = read(); if (s.mode) apply(s.mode, s.wallpaper || "alps"); } });
-  sync();
-}
-
-// ---- sign-in
-//
-// The whole of it lives in auth.js, and auth.js is only fetched when someone reaches for the door: a pointer over
-// the button, a keyboard focus, a click, or a returning visit by someone who was signed in here before. An
-// anonymous visit downloads none of it.
-function account() {
-  const box = $("#account"), signIn = $("#sign-in-button"), mark = $("#account-button"), menu = $("#account-menu");
-  let mod = null, modReady = null;
-  // The module handle is kept the moment it resolves: paint() runs from its own change events and must not wait.
-  const load = () => (mod ??= import(`${base}auth.js`).then((m) => (modReady = m)));
-
-  function paint(user) {
-    signIn.hidden = Boolean(user);
-    mark.hidden = !user;
-    if (!user) { menu.hidden = true; menu.replaceChildren(); return; }
-    const m = mod && modReady;
-    $("#account-initial").textContent = m ? m.initialOf(user) : "?";
-    mark.title = user.email || "Your account";
-    if (m) menu.innerHTML = m.accountMenu(user);
-    $("#sign-out")?.addEventListener("click", async () => { open(false); (await load()).signOut(); });
-  }
-  paint(null);
-
-  const open = (show) => { menu.hidden = !show; mark.setAttribute("aria-expanded", String(show)); };
-  mark.addEventListener("click", (e) => { e.stopPropagation(); open(menu.hidden); });
-  menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { open(false); mark.focus(); } });
-  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest("#account")) open(false); });
-
-  // Intent, not load: reaching for the button is enough to have the sign-in ready by the time it is pressed. A
-  // phone has no hover, so the press itself is the first signal there — pointerdown still lands before the click.
-  const warm = () => load().then((m) => m.warm());
-  for (const signal of ["pointerenter", "pointerdown", "focus"]) signIn.addEventListener(signal, warm, { once: true });
-  signIn.addEventListener("click", async () => (await load()).open());
-
-  // Two reasons to load it without being asked: this is the page a provider sends people back to, or this browser
-  // was signed in here before. The hint is read straight from storage, not from auth.js, so that asking the
-  // question costs an anonymous visitor nothing.
-  const landing = $("#auth-landing");
-  const returning = (() => { try { return localStorage.getItem("hologram-models-hub.account") === "1"; } catch { return false; } })();
-  if (landing || returning) {
-    load().then(async (m) => {
-      m.onChange(paint);
-      try {
-        const user = await m.restore();
-        if (!landing) return;
-        if (user) location.replace(base);
-        else landing.textContent = "That sign-in link did not work. Try again from any page.";
-      } catch { if (landing) landing.textContent = "Something went wrong signing you in. Try again from any page."; }
-    }).catch(() => {});
-  }
 }

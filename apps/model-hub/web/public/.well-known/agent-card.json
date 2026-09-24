@@ -40,6 +40,8 @@
     "getAgentBrief",
     "getModelsSection",
     "getRegistrySection",
+    "getSpacesSection",
+    "getBucketsSection",
     "getModelsPage",
     "getDocs",
     "getDocsIndex",

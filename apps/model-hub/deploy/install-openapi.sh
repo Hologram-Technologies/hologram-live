@@ -19,6 +19,7 @@
 #   5. A malformed object address refuses in the documented JSON shape instead of the catch-all's text/plain.
 #   6. /models and /registry answer their own brief to anything that is not a browser, so the endpoint the site
 #      shows beside each section heading is a line you can run rather than a name you have to interpret.
+#      /docs carries its slash: /docs without one is the server's own API reference, on a different upstream.
 #
 # Each edit is applied only if it is missing, so this is safe to run against a host that has had an earlier version
 # of this script: it adds what is absent and leaves the rest alone.
@@ -182,9 +183,31 @@ if robots_anchor not in block:
     raise SystemExit("the robots header is not where expected; refusing to guess where to insert")
 if "@section_brief" not in block:
     block = block.replace(robots_anchor, robots_anchor + (
-        '\t\t# Each section answers the way the root does: the page to a browser, the section\'s own brief to everything\n\t\t# else. The site shows an endpoint beside every section heading, and a name is not usable -- an agent that\n\t\t# follows it gets the browse page, a quarter of a megabyte of markup. This adds no API: every route the briefs\n\t\t# name already existed. /v2/ is deliberately untouched, because it is a protocol endpoint and OCI clients\n\t\t# depend on exactly what it returns.\n\t\t@section_brief {\n\t\t\tpath /models /models/ /registry /registry/\n\t\t\tnot header Accept *text/html*\n\t\t\tnot header User-Agent *bot*\n\t\t\tnot header User-Agent *Bot*\n\t\t\tnot header User-Agent *Slack*\n\t\t\tnot header User-Agent *Twitter*\n\t\t\tnot header User-Agent *Discord*\n\t\t\tnot header User-Agent *facebookexternalhit*\n\t\t}\n\t\trewrite @section_brief /{path.0}.md\n\t\theader /models* Vary Accept\n\t\theader /registry* Vary Accept\n\t\theader /models.md Access-Control-Allow-Origin "*"\n\t\theader /registry.md Access-Control-Allow-Origin "*"\n'
+        '\t\t# Each section answers the way the root does: the page to a browser, the section\'s own brief to everything\n\t\t# else. The site shows an endpoint beside every section heading, and a name is not usable -- an agent that\n\t\t# follows it gets the browse page, a quarter of a megabyte of markup. This adds no API: every route the briefs\n\t\t# name already existed. /v2/ is deliberately untouched, because it is a protocol endpoint and OCI clients\n\t\t# depend on exactly what it returns.\n\t\t@section_brief {\n\t\t\tpath /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/\n\t\t\tnot header Accept *text/html*\n\t\t\tnot header User-Agent *bot*\n\t\t\tnot header User-Agent *Bot*\n\t\t\tnot header User-Agent *Slack*\n\t\t\tnot header User-Agent *Twitter*\n\t\t\tnot header User-Agent *Discord*\n\t\t\tnot header User-Agent *facebookexternalhit*\n\t\t}\n\t\trewrite @section_brief /{path.0}.md\n\t\theader /models* Vary Accept\n\t\theader /registry* Vary Accept\n\t\theader /spaces* Vary Accept\n\t\theader /buckets* Vary Accept\n\t\theader /docs/* Vary Accept\n\t\theader /models.md Access-Control-Allow-Origin "*"\n\t\theader /registry.md Access-Control-Allow-Origin "*"\n\t\theader /spaces.md Access-Control-Allow-Origin "*"\n\t\theader /buckets.md Access-Control-Allow-Origin "*"\n\t\theader /docs.md Access-Control-Allow-Origin "*"\n'
     ), 1)
     done.append("gave /models and /registry their own briefs")
+else:
+    # Already there, from when only two sections had one. Widen it to all five rather than leave the three new
+    # tags pointing at an address that answers a page.
+    old_paths = "\t\t\tpath /models /models/ /registry /registry/\n"
+    new_paths = "\t\t\tpath /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/\n"
+    if old_paths in block:
+        block = block.replace(old_paths, new_paths, 1)
+        done.append("widened the section briefs to spaces, buckets and docs")
+    old_cors = '\t\theader /registry.md Access-Control-Allow-Origin "*"\n'
+    new_cors = ('\t\theader /registry.md Access-Control-Allow-Origin "*"\n'
+                '\t\theader /spaces.md Access-Control-Allow-Origin "*"\n'
+                '\t\theader /buckets.md Access-Control-Allow-Origin "*"\n'
+                '\t\theader /docs.md Access-Control-Allow-Origin "*"\n')
+    if old_cors in block and "/spaces.md Access-Control" not in block:
+        block = block.replace(old_cors, new_cors, 1)
+    old_vary = "\t\theader /registry* Vary Accept\n"
+    new_vary = ("\t\theader /registry* Vary Accept\n"
+                "\t\theader /spaces* Vary Accept\n"
+                "\t\theader /buckets* Vary Accept\n"
+                "\t\theader /docs/* Vary Accept\n")
+    if old_vary in block and "/spaces* Vary" not in block:
+        block = block.replace(old_vary, new_vary, 1)
 
 if not done:
     raise SystemExit("already applied; nothing to change")
@@ -214,6 +237,9 @@ verify() {
 	probe "malformed address"   /api/v1/objects/notanaddress  400 'LIVE_BAD_REQUEST'
 	probe "the models brief"    /models                       200 "$HOST/models"
 	probe "the registry brief"  /registry                     200 "$HOST/registry"
+	probe "the spaces brief"    /spaces                       200 "$HOST/spaces"
+	probe "the buckets brief"   /buckets                      200 "$HOST/buckets"
+	probe "the docs brief"      /docs/                        200 "$HOST/docs"
 	# The headline claim: what curl actually gets from the bare name.
 	if curl -s --max-time 20 -H 'accept: */*' "https://$HOST/" | head -1 | grep -q "^# $HOST"; then
 		echo "  ok   the bare name answers the brief"

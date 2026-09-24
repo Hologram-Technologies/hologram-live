@@ -69,7 +69,7 @@ Append `Caddyfile.hub` (with the token) to the front Caddyfile, then `caddy relo
 - **IPFS:** measured 2026-09-18 with Kokoro-82M: Filebase read-back CID equals the local CID; the 327 MB weights fetched from `ipfs.filebase.io` in 33 s at 10 MB/s match Hugging Face SHA-256; the gateway sends `Access-Control-Allow-Origin: *`, so browser Verify reports "Identical bytes from Hugging Face, ModelScope and IPFS". Public gateways `ipfs.io` and `dweb.link` rate-limited the same CID (429), so the site uses the Filebase gateway.
 - **Get a pinned model:** `pins.json` gives the IPFS root per model; `https://ipfs.filebase.io/ipfs/<root>/<path>` serves each file, and the browser checks it against the index SHA-256.
 
-## The name: gethologram.ai (moved from hub.uor.foundation on 2026-09-24)
+## The name: gethologram.ai (moved from gethologram.ai on 2026-09-24)
 
 The hub's own address lives in one file, `web/src/origin.mjs`; everything that prints it (the hero line, `agent.md`,
 the section briefs, `llms.txt`, the OpenAPI `servers` entry, the run snippets, the star badge's data build) reads it
@@ -94,7 +94,7 @@ host, not the host to the name. `cutover-gethologram.sh` does the host side, eac
 Order matters: the site must already be built from a revision that carries the rename (`agent.md` opens with
 `# gethologram.ai`), and `install` refuses otherwise, because the hero would advertise a name the front door does not
 answer. Run `build-site.sh && publish.sh` first, never `build-site.sh` alone. The front door keeps answering
-`hub.uor.foundation` until that name is deleted; nothing on the hub depends on it any more.
+`gethologram.ai` until that name is deleted; nothing on the hub depends on it any more.
 
 `/benches/*` is the benchmark JSON that `Hologram-Technologies/hologram`'s benchmarks workflow pushes into the
 `hologram-website` repository; it used to be served by Pages. Now `/root/hub/benches` is a sparse clone of that

@@ -171,7 +171,14 @@ const chromeHead = [
   `<script type="module">import { mountChrome } from "${base}chrome.js"; mountChrome();</script>`,
 ].join("\n");
 
-const page = ({ title, description, body, search = false, model = "", home = false, section = "", styles = [] }) => `<!doctype html>
+// The tag beside every section heading. One shape and one meaning wherever a section is titled: the address
+// that answers with what this section does and how to use it. A browser asking for it gets the section's page;
+// anything else gets the brief. chrome.js fills in the host, asks the address whether it is answering, and
+// copies it when clicked; the head link beside it is the same address in a form a machine reads first.
+const sectionTag = (name) => `<button type="button" class="endpoint section-tag" data-section="${name}" aria-label="Copy the ${name} endpoint"><span class="dot"></span><span class="host">\u2026</span></button>`;
+const describedBy = (name) => name ? `<link rel="describedby" type="text/markdown" href="${base}${name}.md">` : "";
+
+const page = ({ title, description, body, search = false, model = "", home = false, section = "", sectionRoot = false, styles = [] }) => `<!doctype html>
 <html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
@@ -185,6 +192,7 @@ const page = ({ title, description, body, search = false, model = "", home = fal
 ${home ? `<script>if(location.search)location.replace(${JSON.stringify(BROWSE)}+location.search);</script>\n` : ""}<script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>
 ${privy ? `<script type="application/json" id="privy">${JSON.stringify(privy)}</script>` : ""}
 <link rel="service-desc" type="application/openapi+json" href="${base}openapi.json">
+${describedBy(sectionRoot ? section : "")}
 <link rel="service-doc" type="text/markdown" href="${base}agent.md">
 <link rel="llms-txt" href="${base}llms.txt">
 <link rel="alternate" type="application/json" href="${base}.well-known/model-hub.json">
@@ -223,6 +231,7 @@ const r = R.query(models, initial);
 const sortMenu = R.SORTS.map(([k, label]) => `<li role="option" data-sort="${k}" aria-selected="${k === initial.sort}">${label}${R.icon.check}</li>`).join("");
 const browse = page({
   section: "models",
+  sectionRoot: true,
   title: R.title(initial),
   description: `The ${models.length} trending models on Hugging Face, every file named by its bytes.`,
   // The lead row is the same row every catalogue page opens with (.lead, chrome.css): the section's name, how
@@ -230,7 +239,7 @@ const browse = page({
   // call, not the name of the page — /models answers this page to a browser and its brief to everything else,
   // so the row names the route that returns the models themselves. app.js fills it in and asks it whether it
   // is up, which is what the dot says.
-  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span></div>
+  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${sectionTag("models")}</div>
 ${archive ? `<div class="archive-hidden" hidden>${indexPill()}</div>` : ""}
 <main class="browse" id="browse">
   <aside class="panel filters" aria-label="Filters">
@@ -461,8 +470,9 @@ for (const p of docPages) {
     title: p.slug === "index" ? "Docs · Hologram Models Hub" : `${p.title} · Docs · Hologram Models Hub`,
     description: p.description,
     section: "docs",
+    sectionRoot: p.slug === "index",
     styles: ["docs.css"],
-    body: `<main class="docs">${D.sidebar(docPages, p.slug, base)}${D.article(p, docPages, base)}</main>`,
+    body: `<main class="docs">${D.sidebar(docPages, p.slug, base)}${D.article(p, docPages, base, p.slug === "index" ? sectionTag("docs") : "")}</main>`,
   }));
   await writeFile(join(DIST, "docs", `${p.slug}.md`), D.twin(p, { endpoint: ENDPOINT }));
 }
@@ -511,7 +521,11 @@ for (const section of ["registry", "spaces", "buckets"]) {
   for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {
     if (!html.includes(mark)) throw new Error(`${section}/index.html lost ${mark}: the shared header has nowhere to go`);
   }
-  html = html.replace("<!--chrome:head-->", chromeHead).replace("<!--chrome:header-->", header({ section }));
+  if (!html.includes("<!--chrome:tag-->")) throw new Error(`${section}/index.html lost <!--chrome:tag-->: the section tag has nowhere to go`);
+  html = html
+    .replace("<!--chrome:head-->", chromeHead + "\n" + describedBy(section))
+    .replace("<!--chrome:header-->", header({ section }))
+    .replace("<!--chrome:tag-->", sectionTag(section));
   await writeFile(path, html);
 }
 

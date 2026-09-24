@@ -7,6 +7,7 @@
 //! either underspecified or the server does not hold it. Run each fifty times
 //! before believing it.
 
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
@@ -71,7 +72,7 @@ fn start() -> Server {
         port,
         _root: root,
     };
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_mins(1);
     while TcpStream::connect(("127.0.0.1", port)).is_err() {
         assert!(Instant::now() < deadline, "the registry did not start");
         std::thread::sleep(Duration::from_millis(50));
@@ -109,14 +110,14 @@ impl Answer {
 fn send(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Answer {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream
-        .set_read_timeout(Some(Duration::from_secs(60)))
+        .set_read_timeout(Some(Duration::from_mins(1)))
         .expect("timeout");
     let mut head = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: {}\r\n",
         body.len()
     );
     for (name, value) in headers {
-        head.push_str(&format!("{name}: {value}\r\n"));
+        write!(&mut head, "{name}: {value}\r\n").expect("format header");
     }
     head.push_str("\r\n");
     stream.write_all(head.as_bytes()).expect("send head");
@@ -152,15 +153,13 @@ fn try_send(
     body: &[u8],
 ) -> Option<Answer> {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(60)))
-        .ok()?;
+    stream.set_read_timeout(Some(Duration::from_mins(1))).ok()?;
     let mut head = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: {}\r\n",
         body.len()
     );
     for (name, value) in headers {
-        head.push_str(&format!("{name}: {value}\r\n"));
+        write!(&mut head, "{name}: {value}\r\n").expect("format header");
     }
     head.push_str("\r\n");
     stream.write_all(head.as_bytes()).ok()?;
@@ -336,7 +335,7 @@ fn delete_during_pull() {
     // flight while the delete lands.
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream
-        .set_read_timeout(Some(Duration::from_secs(60)))
+        .set_read_timeout(Some(Duration::from_mins(1)))
         .expect("timeout");
     write!(
         stream,

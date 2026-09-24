@@ -16,7 +16,6 @@
 }
 .lead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:30px 0 18px}
 .lead h1{font-size:30px;font-weight:500;letter-spacing:-.02em}
-.lead .prov{margin-left:auto;font-size:13px;color:var(--faint)}
 .endpoint{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border:1px solid var(--line2);
   border-radius:8px;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
 .dot{width:7px;height:7px;border-radius:999px;background:var(--faint);flex:none}
@@ -52,8 +51,6 @@
 .stage iframe{display:block;width:100%;height:min(78vh,860px);border:0;background:var(--ground)}
 .stage .need{padding:40px 24px;color:var(--dim);font-size:14px;max-width:60ch}
 .stage .need b{color:var(--text);font-weight:500}
-.foot-note{padding:28px 0 40px;font-size:12.5px;color:var(--faint);max-width:72ch}
-.foot-note a{color:var(--dim)}
 @media (max-width:640px){.stage .bar .k{display:none}.stage iframe{height:72vh}}
 </style>
 </head>
@@ -61,7 +58,7 @@
 <!--chrome:header-->
 <div class="shell">
 <main>
-  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span><p class="prov" id="prov">Each one runs in your browser, in its own sealed frame.</p></div>
+  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span></div>
 
   <section class="stage" id="stage" aria-live="polite">
     <div class="bar">
@@ -75,7 +72,6 @@
 
   <div class="grid" id="grid"></div>
 
-  <footer class="foot-note" id="note"></footer>
 </main>
 </div>
 <script type="module" src="./app.js"></script>

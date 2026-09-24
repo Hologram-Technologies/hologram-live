@@ -98,7 +98,6 @@ async function main() {
   await icons();
   $("count").textContent = String(catalog.length);
   const grid = $("grid"); grid.innerHTML = ""; for (const s of catalog) grid.appendChild(card(s));
-  $("note").innerHTML = `A Space is a folder sealed under one address — its files, their digests and the models it names. The model bytes come from ${new URL(catalog[0].modelHost).host} and are accepted only when they re-derive to the digest the model index gives them; after that they are served from your own browser's store. Nothing runs on a server. Source Spaces: ${catalog.map((s) => `<a href="${s.source}" rel="noopener" target="_blank">${s.source.split("/spaces/")[1]}</a>`).join(", ")}.`;
   $("s-close").addEventListener("click", close);
   // registry presence, per Space
   let any = 0;

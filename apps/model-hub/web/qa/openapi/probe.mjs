@@ -82,6 +82,11 @@ async function main() {
     ["section.models.slash", "/models/", { headers: { accept: "*/*" } }],
     ["section.models.page", "/models/", { headers: { accept: "text/html" } }],
     ["section.registry", "/registry", { headers: { accept: "*/*" } }],
+    ["section.spaces", "/spaces", { headers: { accept: "*/*" } }],
+    ["section.buckets", "/buckets", { headers: { accept: "*/*" } }],
+    // Docs is the one section with no slashless address of its own: /docs is the server's API reference.
+    ["section.docs", "/docs/", { headers: { accept: "*/*" } }],
+    ["section.docs.page", "/docs/", { headers: { accept: "text/html" } }],
     ["descriptor", "/.well-known/model-hub.json", { headers: CORS }],
     ["llms", "/llms.txt", { headers: CORS }],
     ["openapi", "/openapi.json", { headers: CORS }],

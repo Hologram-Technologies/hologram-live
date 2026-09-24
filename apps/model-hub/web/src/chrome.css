@@ -144,6 +144,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 .lead h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
 /* The address. A chip the height of the count beside it, in the mono the address is written in. */
 .endpoint { display: inline-flex; align-items: center; gap: var(--space-2); height: var(--hh-control); padding: 0 var(--space-3); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim); white-space: nowrap; }
+/* The tag beside a section heading: the same control on all five sections. It is a button because it copies,
+   and it wears .endpoint because what it shows is the section's address -- one look, whichever section you
+   are in. Focus is the sheet-wide :focus-visible rule above; nothing here needs its own. */
+.section-tag { background: none; cursor: pointer; font: inherit; font-family: var(--font-mono); font-size: var(--text-sm); transition: color var(--hh-ease), border-color var(--hh-ease); }
+.section-tag:hover { color: var(--hh-text); border-color: var(--hh-text-faint); }
+.section-tag.copied { color: var(--hh-ok); border-color: var(--hh-ok); }
 .dot { width: var(--space-2); height: var(--space-2); border-radius: 50%; background: var(--hh-text-faint); flex: none; }
 .dot.ok { background: var(--hh-ok); }
 .dot.bad { background: var(--hh-bad); }

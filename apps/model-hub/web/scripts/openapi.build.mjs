@@ -21,14 +21,20 @@
 //
 // Every example here is copied from qa/openapi/evidence.json, recorded by probe.mjs against the live hub.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { load as loadDocs, GROUPS as DOC_GROUPS } from "../src/docs.mjs";
 
 const HERE = new URL("./", import.meta.url);
+// The docs brief is built from the docs loader the site itself uses, so it cannot list a page the build does
+// not ship, or miss one it does.
+const DOCS_DIR = fileURLToPath(new URL("../docs/", HERE));
 const SERVER_SPEC = new URL("./openapi.server.json", HERE);
 const PUBLIC = new URL("../public/", HERE);
 const OUT = new URL("./openapi.json", PUBLIC);
 const CARD = new URL("./.well-known/agent-card.json", PUBLIC);
 const BRIEF = new URL("./agent.md", PUBLIC);
-const SECTIONS = { models: new URL("./models.md", PUBLIC), registry: new URL("./registry.md", PUBLIC) };
+const SECTION_NAMES = ["models", "registry", "spaces", "buckets", "docs"];
+const SECTIONS = Object.fromEntries(SECTION_NAMES.map((n) => [n, new URL(`./${n}.md`, PUBLIC)]));
 const ROBOTS = new URL("./robots.txt", PUBLIC);
 const BASE = "https://hub.uor.foundation";
 
@@ -228,21 +234,31 @@ function document(server, evidence) {
       ...probe("/agent.md", { contentType: "text/markdown" }),
     },
   };
-  for (const [name, what] of [["models", "finding a model, proving it and fetching it"], ["registry", "pulling the same models as OCI artifacts"]]) {
-    spec.paths[`/${name}`] = {
+  // Every section of the site names one address beside its heading, and this is that address. /docs keeps its
+  // slash: /docs without one is the server's own API reference, a different thing on a different upstream.
+  const SECTION_PATH = { models: "/models", registry: "/registry", spaces: "/spaces", buckets: "/buckets", docs: "/docs/" };
+  for (const [name, what] of [
+    ["models", "finding a model, proving it and fetching it"],
+    ["registry", "pulling the same models as OCI artifacts"],
+    ["spaces", "browser-only apps, each sealed under one root digest, and how to read one from the registry"],
+    ["buckets", "walking a bucket as an OCI index tree and checking every block against its address"],
+  ]) {
+    spec.paths[SECTION_PATH[name]] = {
       get: {
         tags: ["Discovery"],
-        operationId: name === "models" ? "getModelsSection" : "getRegistrySection",
+        operationId: `get${name[0].toUpperCase()}${name.slice(1)}Section`,
         summary: `The ${name} section, answered two ways`,
         description: [
-          `The site shows this address beside the ${name} heading. A browser gets the browse page; anything else`,
-          `gets a brief covering ${what}: the few requests that do the job, in the order you would make them, with`,
-          "the rule that makes the bytes safe.",
+          `The site shows this address beside the ${name} heading — the same tag on every section, so one shape`,
+          "covers all five. A browser gets the section's page; anything else gets a brief covering",
+          `${what}: the few requests that do the job, in the order you would make them, with the rule that makes`,
+          "the bytes safe.",
           "",
           "It adds no API — every route the brief names is already in this document. What was missing was an",
           "address that gathers them, which the site was already advertising. The trailing slash works either way,",
-          "and a page below the section, such as a single model, is untouched.",
+          "and a page below the section, such as a single model or one docs page, is untouched.",
           name === "registry" ? "\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns." : "",
+          name === "docs" ? "\nThis one is the only section whose address needs its slash: `/docs` without one is the server's own API reference." : "",
         ].filter(Boolean).join("\n"),
         responses: {
           200: {
@@ -252,7 +268,7 @@ function document(server, evidence) {
           },
           ...NOT_SERVED,
         },
-        ...probe(`/${name}`, { headers: { accept: "*/*" }, contentType: "text/markdown" }),
+        ...probe(SECTION_PATH[name], { headers: { accept: "*/*" }, contentType: "text/markdown" }),
       },
     };
   }
@@ -290,9 +306,24 @@ function document(server, evidence) {
       tags: ["Discovery"],
       operationId: "getDocsIndex",
       summary: "The documentation",
-      description: "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
-      responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, ...NOT_SERVED },
-      ...probe("/docs/", { contentType: "text/html" }),
+      description: [
+        "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document.",
+        "Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+        "",
+        "This is also the address the site shows beside the Docs heading, the same tag every section carries. A",
+        "browser gets this index; anything else gets the section brief, which lists every page and the address of",
+        "its twin, generated from the pages themselves. The slash is load-bearing: `/docs` without one is the",
+        "server's own API reference, on a different upstream.",
+      ].join("\n"),
+      responses: {
+        200: {
+          description: "The index to a browser; to anything else the section brief.",
+          headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
+          content: { "text/html": { schema: { type: "string" } }, "text/markdown": { schema: { type: "string", description: "The section brief." } } },
+        },
+        ...NOT_SERVED,
+      },
+      ...probe("/docs/", { headers: { accept: "text/html" }, contentType: "text/html" }),
     },
   };
   spec.paths["/docs/{page}/"] = {
@@ -1143,7 +1174,7 @@ const trim = (value, key, keep = 2) => (value && Array.isArray(value[key]) ? { .
 //
 // This adds no API. Every route named below already existed and is already in the document; what was missing was
 // an address that gathers them, which the site was already advertising.
-function sectionBrief(name) {
+function sectionBrief(name, docs = []) {
   const common = [
     "",
     "## The rule that makes it safe",
@@ -1161,6 +1192,90 @@ function sectionBrief(name) {
     `     ${BASE}/${name} again and read it verbatim. -->`,
     "",
   ];
+
+  if (name === "spaces") {
+    return [
+      "# hub.uor.foundation/spaces",
+      "",
+      "Apps that run entirely in the visitor's browser, each sealed under one address. Nothing runs on a server:",
+      "the page is a folder of static files, the model comes from the host the Space names, and the work happens on",
+      "the visitor's own GPU.",
+      "",
+      "## What is here",
+      "",
+      "    GET /spaces/spaces.json",
+      "        The catalog: every Space, and the SHA-256 root its whole folder seals under.",
+      "",
+      "    GET /v2/spaces/{id}/manifests/latest",
+      "        A published Space as an OCI artifact — config `holospace.json`, one layer per file, artifact type",
+      "        `application/vnd.hologram.space.v1+json`, the sealed root in an annotation. Reads need no token.",
+      "        A Space that is listed but not yet published answers 404 here, and that is not an error.",
+      "",
+      "## What sealed means",
+      "",
+      "Every file of a Space is named in `holospace.lock.json` with its SHA-256, and the lock's `root` is the",
+      "SHA-256 over that map. Change one byte anywhere and the root changes. Before a Space's code runs, its model",
+      "files are held until their bytes re-derive to the digest the model index gave; a byte that does not match is",
+      "refused, so the app sees a failed load rather than a wrong file.",
+      "",
+      "Each Space runs in a sandboxed frame with its own storage and a policy allowing exactly its own files, the",
+      "brand kit, and the one model host it declares. No CDN script, no third party, no camera, no microphone.",
+      ...common,
+    ].join("\n");
+  }
+
+  if (name === "buckets") {
+    return [
+      "# hub.uor.foundation/buckets",
+      "",
+      "Storage for models, datasets and checkpoints, where every object carries the address of its own bytes. A",
+      "bucket is an OCI index tree under `/v2/`, so anything that speaks the distribution protocol can walk one,",
+      "and every block can be checked against the address that named it. There is no separate bucket API.",
+      "",
+      "## Walk one",
+      "",
+      "    GET /v2/_catalog?n=200",
+      "        Every repository on the hub. The buckets are the ones named `buckets/<owner>/<name>`.",
+      "",
+      "    GET /v2/buckets/{owner}/{name}/manifests/latest",
+      "        The bucket as it stands: an OCI index whose entries carry each object's name, size and root.",
+      "",
+      "    GET /v2/buckets/{owner}/{name}/blobs/{digest}",
+      "        One block. The digest is the SHA-256 of the bytes, so you can check what you were given.",
+      "",
+      "    GET /v2/buckets/{owner}/{name}/tags/list",
+      "        Every past state. A tag `h-<milliseconds>` is one publish, and each names its parent, so the",
+      "        history is a chain you can walk back and read at any point.",
+      "",
+      "## What is private",
+      "",
+      "A private bucket is encrypted in the browser before anything is sent, object names included, and the key",
+      "stays in that browser. The hub holds bytes it cannot read, and so can anyone else who walks the tree.",
+      "Reading a public bucket is anonymous; writing any bucket needs the registry credential.",
+      "",
+      "A bucket exists only once someone has made one, so the catalog above is the honest answer to what is",
+      "here, not this file.",
+      ...common,
+    ].join("\n");
+  }
+
+  if (name === "docs") {
+    // A reader gets /docs/<page>/; you get /docs/<page>.md, the same words with no markup.
+    return [
+      "# hub.uor.foundation/docs",
+      "",
+      "The written documentation, in reading order. Every page has a Markdown twin at the address below: the same",
+      "words, with no navigation, no markup and no scripts.",
+      "",
+      ...DOC_GROUPS.flatMap((g) => {
+        const ps = docs.filter((p) => p.group === g);
+        if (!ps.length) return [];
+        return [`## ${g}`, "", ...ps.flatMap((p) => [`    GET /docs/${p.slug}.md`, `        ${p.title}. ${p.description}`]), ""];
+      }),
+      "If you would rather have it in one request, `/llms.txt` is this same list with the endpoints appended.",
+      ...common,
+    ].join("\n");
+  }
 
   if (name === "models") {
     return [
@@ -1395,12 +1510,12 @@ async function main() {
   }
   const server = JSON.parse(await readFile(SERVER_SPEC, "utf8"));
   const evidence = JSON.parse(await readFile(new URL("../qa/openapi/evidence.json", HERE), "utf8"));
+  const docs = await loadDocs(DOCS_DIR);
   const spec = document(server, evidence);
   const files = [
     [OUT, JSON.stringify(spec, null, 1) + "\n"],
     [BRIEF, brief(spec)],
-    [SECTIONS.models, sectionBrief("models")],
-    [SECTIONS.registry, sectionBrief("registry")],
+    ...SECTION_NAMES.map((n) => [SECTIONS[n], sectionBrief(n, docs)]),
     [CARD, JSON.stringify(agentCard(spec), null, 1) + "\n"],
     [ROBOTS, robots()],
   ];
@@ -1420,7 +1535,7 @@ async function main() {
   const ops = Object.values(spec.paths).reduce((n, item) => n + Object.keys(item).filter((k) => k !== "parameters").length, 0);
   console.log(`wrote public/openapi.json: ${Object.keys(spec.paths).length} paths, ${ops} operations, ${Object.keys(spec.components.schemas).length} schemas, ${Math.round(files[0][1].length / 1024)} KB`);
   console.log(`wrote public/agent.md: ${brief(spec).split("\n").length} lines`);
-  for (const [name, url] of Object.entries(SECTIONS)) console.log(`wrote public/${name}.md: ${sectionBrief(name).split("\n").length} lines`);
+  for (const [name, url] of Object.entries(SECTIONS)) console.log(`wrote public/${name}.md: ${sectionBrief(name, docs).split("\n").length} lines`);
   console.log(`wrote public/.well-known/agent-card.json: ${agentCard(spec).skills.length} skills`);
   console.log("wrote public/robots.txt");
 }

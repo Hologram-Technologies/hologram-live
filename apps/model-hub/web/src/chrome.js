@@ -12,7 +12,48 @@ const $ = (s, el = document) => el.querySelector(s);
 export function mountChrome() {
   foldingMenu();
   themeSwitch();
+  sectionTag();
   if ($("#account")) account();
+}
+
+// ---- the section tag
+//
+// Every section heading carries the same thing to its right: the address that describes that section. It is not
+// a label and not decoration -- it is a URL, and fetching it returns that section's features and the requests
+// that use them, in the order you would make them. A browser asking for the same URL gets the page instead, so
+// the tag names one address that serves the reader and the agent alike.
+//
+// Five sections, one implementation, so they cannot come to describe themselves in five different ways. The
+// address is the section's own name; /docs keeps its slash because /docs without one is the server's API
+// reference, a different thing on a different upstream.
+const SECTION_TAG = { models: "/models", registry: "/registry", spaces: "/spaces", buckets: "/buckets", docs: "/docs/" };
+
+function sectionTag() {
+  const el = $(".section-tag");
+  if (!el) return;
+  const path = SECTION_TAG[el.dataset.section];
+  if (!path) return;
+  const url = location.origin + path;
+  const host = $(".host", el);
+  host.textContent = location.host + path;
+  el.title = `${url} — what this section is and how to use it. Click to copy.`;
+
+  // The dot is worth the round trip: the page you are reading was built hours ago, and the address either
+  // answers now or it does not. Asking for the brief is what an agent would do, so this asks for the same.
+  const dot = $(".dot", el);
+  (async () => {
+    try {
+      const r = await fetch(path, { method: "HEAD", headers: { accept: "text/markdown" } });
+      dot.className = "dot " + (r.ok ? "ok" : "bad");
+    } catch { dot.className = "dot bad"; }
+  })();
+
+  el.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(url); } catch { return; }
+    el.classList.add("copied");
+    host.textContent = "copied";
+    setTimeout(() => { el.classList.remove("copied"); host.textContent = location.host + path; }, 1200);
+  });
 }
 
 // The row folded into a sheet, on a narrow screen. The button at the end of the header opens and closes it;

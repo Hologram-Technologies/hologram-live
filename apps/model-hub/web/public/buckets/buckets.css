@@ -23,9 +23,19 @@ main { display: block; }
 .crumbs a:hover { color: var(--hh-text); }
 .crumbs b { font-weight: var(--weight-normal); color: var(--hh-text); }
 
-.bar { display: flex; gap: var(--space-3); align-items: center; padding-bottom: var(--space-4);
+/* Inside a bucket: the filter and the check-everything button. (The list's bar is the site's .bar, from
+   /lib/catalog.css, with New bucket at its end at the same height as the search beside it.) */
+.tools { display: flex; gap: var(--space-3); align-items: center; padding-bottom: var(--space-4);
   flex-wrap: wrap; }
-.bar .field { flex: 1; min-width: 12rem; }
+.tools .field { flex: 1; min-width: 12rem; }
+#list-bar .button { height: var(--space-12); border-radius: var(--radius-lg); }
+/* A bucket's card: the bucket mark where a cover would be, the owner dimmed in the name. */
+.card .logo { display: grid; place-items: center; color: var(--hh-text); }
+.card .logo .i { width: var(--space-6); height: var(--space-6); color: var(--hh-text-dim); }
+.card h3 .owner { color: var(--hh-text-dim); }
+/* Inside a bucket the rail has nothing to say; the column takes the width. */
+.cols.one { grid-template-columns: minmax(0, 1fr); }
+.cols.one .rail { display: none; }
 
 .panel table { width: 100%; border-collapse: collapse; }
 .panel th { text-align: left; font-weight: var(--weight-normal); font-size: var(--text-xs);

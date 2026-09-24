@@ -5,6 +5,7 @@
 import { registry, readBucket, readHistory, readObject, writeObject, digestToCid, cidToDigest, visibilityOf, DEFAULT_QUOTA, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs?v=9'
 import { newKey, keyToText, keyFromText, keyCheck, sealName, ENC } from './lib/crypt.mjs?v=9'
 import { build, objectManifest } from './lib/octree.mjs?v=9'
+import { createRail, ICONS as I } from '../lib/rail.mjs'
 
 const reg = registry('')
 // Live follow is served by the bucket service, not by /v2/. Same origin in production; in the
@@ -178,17 +179,98 @@ let nextNote = null
 const READING = 'Read straight from /v2/. Every block is checked against its address in this tab before it counts as delivered.'
 
 // ---------------------------------------------------------------- the bucket list
+//
+// The same page every section is: the rail on the left with what you can narrow by, search and sort on
+// top, a card per bucket. A bucket's card is read from its head — objects, size, created, what it says
+// about itself — so the list costs one manifest per bucket after the catalogue, and nothing is drawn twice.
+const SIZES = ['Under 100 MB', '100 MB to 1 GB', '1 to 10 GB', 'Over 10 GB']
+const sizeOf = b => (b < 1e8 ? SIZES[0] : b < 1e9 ? SIZES[1] : b < 1e10 ? SIZES[2] : SIZES[3])
+let buckets = []
+const picked = { owner: new Set(), visibility: new Set(), size: new Set() }
+const values = (b, key) => key === 'owner' ? [b.owner] : key === 'visibility' ? [b.visibility] : key === 'size' ? [sizeOf(b.bytes)] : []
+function hit (b) {
+  const q = $('q-list').value.trim().toLowerCase()
+  return !q || [b.owner, b.name, b.owner + '/' + b.name, b.description].some(v => String(v || '').toLowerCase().includes(q))
+}
+// 'skip' leaves one facet's own choice out, so a chip's count says what choosing it would show.
+const matches = (b, skip) => hit(b) && Object.keys(picked).every(k => k === skip || !picked[k].size || values(b, k).some(v => picked[k].has(v)))
+function counts (key) {
+  const c = {}
+  for (const v of picked[key]) c[v] = 0
+  for (const b of buckets) if (matches(b, key)) for (const v of values(b, key)) c[v] = (c[v] || 0) + 1
+  return c
+}
+const SORT = {
+  name: (a, b) => (a.owner + '/' + a.name).localeCompare(b.owner + '/' + b.name),
+  large: (a, b) => b.bytes - a.bytes,
+  new: (a, b) => b.created.localeCompare(a.created)
+}
+const rail = createRail({
+  el: $('rail'),
+  tabs: [['Main', I.grid, ['owner', 'visibility']], ['Size', I.box, ['size']]],
+  labels: { owner: 'Owner', visibility: 'Visibility', size: 'Size' },
+  icons: { owner: I.seal, visibility: I.tag, size: I.box },
+  counts,
+  picked,
+  onChange: () => renderGrid(),
+  order: { size: SIZES, visibility: ['public', 'unlisted', 'private'] }
+})
+
+// The Models page's faceted mesh, seeded by the bucket's current state: same bytes, same surface.
+// (The Registry and Spaces pages carry the same lines; one generator for all three is on its way.)
+const ART_W = 260, ART_H = 120
+function art (seed) {
+  let h = 2166136261
+  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
+  const r = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000 }
+  const f = n => n.toFixed(1)
+  const cols = 9, rows = 4, gx = ART_W / (cols - 1), gy = ART_H / (rows - 1), p = []
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) p.push([x * gx + (r() - 0.5) * gx * 0.5, y * gy + (y && y < rows - 1 ? (r() - 0.5) * gy * 0.5 : 0)])
+  let edges = '', faces = ''
+  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols - 1; x++) {
+    const a = p[y * cols + x], b = p[y * cols + x + 1], c = p[(y + 1) * cols + x], d = p[(y + 1) * cols + x + 1]
+    for (const t of [[a, b, d], [a, d, c]]) {
+      const path = 'M' + t.map(q => f(q[0]) + ' ' + f(q[1])).join('L') + 'Z'
+      edges += path
+      const v = r()
+      if (v < 0.35) faces += '<path d="' + path + '" opacity="' + f(0.02 + v * 0.12) + '"/>'
+    }
+  }
+  return '<svg class="art lit" viewBox="0 0 ' + ART_W + ' ' + ART_H + '" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">' + faces + '</g><path class="edges" d="' + edges + '"/></svg>'
+}
+
+function card (b) {
+  const a = el('a', 'card')
+  a.href = '#/' + b.owner + '/' + b.name
+  const n = b.objects + ' object' + (b.objects === 1 ? '' : 's')
+  const tags = '<span class="tag ' + (b.visibility === 'public' ? 'here' : '') + '">' + b.visibility + '</span><span class="tag">' + n + '</span>'
+  a.innerHTML = '<span class="logo">' + ICON.bucket + '</span><span class="tags">' + tags + '</span><h3><span class="owner"></span> <span class="n"></span></h3><p></p><span class="foot"><span class="k" title="' + b.digest + '">κ:' + b.digest.slice(7, 15) + '</span><span>' + human(b.bytes) + '</span>' + (b.created ? '<span>' + b.created.slice(0, 10) + '</span>' : '') + '</span>' + art(b.digest)
+  a.querySelector('h3 .owner').textContent = b.owner + ' /'
+  a.querySelector('h3 .n').textContent = b.name
+  a.querySelector('p').textContent = b.description || (n + ', every one addressed by its bytes.')
+  return a
+}
+
+function renderGrid () {
+  const rows = buckets.filter(b => matches(b)).sort(SORT[$('sort').value] || SORT.name)
+  $('grid').replaceChildren(...rows.map(card))
+  $('count').textContent = String(rows.length)
+  $('list-empty').hidden = rows.length > 0
+  $('list-empty').textContent = buckets.length ? 'Nothing matches those filters.' : 'No buckets yet. Make one here, or from a shell with buckets create <owner>/<name>.'
+}
+
 async function renderList () {
   document.title = 'Buckets · Hologram Models Hub'
   $('title').textContent = 'Buckets'
   $('sub').hidden = true; $('sub').textContent = ''
   $('count').hidden = false; $('count').textContent = '…'
+  $('cols').classList.remove('one')
+  $('list-bar').hidden = false; $('grid').hidden = false; $('actions').hidden = true; $('table').hidden = true
   $('crumbs').hidden = true; $('bar').hidden = true; $('drop').hidden = true
   $('readme').hidden = true; $('cred').hidden = true; $('settings').hidden = true
   $('history-button').hidden = true; $('history').hidden = true; $('keybar').hidden = true; $('linked').hidden = true
+  $('empty').hidden = true
   closeDetail()
-  $('head').innerHTML = '<tr><th>Bucket</th><th>Objects</th><th>Size</th><th class="hide">Created</th><th class="hide">Address of the current state</th></tr>'
-  $('rows').replaceChildren()
   state = null
 
   const mine = ++renderSeq
@@ -196,51 +278,39 @@ async function renderList () {
   // The dot beside the title is the section tag's (chrome.js): it asks this section's address itself.
   try { repos = (await reg.catalogue()).filter(r => r.startsWith('buckets/')) } catch {}
   if (mine !== renderSeq) return
-  $('count').textContent = String(repos.length)
-  $('empty').hidden = repos.length > 0
-  if (!repos.length) {
-    $('empty').textContent = 'No buckets yet. Make one here, or from a shell with `buckets create <owner>/<name>`.'
-    says('')
-    return
-  }
-
-  for (const repo of repos.sort()) {
+  // One head per bucket, all at once. A repository whose tag is gone is a deleted bucket: the catalogue
+  // keeps listing the name, and a card with nothing behind it is a ghost.
+  const heads = await Promise.all(repos.map(repo => reg.manifest(repo, 'latest').catch(() => null)))
+  if (mine !== renderSeq) return
+  buckets = repos.map((repo, i) => {
+    const head = heads[i]
+    if (!head) return null
     const [, owner, name] = repo.split('/')
-    const tr = el('tr')
-    const a = el('a')
-    a.href = `#/${owner}/${name}`
-    a.innerHTML = `<span class="name">${ICON.bucket}<span>${owner} / <b>${name}</b></span></span>`
-    const td = el('td'); td.appendChild(a)
-    tr.append(td, el('td', 'num', '…'), el('td', 'num', ''), el('td', 'num hide', ''), el('td', 'addr hide', ''))
-    $('rows').appendChild(tr)
-    reg.manifest(repo, 'latest').then(head => {
-      // Deleting a bucket removes its tag, not its repository, so the catalogue keeps listing
-      // the name. A row with nothing behind it is a ghost; drop it.
-      if (!head) {
-        tr.remove()
-        const left = $('rows').children.length
-        $('count').textContent = String(left)
-        $('empty').hidden = left > 0
-        return
-      }
-      const ann = head.json.annotations || {}
-      tr.children[1].textContent = ann['foundation.uor.bucket.objects'] ?? '?'
-      tr.children[2].textContent = human(Number(ann['foundation.uor.bucket.bytes'] || 0))
-      tr.children[3].textContent = (ann['foundation.uor.bucket.created'] || '').slice(0, 10)
-      const vis = visibilityOf(ann)
-      if (vis !== 'public') tr.children[0].querySelector('.name').appendChild(el('span', 'pill', vis))
-      tr.children[4].textContent = short(digestToCid(head.digest, 0x71))
-      tr.children[4].title = head.digest
-    }).catch(() => {})
-  }
-  says(nextNote || READING); nextNote = null
+    const ann = head.json.annotations || {}
+    return {
+      repo, owner, name, digest: head.digest,
+      objects: Number(ann['foundation.uor.bucket.objects'] || 0),
+      bytes: Number(ann['foundation.uor.bucket.bytes'] || 0),
+      created: ann['foundation.uor.bucket.created'] || '',
+      visibility: visibilityOf(ann),
+      description: ann['foundation.uor.bucket.description'] || ''
+    }
+  }).filter(Boolean)
+  rail.render()
+  renderGrid()
+  says(nextNote || (buckets.length ? READING : '')); nextNote = null
 }
+$('q-list').addEventListener('input', () => { rail.render(); renderGrid() })
+$('sort').addEventListener('change', () => renderGrid())
 
 // ---------------------------------------------------------------- one bucket
 async function renderBrowse (r) {
   const repo = `buckets/${r.owner}/${r.name}`
   document.title = `${r.owner}/${r.name} · Buckets`
   $('title').innerHTML = `<span class="owner">${r.owner} /</span> ${r.name}`
+  $('cols').classList.add('one')
+  $('list-bar').hidden = true; $('grid').hidden = true; $('list-empty').hidden = true
+  $('actions').hidden = false; $('table').hidden = false
   $('sub').hidden = false
   $('crumbs').hidden = false
   $('bar').hidden = false

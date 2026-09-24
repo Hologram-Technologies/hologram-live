@@ -23,7 +23,7 @@ const DIST = join(SITE, "dist");
 
 // What the menu is. Written out here rather than imported, so a change to build.mjs has to be made twice
 // on purpose instead of once by accident.
-const SECTIONS = ["Models", "Registry", "Docs"];
+const SECTIONS = ["Models", "Registry", "Spaces", "Docs"];
 
 // One page of every shape the site builds, and the section each belongs to. "" means no section is current:
 // the landing is the front door, it is not inside any of the three.
@@ -32,6 +32,7 @@ const PAGES = [
   ["browse", "/models/", "Models"],
   ["model", null, "Models"],           // filled in from dist below: whichever model page is first
   ["registry", "/registry/", "Registry"],
+  ["spaces", "/spaces/", "Spaces"],
   ["not found", "/404.html", ""],
 ];
 // Wide enough for the menu, and narrow enough to have hidden it. Both are checked.

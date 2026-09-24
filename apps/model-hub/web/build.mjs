@@ -5,6 +5,7 @@
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { checkSealed } from "./qa/registry-sealed.mjs";
+import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,6 +99,7 @@ const SECTIONS = [
   ["models", "Models", "grid", BROWSE],
   ["registry", "Registry", "box", `${base}registry/`],
   ["spaces", "Spaces", "cpu", `${base}spaces/`],
+  ["buckets", "Buckets", "bucket", `${base}buckets/`],
   ["docs", "Docs", "file", `${base}docs/`],
 ];
 // `current` is the section the page belongs to. It marks that one link aria-current, which the stylesheet
@@ -292,6 +294,11 @@ function modelPage(m, files, ov, readme) {
     files?.sources?.length ? fact("Sources", String(files.sources.length)) : "",
     m.revision ? fact("Revision", copy(m.revision, m.revision.slice(0, 12))) : "",
     m.manifest ? fact("Manifest", copy(m.manifest, R.shortAddress(m.manifest))) : "",
+    // A model card may name the buckets its checkpoints and data live in (`buckets:` in the
+    // card's YAML, HF's own field). Each becomes a link, and the bucket page links back.
+    bucketsOf(readme).length
+      ? fact("Buckets", bucketsOf(readme).map((b) => `<a href="${base}buckets/#/${R.esc(b)}">${R.esc(b)}</a>`).join(", "))
+      : "",
   ].join("");
 
   let filesPanel, downloadMenu = "";
@@ -417,6 +424,7 @@ await writeFile(join(DIST, "404.html"), page({
   body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${BROWSE}">All models</a></div></section>`,
 }));
 
+const bucketLinks = {};   // "owner/name" -> [model id, …], written for the Buckets page
 for (const m of models) {
   const filesPath = join(SITE, "data", "files", m.org, `${m.name}.json`);
   const files = existsSync(filesPath) ? JSON.parse(await readFile(filesPath, "utf8")) : null;
@@ -428,6 +436,7 @@ for (const m of models) {
   const dir = join(DIST, "models", m.org, m.name);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "index.html"), modelPage(m, files, ov, readme));
+  for (const b of bucketsOf(readme)) (bucketLinks[b] ??= []).push(m.id);
 }
 
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
@@ -492,8 +501,8 @@ await writeFile(join(DIST, ".nojekyll"), "");
 // of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
 // one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
 // very same header() and topNav() every other page is built with.
-// The Spaces page ships the same way: its own components and its own runtime, the site's header.
-for (const section of ["registry", "spaces"]) {
+// The Spaces and Buckets pages ship the same way: their own components, the site's header.
+for (const section of ["registry", "spaces", "buckets"]) {
   const path = join(DIST, section, "index.html");
   let html = await readFile(path, "utf8");
   for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {
@@ -505,6 +514,8 @@ for (const section of ["registry", "spaces"]) {
 
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this
 // refuses to build a copy that would fetch either from somebody else.
+await writeFile(join(DIST, "buckets", "links.json"), JSON.stringify(bucketLinks));
+console.log(await checkBucketLinks(DIST, models.length));
 console.log(await checkSealed(DIST));
 // Every link in the docs lands on something this build ships, and every page has something to run.
 console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));

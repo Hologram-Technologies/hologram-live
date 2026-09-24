@@ -118,6 +118,7 @@ export const icon = {
   globe: I('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>'),
   file: I('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>'),
   box: I('<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>'),
+  bucket: I('<path d="M4.5 7.5h15l-1.4 11.2a1.5 1.5 0 0 1-1.5 1.3H7.4a1.5 1.5 0 0 1-1.5-1.3Z"/><path d="M4.5 7.5c0-1.7 3.4-3 7.5-3s7.5 1.3 7.5 3"/>'),
   scale: I('<path d="M12 4v16M7 20h10M5 7h14M5 7l-3 7a3 3 0 0 0 6 0L5 7Zm14 0-3 7a3 3 0 0 0 6 0l-3-7Z"/>'),
   sortAz: I('<path d="M4 8h9M4 12h6M4 16h3M17 5v14m-3-3 3 3 3-3"/>'),
   sortCount: I('<path d="M4 8h3M4 12h6M4 16h9M17 5v14m-3-3 3 3 3-3"/>'),

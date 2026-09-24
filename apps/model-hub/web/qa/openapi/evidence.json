@@ -1,22 +1,22 @@
 {
- "probed_at": "2026-09-23T23:47:41.854Z",
+ "probed_at": "2026-09-24T09:47:26.429Z",
  "base": "https://hub.uor.foundation",
  "sample": {
   "model": "sentence-transformers/all-MiniLM-L6-v2",
   "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
   "file": "sentence_bert_config.json",
-  "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f"
+  "catalog": "blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2"
  },
  "records": [
   {
    "id": "root.html",
    "method": "GET",
    "path": "/",
-   "ms": 87,
+   "ms": 99,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dln2nu6qq7fv2zr-gzip\"",
+    "etag": "\"dlng7loykpk33ed-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -27,11 +27,11 @@
    "id": "root.descriptor",
    "method": "GET",
    "path": "/",
-   "ms": 92,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln2nuzy4z48uz-gzip\"",
+    "etag": "\"dlng9dpg28hpuz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -39,8 +39,8 @@
     "format": "hologram.model-hub.descriptor/v1",
     "name": "Hologram Model Hub",
     "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-    "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-    "snapshot": "2026-09-23",
+    "catalog": "blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2",
+    "snapshot": "2026-09-24",
     "fetch": "/api/v1/objects/{id}",
     "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
     "publish": "POST /api/v1/objects with a publisher token",
@@ -64,11 +64,11 @@
    "id": "root.brief",
    "method": "GET",
    "path": "/",
-   "ms": 92,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dln2nu6qq7fv2zr-gzip\"",
+    "etag": "\"dlng7loykpk33ed-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -79,11 +79,11 @@
    "id": "brief",
    "method": "GET",
    "path": "/agent.md",
-   "ms": 88,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dln2nu6qq7fv2zr-gzip\"",
+    "etag": "\"dlng7loykpk33ed-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -94,11 +94,11 @@
    "id": "descriptor",
    "method": "GET",
    "path": "/.well-known/model-hub.json",
-   "ms": 90,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln2nuzy4z48uz-gzip\"",
+    "etag": "\"dlng9dpg28hpuz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -106,8 +106,8 @@
     "format": "hologram.model-hub.descriptor/v1",
     "name": "Hologram Model Hub",
     "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-    "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-    "snapshot": "2026-09-23",
+    "catalog": "blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2",
+    "snapshot": "2026-09-24",
     "fetch": "/api/v1/objects/{id}",
     "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
     "publish": "POST /api/v1/objects with a publisher token",
@@ -131,11 +131,11 @@
    "id": "llms",
    "method": "GET",
    "path": "/llms.txt",
-   "ms": 87,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dln2ntqlnjqs3jz-gzip\"",
+    "etag": "\"dlng7kowol7g3ou-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -146,12 +146,12 @@
    "id": "openapi",
    "method": "GET",
    "path": "/openapi.json",
-   "ms": 174,
+   "ms": 227,
    "status": 200,
    "headers": {
     "content-type": "application/json",
     "cache-control": "public, max-age=300",
-    "etag": "\"dln2nu6q4rum2pac-gzip\"",
+    "etag": "\"dlng7loxz9yt2rfr-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -424,6 +424,10 @@
         "parameters": {
          "type": "integer",
          "description": "Parameter count, when it is known."
+        },
+        "listed": {
+         "type": "boolean",
+         "description": "Absent or true on a model the current browse list carries, which is a row with the full facts. `false` on a model the browse list has forgotten: the hub still holds its bytes and serves every dialect for it, but the task, parameter count and download figures were never published with the object, so they are absent rather than zero."
         },
         "context": {
          "type": "integer",
@@ -1805,6 +1809,80 @@
        }
       }
      },
+     "/spaces/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getSpacesPage",
+       "summary": "Apps that run entirely in the browser, each in its own sealed frame",
+       "description": "Three demo Spaces (speech, image, chat). Every file of a Space is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. A Space published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/spaces/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
+     "/spaces/spaces.json": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getSpacesCatalog",
+       "summary": "The Spaces catalog: id, sealed root, files, models and their sizes",
+       "description": "`{ format: \"hologram.spaces.catalog/v1\", spaces: [{ id, name, task, tagline, root, bytes, files, models, modelHost, modelBytes, source, requires, entry }] }`. `root` is SHA-256 over the Space's file map; `entry` is the page to open.",
+       "responses": {
+        "200": {
+         "description": "JSON.",
+         "content": {
+          "application/json": {
+           "schema": {
+            "type": "object"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/spaces/spaces.json",
+        "status": 200,
+        "contentType": "application/json"
+       }
+      }
+     },
      "/llms.txt": {
       "get": {
        "tags": [
@@ -2051,17 +2129,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-23T22:02:06.716Z",
+              "checked": "2026-09-23T23:47:07.147Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-23T22:02:08.215Z",
+              "checked": "2026-09-23T23:47:08.149Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-23T22:02:08.291Z",
+              "checked": "2026-09-23T23:47:08.232Z",
               "reason": "verified"
              }
             },
@@ -2169,9 +2247,9 @@
              "private": false,
              "gated": false,
              "disabled": false,
-             "likes": 6111,
+             "likes": 6112,
              "downloads": 251354399,
-             "trendingScore": 423,
+             "trendingScore": 422,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "sentence-similarity",
              "library_name": "sentence-transformers",
@@ -4651,11 +4729,11 @@
    "id": "wellknown.openapi",
    "method": "GET",
    "path": "/.well-known/openapi.json",
-   "ms": 91,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln2nu6q4rum2pac-gzip\"",
+    "etag": "\"dlng7loxz9yt2rfr-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -4928,6 +5006,10 @@
         "parameters": {
          "type": "integer",
          "description": "Parameter count, when it is known."
+        },
+        "listed": {
+         "type": "boolean",
+         "description": "Absent or true on a model the current browse list carries, which is a row with the full facts. `false` on a model the browse list has forgotten: the hub still holds its bytes and serves every dialect for it, but the task, parameter count and download figures were never published with the object, so they are absent rather than zero."
         },
         "context": {
          "type": "integer",
@@ -6309,6 +6391,80 @@
        }
       }
      },
+     "/spaces/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getSpacesPage",
+       "summary": "Apps that run entirely in the browser, each in its own sealed frame",
+       "description": "Three demo Spaces (speech, image, chat). Every file of a Space is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. A Space published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
+       "responses": {
+        "200": {
+         "description": "An HTML page.",
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/spaces/",
+        "status": 200,
+        "contentType": "text/html"
+       }
+      }
+     },
+     "/spaces/spaces.json": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getSpacesCatalog",
+       "summary": "The Spaces catalog: id, sealed root, files, models and their sizes",
+       "description": "`{ format: \"hologram.spaces.catalog/v1\", spaces: [{ id, name, task, tagline, root, bytes, files, models, modelHost, modelBytes, source, requires, entry }] }`. `root` is SHA-256 over the Space's file map; `entry` is the page to open.",
+       "responses": {
+        "200": {
+         "description": "JSON.",
+         "content": {
+          "application/json": {
+           "schema": {
+            "type": "object"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/spaces/spaces.json",
+        "status": 200,
+        "contentType": "application/json"
+       }
+      }
+     },
      "/llms.txt": {
       "get": {
        "tags": [
@@ -6555,17 +6711,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-23T22:02:06.716Z",
+              "checked": "2026-09-23T23:47:07.147Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-23T22:02:08.215Z",
+              "checked": "2026-09-23T23:47:08.149Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-23T22:02:08.291Z",
+              "checked": "2026-09-23T23:47:08.232Z",
               "reason": "verified"
              }
             },
@@ -6673,9 +6829,9 @@
              "private": false,
              "gated": false,
              "disabled": false,
-             "likes": 6111,
+             "likes": 6112,
              "downloads": 251354399,
-             "trendingScore": 423,
+             "trendingScore": 422,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "sentence-similarity",
              "library_name": "sentence-transformers",
@@ -9155,11 +9311,11 @@
    "id": "agentcard",
    "method": "GET",
    "path": "/.well-known/agent-card.json",
-   "ms": 89,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln2nu6b8y3r3l2-gzip\"",
+    "etag": "\"dlng7lo01la43mb-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -9240,11 +9396,11 @@
    "id": "robots",
    "method": "GET",
    "path": "/robots.txt",
-   "ms": 93,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dln2nu689s5ldp\"",
+    "etag": "\"dlng7lnwgzqgdp\"",
     "accept-ranges": "bytes",
     "access-control-allow-origin": "*"
    },
@@ -9255,7 +9411,7 @@
    "id": "docs",
    "method": "GET",
    "path": "/docs",
-   "ms": 272,
+   "ms": 264,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
@@ -9270,11 +9426,11 @@
    "id": "archive",
    "method": "GET",
    "path": "/archive.json",
-   "ms": 87,
+   "ms": 90,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln2nuzqecg6302-gzip\"",
+    "etag": "\"dlng7mz6m6d73fs-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -9332,11 +9488,11 @@
    "id": "pins",
    "method": "GET",
    "path": "/pins.json",
-   "ms": 84,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dln2nuznf6i0ejs-gzip\"",
+    "etag": "\"dlng7mz19a1qejs-gzip\"",
     "content-encoding": "gzip"
    },
    "body": {
@@ -9867,7 +10023,7 @@
    "id": "healthz",
    "method": "GET",
    "path": "/healthz",
-   "ms": 87,
+   "ms": 84,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -9886,7 +10042,7 @@
    "id": "hub.health",
    "method": "GET",
    "path": "/api/hub/health",
-   "ms": 84,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -9898,17 +10054,17 @@
     "sources": {
      "huggingface.co": {
       "ok": true,
-      "checked": "2026-09-23T23:47:07.147Z",
+      "checked": "2026-09-24T09:47:05.527Z",
       "reason": "verified"
      },
      "modelscope.cn": {
       "ok": true,
-      "checked": "2026-09-23T23:47:08.149Z",
+      "checked": "2026-09-24T09:47:06.622Z",
       "reason": "verified"
      },
      "ipfs": {
       "ok": true,
-      "checked": "2026-09-23T23:47:08.232Z",
+      "checked": "2026-09-24T09:47:06.701Z",
       "reason": "verified"
      }
     },
@@ -9924,12 +10080,12 @@
    "id": "models.list",
    "method": "GET",
    "path": "/api/models?limit=2&sort=downloads",
-   "ms": 86,
+   "ms": 99,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "public, max-age=60",
-    "x-total-count": "605",
+    "x-total-count": "640",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
     "content-encoding": "gzip"
@@ -9944,9 +10100,9 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 6112,
-     "downloads": 251354399,
-     "trendingScore": 422,
+     "likes": 6114,
+     "downloads": 250598416,
+     "trendingScore": 404,
      "createdAt": "2022-03-02T00:00:00.000Z",
      "pipeline_tag": "sentence-similarity",
      "library_name": "sentence-transformers",
@@ -9969,31 +10125,30 @@
      }
     },
     {
-     "_id": "bd31a9ad9e4705f6ddf97c7d",
-     "id": "google-bert/bert-base-uncased",
-     "modelId": "google-bert/bert-base-uncased",
-     "author": "google-bert",
-     "sha": "86b5e0934494bd15c9632b12f734a8a67f723594",
+     "_id": "3dba3c69368e47a8f7710954",
+     "id": "BAAI/bge-m3",
+     "modelId": "BAAI/bge-m3",
+     "author": "BAAI",
+     "sha": "5617a9f61b028005a4858fdac845db406aefb181",
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 3368,
-     "downloads": 45461966,
-     "trendingScore": 64,
-     "createdAt": "2022-03-02T00:00:00.000Z",
-     "pipeline_tag": "fill-mask",
-     "library_name": "transformers",
+     "likes": 3617,
+     "downloads": 37173706,
+     "trendingScore": 284,
+     "createdAt": "2024-01-27T00:00:00.000Z",
+     "pipeline_tag": "sentence-similarity",
+     "library_name": "sentence-transformers",
      "tags": [
-      "fill-mask",
-      "transformers",
-      "safetensors"
+      "sentence-similarity",
+      "sentence-transformers",
+      "onnx"
      ],
      "hologram": {
-      "manifest": "blake3:bd31a9ad9e4705f6ddf97c7dc1c43b3ab26c4d583b0526955664d54f867571d4",
-      "files": 16,
-      "weight_bytes": 3453216078,
-      "parameters": 110106428,
-      "context": 512,
+      "manifest": "blake3:3dba3c69368e47a8f7710954783515b46431dfe7495c98f5f3bb0f978c31a5cd",
+      "files": 30,
+      "weight_bytes": 4585114582,
+      "context": 8194,
       "sources": [
        "Hugging Face",
        "ModelScope",
@@ -10008,12 +10163,12 @@
    "id": "models.search",
    "method": "GET",
    "path": "/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&limit=2",
-   "ms": 88,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "public, max-age=60",
-    "x-total-count": "11",
+    "x-total-count": "13",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
     "content-encoding": "gzip"
@@ -10028,9 +10183,9 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 135,
-     "downloads": 95061,
-     "trendingScore": 454,
+     "likes": 137,
+     "downloads": 133496,
+     "trendingScore": 443,
      "createdAt": "2026-09-16T00:00:00.000Z",
      "pipeline_tag": "text-generation",
      "library_name": "gguf",
@@ -10060,9 +10215,9 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 1241,
-     "downloads": 2327149,
-     "trendingScore": 432,
+     "likes": 1247,
+     "downloads": 2331396,
+     "trendingScore": 431,
      "createdAt": "2026-08-14T00:00:00.000Z",
      "pipeline_tag": "text-generation",
      "library_name": "llama.cpp",
@@ -10089,7 +10244,7 @@
    "id": "models.info",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 86,
+   "ms": 93,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10127,7 +10282,7 @@
    "id": "models.info.revision",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-   "ms": 86,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10165,7 +10320,7 @@
    "id": "models.refs",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/refs",
-   "ms": 97,
+   "ms": 93,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10190,7 +10345,7 @@
    "id": "models.tree",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
-   "ms": 87,
+   "ms": 133,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10225,7 +10380,7 @@
    "id": "models.missing",
    "method": "GET",
    "path": "/api/models/nobody/not-a-real-model-xyz",
-   "ms": 141,
+   "ms": 171,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10244,7 +10399,7 @@
    "id": "models.revision.wrong",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/0000000",
-   "ms": 93,
+   "ms": 97,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10263,7 +10418,7 @@
    "id": "models.readonly",
    "method": "POST",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 83,
+   "ms": 84,
    "status": 405,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10282,7 +10437,7 @@
    "id": "resolve",
    "method": "HEAD",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 88,
+   "ms": 89,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10302,7 +10457,7 @@
    "id": "resolve.sha256sums",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/SHA256SUMS",
-   "ms": 89,
+   "ms": 96,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -10319,7 +10474,7 @@
    "id": "resolve.entry.missing",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/not-a-file.bin",
-   "ms": 87,
+   "ms": 83,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10338,7 +10493,7 @@
    "id": "via.ipfs",
    "method": "HEAD",
    "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 306,
+   "ms": 276,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10358,7 +10513,7 @@
    "id": "via.huggingface",
    "method": "HEAD",
    "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 88,
+   "ms": 93,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10378,27 +10533,27 @@
    "id": "via.list",
    "method": "GET",
    "path": "/via/ipfs/api/models?limit=1",
-   "ms": 257,
+   "ms": 256,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "public, max-age=60",
-    "x-total-count": "605",
+    "x-total-count": "640",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
     "content-encoding": "gzip"
    },
    "body": [
     {
-     "_id": "54393b0f6b21f18d93521f9c",
+     "_id": "f98092e5403fd9aae3086e18",
      "id": "convaiinnovations/laya",
      "modelId": "convaiinnovations/laya",
      "author": "convaiinnovations",
-     "sha": "5e7b2b1b8ca2ecdd3f2322d94069c9b6ce7e844b",
+     "sha": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 3081,
+     "likes": 3240,
      "downloads": 0,
      "trendingScore": 500,
      "createdAt": "2026-09-18T00:00:00.000Z",
@@ -10410,7 +10565,7 @@
       "safetensors"
      ],
      "hologram": {
-      "manifest": "blake3:54393b0f6b21f18d93521f9caac3187adf6bbe4f9799cdaba74936bbec4d442e",
+      "manifest": "blake3:f98092e5403fd9aae3086e18e3bba432e3a59d9eeed4d259564c4381d8f9ec10",
       "files": 38,
       "weight_bytes": 2365127066,
       "parameters": 421293830,
@@ -10427,7 +10582,7 @@
    "id": "xet",
    "method": "HEAD",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
-   "ms": 264,
+   "ms": 255,
    "status": 307,
    "headers": {
     "cache-control": "no-store",
@@ -10440,13 +10595,13 @@
   {
    "id": "objects.get",
    "method": "HEAD",
-   "path": "/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-   "ms": 98,
+   "path": "/api/v1/objects/blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2",
+   "ms": 111,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.hologram.model-hub.catalog.v1+json",
     "cache-control": "public, max-age=31536000, immutable",
-    "etag": "\"blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f\"",
+    "etag": "\"blake3:6b97129c0785270d874b05dab9c2e1920d46359ac7d2c0423be5f659fc9127b2\"",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "ETag, Content-Disposition"
    },
@@ -10456,7 +10611,7 @@
    "id": "objects.list.anon",
    "method": "GET",
    "path": "/api/v1/objects",
-   "ms": 251,
+   "ms": 253,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -10469,7 +10624,7 @@
    "id": "objects.search.anon",
    "method": "GET",
    "path": "/api/v1/objects/search?q=qwen",
-   "ms": 247,
+   "ms": 249,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -10482,7 +10637,7 @@
    "id": "objects.missing",
    "method": "GET",
    "path": "/api/v1/objects/blake3:0000000000000000000000000000000000000000000000000000000000000000",
-   "ms": 84,
+   "ms": 88,
    "status": 404,
    "headers": {
     "content-type": "application/json",
@@ -10500,7 +10655,7 @@
    "id": "capabilities",
    "method": "GET",
    "path": "/api/v1/capabilities",
-   "ms": 87,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10566,7 +10721,7 @@
    "id": "modules",
    "method": "GET",
    "path": "/api/v1/modules",
-   "ms": 87,
+   "ms": 105,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10619,7 +10774,7 @@
    "id": "oci.base",
    "method": "GET",
    "path": "/v2/",
-   "ms": 82,
+   "ms": 95,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10631,7 +10786,7 @@
    "id": "oci.catalog",
    "method": "GET",
    "path": "/v2/_catalog",
-   "ms": 86,
+   "ms": 109,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10649,7 +10804,7 @@
    "id": "oci.manifest.docker",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 96,
+   "ms": 97,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10671,7 +10826,7 @@
    "id": "oci.manifest.modelpack",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 171,
+   "ms": 193,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.oci.image.manifest.v1+json",
@@ -10754,7 +10909,7 @@
    "id": "oci.index.tags",
    "method": "GET",
    "path": "/v2/model-hub/index/tags/list",
-   "ms": 83,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -10762,7 +10917,8 @@
    "body": {
     "name": "model-hub/index",
     "tags": [
-     "2026-09-23"
+     "2026-09-23",
+     "2026-09-24"
     ]
    },
    "error": null
@@ -10771,7 +10927,7 @@
    "id": "account.health",
    "method": "GET",
    "path": "/api/account/health",
-   "ms": 90,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10787,7 +10943,7 @@
    "id": "account.me.anon",
    "method": "GET",
    "path": "/api/account/me",
-   "ms": 85,
+   "ms": 83,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10802,7 +10958,7 @@
    "id": "account.me.patch.anon",
    "method": "PATCH",
    "path": "/api/account/me",
-   "ms": 85,
+   "ms": 84,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10817,7 +10973,7 @@
    "id": "account.saved.anon",
    "method": "POST",
    "path": "/api/account/saved",
-   "ms": 81,
+   "ms": 87,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10832,7 +10988,7 @@
    "id": "account.saved.delete.anon",
    "method": "DELETE",
    "path": "/api/account/saved/a%2Fb",
-   "ms": 85,
+   "ms": 84,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10847,7 +11003,7 @@
    "id": "account.request.anon",
    "method": "POST",
    "path": "/api/account/request",
-   "ms": 85,
+   "ms": 89,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10862,7 +11018,7 @@
    "id": "account.publisher.anon",
    "method": "POST",
    "path": "/api/account/publisher-request",
-   "ms": 87,
+   "ms": 84,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10877,7 +11033,7 @@
    "id": "account.unknown.anon",
    "method": "GET",
    "path": "/api/account/nope",
-   "ms": 85,
+   "ms": 83,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10904,7 +11060,7 @@
    "id": "mcp.initialize",
    "method": "POST",
    "path": "/mcp",
-   "ms": 85,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10936,7 +11092,7 @@
    "id": "mcp.tools.list",
    "method": "POST",
    "path": "/mcp",
-   "ms": 84,
+   "ms": 93,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11063,11 +11219,11 @@
      "content": [
       {
        "type": "text",
-       "text": "{\"total\":167,\"models\":[{\"id\":\"Qwen/Qwen-Image-2.1\",\"task\":\"text-to-image\",\"library\":\"diffusers\",\"license\":\"other\",\"parameters\":7115124736,\"weights_gb\":33.13,\"downloads\":28407,\"sources\":[\"Hugging Face\"],\"page\":\"https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/\"},{\"id\":\"abenzerps/Qwen-Image-2.1-Uncensored-GGUF\",\"task\":\"text-to-image\",\"library\":\"gguf\",\"license\":\"other\",\"parameters\":7115124736,\"w…"
+       "text": "{\"total\":177,\"models\":[{\"id\":\"Qwen/Qwen-Image-2.1\",\"task\":\"text-to-image\",\"library\":\"diffusers\",\"license\":\"other\",\"parameters\":7115124736,\"weights_gb\":33.13,\"downloads\":37618,\"sources\":[\"Hugging Face\"],\"page\":\"https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/\"},{\"id\":\"abenzerps/Qwen-Image-2.1-Uncensored-GGUF\",\"task\":\"text-to-image\",\"library\":\"gguf\",\"license\":\"other\",\"parameters\":7115124736,\"w…"
       }
      ],
      "structuredContent": {
-      "total": 167,
+      "total": 177,
       "models": [
        {
         "id": "Qwen/Qwen-Image-2.1",
@@ -11076,7 +11232,7 @@
         "license": "other",
         "parameters": 7115124736,
         "weights_gb": 33.13,
-        "downloads": 28407,
+        "downloads": 37618,
         "sources": [
          "Hugging Face"
         ],
@@ -11089,7 +11245,7 @@
         "license": "other",
         "parameters": 7115124736,
         "weights_gb": 83.61,
-        "downloads": 350678,
+        "downloads": 575697,
         "sources": [
          "Hugging Face"
         ],
@@ -11105,7 +11261,7 @@
    "id": "preflight.models",
    "method": "OPTIONS",
    "path": "/api/models",
-   "ms": 81,
+   "ms": 83,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*",
@@ -11117,7 +11273,7 @@
    "id": "preflight.objects",
    "method": "OPTIONS",
    "path": "/api/v1/objects",
-   "ms": 88,
+   "ms": 83,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*"
@@ -11128,7 +11284,7 @@
    "id": "closed.grpc",
    "method": "POST",
    "path": "/hologram.live.v1.HologramLive/Handshake",
-   "ms": 89,
+   "ms": 82,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -11140,7 +11296,7 @@
    "id": "nav.wallpapers",
    "method": "GET",
    "path": "/wallpapers/",
-   "ms": 85,
+   "ms": 82,
    "status": 404,
    "headers": {},
    "error": null

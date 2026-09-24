@@ -27,9 +27,7 @@ function themeSwitch() {
     const mode = root.dataset.theme, wall = root.dataset.wallpaper;
     for (const b of menu.querySelectorAll("[data-theme-mode]")) b.setAttribute("aria-checked", String(b.dataset.themeMode === mode));
     for (const b of menu.querySelectorAll("button.wall")) b.setAttribute("aria-checked", String(mode === "immersive" && b.dataset.wallpaper === wall));
-    const w = walls.find((x) => x.key === wall);
     $("#walls").classList.toggle("on", mode === "immersive");
-    $("#wall-credit").innerHTML = w ? `${w.name}, photo by <a href="${w.url}" target="_blank" rel="noopener">${w.by}</a> on Unsplash` : "";
   }
 
   function apply(mode, wallpaper = root.dataset.wallpaper) {

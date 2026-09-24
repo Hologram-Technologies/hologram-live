@@ -219,9 +219,6 @@ ul { list-style: none; margin: 0; padding: 0; }
 .wall img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .wall:hover { transform: translateY(-1px); outline-color: var(--hh-line-focus); }
 .wall[aria-checked="true"] { outline: 2px solid var(--hh-text); outline-offset: 2px; }
-.credit { padding: 0 var(--space-1); font-size: var(--text-sm); line-height: 1.43; color: var(--hh-text-dim); }
-.credit a { color: var(--hh-text); text-decoration: underline; text-decoration-color: var(--hh-line-focus); text-underline-offset: var(--space-1); }
-.walls:not(.on) .credit { visibility: hidden; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 280ms; }
 
 /* ---- sign-in (src/auth.js)

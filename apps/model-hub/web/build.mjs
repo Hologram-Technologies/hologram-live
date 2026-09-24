@@ -64,9 +64,9 @@ function indexPill() {
 }
 
 const WALLPAPERS = [
-  { key: "alps", name: "Alpine Dawn", by: "Unsplash", url: "https://unsplash.com/?utm_source=Hologram&utm_medium=referral" },
-  { key: "galaxy", name: "Galaxy", by: "Tiago Ferreira", url: "https://unsplash.com/@tiago_f_ferreira?utm_source=Hologram&utm_medium=referral" },
-  { key: "aurora", name: "Aurora", by: "Lightscape", url: "https://unsplash.com/@lightscape?utm_source=Hologram&utm_medium=referral" },
+  { key: "alps", name: "Alpine Dawn" },
+  { key: "galaxy", name: "Galaxy" },
+  { key: "aurora", name: "Aurora" },
 ];
 const THEMES = [["dark", "Dark", "moon"], ["light", "Light", "sun"], ["immersive", "Immersive", "image"]];
 
@@ -123,7 +123,6 @@ const themeSwitch = `<div class="appearance">
         <div class="walls" id="walls">
           <h3>Wallpaper</h3>
           <div class="wall-row" role="group" aria-label="Wallpaper">${WALLPAPERS.map((w) => `<button type="button" class="wall" role="menuitemradio" data-wallpaper="${w.key}" aria-checked="false" aria-label="${w.name}" title="${w.name}"><img src="${base}wallpapers/${w.key}-thumb.jpg" alt="" width="320" height="198" decoding="async"></button>`).join("")}</div>
-          <p class="credit" id="wall-credit"></p>
         </div>
       </div>
     </div>`;

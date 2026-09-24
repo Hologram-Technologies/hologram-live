@@ -6,7 +6,7 @@
 <title>Buckets · Hologram Models Hub</title>
 <meta name="description" content="Object storage for models, datasets and checkpoints, where every object carries the address of its own bytes.">
 <!--chrome:head-->
-<link rel="stylesheet" href="buckets.css?v=4">
+<link rel="stylesheet" href="buckets.css?v=9">
 </head>
 <body>
 
@@ -92,19 +92,21 @@
   <p class="prov note" id="note"></p>
 </main>
 
-<dialog class="ask" id="dialog">
+<dialog class="ask" id="dialog" aria-labelledby="dialog-title">
   <form method="dialog" id="dialog-form">
-    <h2 id="dialog-title">New bucket</h2>
-    <p class="muted" id="dialog-why"></p>
-    <div id="dialog-body"></div>
-    <div class="ask-foot">
+    <header class="ask-head">
+      <h2 id="dialog-title">New bucket</h2>
+      <p class="muted" id="dialog-why"></p>
+    </header>
+    <div class="ask-body" id="dialog-body"></div>
+    <footer class="ask-foot">
       <button type="button" class="button" id="dialog-cancel">Cancel</button>
       <button type="submit" class="button primary" id="dialog-ok">Create</button>
-    </div>
+    </footer>
   </form>
 </dialog>
 </div>
 
-<script type="module" src="buckets.js?v=4"></script>
+<script type="module" src="buckets.js?v=9"></script>
 </body>
 </html>

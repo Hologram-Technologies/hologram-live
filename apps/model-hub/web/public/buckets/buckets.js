@@ -2,9 +2,9 @@
 // page walks it the same way the CLI does, and checks every block it reads against the address
 // that named it. No framework, no CDN. The chrome — header, nav, theme, account — is the site's
 // own, so this file is only ever about buckets.
-import { registry, readBucket, readHistory, readObject, writeObject, digestToCid, cidToDigest, visibilityOf, DEFAULT_QUOTA, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs?v=4'
-import { newKey, keyToText, keyFromText, keyCheck, sealName, ENC } from './lib/crypt.mjs?v=4'
-import { build, objectManifest } from './lib/octree.mjs?v=4'
+import { registry, readBucket, readHistory, readObject, writeObject, digestToCid, cidToDigest, visibilityOf, DEFAULT_QUOTA, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs?v=9'
+import { newKey, keyToText, keyFromText, keyCheck, sealName, ENC } from './lib/crypt.mjs?v=9'
+import { build, objectManifest } from './lib/octree.mjs?v=9'
 
 const reg = registry('')
 // Live follow is served by the bucket service, not by /v2/. Same origin in production; in the
@@ -72,61 +72,100 @@ addEventListener('hashchange', render)
 // ---------------------------------------------------------------- asking
 // One dialog for New bucket, Settings and Delete: three questions, one shape, and never a
 // browser prompt — a dialog the page owns can say what it is about to do.
-function ask ({ title, why, fields = [], ok = 'Save' }) {
+function ask ({ title, why, fields = [], ok = 'Save', cancel = 'Cancel' }) {
   return new Promise(resolve => {
     const dialog = $('dialog')
     $('dialog-title').textContent = title
     $('dialog-why').textContent = why || ''
-    $('dialog-why').hidden = !why
     const body = $('dialog-body')
     body.replaceChildren()
+
+    const labelled = (text, control, apart) => {
+      const wrap = el('div', apart ? 'apart' : null)
+      if (text) wrap.appendChild(el('label', 'lab', text))
+      wrap.appendChild(control)
+      return wrap
+    }
+    const input = (name, placeholder, value = '') => {
+      const field = el('label', 'field')
+      const box = el('input')
+      box.id = 'f-' + name
+      box.placeholder = placeholder || ''
+      box.value = value || ''
+      box.autocomplete = 'off'
+      box.spellcheck = false
+      field.appendChild(box)
+      return field
+    }
+
     for (const f of fields) {
-      if (f.type === 'checkbox') {
-        const label = el('label', 'row')
-        const input = el('input')
-        input.type = 'checkbox'; input.id = 'f-' + f.name; input.checked = !!f.value
-        label.append(input, el('span', null, f.label))
-        body.appendChild(label)
+      if (f.type === 'id') {
+        // owner / name, written the way the bucket is written everywhere else.
+        const row = el('div', 'idrow')
+        row.append(input('owner', 'your handle', f.owner), el('span', 'sep', '/'), input('name', 'bucket name', f.name))
+        body.appendChild(labelled(f.label, row))
       } else if (f.type === 'choice') {
+        const list = el('div', 'choices')
         for (const c of f.options) {
           const label = el('label', 'choice' + (c.disabled ? ' off' : ''))
-          const input = el('input')
-          input.type = 'radio'; input.name = 'f-' + f.name; input.value = c.value; input.checked = c.value === f.value; input.disabled = !!c.disabled
-          const text = el('span', null, c.label)
+          const radio = el('input')
+          radio.type = 'radio'; radio.name = 'f-' + f.name; radio.value = c.value
+          radio.checked = c.value === f.value; radio.disabled = !!c.disabled
+          const text = el('span')
+          text.appendChild(el('b', null, c.label))
           if (c.why) text.appendChild(el('small', null, c.why))
-          label.append(input, text)
-          body.appendChild(label)
+          label.append(radio, el('span', 'dot'), text)
+          list.appendChild(label)
         }
-      } else if (f.type === 'static') {
-        const block = el('div', f.cls || 'muted', f.value)
-        body.appendChild(block)
-      } else {
-        const label = el('label', 'field')
-        const input = el('input')
-        input.id = 'f-' + f.name
-        input.placeholder = f.label
-        input.value = f.value || ''
-        input.autocomplete = 'off'
-        label.appendChild(input)
+        body.appendChild(labelled(f.label, list))
+      } else if (f.type === 'key') {
+        const box = el('div', 'keybox')
+        const code = el('code', null, f.value)
+        const row = el('div', 'row')
+        const copy = el('button', 'button', 'Copy')
+        copy.type = 'button'
+        const said = el('span', null, 'Shown once. Nobody can give it back.')
+        copy.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(f.value); said.textContent = 'Copied.' } catch { getSelection().selectAllChildren(code) }
+        })
+        row.append(said, copy)
+        box.append(code, row)
+        body.appendChild(labelled(f.label, box))
+      } else if (f.type === 'checkbox') {
+        const label = el('label', 'choice')
+        const box = el('input')
+        box.type = 'checkbox'; box.id = 'f-' + f.name; box.checked = !!f.value
+        const text = el('span')
+        text.appendChild(el('b', null, f.label))
+        if (f.why) text.appendChild(el('small', null, f.why))
+        label.append(box, el('span', 'dot'), text)
         body.appendChild(label)
+      } else {
+        body.appendChild(labelled(f.label, input(f.name, f.placeholder || f.label, f.value), f.apart))
       }
     }
+
     $('dialog-ok').textContent = ok
+    // Some questions have no second answer: a key already minted cannot be un-minted, so the
+    // dialog that shows it offers one way out, not a choice that would be a lie.
+    $('dialog-cancel').hidden = !cancel
+    if (cancel) $('dialog-cancel').textContent = cancel
     const done = value => { dialog.close(); $('dialog-form').onsubmit = null; resolve(value) }
     $('dialog-form').onsubmit = e => {
       e.preventDefault()
       const out = {}
       for (const f of fields) {
-        if (f.type === 'static') continue
+        if (f.type === 'key') continue
+        if (f.type === 'id') { out.owner = $('f-owner').value.trim(); out.name = $('f-name').value.trim(); continue }
         if (f.type === 'choice') { out[f.name] = body.querySelector(`input[name="f-${f.name}"]:checked`)?.value; continue }
-        const input = $('f-' + f.name)
-        out[f.name] = f.type === 'checkbox' ? input.checked : input.value.trim()
+        const box = $('f-' + f.name)
+        out[f.name] = f.type === 'checkbox' ? box.checked : box.value.trim()
       }
       done(out)
     }
     $('dialog-cancel').onclick = () => done(null)
     dialog.showModal()
-    const first = body.querySelector('input')
+    const first = body.querySelector('input:not([type=radio]):not([disabled]), input[type=radio]:checked')
     if (first) first.focus()
   })
 }
@@ -521,17 +560,16 @@ function refused (e) { return /40[13]/.test(String(e && e.message)) }
 $('new-bucket').addEventListener('click', async () => {
   const answer = await ask({
     title: 'New bucket',
-    why: 'A bucket is a place to put objects. Its name cannot change later; its contents can, at any time.',
+    why: 'The name cannot change later. Everything in it can, at any time.',
     fields: [
-      { name: 'owner', label: 'owner (your handle)', value: owner() },
-      { name: 'name', label: 'bucket name, for example training-data' },
-      { name: 'visibility', type: 'choice', value: 'public', options: [
-        { value: 'public', label: 'Public', why: 'listed, readable by anyone' },
-        { value: 'unlisted', label: 'Unlisted', why: 'off the list; readable by anyone holding an address' },
-        { value: 'private', label: 'Private', why: 'names and bytes leave this browser sealed with a key that never does' }
+      { type: 'id', label: 'Bucket', owner: owner(), name: '' },
+      { name: 'visibility', type: 'choice', label: 'Who can read it', value: 'public', options: [
+        { value: 'public', label: 'Public', why: 'Listed here, readable by anyone.' },
+        { value: 'unlisted', label: 'Unlisted', why: 'Kept off the list. Anyone holding an address can still read it.' },
+        { value: 'private', label: 'Private', why: 'Names and bytes are sealed with a key that stays in this browser.' }
       ] }
     ],
-    ok: 'Create'
+    ok: 'Create bucket'
   })
   if (!answer || !answer.name) return
   const who = handleOf(answer.owner)
@@ -554,9 +592,10 @@ $('new-bucket').addEventListener('click', async () => {
         keyStore.set(who, name, key)
         await ask({
           title: 'Keep this key',
-          why: `${who}/${name} is sealed with it. It stays in this browser; to open the bucket anywhere else, paste it there. Without it the bucket is noise, and nobody can give it back.`,
-          fields: [{ name: 'key', type: 'static', cls: 'key', value: keyToText(key) }],
-          ok: 'I kept it'
+          why: `${who}/${name} is sealed with it. It stays in this browser — to open the bucket anywhere else, paste it there. Without it the bucket is noise.`,
+          fields: [{ type: 'key', label: 'Bucket key', value: keyToText(key) }],
+          ok: 'I have kept it',
+          cancel: false
         })
       }
       nextNote = `${who}/${name} is ready. Drop files into it.`
@@ -574,17 +613,17 @@ $('settings').addEventListener('click', async () => {
   if (r.view !== 'browse' || !state) return
   const current = state.visibility
   const answer = await ask({
-    title: `${r.owner}/${r.name}`,
+    title: `${r.owner} / ${r.name}`,
     why: state.encrypted
-      ? 'A private bucket stays private: its blocks are sealed. To publish something from it, copy it into a public bucket.'
-      : 'Unlisted keeps a bucket off the list; anyone holding an address can still read it. A bucket is private from birth, so make a private one and copy into it.',
+      ? 'This bucket is sealed, and stays that way. To publish something from it, copy that into a public bucket.'
+      : 'A bucket is private from birth — make a private one and copy into it.',
     fields: [
-      { name: 'visibility', type: 'choice', value: current, options: [
-        { value: 'public', label: 'Public', why: 'listed, readable by anyone', disabled: state.encrypted },
-        { value: 'unlisted', label: 'Unlisted', why: 'off the list; readable by anyone holding an address', disabled: state.encrypted },
-        { value: 'private', label: 'Private', why: 'sealed with a key; from birth only', disabled: !state.encrypted }
+      { name: 'visibility', type: 'choice', label: 'Who can read it', value: current, options: [
+        { value: 'public', label: 'Public', why: 'Listed here, readable by anyone.', disabled: state.encrypted },
+        { value: 'unlisted', label: 'Unlisted', why: 'Kept off the list. Anyone holding an address can still read it.', disabled: state.encrypted },
+        { value: 'private', label: 'Private', why: 'Sealed with a key. Chosen when the bucket is made.', disabled: !state.encrypted }
       ] },
-      { name: 'confirm', label: 'to delete this bucket, type its name' }
+      { name: 'confirm', label: 'Delete this bucket', placeholder: `type ${r.name} to delete it`, apart: true }
     ],
     ok: 'Save'
   })

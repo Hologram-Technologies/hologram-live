@@ -43,6 +43,8 @@
     "getDocsPage",
     "getDocsPageMarkdown",
     "getRegistryPage",
+    "getSpacesPage",
+    "getSpacesCatalog",
     "getLlmsTxt",
     "getArchive",
     "getPins",

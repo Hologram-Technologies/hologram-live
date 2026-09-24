@@ -1,0 +1,65 @@
+{
+  "format": "hologram.spaces.catalog/v1",
+  "spaces": [
+    {
+      "id": "kokoro-tts",
+      "name": "Kokoro TTS",
+      "task": "Speech",
+      "tagline": "Type a sentence, hear it. 82M parameters, on your GPU.",
+      "root": "sha256:383df588d4de9957470c42ae073fdaea1bfc246550a21d5f4e63be55fde2beca",
+      "bytes": 2439133,
+      "files": 7,
+      "models": [
+        "onnx-community/Kokoro-82M-v1.0-ONNX"
+      ],
+      "modelHost": "https://huggingface.co",
+      "modelBytes": 326054472,
+      "source": "https://huggingface.co/spaces/webml-community/kokoro-webgpu",
+      "requires": [
+        "webgpu",
+        "opfs"
+      ],
+      "entry": "kokoro-tts/index.html"
+    },
+    {
+      "id": "remove-background",
+      "name": "Remove Background",
+      "task": "Image",
+      "tagline": "Drop a photo; the subject comes back cut out. RMBG 1.4.",
+      "root": "sha256:5963c1ccea30c44891963cc777b09accea497cc4c13a575ea38e7bbc8d53f0eb",
+      "bytes": 1407092,
+      "files": 7,
+      "models": [
+        "briaai/RMBG-1.4"
+      ],
+      "modelHost": "https://huggingface.co",
+      "modelBytes": 176220000,
+      "source": "https://huggingface.co/spaces/Xenova/remove-background-webgpu",
+      "requires": [
+        "webgpu",
+        "opfs"
+      ],
+      "entry": "remove-background/index.html"
+    },
+    {
+      "id": "smollm-chat",
+      "name": "SmolLM Chat",
+      "task": "Chat",
+      "tagline": "A 360M-parameter assistant. The whole conversation stays on your device.",
+      "root": "sha256:f8ce3e93e60cd741502caf9ce5ae0e746c6fafc2642847cd4b51d5679002e5f9",
+      "bytes": 1786589,
+      "files": 8,
+      "models": [
+        "HuggingFaceTB/SmolLM-360M-Instruct"
+      ],
+      "modelHost": "https://huggingface.co",
+      "modelBytes": 386700000,
+      "source": "https://huggingface.co/spaces/webml-community/smollm-webgpu",
+      "requires": [
+        "webgpu",
+        "opfs"
+      ],
+      "entry": "smollm-chat/index.html"
+    }
+  ]
+}

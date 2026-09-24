@@ -46,12 +46,15 @@ not hold the file answers 404 and names the ones that do.
 
 ## When you want more
 
-    /openapi.json     the whole endpoint, 43 paths and 45 operations, OpenAPI 3.1. Bind to it directly.
+    /openapi.json     the whole endpoint, 45 paths and 47 operations, OpenAPI 3.1. Bind to it directly.
     /mcp              the same hub as MCP tools over streamable HTTP. No key.
     /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.
     /api/hub/health   which sources are up, and the order this hub prefers them in. Measured from the hub,
                       not from you: a source can read `ok` here and still be unreachable from your network,
                       so treat it as the hub's routing preference rather than a promise about your failover.
+    /spaces/          apps that run entirely in the browser, each in its own sealed frame; the catalog with every
+                      Space's root digest and models is /spaces/spaces.json, and a published Space is the OCI
+                      artifact at /v2/spaces/<id>.
     /docs/            the documentation: quickstart, the concepts, one page per dialect, the reference. Each page also at /docs/<page>.md.
     /llms.txt         the same thing at more length, and the index of every docs page.
 

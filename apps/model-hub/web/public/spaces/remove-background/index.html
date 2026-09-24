@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" class="dark" data-theme="dark" data-space="remove-background">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' blob: data:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self'">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit/hologram-warm.css">
+<link rel="stylesheet" href="/kit/hologram-gap-tokens.css">
+<link rel="stylesheet" href="/tokens.css">
+<script type="module">// ── Hologram Spaces prelude: every model byte is verified against the model index's digest before the
+// runtime sees it, then kept in this Space's own store by digest. The host is a location, never the identity.
+import { installVerifiedFetch } from "../runtime/holo-spaces-hf-fetch.mjs";
+import { OpfsKappaStore } from "../runtime/holo-opfs-kappastore.mjs";
+const __holoStoreP = OpfsKappaStore.open("holo-space:remove-background").catch(() => null);
+const __holoChan = (() => { try { return new BroadcastChannel("holo-spaces:remove-background"); } catch { return null; } })();
+const __holoSay = (e) => { try { __holoChan && __holoChan.postMessage(e); } catch {} };
+// a failure inside this context is a fact the page should show, not a silent spinner
+self.addEventListener("error", (ev) => __holoSay({ kind: "error", error: String((ev && ev.message) || ev) }));
+self.addEventListener("unhandledrejection", (ev) => __holoSay({ kind: "error", error: String((ev && ev.reason && (ev.reason.message || ev.reason)) || ev) }));
+installVerifiedFetch({
+  host: "https://huggingface.co", models: ["briaai/RMBG-1.4"],
+  store: { getByKey: async (a, h) => { const st = await __holoStoreP; return st ? st.getByKey(a, h) : null; },
+           putVerified: async (a, h, b) => { const st = await __holoStoreP; if (st) await st.putVerified(a, h, b); } },
+  onEvent: __holoSay,
+}).then((vf) => __holoSay({ kind: "armed" }), (e) => __holoSay({ kind: "index-failed", error: String(e && e.message || e) }));
+</script>
+  <title>Remove Background · Spaces · Hologram</title>
+  <script type="module" src="./assets/index-17_Va4sS.js"></script>
+  <link rel="stylesheet" href="./assets/index-SojaDS6z.css">
+<link rel="stylesheet" href="../runtime/space.css">
+</head>
+
+<body>
+  <div id="container">
+    <label id="upload-button" for="upload">
+      <svg width="25" height="25" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#000"
+          d="M3.5 24.3a3 3 0 0 1-1.9-.8c-.5-.5-.8-1.2-.8-1.9V2.9c0-.7.3-1.3.8-1.9.6-.5 1.2-.7 2-.7h18.6c.7 0 1.3.2 1.9.7.5.6.7 1.2.7 2v18.6c0 .7-.2 1.4-.7 1.9a3 3 0 0 1-2 .8H3.6Zm0-2.7h18.7V2.9H3.5v18.7Zm2.7-2.7h13.3c.3 0 .5 0 .6-.3v-.7l-3.7-5a.6.6 0 0 0-.6-.2c-.2 0-.4 0-.5.3l-3.5 4.6-2.4-3.3a.6.6 0 0 0-.6-.3c-.2 0-.4.1-.5.3l-2.7 3.6c-.1.2-.2.4 0 .7.1.2.3.3.6.3Z">
+        </path>
+      </svg>
+      Click to upload image
+      <label id="example">(or try example)</label>
+    </label>
+  </div>
+  <label id="status"></label>
+  <input id="upload" type="file" accept="image/*" />
+
+</body>
+
+</html>

@@ -281,6 +281,28 @@ function document(server, evidence) {
       ...probe("/registry/", { contentType: "text/html" }),
     },
   };
+  // The Spaces page: apps that run entirely in the visitor's browser, each in its own sealed frame. The page
+  // reads its catalog from the site and asks `/v2/spaces/<id>/manifests/latest` whether a Space is published.
+  spec.paths["/spaces/"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getSpacesPage",
+      summary: "Apps that run entirely in the browser, each in its own sealed frame",
+      description: "Three demo Spaces (speech, image, chat). Every file of a Space is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. A Space published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
+      responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, ...NOT_SERVED },
+      ...probe("/spaces/", { contentType: "text/html" }),
+    },
+  };
+  spec.paths["/spaces/spaces.json"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getSpacesCatalog",
+      summary: "The Spaces catalog: id, sealed root, files, models and their sizes",
+      description: "`{ format: \"hologram.spaces.catalog/v1\", spaces: [{ id, name, task, tagline, root, bytes, files, models, modelHost, modelBytes, source, requires, entry }] }`. `root` is SHA-256 over the Space's file map; `entry` is the page to open.",
+      responses: { 200: { description: "JSON.", content: { "application/json": { schema: { type: "object" } } } }, ...NOT_SERVED },
+      ...probe("/spaces/spaces.json", { contentType: "application/json" }),
+    },
+  };
   spec.paths["/llms.txt"] = {
     get: {
       tags: ["Discovery"],
@@ -1121,6 +1143,9 @@ function brief(spec) {
     "    /api/hub/health   which sources are up, and the order this hub prefers them in. Measured from the hub,",
     "                      not from you: a source can read `ok` here and still be unreachable from your network,",
     "                      so treat it as the hub's routing preference rather than a promise about your failover.",
+    "    /spaces/          apps that run entirely in the browser, each in its own sealed frame; the catalog with every",
+    "                      Space's root digest and models is /spaces/spaces.json, and a published Space is the OCI",
+    "                      artifact at /v2/spaces/<id>.",
     "    /docs/            the documentation: quickstart, the concepts, one page per dialect, the reference. Each page also at /docs/<page>.md.",
     "    /llms.txt         the same thing at more length, and the index of every docs page.",
     "",

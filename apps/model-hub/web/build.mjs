@@ -97,6 +97,7 @@ const accountControl = () => privy ? `<div class="account" id="account">
 const SECTIONS = [
   ["models", "Models", "grid", BROWSE],
   ["registry", "Registry", "box", `${base}registry/`],
+  ["spaces", "Spaces", "cpu", `${base}spaces/`],
   ["docs", "Docs", "file", `${base}docs/`],
 ];
 // `current` is the section the page belongs to. It marks that one link aria-current, which the stylesheet
@@ -476,15 +477,16 @@ await writeFile(join(DIST, ".nojekyll"), "");
 // of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
 // one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
 // very same header() and topNav() every other page is built with.
-const regPath = join(DIST, "registry", "index.html");
-let registryHtml = await readFile(regPath, "utf8");
-for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {
-  if (!registryHtml.includes(mark)) throw new Error(`registry/index.html lost ${mark}: the shared header has nowhere to go`);
+// The Spaces page ships the same way: its own components and its own runtime, the site's header.
+for (const section of ["registry", "spaces"]) {
+  const path = join(DIST, section, "index.html");
+  let html = await readFile(path, "utf8");
+  for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {
+    if (!html.includes(mark)) throw new Error(`${section}/index.html lost ${mark}: the shared header has nowhere to go`);
+  }
+  html = html.replace("<!--chrome:head-->", chromeHead).replace("<!--chrome:header-->", header({ section }));
+  await writeFile(path, html);
 }
-registryHtml = registryHtml
-  .replace("<!--chrome:head-->", chromeHead)
-  .replace("<!--chrome:header-->", header({ section: "registry" }));
-await writeFile(regPath, registryHtml);
 
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this
 // refuses to build a copy that would fetch either from somebody else.

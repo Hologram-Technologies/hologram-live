@@ -1,0 +1,26 @@
+{
+  "format": "hologram.space/v1",
+  "id": "smollm-chat",
+  "name": "SmolLM Chat",
+  "task": "Chat",
+  "tagline": "A 360M-parameter assistant. The whole conversation stays on your device.",
+  "entry": "index.html",
+  "space": {
+    "source": "https://huggingface.co/spaces/webml-community/smollm-webgpu",
+    "sdk": "static",
+    "models": [
+      "HuggingFaceTB/SmolLM-360M-Instruct"
+    ],
+    "modelHost": "https://huggingface.co",
+    "modelBytes": 386700000
+  },
+  "requires": [
+    "webgpu",
+    "opfs"
+  ],
+  "capabilities": {
+    "storage": [
+      "holo-space:smollm-chat"
+    ]
+  }
+}

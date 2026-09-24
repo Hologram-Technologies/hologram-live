@@ -1,0 +1,25 @@
+/* The frame a Space renders in. It keeps the source app's controls and takes the hub's ground, type and
+   lines, so a Space looks like part of the site rather than a page pasted into it. Spaces are always dark:
+   the source apps set their own text colours for a dark ground. */
+html, body { background: var(--hh-ground, #0f0f10) !important; color: var(--hh-text, #ece9fb) !important; }
+body, button, input, select, textarea { font-family: var(--font-sans, Geist, Inter, sans-serif) !important; }
+code, pre, kbd { font-family: var(--font-mono, "Geist Mono", monospace) !important; }
+#root > div:first-child { background: var(--hh-ground, #0f0f10) !important; }
+
+/* Kokoro: the headline and the "Powered by" line repeat what the card says. */
+html[data-space="kokoro-tts"] h1 { display: none !important; }
+html[data-space="kokoro-tts"] p:has(img[src*="hf-logo"]) { display: none !important; }
+html[data-space="kokoro-tts"] img[src*="hf-logo"] { display: none !important; }
+
+/* SmolLM: the logo and the title; the Load button and the chat stay. */
+html[data-space="smollm-chat"] img[src*="logo.png"] { display: none !important; }
+html[data-space="smollm-chat"] h1 { display: none !important; }
+
+/* Remove Background: the drop zone in the hub's lines and text; the icon takes the text colour. */
+html[data-space="remove-background"] body { padding: 24px !important; }
+html[data-space="remove-background"] #container { border: 1px dashed var(--hh-line-strong, #3a3a3d) !important; border-radius: 13px !important; background-color: var(--hh-surface, #16161a); }
+html[data-space="remove-background"] #upload-button { color: var(--hh-text, #ece9fb) !important; font-size: 15px !important; }
+html[data-space="remove-background"] #upload-button svg path { fill: currentColor !important; }
+html[data-space="remove-background"] #example { color: var(--hh-text-dim, #9a9aa3) !important; }
+html[data-space="remove-background"] #example:hover { color: var(--brand, #e93b01) !important; }
+html[data-space="remove-background"] #status { color: var(--hh-text-dim, #9a9aa3); font-family: var(--font-mono, monospace); font-size: 12.5px; }

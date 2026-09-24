@@ -1,0 +1,26 @@
+{
+  "format": "hologram.space/v1",
+  "id": "remove-background",
+  "name": "Remove Background",
+  "task": "Image",
+  "tagline": "Drop a photo; the subject comes back cut out. RMBG 1.4.",
+  "entry": "index.html",
+  "space": {
+    "source": "https://huggingface.co/spaces/Xenova/remove-background-webgpu",
+    "sdk": "static",
+    "models": [
+      "briaai/RMBG-1.4"
+    ],
+    "modelHost": "https://huggingface.co",
+    "modelBytes": 176220000
+  },
+  "requires": [
+    "webgpu",
+    "opfs"
+  ],
+  "capabilities": {
+    "storage": [
+      "holo-space:remove-background"
+    ]
+  }
+}

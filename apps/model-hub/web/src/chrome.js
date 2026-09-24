@@ -33,7 +33,7 @@ function foldingMenu() {
   // A section chosen on the page you are already on: the panel closes rather than sitting over an unchanged page.
   sheet.addEventListener("click", (e) => { if (e.target.closest(".top-nav a")) open(false); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen()) { open(false); button.focus(); } });
-  const wide = matchMedia("(min-width: 961px)");
+  const wide = matchMedia("(min-width: 1101px)");
   wide.addEventListener("change", () => { if (wide.matches) open(false); });
 }
 

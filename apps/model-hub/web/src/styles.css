@@ -70,7 +70,7 @@
   display: inline-flex; align-items: center; gap: var(--space-3);
   height: var(--hh-control); padding: 0 var(--space-4);
   border: 1px solid var(--hh-line); border-radius: var(--hh-control);
-  font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim);
+  font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text-dim);
   transition: color var(--hh-ease), border-color var(--hh-ease);
 }
 .land-badge .lockup, .land-badge .tally { display: inline-flex; align-items: center; gap: var(--space-2); }
@@ -83,7 +83,9 @@
 .land-badge + .land-title { margin-top: var(--space-6); }
 .land-title { font-family: var(--font-display); font-size: var(--hh-display); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: .95; }
 .land-title span { display: block; }
-.land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--hh-lead); color: var(--hh-text-dim); }
+/* The line under the headline is set at the site's one text size, the same as the menu above it and the
+   actions below it: one size for everything that is not the headline, so the headline is the only scale. */
+.land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--hh-ui); color: var(--hh-text-dim); }
 /* ---- the highlighted word.
    The subline carries one claim and the word "self-verifying" is it. Seven treatments live here at once,
    chosen by data-highlight on <html>; HIGHLIGHT= at build time picks the one that ships. The word inherits
@@ -142,7 +144,7 @@
 
 .land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-6); }
 .land-prompt { color: var(--hh-text-dim); margin-right: .5ch; }
-.land-second { font-family: var(--font-mono); font-size: var(--hh-lead); color: var(--hh-text); transition: opacity var(--hh-ease); }
+.land-second { font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }
 
 /* The strip on the bottom edge: two identical runs, sliding exactly half the track, so the loop has no seam. */
@@ -169,14 +171,13 @@
 :root.dark .land-track img { background: var(--hh-text); }
 @keyframes land-slide { to { transform: translateX(-50%); } }
 
-@media (min-width: 720px) and (min-height: 700px) { :root { --hh-lead: var(--text-xl); } }
 @media (max-height: 820px) {
   :root { --hh-strip-mark: var(--space-8); --hh-strip-top: var(--space-4); --hh-strip-bottom: var(--space-6); --hh-strip-gap: var(--space-12); --hh-strip-label: var(--text-lg); }
   .land { padding: var(--space-4) 0; }
   .land-sub, .land-actions, .land-badge + .land-title { margin-top: var(--space-4); }
 }
 @media (max-height: 620px) {
-  :root { --hh-strip-mark: var(--space-6); --hh-strip-top: var(--space-3); --hh-strip-bottom: var(--space-4); --hh-strip-gap: var(--space-10); --hh-strip-label: var(--text-sm); --hh-lead: var(--text-base); }
+  :root { --hh-strip-mark: var(--space-6); --hh-strip-top: var(--space-3); --hh-strip-bottom: var(--space-4); --hh-strip-gap: var(--space-10); --hh-strip-label: var(--text-sm); }
   .land { padding: var(--space-3) 0; }
   .land-sub, .land-actions, .land-badge + .land-title { margin-top: var(--space-3); }
 }
@@ -190,13 +191,12 @@
 
 /* ---- a phone.
    The headline is the page, so it takes the width: the two halves wrap as one line of text rather than as
-   two fixed lines, which lets the type grow past what the wide layout's vw rule allows. The command steps
-   down a size so it reads as the second action, not a second headline; the primary action gets a little more
-   air above it; and the strip, whose run is shorter here, keeps its pace by taking less time per loop. */
+   two fixed lines, which lets the type grow past what the wide layout's vw rule allows. The primary action
+   gets a little more air above it, and the strip, whose run is shorter here, keeps its pace by taking less
+   time per loop. */
 @media (max-width: 720px) {
   :root { --hh-display: clamp(var(--text-4xl), 12vw, var(--text-5xl)); }
   .land-title span { display: inline; }
-  .land-second { font-size: var(--text-base); }
   .land-actions { margin-top: var(--space-8); }
   .land-track { animation-duration: 40s; }
 }

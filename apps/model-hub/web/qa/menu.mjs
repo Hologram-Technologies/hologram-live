@@ -42,7 +42,7 @@ const PAGES = [
 // parts in another order, moves the reader's eye when they cross into it.
 const LEAD = "name count address";
 // Wide enough for the menu, and narrow enough to have hidden it. Both are checked.
-const WIDTHS = [2560, 1600, 1440, 1280, 1100, 1024, 900, 861, 860, 768, 390, 320];
+const WIDTHS = [2560, 1600, 1440, 1280, 1101, 1100, 1024, 900, 861, 860, 768, 390, 320];
 const THEMES = ["dark", "light"];
 // AA for a 14px label. Immersive puts the row on a photograph nobody can rule on, so it is not held here.
 const AA = 4.5;

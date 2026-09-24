@@ -5,6 +5,7 @@
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { checkSealed } from "./qa/registry-sealed.mjs";
+import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -287,6 +288,11 @@ function modelPage(m, files, ov, readme) {
     files?.sources?.length ? fact("Sources", String(files.sources.length)) : "",
     m.revision ? fact("Revision", copy(m.revision, m.revision.slice(0, 12))) : "",
     m.manifest ? fact("Manifest", copy(m.manifest, R.shortAddress(m.manifest))) : "",
+    // A model card may name the buckets its checkpoints and data live in (`buckets:` in the
+    // card's YAML, HF's own field). Each becomes a link, and the bucket page links back.
+    bucketsOf(readme).length
+      ? fact("Buckets", bucketsOf(readme).map((b) => `<a href="${base}buckets/#/${R.esc(b)}">${R.esc(b)}</a>`).join(", "))
+      : "",
   ].join("");
 
   let filesPanel, downloadMenu = "";
@@ -412,6 +418,7 @@ await writeFile(join(DIST, "404.html"), page({
   body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${BROWSE}">All models</a></div></section>`,
 }));
 
+const bucketLinks = {};   // "owner/name" -> [model id, …], written for the Buckets page
 for (const m of models) {
   const filesPath = join(SITE, "data", "files", m.org, `${m.name}.json`);
   const files = existsSync(filesPath) ? JSON.parse(await readFile(filesPath, "utf8")) : null;
@@ -423,6 +430,7 @@ for (const m of models) {
   const dir = join(DIST, "models", m.org, m.name);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "index.html"), modelPage(m, files, ov, readme));
+  for (const b of bucketsOf(readme)) (bucketLinks[b] ??= []).push(m.id);
 }
 
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
@@ -500,6 +508,8 @@ for (const section of ["registry", "spaces", "buckets"]) {
 
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this
 // refuses to build a copy that would fetch either from somebody else.
+await writeFile(join(DIST, "buckets", "links.json"), JSON.stringify(bucketLinks));
+console.log(await checkBucketLinks(DIST, models.length));
 console.log(await checkSealed(DIST));
 // Every link in the docs lands on something this build ships, and every page has something to run.
 console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));

@@ -4,12 +4,22 @@
 // base32, just enough dag-pb and UnixFS to read and write a file DAG, and the walk over the
 // OCI index tree. Object bytes are hashed by `crypto.subtle`, which is native and fast; the
 // index nodes and keys use the shared synchronous sha-256 so the tree is one implementation.
-import { sha256, sha256hex } from './sha256.mjs'
+import { sha256, sha256hex } from './sha256.mjs?v=3'
 
 export const INDEX_MT = 'application/vnd.oci.image.index.v1+json'
 export const MANIFEST_MT = 'application/vnd.oci.image.manifest.v1+json'
 export const ACCEPT = `${INDEX_MT}, ${MANIFEST_MT}`
 export const CHUNK = 1 << 20
+import { sealBlock, openBlock, sealName, openName, keyCheck } from './crypt.mjs?v=3'
+export const DEFAULT_QUOTA = 50e9
+
+// public, unlisted, or private (= sealed). A head written before the distinction said
+// "private" and meant unlisted; it reads as such.
+export function visibilityOf (a = {}) {
+  if (a['foundation.uor.bucket.encryption']) return 'private'
+  const v = a['foundation.uor.bucket.visibility'] || 'public'
+  return v === 'private' ? 'unlisted' : v
+}
 const RAW = 0x55
 const DAG_PB = 0x70
 
@@ -131,6 +141,10 @@ export function registry (base = '') {
       const r = await fetch(at('_catalog?n=200'))
       return r.ok ? (await r.json()).repositories || [] : []
     },
+    async tags (repo) {
+      const r = await fetch(at(`${repo}/tags/list?n=10000`))
+      return r.ok ? (await r.json()).tags || [] : []
+    },
     async putBlob (repo, bytes, token) {
       const digest = 'sha256:' + await hashBytes(bytes)
       const head = await fetch(at(`${repo}/blobs/${digest}`), { method: 'HEAD', headers: auth(token) })
@@ -163,20 +177,28 @@ export async function hashBytes (bytes) {
 }
 
 // ---------------------------------------------------------------- reading a bucket
-export async function readBucket (reg, repo) {
+export async function readBucket (reg, repo, { key = null } = {}) {
   const head = await reg.manifest(repo, 'latest')
   if (!head) return null
+  const a = head.json.annotations || {}
+  const encrypted = !!a['foundation.uor.bucket.encryption']
+  if (encrypted && key && a['foundation.uor.bucket.keycheck'] && (await keyCheck(key)) !== a['foundation.uor.bucket.keycheck']) {
+    const e = new Error('this key does not fit this bucket'); e.wrongKey = true; throw e
+  }
   const entries = new Map()
   async function walk (node) {
     const level = Number(node.annotations?.['foundation.uor.bucket.level'] ?? '0')
     for (const child of node.manifests || []) {
       if (level === 0) {
-        const a = child.annotations || {}
-        entries.set(a['foundation.uor.bucket.key'], {
+        const c = child.annotations || {}
+        const wire = c['foundation.uor.bucket.key']
+        // A private bucket's names are sealed on the wire; with the key they read as written.
+        entries.set(encrypted && key ? await openName(key, wire) : wire, {
           manifest: child.digest,
-          root: a['foundation.uor.object.root'],
-          size: Number(a['foundation.uor.bucket.size'] || 0),
-          mtime: Number(a['foundation.uor.bucket.mtime'] || 0)
+          root: c['foundation.uor.object.root'],
+          size: Number(c['foundation.uor.bucket.size'] || 0),
+          mtime: Number(c['foundation.uor.bucket.mtime'] || 0),
+          ...(encrypted ? { wire } : {})
         })
       } else {
         walkNext.push(child.digest)
@@ -193,9 +215,29 @@ export async function readBucket (reg, repo) {
   return {
     repo,
     head: head.digest,
-    annotations: head.json.annotations || {},
+    annotations: a,
+    visibility: visibilityOf(a),
+    encrypted,
+    key: encrypted ? key : null,
+    locked: encrypted && !key,
+    bytes: Number(a['foundation.uor.bucket.bytes'] || 0),
+    quota: Number(a['foundation.uor.bucket.quota.bytes'] || DEFAULT_QUOTA),
     entries
   }
+}
+
+/** Every state a bucket has been in, newest first: one per publish, each a full root. */
+export async function readHistory (reg, repo) {
+  const tags = (await reg.tags(repo)).filter(t => /^h-\d+$/.test(t)).sort((x, y) => Number(y.slice(2)) - Number(x.slice(2)))
+  const out = []
+  for (const tag of tags) {
+    const m = await reg.manifest(repo, tag).catch(() => null)
+    if (!m) continue
+    const a = m.json.annotations || {}
+    out.push({ tag, state: m.digest, json: m.json, published: a['foundation.uor.bucket.published'] || new Date(Number(tag.slice(2))).toISOString(),
+      objects: Number(a['foundation.uor.bucket.objects'] || 0), size: Number(a['foundation.uor.bucket.bytes'] || 0), parent: a['foundation.uor.bucket.parent'] || null })
+  }
+  return out
 }
 
 /**
@@ -203,12 +245,12 @@ export async function readBucket (reg, repo) {
  * onProgress({ done, total, blocks }) is called as blocks arrive.
  * Throws with `refused` set when a block's bytes are not what its address names.
  */
-export async function readObject (reg, repo, rootCid, onProgress = () => {}) {
+export async function readObject (reg, repo, rootCid, onProgress = () => {}, key = null) {
   const parts = []
   let done = 0
   let blocks = 0
   async function walk (cid) {
-    const bytes = await reg.blob(repo, cidToDigest(cid))
+    let bytes = await reg.blob(repo, cidToDigest(cid))
     const got = await hashBytes(bytes)
     if (got !== cidToDigest(cid).slice(7)) {
       const error = new Error('these bytes are not what this address names')
@@ -217,6 +259,7 @@ export async function readObject (reg, repo, rootCid, onProgress = () => {}) {
     }
     blocks++
     if (codecOf(cid) === RAW) {
+      if (key) bytes = await openBlock(key, bytes)     // checked first, opened second
       parts.push(bytes)
       done += bytes.length
       onProgress({ done, blocks })
@@ -242,12 +285,13 @@ export async function ensureEmptyConfig (reg, repo, token) {
   emptyPushed.add(repo)
 }
 
-export async function writeObject (reg, repo, key, file, token, onProgress = () => {}) {
+export async function writeObject (reg, repo, key, file, token, onProgress = () => {}, bkey = null) {
   await ensureEmptyConfig(reg, repo, token)
   const leaves = []
   let sent = 0
   for (let offset = 0; offset < file.size || (file.size === 0 && offset === 0); offset += CHUNK) {
-    const slice = new Uint8Array(await file.slice(offset, Math.min(offset + CHUNK, file.size)).arrayBuffer())
+    let slice = new Uint8Array(await file.slice(offset, Math.min(offset + CHUNK, file.size)).arrayBuffer())
+    if (bkey) slice = await sealBlock(bkey, slice)      // a private bucket: the block leaves sealed
     const hex = await hashBytes(slice)
     await reg.putBlob(repo, slice, token)
     leaves.push({ digest: hexToBytes(hex), size: slice.length })
@@ -260,10 +304,11 @@ export async function writeObject (reg, repo, key, file, token, onProgress = () 
   if (leaves.length === 1) {
     root = cidString(RAW, leaves[0].digest)
   } else {
-    const node = fileNode(leaves, file.size)
+    const node = fileNode(leaves, leaves.reduce((n, l) => n + l.size, 0))
     const { digest } = await reg.putBlob(repo, node, token)
     blocks.push({ digest, size: node.length })
     root = digestToCid(digest, DAG_PB)
   }
-  return { key, root, size: file.size, mtime: Date.now(), blocks }
+  // The object's size is the plaintext size; its name on the wire is sealed when the bucket is.
+  return { key, wire: bkey ? await sealName(bkey, key) : key, root, size: file.size, mtime: Date.now(), blocks }
 }

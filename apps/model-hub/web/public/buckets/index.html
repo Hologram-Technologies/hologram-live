@@ -6,7 +6,7 @@
 <title>Buckets · Hologram Models Hub</title>
 <meta name="description" content="Object storage for models, datasets and checkpoints, where every object carries the address of its own bytes.">
 <!--chrome:head-->
-<link rel="stylesheet" href="buckets.css">
+<link rel="stylesheet" href="buckets.css?v=3">
 </head>
 <body>
 
@@ -21,13 +21,21 @@
       <span class="pill" id="count" hidden></span>
     </div>
     <div class="lead-end">
+      <button type="button" class="button" id="history-button" hidden>History</button>
       <button type="button" class="button" id="settings" hidden>Settings</button>
       <button type="button" class="button primary" id="new-bucket">New bucket</button>
     </div>
   </div>
   <p class="prov" id="sub">Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.</p>
 
+  <p class="prov linked" id="linked" hidden></p>
   <nav class="crumbs" id="crumbs" hidden aria-label="Breadcrumb"></nav>
+
+  <div class="cred" id="keybar" hidden>
+    <span id="keybar-why">This bucket is private. Its key opens it here, and stays in this browser.</span>
+    <label class="field compact"><input id="keybar-value" type="password" placeholder="bucket key" autocomplete="off"></label>
+    <button type="button" class="button primary" id="keybar-save">Open</button>
+  </div>
 
   <div class="bar" id="bar" hidden>
     <label class="field compact" for="q">
@@ -70,6 +78,15 @@
     </div>
   </section>
 
+  <section class="detail" id="history" hidden aria-live="polite">
+    <div class="detail-head">
+      <h2>History</h2>
+      <button type="button" class="button" id="history-close" aria-label="Close">Close</button>
+    </div>
+    <p class="muted" id="history-why">Every publish leaves a state behind. Restoring one publishes it again as the newest; nothing is rewritten.</p>
+    <table class="states"><tbody id="history-rows"></tbody></table>
+  </section>
+
   <div class="readme" id="readme" hidden></div>
 
   <p class="prov note" id="note"></p>
@@ -88,6 +105,6 @@
 </dialog>
 </div>
 
-<script type="module" src="buckets.js"></script>
+<script type="module" src="buckets.js?v=3"></script>
 </body>
 </html>

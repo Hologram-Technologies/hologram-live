@@ -2,14 +2,42 @@
 // page walks it the same way the CLI does, and checks every block it reads against the address
 // that named it. No framework, no CDN. The chrome — header, nav, theme, account — is the site's
 // own, so this file is only ever about buckets.
-import { registry, readBucket, readObject, writeObject, digestToCid, cidToDigest, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs'
-import { build, objectManifest } from './lib/octree.mjs'
+import { registry, readBucket, readHistory, readObject, writeObject, digestToCid, cidToDigest, visibilityOf, DEFAULT_QUOTA, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs?v=3'
+import { newKey, keyToText, keyFromText, keyCheck, sealName, ENC } from './lib/crypt.mjs?v=3'
+import { build, objectManifest } from './lib/octree.mjs?v=3'
 
 const reg = registry('')
 // Live follow is served by the bucket service, not by /v2/. Same origin in production; in the
 // dev server it is the gateway next door.
 const EVENTS_BASE = new URLSearchParams(location.search).get('events') || ''
-const OWNER = new URLSearchParams(location.search).get('owner') || 'ilya'
+// Who is making buckets here. The hub's own sign-in (auth.js, the same module the header uses)
+// says who is in; the namespace is that person's handle. `?owner=` overrides it for a test, and
+// a person who is not signed in is asked in the dialog. The write credential is separate: the
+// registry's, asked for once when a write is refused, kept in this tab.
+let account = null
+const OWNER_PARAM = new URLSearchParams(location.search).get('owner') || ''
+const handleOf = who => String(who || '').split('@')[0].toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+const owner = () => OWNER_PARAM || (account && handleOf(account.email)) || ''
+;(async () => {
+  try {
+    const base = document.documentElement.dataset.base || '/'
+    const auth = await import(`${base}auth.js`)
+    auth.onChange(user => { account = user })
+    await auth.restore().catch(() => {})
+  } catch { /* no sign-in on this build: the dialog asks */ }
+})()
+
+// A private bucket's key lives in this browser and nowhere else it did not choose.
+const keyStore = {
+  get (o, n) { try { const t = localStorage.getItem(`uor-bucket-key:${o}/${n}`); return t ? keyFromText(t) : null } catch { return null } },
+  set (o, n, key) { try { localStorage.setItem(`uor-bucket-key:${o}/${n}`, keyToText(key)) } catch {} },
+  forget (o, n) { try { localStorage.removeItem(`uor-bucket-key:${o}/${n}`) } catch {} }
+}
+let links = null
+async function linksFor (id) {
+  if (!links) { try { links = await (await fetch('links.json')).json() } catch { links = {} } }
+  return links[id] || []
+}
 const $ = id => document.getElementById(id)
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n }
 
@@ -59,6 +87,19 @@ function ask ({ title, why, fields = [], ok = 'Save' }) {
         input.type = 'checkbox'; input.id = 'f-' + f.name; input.checked = !!f.value
         label.append(input, el('span', null, f.label))
         body.appendChild(label)
+      } else if (f.type === 'choice') {
+        for (const c of f.options) {
+          const label = el('label', 'choice' + (c.disabled ? ' off' : ''))
+          const input = el('input')
+          input.type = 'radio'; input.name = 'f-' + f.name; input.value = c.value; input.checked = c.value === f.value; input.disabled = !!c.disabled
+          const text = el('span', null, c.label)
+          if (c.why) text.appendChild(el('small', null, c.why))
+          label.append(input, text)
+          body.appendChild(label)
+        }
+      } else if (f.type === 'static') {
+        const block = el('div', f.cls || 'muted', f.value)
+        body.appendChild(block)
       } else {
         const label = el('label', 'field')
         const input = el('input')
@@ -76,6 +117,8 @@ function ask ({ title, why, fields = [], ok = 'Save' }) {
       e.preventDefault()
       const out = {}
       for (const f of fields) {
+        if (f.type === 'static') continue
+        if (f.type === 'choice') { out[f.name] = body.querySelector(`input[name="f-${f.name}"]:checked`)?.value; continue }
         const input = $('f-' + f.name)
         out[f.name] = f.type === 'checkbox' ? input.checked : input.value.trim()
       }
@@ -102,6 +145,7 @@ async function renderList () {
   $('sub').textContent = 'Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.'
   $('crumbs').hidden = true; $('bar').hidden = true; $('drop').hidden = true
   $('readme').hidden = true; $('cred').hidden = true; $('settings').hidden = true
+  $('history-button').hidden = true; $('history').hidden = true; $('keybar').hidden = true; $('linked').hidden = true
   closeDetail()
   $('head').innerHTML = '<tr><th>Bucket</th><th>Objects</th><th>Size</th><th class="hide">Created</th><th class="hide">Address of the current state</th></tr>'
   $('rows').replaceChildren()
@@ -142,7 +186,8 @@ async function renderList () {
       tr.children[1].textContent = ann['foundation.uor.bucket.objects'] ?? '?'
       tr.children[2].textContent = human(Number(ann['foundation.uor.bucket.bytes'] || 0))
       tr.children[3].textContent = (ann['foundation.uor.bucket.created'] || '').slice(0, 10)
-      if (ann['foundation.uor.bucket.visibility'] === 'private') tr.children[0].querySelector('.name').appendChild(el('span', 'pill', 'unlisted'))
+      const vis = visibilityOf(ann)
+      if (vis !== 'public') tr.children[0].querySelector('.name').appendChild(el('span', 'pill', vis))
       tr.children[4].textContent = short(digestToCid(head.digest, 0x71))
       tr.children[4].title = head.digest
     }).catch(() => {})
@@ -160,7 +205,16 @@ async function renderBrowse (r) {
   $('empty').hidden = true
   $('settings').hidden = false
 
-  state = await readBucket(reg, repo)
+  $('history-button').hidden = false
+  $('history').hidden = true
+  try {
+    state = await readBucket(reg, repo, { key: keyStore.get(r.owner, r.name) })
+  } catch (e) {
+    if (!e.wrongKey) throw e
+    keyStore.forget(r.owner, r.name)
+    state = await readBucket(reg, repo)
+    says('The key kept here did not fit this bucket; it was forgotten.')
+  }
   if (!state) {
     $('sub').textContent = 'No such bucket.'
     $('rows').replaceChildren()
@@ -170,12 +224,25 @@ async function renderBrowse (r) {
     return
   }
   const ann = state.annotations
-  const unlisted = (ann['foundation.uor.bucket.visibility'] || 'public') === 'private'
   $('count').hidden = false
-  $('count').textContent = `${state.entries.size} object${state.entries.size === 1 ? '' : 's'} · ${human(Number(ann['foundation.uor.bucket.bytes'] || 0))}`
-  $('sub').textContent = `${unlisted ? 'unlisted' : 'public'} · state ${short(digestToCid(state.head, 0x71))}`
+  $('count').textContent = `${state.entries.size} object${state.entries.size === 1 ? '' : 's'} · ${human(state.bytes)} of ${human(state.quota)}`
+  $('sub').textContent = `${state.visibility}${state.encrypted ? ' — names and bytes are sealed; the key is in this browser' : ''} · state ${short(digestToCid(state.head, 0x71))}`
   $('sub').title = state.head
-  $('drop').hidden = false
+  $('drop').hidden = state.locked
+  // Private and no key here: the names are sealed and nothing opens. Ask for the key, inline.
+  $('keybar').hidden = !state.locked
+  if (state.locked) $('keybar-value').focus()
+  linksFor(`${r.owner}/${r.name}`).then(ids => {
+    $('linked').hidden = !ids.length
+    if (ids.length) {
+      $('linked').replaceChildren(el('span', null, 'Linked from '))
+      ids.forEach((id, i) => {
+        const a = el('a', null, id); a.href = `${document.documentElement.dataset.base || '/'}models/${id}/`
+        if (i) $('linked').appendChild(el('span', null, ', '))
+        $('linked').appendChild(a)
+      })
+    }
+  })
 
   crumbs(r)
   paint(r)
@@ -242,7 +309,7 @@ function paint (r) {
     button.addEventListener('click', () => openDetail(key, label, tr))
     const td = el('td'); td.appendChild(button)
     const addr = el('td', 'addr hide', short(v.root)); addr.title = v.root
-    tr.append(td, el('td', 'num', human(v.size)), el('td', 'num hide', when(v.mtime)), addr, el('td', 'state', ''))
+    tr.append(td, el('td', 'num', human(v.size)), el('td', 'num hide', when(v.mtime)), addr, el('td', 'state', state.locked ? 'sealed' : ''))
     body.appendChild(tr)
   }
 
@@ -284,11 +351,27 @@ async function showReadme (entry) {
   const box = $('readme')
   box.textContent = 'Reading README.md…'
   try {
-    box.innerHTML = markdown(new TextDecoder().decode(await readObject(reg, state.repo, entry.root)))
+    box.innerHTML = markdown(new TextDecoder().decode(await readObject(reg, state.repo, entry.root, () => {}, state.key)))
   } catch (e) {
     box.textContent = `README.md was refused: ${e.message}`
   }
 }
+
+$('keybar-save').addEventListener('click', async () => {
+  const r = route()
+  let key
+  try { key = keyFromText($('keybar-value').value) } catch { return says('That is not a bucket key: 43 characters, base64url.') }
+  try {
+    const probe = await readBucket(reg, state.repo, { key })
+    keyStore.set(r.owner, r.name, key)
+    $('keybar-value').value = ''
+    state = probe
+    await renderBrowse(r)
+    says('Opened. The key stays in this browser.')
+  } catch (e) {
+    says(e.wrongKey ? 'That key does not fit this bucket.' : `That did not work: ${e.message}`)
+  }
+})
 
 // ---------------------------------------------------------------- one object
 // What HF shows on a file page, and two things it cannot: the address the bytes answer to,
@@ -313,7 +396,8 @@ async function openDetail (key, label, tr) {
     ['Modified', when(entry.mtime) || '—'],
     ['Blocks', '…'],
     ['Lives at', `/v2/${state.repo}/blobs/${digest}`, 'mono'],
-    ['Named by', `/v2/${state.repo}/manifests/${entry.manifest}`, 'mono']
+    ['Named by', `/v2/${state.repo}/manifests/${entry.manifest}`, 'mono'],
+    ...(entry.wire ? [['On the wire', `${entry.wire.slice(0, 24)}… — the name and every block are sealed with this bucket\u2019s key; the registry holds noise`, 'mono']] : [])
   ]
   const dl = $('detail-facts')
   dl.replaceChildren()
@@ -343,7 +427,7 @@ $('detail-check').addEventListener('click', async () => {
   const cell = $('detail-state')
   cell.className = 'state'; cell.textContent = 'checking…'
   try {
-    await readObject(reg, state.repo, state.entries.get(detail.key).root, ({ blocks }) => { cell.textContent = `checking… ${blocks} block${blocks === 1 ? '' : 's'}` })
+    await readObject(reg, state.repo, state.entries.get(detail.key).root, ({ blocks }) => { cell.textContent = `checking… ${blocks} block${blocks === 1 ? '' : 's'}` }, state.key)
     cell.className = 'state ok'; cell.textContent = 'verified: every block is what its address names'
     mark(detail.tr, 'ok', 'verified')
   } catch (e) {
@@ -368,7 +452,7 @@ async function download (key, label, tr, also) {
   try {
     const bytes = await readObject(reg, state.repo, entry.root, ({ done }) => {
       say('state', entry.size ? `${Math.round((done / entry.size) * 100)}%` : 'reading…')
-    })
+    }, state.key)
     say('state ok', 'verified')
     const url = URL.createObjectURL(new Blob([bytes]))
     const a = document.createElement('a')
@@ -390,7 +474,7 @@ $('verify').addEventListener('click', async () => {
     const cell = tr.children[4]
     cell.className = 'state'; cell.textContent = 'checking…'
     try {
-      await readObject(reg, state.repo, entry.root)
+      await readObject(reg, state.repo, entry.root, () => {}, state.key)
       cell.className = 'state ok'; cell.textContent = 'verified'; ok++
     } catch (e) {
       cell.className = 'state bad'; cell.textContent = e.refused ? 'refused' : 'failed'; cell.title = e.message; refused++
@@ -439,22 +523,45 @@ $('new-bucket').addEventListener('click', async () => {
     title: 'New bucket',
     why: 'A bucket is a place to put objects. Its name cannot change later; its contents can, at any time.',
     fields: [
+      { name: 'owner', label: 'owner (your handle)', value: owner() },
       { name: 'name', label: 'bucket name, for example training-data' },
-      { name: 'private', label: 'Unlisted — keep it off the list', type: 'checkbox' }
+      { name: 'visibility', type: 'choice', value: 'public', options: [
+        { value: 'public', label: 'Public', why: 'listed, readable by anyone' },
+        { value: 'unlisted', label: 'Unlisted', why: 'off the list; readable by anyone holding an address' },
+        { value: 'private', label: 'Private', why: 'names and bytes leave this browser sealed with a key that never does' }
+      ] }
     ],
     ok: 'Create'
   })
   if (!answer || !answer.name) return
+  const who = handleOf(answer.owner)
+  if (!who) return says('A bucket needs an owner: sign in, or type a handle.')
   const name = answer.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
   if (!name) return says('That name has nothing usable in it.')
   const run = async () => {
     try {
-      const repo = `buckets/${OWNER}/${name}`
-      if (await reg.manifest(repo, 'latest')) return says(`${OWNER}/${name} already exists.`)
-      await publishRoot(repo, [], answer.private ? 'private' : 'public')
-      nextNote = `${OWNER}/${name} is ready. Drop files into it.`
-      if (location.hash === `#/${OWNER}/${name}`) await render()
-      else location.hash = `#/${OWNER}/${name}`
+      const repo = `buckets/${who}/${name}`
+      if (await reg.manifest(repo, 'latest')) return says(`${who}/${name} already exists.`)
+      const extra = {}
+      let key = null
+      if (answer.visibility === 'private') {
+        key = newKey()
+        extra['foundation.uor.bucket.encryption'] = ENC
+        extra['foundation.uor.bucket.keycheck'] = await keyCheck(key)
+      }
+      await publishRoot(repo, [], answer.visibility === 'private' ? 'private' : answer.visibility, extra, key)
+      if (key) {
+        keyStore.set(who, name, key)
+        await ask({
+          title: 'Keep this key',
+          why: `${who}/${name} is sealed with it. It stays in this browser; to open the bucket anywhere else, paste it there. Without it the bucket is noise, and nobody can give it back.`,
+          fields: [{ name: 'key', type: 'static', cls: 'key', value: keyToText(key) }],
+          ok: 'I kept it'
+        })
+      }
+      nextNote = `${who}/${name} is ready. Drop files into it.`
+      if (location.hash === `#/${who}/${name}`) await render()
+      else location.hash = `#/${who}/${name}`
     } catch (e) {
       if (refused(e)) { forget(); askForCredential('Making a bucket needs a credential. It stays in this tab.', run) } else says(`That did not land: ${e.message}`)
     }
@@ -465,12 +572,18 @@ $('new-bucket').addEventListener('click', async () => {
 $('settings').addEventListener('click', async () => {
   const r = route()
   if (r.view !== 'browse' || !state) return
-  const unlisted = (state.annotations['foundation.uor.bucket.visibility'] || 'public') === 'private'
+  const current = state.visibility
   const answer = await ask({
     title: `${r.owner}/${r.name}`,
-    why: 'Unlisted keeps a bucket off the list. It is not private: the registry still serves its objects to anyone holding an address.',
+    why: state.encrypted
+      ? 'A private bucket stays private: its blocks are sealed. To publish something from it, copy it into a public bucket.'
+      : 'Unlisted keeps a bucket off the list; anyone holding an address can still read it. A bucket is private from birth, so make a private one and copy into it.',
     fields: [
-      { name: 'private', label: 'Unlisted', type: 'checkbox', value: unlisted },
+      { name: 'visibility', type: 'choice', value: current, options: [
+        { value: 'public', label: 'Public', why: 'listed, readable by anyone', disabled: state.encrypted },
+        { value: 'unlisted', label: 'Unlisted', why: 'off the list; readable by anyone holding an address', disabled: state.encrypted },
+        { value: 'private', label: 'Private', why: 'sealed with a key; from birth only', disabled: !state.encrypted }
+      ] },
       { name: 'confirm', label: 'to delete this bucket, type its name' }
     ],
     ok: 'Save'
@@ -479,17 +592,19 @@ $('settings').addEventListener('click', async () => {
   const run = async () => {
     try {
       if (answer.confirm === r.name) {
-        await reg.deleteManifest(state.repo, state.head, token)
-        nextNote = `${r.owner}/${r.name} is gone. Its objects stay in the store until the next collection.`
+        // Every state, not just the head: a deleted bucket leaves no history behind.
+        const states = new Set([state.head, ...(await readHistory(reg, state.repo)).map(h => h.state)])
+        for (const digest of states) await reg.deleteManifest(state.repo, digest, token).catch(e => { if (!/404/.test(e.message)) throw e })
+        nextNote = `${r.owner}/${r.name} is gone (${states.size} state${states.size === 1 ? '' : 's'}). Its objects stay in the store until the next collection.`
         if (location.hash === '#/' || location.hash === '') await render()
         else location.hash = '#/'
         return
       }
-      const wanted = answer.private ? 'private' : 'public'
-      if (wanted === (unlisted ? 'private' : 'public')) return
+      const wanted = answer.visibility
+      if (!wanted || wanted === current || state.encrypted) return
       await publishRoot(state.repo, [...state.entries], wanted)
       await renderBrowse(route())
-      says(`${r.owner}/${r.name} is now ${wanted === 'private' ? 'unlisted' : 'public'}.`)
+      says(`${r.owner}/${r.name} is now ${wanted}.`)
     } catch (e) {
       if (refused(e)) { forget(); askForCredential('That needs a credential. It stays in this tab.', run) } else says(`That did not land: ${e.message}`)
     }
@@ -514,18 +629,23 @@ async function doUpload (files) {
   const prefix = r.prefix ? r.prefix.replace(/\/$/, '') + '/' : ''
   const text = $('drop-text')
   try {
+    if (state.locked) return says('This bucket is private and its key is not here.')
+    // The ceiling, before a byte moves.
+    let after = state.bytes
+    for (const file of files) after += file.size - (state.entries.get(prefix + file.name)?.size || 0)
+    if (after > state.quota) return says(`This bucket may hold ${human(state.quota)}; that would make it ${human(after)}. Nothing was moved.`)
     for (const file of files) {
       const key = prefix + file.name
       text.textContent = `Adding ${file.name}…`
       const object = await writeObject(reg, state.repo, key, file, token, ({ done, total }) => {
         text.textContent = `Adding ${file.name} — ${total ? Math.round((done / total) * 100) : 100}%`
-      })
-      const om = objectManifest({ key, root: object.root, size: object.size, mtime: object.mtime, blocks: object.blocks })
+      }, state.key)
+      const om = objectManifest({ key: object.wire, root: object.root, size: object.size, mtime: object.mtime, blocks: object.blocks })
       await reg.putManifest(state.repo, om.digest, om.bytes, MANIFEST_MT, token)
-      state.entries.set(key, { manifest: om.digest, root: object.root, size: object.size, mtime: object.mtime, manifestSize: om.size })
+      state.entries.set(key, { manifest: om.digest, root: object.root, size: object.size, mtime: object.mtime, manifestSize: om.size, ...(state.encrypted ? { wire: object.wire } : {}) })
     }
     text.textContent = 'Publishing the new state…'
-    await publishRoot(state.repo, [...state.entries], state.annotations['foundation.uor.bucket.visibility'] || 'public')
+    await publishRoot(state.repo, [...state.entries], state.visibility, {}, state.key)
     text.textContent = 'Drop files here to add them to this bucket, or choose files.'
     await renderBrowse(route())
   } catch (e) {
@@ -538,13 +658,22 @@ async function doUpload (files) {
 }
 
 // Every write publishes a new root: the bucket is a pointer, so nothing is edited in place.
-async function publishRoot (repo, entries, visibility) {
-  // A bucket keeps its birthday. It lives only on the head, so read it before replacing it.
+async function publishRoot (repo, entries, visibility, extra = {}, bkey = null) {
+  // A bucket keeps its birthday, its key fingerprint and its ceiling. They live only on the
+  // head, so read it before replacing it; the new head names this one as its parent.
   const prior = await reg.manifest(repo, 'latest').catch(() => null)
-  const created = (prior && prior.json.annotations && prior.json.annotations['foundation.uor.bucket.created']) || new Date().toISOString()
-  const list = entries.map(([key, v]) => [key, {
-    manifest: v.manifest, manifestSize: v.manifestSize || 0, root: v.root, size: v.size, mtime: v.mtime
-  }])
+  const pa = (prior && prior.json.annotations) || {}
+  const now = new Date().toISOString()
+  const encrypted = !!(extra['foundation.uor.bucket.encryption'] || pa['foundation.uor.bucket.encryption'])
+  const list = []
+  for (const [key, v] of entries) {
+    list.push([encrypted ? (v.wire || await sealName(bkey, key)) : key, {
+      manifest: v.manifest, manifestSize: v.manifestSize || 0, root: v.root, size: v.size, mtime: v.mtime
+    }])
+  }
+  const bytes = list.reduce((s, [, v]) => s + v.size, 0)
+  const quota = Number(extra['foundation.uor.bucket.quota.bytes'] || pa['foundation.uor.bucket.quota.bytes'] || DEFAULT_QUOTA)
+  if (bytes > quota && bytes > Number(pa['foundation.uor.bucket.bytes'] || 0)) throw new Error(`this bucket may hold ${human(quota)}; that would make it ${human(bytes)}`)
   const tree = build(list)
   for (const node of tree.nodes) {
     if (node.digest === tree.root) continue
@@ -555,12 +684,76 @@ async function publishRoot (repo, entries, visibility) {
     ...root.annotations,
     'foundation.uor.bucket.type': 'application/vnd.uor.bucket.v1',
     'foundation.uor.bucket.objects': String(list.length),
-    'foundation.uor.bucket.bytes': String(list.reduce((s, [, v]) => s + v.size, 0)),
+    'foundation.uor.bucket.bytes': String(bytes),
     'foundation.uor.bucket.levels': String(tree.levels),
     'foundation.uor.bucket.visibility': visibility,
-    'foundation.uor.bucket.created': created
+    'foundation.uor.bucket.created': pa['foundation.uor.bucket.created'] || now,
+    'foundation.uor.bucket.quota.bytes': String(quota),
+    ...(pa['foundation.uor.bucket.encryption'] ? { 'foundation.uor.bucket.encryption': pa['foundation.uor.bucket.encryption'], 'foundation.uor.bucket.keycheck': pa['foundation.uor.bucket.keycheck'] } : {}),
+    ...(prior ? { 'foundation.uor.bucket.parent': prior.digest } : {}),
+    'foundation.uor.bucket.published': now,
+    ...extra
   }
-  return reg.putManifest(repo, 'latest', new TextEncoder().encode(JSON.stringify(root)), INDEX_MT, token)
+  const head = new TextEncoder().encode(JSON.stringify(root))
+  const digest = await reg.putManifest(repo, 'latest', head, INDEX_MT, token)
+  // Every state stays listable: the same root, tagged by its moment.
+  await reg.putManifest(repo, 'h-' + Date.now(), head, INDEX_MT, token)
+  return digest
+}
+
+// ---------------------------------------------------------------- history
+// Every publish left a state; here they are, newest first, with Restore. Restoring publishes
+// the old root's entries as the newest head, so the state you leave stays listed too.
+$('history-close').addEventListener('click', () => { $('history').hidden = true })
+$('history-button').addEventListener('click', async () => {
+  if (!state) return
+  const box = $('history')
+  box.hidden = false
+  const rows = $('history-rows')
+  rows.replaceChildren()
+  const r = route()
+  const states = await readHistory(reg, state.repo)
+  if (!states.length) { rows.appendChild(el('tr')).appendChild(el('td', 'num', 'No states yet.')); return }
+  for (const h of states) {
+    const tr = el('tr')
+    const when = el('td', 'when', h.published.slice(0, 16).replace('T', ' '))
+    if (h.state === state.head) when.appendChild(el('span', 'pill', 'now'))
+    const addr = el('td', 'addr hide', short(digestToCid(h.state, 0x71))); addr.title = h.state
+    const act = el('td', 'act')
+    if (h.state !== state.head) {
+      const b = el('button', 'button', 'Restore')
+      b.addEventListener('click', () => restore(h, r))
+      act.appendChild(b)
+    }
+    tr.append(when, el('td', 'num', `${h.objects} object${h.objects === 1 ? '' : 's'}`), el('td', 'num', human(h.size)), addr, act)
+    rows.appendChild(tr)
+  }
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+})
+async function restore (h, r) {
+  const run = async () => {
+    try {
+      // The old root's entries, as the wire holds them: the names are already what they must be.
+      const entries = []
+      const walk = async node => {
+        const level = Number(node.annotations?.['foundation.uor.bucket.level'] ?? '0')
+        for (const child of node.manifests || []) {
+          if (level === 0) {
+            const c = child.annotations || {}
+            entries.push([c['foundation.uor.bucket.key'], { manifest: child.digest, manifestSize: child.size || 0, root: c['foundation.uor.object.root'], size: Number(c['foundation.uor.bucket.size'] || 0), mtime: Number(c['foundation.uor.bucket.mtime'] || 0), wire: state.encrypted ? c['foundation.uor.bucket.key'] : undefined }])
+          } else await walk((await reg.manifest(state.repo, child.digest)).json)
+        }
+      }
+      await walk(h.json)
+      await publishRoot(state.repo, entries, state.visibility, {}, state.key)
+      nextNote = `Restored the state from ${h.published.slice(0, 16).replace('T', ' ')} as the newest. The one you left is still in the history.`
+      await renderBrowse(r)
+      $('history').hidden = true
+    } catch (e) {
+      if (refused(e)) { forget(); askForCredential('Restoring needs a credential. It stays in this tab.', run) } else says(`That did not land: ${e.message}`)
+    }
+  }
+  run()
 }
 
 // ---------------------------------------------------------------- live

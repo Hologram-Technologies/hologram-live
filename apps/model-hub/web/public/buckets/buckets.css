@@ -77,6 +77,24 @@ td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(-
 .detail-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-top: var(--space-5); }
 .detail-actions .state { margin-left: var(--space-2); }
 
+.states { width: 100%; border-collapse: collapse; }
+.states td { padding: var(--space-2) var(--space-2); border-bottom: 1px solid var(--hh-line); font-size: var(--text-sm); vertical-align: middle; }
+.states tr:last-child td { border-bottom: 0; }
+.states td.when { white-space: nowrap; color: var(--hh-text); }
+.states td.num { color: var(--hh-text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.states td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-faint); }
+.states td.act { text-align: right; white-space: nowrap; }
+.states .pill { margin-left: var(--space-2); }
+.ask label.choice { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2);
+  font-size: var(--text-sm); color: var(--hh-text); }
+.ask label.choice input { margin-top: 3px; }
+.ask label.choice small { display: block; color: var(--hh-text-dim); }
+.ask label.choice.off { opacity: .55; }
+.ask .key { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; background: var(--hh-fill);
+  padding: var(--space-3); border-radius: var(--radius-md); margin: var(--space-3) 0; user-select: all; }
+.prov.linked a { color: var(--hh-accent-legible); }
+.name .pill { margin-left: var(--space-2); }
+
 .readme { margin-top: var(--space-5); background: var(--hh-surface); border: 1px solid var(--hh-line);
   border-radius: var(--radius-xl); padding: var(--space-6); }
 .readme h1, .readme h2, .readme h3 { font-weight: var(--weight-medium);

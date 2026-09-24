@@ -2008,17 +2008,17 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-23T22:46:13.491Z",
+           "checked": "2026-09-23T23:47:07.147Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-23T22:46:14.683Z",
+           "checked": "2026-09-23T23:47:08.149Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-23T22:46:14.757Z",
+           "checked": "2026-09-23T23:47:08.232Z",
            "reason": "verified"
           }
          },
@@ -2223,7 +2223,7 @@
           "disabled": false,
           "likes": 3368,
           "downloads": 45461966,
-          "trendingScore": 65,
+          "trendingScore": 64,
           "createdAt": "2022-03-02T00:00:00.000Z",
           "pipeline_tag": "fill-mask",
           "library_name": "transformers",

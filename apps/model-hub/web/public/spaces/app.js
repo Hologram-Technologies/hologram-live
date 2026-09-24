@@ -188,19 +188,11 @@ function close() {
   const u = new URL(location.href); u.searchParams.delete("open"); history.replaceState(null, "", u);
 }
 
-// The dot beside the address: whether this registry holds any of these Spaces as artifacts.
-function provenance() {
-  const any = Object.keys(onRegistry).length;
-  $("dot").className = "dot" + (any ? " ok" : "");
-  $("dot").title = any ? `${any} of ${catalog.length} published` : "not published to the registry yet";
-}
 
 async function main() {
-  $("host").textContent = location.host + "/v2/spaces/";
   const [cat, c] = await Promise.all([fetch("./spaces.json").then((r) => r.json()), detect()]);
   catalog = cat.spaces; caps = c;
   await icons();
-  provenance();
   rail.render();
   render();
   $("q").addEventListener("input", () => { rail.render(); render(); });
@@ -208,9 +200,8 @@ async function main() {
   $("s-close").addEventListener("click", close);
   const want = new URLSearchParams(location.search).get("open");
   if (want && catalog.some((s) => s.id === want)) open(want);
-  // registry presence, per Space: a mark on the card, a chip in the rail, a count in the lead row
+  // registry presence, per Space: a mark on the card and a chip in the rail
   await Promise.all(catalog.map(async (s) => { const d = await published(s.id); if (d) onRegistry[s.id] = d; }));
-  provenance();
   rail.render();
   render();
 }

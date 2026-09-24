@@ -513,7 +513,6 @@ const rail = createRail({
 
 (async function start() {
   data = await (await fetch("data/images.json")).json();
-  $("host").textContent = location.host + "/v2/";
 
   // First paint waits on one file and nothing else.
   //
@@ -541,7 +540,6 @@ const rail = createRail({
 
   // ---- our own rows, read live, and they lead the list once they are here
   const live = (await reg.base()) ? await liveRows() : [];
-  $("dot").className = "dot " + (live.length ? "ok" : "bad");
   if (!live.length) return;
   data.images = [...live, ...data.images.filter((r) => !r.here)];
   data.facets.registry = { ...data.facets.registry, Hologram: live.length };

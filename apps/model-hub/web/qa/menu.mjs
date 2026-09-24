@@ -170,6 +170,14 @@ const READ = `(() => {
       const top = lead.getBoundingClientRect().top;
       return { name: lead.querySelector("h1")?.textContent.trim() || "", order: kids.join(" "), top: Math.round(top), font: getComputedStyle(lead.querySelector("h1")).fontFamily };
     })(),
+    // The search and the sort beside it: one row of controls, so one height, on every catalogue page.
+    bar: (() => {
+      const bar = document.querySelector(".bar");
+      const search = bar?.querySelector(".search");
+      const sort = bar?.querySelector(".sort > button") || bar?.querySelector(".sort");
+      if (!search || !sort || !search.offsetParent) return null;
+      return { search: Math.round(search.getBoundingClientRect().height), sort: Math.round(sort.getBoundingClientRect().height) };
+    })(),
   };
 })()`;
 
@@ -284,6 +292,13 @@ for (const theme of THEMES) {
           }
         }
       } else if (r.lead && !catalogue) problems.push(`${where}: a lead row on a page outside the catalogue`);
+      // The search and the sort stand the same height, and the same height on every catalogue page.
+      if (catalogue === true && r.bar) {
+        if (Math.abs(r.bar.search - r.bar.sort) > 1) problems.push(`${where}: the search is ${r.bar.search}px tall and the sort beside it ${r.bar.sort}px`);
+        const key = `bar ${theme} ${width}`;
+        if (!leads.has(key)) leads.set(key, { page, h: r.bar.search });
+        else if (Math.abs(leads.get(key).h - r.bar.search) > 1) problems.push(`${where}: the search bar is ${r.bar.search}px, on ${leads.get(key).page} it is ${leads.get(key).h}px`);
+      }
 
       if (r.current.length > 1) problems.push(`${where}: ${r.current.length} sections marked current`);
       if ((r.current[0] || "") !== section) problems.push(`${where}: current is ${r.current[0] || "nothing"}, expected ${section || "nothing"}`);

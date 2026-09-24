@@ -1,11 +1,11 @@
 {
   "format": "hologram.space.lock/v1",
   "id": "remove-background",
-  "root": "sha256:67f360b2422fe0b87648450c34b8354c661a619fdc7585d64cd005ea641651bf",
+  "root": "sha256:c357b95f103f587e7f5b8efeba9cc94d0865db691ad76fed05241ebfe9866307",
   "manifest": "manifest.json",
   "ipfs": {
     "recipe": "unixfs-v1-2025",
-    "root": "bafybeibbuewupr242gdurq7tpbtl6dmbqk4pytux2a6zhy4woomwragwt4"
+    "root": "bafybeig4f6ro7za6bgabng2qklnkpwmirbtm5ozfs3nxs2dsfw6f2hb2oy"
   },
   "files": {
     "assets/index-17_Va4sS.js": {
@@ -33,9 +33,9 @@
       "mediaType": "image/jpeg"
     },
     "holospace.json": {
-      "sha256": "b154159fc6c8d124bbba49bec2100639136f0add5e242063b113ec5bc219e705",
-      "bytes": 2731,
-      "cid": "bafkreifrkqkz7rwi2eslxosjx3bbabrzcnxqvxk6eqqghmit5rn4egphau",
+      "sha256": "ffd1ac66fd2eb20a713f33e98b53397621c4eeda5ea4e08bbd200ae601efd0f0",
+      "bytes": 2712,
+      "cid": "bafkreih72gwgn7jowifhcpzt5gfvgolwehco5ws6utqixpjabltad36q6a",
       "mediaType": "application/json"
     },
     "icon.svg": {

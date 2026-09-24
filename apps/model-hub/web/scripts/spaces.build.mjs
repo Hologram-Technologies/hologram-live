@@ -206,9 +206,7 @@ for (const s of SPACES) {
   const config = {
     format: "hologram.space/v1", id: s.id, name: s.name, task: s.task, tagline: s.tagline, entry: "index.html",
     space: { source: s.source, sdk: "static", models: s.models, modelHosts, modelBytes: s.modelBytes, modelFiles: pinned, ort: s.ort },
-    // storage under the Space's OWN identity (the catalog's schema:identifier): its store, not another app's —
-    // the OS grants that without asking; a foreign namespace would rightly raise the Holo Terms card
-    requires: ["webgpu", "opfs"], capabilities: { storage: ["org.hologram.Space." + s.id] },
+    requires: ["webgpu", "opfs"], capabilities: { storage: [s.id] },   // the OS terms gate: a storage namespace equal to the config's own id is granted without a card (holo-terms.js: ref.value === def.id → auto)
   };
   const configBytes = Buffer.from(canon(config) + "\n");
   writeFileSync(join(to, "holospace.json"), configBytes);

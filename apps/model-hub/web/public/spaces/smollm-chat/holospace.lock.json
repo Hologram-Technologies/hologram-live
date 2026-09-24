@@ -1,11 +1,11 @@
 {
   "format": "hologram.space.lock/v1",
   "id": "smollm-chat",
-  "root": "sha256:211e0746c95158e1d280abbc834f35fba7c717e8167722a8da016e04452551b7",
+  "root": "sha256:f36335960618128cde809fc2057c088a44c9d942a802099b8e8a4a201f20df4b",
   "manifest": "manifest.json",
   "ipfs": {
     "recipe": "unixfs-v1-2025",
-    "root": "bafybeidxitrl5yqjaxbmbnkkjwfzzfzyxxqafyem2iicqz44xj7znqg4s4"
+    "root": "bafybeieublszf3sysw7o47x33vsa6e3lvdqlll3audw3w4uz3zdwjsujzu"
   },
   "files": {
     "assets/index-DB1xiIWM.css": {
@@ -33,9 +33,9 @@
       "mediaType": "image/png"
     },
     "holospace.json": {
-      "sha256": "bec78f69026c15b90e650b3a12355d3bd7d48c0e1e19ccc736941a006a67d650",
-      "bytes": 2775,
-      "cid": "bafkreif6y6hwsatmcw4q4zilhijdkxj327kiydq6dhgmonuudiaguz6wka",
+      "sha256": "2df12c082ad3e01fb1007c2b4648c1e948bab52bfc6d2011a62ec49e33630655",
+      "bytes": 2756,
+      "cid": "bafkreibn6ewaqkwt4ap3cad4fnderqpjjc5lkk74nuqbdjroyspdgyygku",
       "mediaType": "application/json"
     },
     "icon.svg": {

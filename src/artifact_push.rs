@@ -10,7 +10,9 @@
 //! because silently replacing what a name points at is not a thing a publish
 //! command should do by default.
 
-use crate::artifact_manifest::{ArtifactLayer, ArtifactManifest, LayerRole};
+use crate::artifact_manifest::{
+    ArtifactLayer, ArtifactManifest, LayerRole, EMPTY_CONFIG, EMPTY_CONFIG_DIGEST,
+};
 use crate::artifact_ref::ArtifactRef;
 use crate::error::{LiveError, Result};
 use crate::protocol::HoloInspection;
@@ -76,6 +78,14 @@ fn external_payloads(inspection: &HoloInspection) -> BTreeSet<String> {
         .collect()
 }
 
+/// The name every OCI client can fetch a blob by. The registry serves the
+/// same bytes under this and under the kappa (ADR 030), so a manifest may
+/// carry it without the store changing.
+fn sha256_of(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    format!("sha256:{:x}", sha2::Sha256::digest(bytes))
+}
+
 pub fn push(
     publish: &dyn LayerPublish,
     store: &ObjectStore,
@@ -98,6 +108,7 @@ pub fn push(
     }
 
     let archive_kappa = format!("blake3:{}", blake3::hash(archive_bytes).to_hex());
+    let archive_sha256 = sha256_of(archive_bytes);
     let external = external_payloads(inspection);
 
     // Gather every payload before publishing anything, so a thin archive with
@@ -116,6 +127,16 @@ pub fn push(
     let total = payloads.len() + 1;
     let mut bytes_transferred = 0_u64;
 
+    // The config the manifest names. It is two bytes, and it has to be in the
+    // repository before the manifest that references it, or the registry
+    // refuses the manifest for naming content it does not hold.
+    publish.put_blob(
+        &repository,
+        EMPTY_CONFIG_DIGEST,
+        "application/vnd.oci.empty.v1+json",
+        EMPTY_CONFIG,
+    )?;
+
     publish.put_blob(&repository, &archive_kappa, HOLO_MEDIA_TYPE, archive_bytes)?;
     let archive_size = archive_bytes.len().try_into().unwrap_or(u64::MAX);
     bytes_transferred = bytes_transferred.saturating_add(archive_size);
@@ -128,6 +149,7 @@ pub fn push(
 
     let mut layers = vec![ArtifactLayer {
         kappa: archive_kappa.clone(),
+        sha256: Some(archive_sha256),
         media_type: HOLO_MEDIA_TYPE.to_owned(),
         size: archive_size,
         role: LayerRole::Archive,
@@ -139,6 +161,7 @@ pub fn push(
         bytes_transferred = bytes_transferred.saturating_add(size);
         layers.push(ArtifactLayer {
             kappa: kappa.clone(),
+            sha256: Some(sha256_of(bytes)),
             media_type: LAYER_MEDIA_TYPE.to_owned(),
             size,
             role: LayerRole::Layer,
@@ -348,13 +371,18 @@ mod tests {
         .expect("push");
 
         let writes = registry.writes.borrow();
-        assert_eq!(writes.len(), 3);
+        // The empty config, the archive, one payload, then the manifest.
+        assert_eq!(writes.len(), 4, "{writes:?}");
         assert!(
-            writes[..2].iter().all(|write| write.starts_with("blob:")),
+            writes[..3].iter().all(|write| write.starts_with("blob:")),
             "blobs first: {writes:?}"
         );
         assert!(
-            writes[2].starts_with("manifest:"),
+            writes[0].contains(EMPTY_CONFIG_DIGEST),
+            "the config the manifest names goes first of all: {writes:?}"
+        );
+        assert!(
+            writes[3].starts_with("manifest:"),
             "manifest last: {writes:?}"
         );
         let _ = std::fs::remove_dir_all(root);

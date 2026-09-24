@@ -101,6 +101,15 @@
 .card{cursor:pointer;text-align:left}
 .card:hover{border-color:var(--line2)}
 .card:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+/* the Models page's mesh behind every card, seeded by the entry's address; lit facets = checkable here */
+.card{position:relative;overflow:hidden;isolation:isolate}
+.art{position:absolute;z-index:-1;top:0;right:0;width:55%;height:100%;pointer-events:none;opacity:.85;
+  -webkit-mask-image:linear-gradient(90deg,transparent,var(--text) var(--space-16));mask-image:linear-gradient(90deg,transparent,var(--text) var(--space-16));
+  transition:opacity var(--hh-ease)}
+.art .facets{fill:var(--text)}
+.art .edges{fill:none;stroke:var(--text);stroke-width:.5;opacity:.07}
+.art.lit .edges{opacity:.14}
+.card:hover .art{opacity:1}
 
 .scrim{position:fixed;inset:0;background:var(--hh-shadow);z-index:40}
 .sheet{position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);z-index:41;background:var(--surface);

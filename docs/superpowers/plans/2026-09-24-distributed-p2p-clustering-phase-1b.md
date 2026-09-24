@@ -530,6 +530,378 @@ git commit -m "test(cluster): two daemons converge, and a stranger does not"
 
 ---
 
+### Task 10: Extract the `ClusterNetwork` trait, with HTTP as its only implementation
+
+The network stops being hard-coded. This lands last, so the extraction is
+verified against a cluster that already works and is already tested, and Phase 2
+adds iroh as a second implementation instead of refactoring the first.
+
+**Files:**
+- Create: `src/cluster/network.rs`
+- Modify: `src/cluster/mod.rs`, `src/cluster/replication.rs`, `Cargo.toml`, `DEPENDENCIES.md`
+- Test: in-file `#[cfg(test)] mod tests` in `src/cluster/network.rs`
+
+**Interfaces:**
+- Consumes: `proof::RequestProof`, `AppState`
+- Produces:
+  - `pub struct ClusterRequest { pub method: &'static str, pub path: String, pub query: Option<String>, pub body: Vec<u8>, pub proof: RequestProof, pub ticket: Option<String>, pub epoch: Option<String> }`
+  - `pub struct ClusterResponse { pub status: u16, pub headers: Vec<(String, String)>, pub body: Vec<u8> }`
+  - `#[async_trait] pub trait ClusterNetwork: Send + Sync { fn scheme(&self) -> &'static str; fn local_address(&self) -> Option<String>; fn accepts(&self, address: &str) -> bool; async fn send(&self, peer: &str, request: ClusterRequest) -> Result<ClusterResponse>; async fn discover(&self, limit: usize) -> Result<Vec<String>>; }`
+  - `pub struct HttpNetwork; HttpNetwork::new(client: reqwest::Client) -> Self`
+  - `pub struct NetworkRegistry; NetworkRegistry::new(networks: Vec<Arc<dyn ClusterNetwork>>) -> Self; NetworkRegistry::route(&self, address: &str) -> Option<&Arc<dyn ClusterNetwork>>; NetworkRegistry::send(&self, address: &str, request: ClusterRequest) -> Result<ClusterResponse>`
+
+- [ ] **Step 1: Declare the dependency that costs nothing**
+
+`async-trait 0.1.92` is already in the daemon's normal dependency graph through
+`tonic` and `opentelemetry`, so declaring it directly adds **no** crate to the
+graph. Confirm that before and after:
+
+```bash
+RUSTC_WRAPPER= cargo tree --package hologram-live --edges normal --prefix none --locked | grep -c '^async-trait'
+```
+
+Add to `Cargo.toml` `[dependencies]`, after `clap`:
+
+```toml
+# dyn-dispatched async for the ClusterNetwork trait. Already in the graph
+# through tonic and opentelemetry, so a direct declaration adds no crate.
+async-trait = "0.1"
+```
+
+Add to the `DEPENDENCIES.md` table:
+
+```markdown
+| `async-trait`                                | `dyn`-dispatched async for the pluggable cluster network trait |
+```
+
+Run: `RUSTC_WRAPPER= cargo tree --package hologram-live --edges normal --prefix none --locked | grep -c '^async-trait'`
+Expected: the same count as before the edit, and `git diff Cargo.lock` shows no new package entries.
+
+- [ ] **Step 2: Write the failing tests**
+
+Create `src/cluster/network.rs` with only this test module:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct StubNetwork {
+        scheme: &'static str,
+    }
+
+    #[async_trait::async_trait]
+    impl ClusterNetwork for StubNetwork {
+        fn scheme(&self) -> &'static str {
+            self.scheme
+        }
+        fn local_address(&self) -> Option<String> {
+            Some(format!("{}:self", self.scheme))
+        }
+        fn accepts(&self, address: &str) -> bool {
+            address.starts_with(self.scheme)
+        }
+        async fn send(&self, peer: &str, _request: ClusterRequest) -> Result<ClusterResponse> {
+            Ok(ClusterResponse {
+                status: 200,
+                headers: vec![("x-peer".to_owned(), peer.to_owned())],
+                body: self.scheme.as_bytes().to_vec(),
+            })
+        }
+        async fn discover(&self, _limit: usize) -> Result<Vec<String>> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn request() -> ClusterRequest {
+        ClusterRequest {
+            method: "GET",
+            path: "/api/v1/cluster/objects".to_owned(),
+            query: None,
+            body: Vec::new(),
+            proof: crate::cluster::proof::RequestProof {
+                node_id: "ed25519:aa".to_owned(),
+                timestamp: "0".to_owned(),
+                signature: "00".to_owned(),
+            },
+            ticket: None,
+            epoch: None,
+        }
+    }
+
+    #[test]
+    fn the_registry_routes_an_address_to_the_network_that_claims_it() {
+        let registry = NetworkRegistry::new(vec![
+            Arc::new(StubNetwork { scheme: "https" }),
+            Arc::new(StubNetwork { scheme: "iroh" }),
+        ]);
+        assert_eq!(
+            registry.route("https://node.example").map(|n| n.scheme()),
+            Some("https")
+        );
+        assert_eq!(
+            registry.route("iroh:ed25519:aa").map(|n| n.scheme()),
+            Some("iroh")
+        );
+        assert!(registry.route("veilid:xyz").is_none());
+    }
+
+    // A mixed cluster is the point: migration happens one node at a time.
+    #[tokio::test]
+    async fn a_mixed_cluster_reaches_both_kinds_of_peer() {
+        let registry = NetworkRegistry::new(vec![
+            Arc::new(StubNetwork { scheme: "https" }),
+            Arc::new(StubNetwork { scheme: "iroh" }),
+        ]);
+        let over_http = registry
+            .send("https://node.example", request())
+            .await
+            .expect("http peer");
+        let over_iroh = registry
+            .send("iroh:ed25519:aa", request())
+            .await
+            .expect("iroh peer");
+        assert_eq!(over_http.body, b"https".to_vec());
+        assert_eq!(over_iroh.body, b"iroh".to_vec());
+    }
+
+    #[tokio::test]
+    async fn an_unroutable_address_is_a_transport_error_not_a_panic() {
+        let registry = NetworkRegistry::new(vec![Arc::new(StubNetwork { scheme: "https" })]);
+        let error = registry
+            .send("veilid:xyz", request())
+            .await
+            .expect_err("no network claims this address");
+        assert!(matches!(error, LiveError::Transport(_)), "got {error:?}");
+    }
+
+    #[test]
+    fn the_http_network_claims_only_http_addresses() {
+        let network = HttpNetwork::new(reqwest::Client::new());
+        assert!(network.accepts("https://node.example:11435"));
+        assert!(network.accepts("http://127.0.0.1:11435"));
+        assert!(!network.accepts("iroh:ed25519:aa"));
+    }
+}
+```
+
+- [ ] **Step 3: Run the tests to verify they fail**
+
+Run: `cargo test --locked cluster::network -- --test-threads=1`
+Expected: FAIL to compile — nothing in `super` is defined.
+
+- [ ] **Step 4: Write the implementation**
+
+Above the test module in `src/cluster/network.rs`:
+
+```rust
+//! The cluster's transport, as a trait.
+//!
+//! No network is privileged. HTTP is the only implementation in Phase 1; iroh
+//! arrives in Phase 2, and Veilid or Reticulum could follow, as peers of it. A
+//! cluster may run several at once, because an address carries its own scheme
+//! and the registry routes on it — which is how a cluster migrates one node at
+//! a time.
+//!
+//! Identity deliberately does not live here. The request proof authenticates the
+//! request rather than the connection, so it travels unchanged over any network,
+//! and a network that authenticates its own connections adds assurance without
+//! being required for safety.
+
+use crate::cluster::proof::RequestProof;
+use crate::error::{LiveError, Result};
+use std::sync::Arc;
+
+#[derive(Debug, Clone)]
+pub struct ClusterRequest {
+    pub method: &'static str,
+    pub path: String,
+    pub query: Option<String>,
+    pub body: Vec<u8>,
+    pub proof: RequestProof,
+    pub ticket: Option<String>,
+    pub epoch: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClusterResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl ClusterResponse {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
+    pub const fn is_success(&self) -> bool {
+        self.status >= 200 && self.status < 300
+    }
+}
+
+#[async_trait::async_trait]
+pub trait ClusterNetwork: Send + Sync {
+    /// The address prefix this network claims, e.g. `"https"` or `"iroh"`.
+    fn scheme(&self) -> &'static str;
+    /// This node's address on this network, as peers should record it.
+    fn local_address(&self) -> Option<String>;
+    /// Whether this network can reach the given address.
+    fn accepts(&self, address: &str) -> bool;
+    /// One request/response exchange with a peer.
+    async fn send(&self, peer: &str, request: ClusterRequest) -> Result<ClusterResponse>;
+    /// Addresses learned without configuration. An empty list is a valid answer.
+    async fn discover(&self, _limit: usize) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+}
+
+pub struct HttpNetwork {
+    client: reqwest::Client,
+    advertised: Option<String>,
+}
+
+impl HttpNetwork {
+    pub fn new(client: reqwest::Client) -> Self {
+        Self { client, advertised: None }
+    }
+
+    pub fn with_advertised(mut self, advertised: Option<String>) -> Self {
+        self.advertised = advertised;
+        self
+    }
+}
+
+#[async_trait::async_trait]
+impl ClusterNetwork for HttpNetwork {
+    fn scheme(&self) -> &'static str {
+        "https"
+    }
+
+    fn local_address(&self) -> Option<String> {
+        self.advertised.clone()
+    }
+
+    fn accepts(&self, address: &str) -> bool {
+        address.starts_with("https://") || address.starts_with("http://")
+    }
+
+    async fn send(&self, peer: &str, request: ClusterRequest) -> Result<ClusterResponse> {
+        let mut url = reqwest::Url::parse(peer)
+            .map_err(|error| LiveError::Config(format!("invalid cluster address: {error}")))?;
+        url.set_path(&request.path);
+        url.set_query(request.query.as_deref());
+
+        let method = reqwest::Method::from_bytes(request.method.as_bytes())
+            .map_err(|error| LiveError::Protocol(format!("invalid cluster method: {error}")))?;
+        let mut builder = self
+            .client
+            .request(method, url)
+            .header(crate::cluster::proof::NODE_HEADER, &request.proof.node_id)
+            .header(crate::cluster::proof::TIMESTAMP_HEADER, &request.proof.timestamp)
+            .header(crate::cluster::proof::SIGNATURE_HEADER, &request.proof.signature);
+        if let Some(ticket) = &request.ticket {
+            builder = builder.header(crate::cluster::proof::TICKET_HEADER, ticket);
+        }
+        if let Some(epoch) = &request.epoch {
+            builder = builder.header("x-hologram-cluster-epoch", epoch);
+        }
+        if !request.body.is_empty() {
+            builder = builder
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(request.body);
+        }
+        let response = builder.send().await.map_err(|error| {
+            LiveError::Transport(format!("reach cluster peer {peer}: {error}"))
+        })?;
+        let status = response.status().as_u16();
+        let headers = response
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
+            })
+            .collect();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|error| LiveError::Transport(format!("read cluster peer {peer}: {error}")))?
+            .to_vec();
+        Ok(ClusterResponse { status, headers, body })
+    }
+}
+
+pub struct NetworkRegistry {
+    networks: Vec<Arc<dyn ClusterNetwork>>,
+}
+
+impl NetworkRegistry {
+    pub fn new(networks: Vec<Arc<dyn ClusterNetwork>>) -> Self {
+        Self { networks }
+    }
+
+    pub fn route(&self, address: &str) -> Option<&Arc<dyn ClusterNetwork>> {
+        self.networks.iter().find(|network| network.accepts(address))
+    }
+
+    pub async fn send(&self, address: &str, request: ClusterRequest) -> Result<ClusterResponse> {
+        let network = self.route(address).ok_or_else(|| {
+            LiveError::Transport(format!("no cluster network can reach {address}"))
+        })?;
+        network.send(address, request).await
+    }
+
+    /// Every address this node can be reached at, across all networks.
+    pub fn local_addresses(&self) -> Vec<String> {
+        self.networks
+            .iter()
+            .filter_map(|network| network.local_address())
+            .collect()
+    }
+}
+```
+
+Add `pub(crate) mod network;` to `src/cluster/mod.rs`.
+
+Note on the body-size bound: `ClusterResponse` reads the whole body, so the
+caller keeps enforcing `replication_max_object_bytes`. Do not drop that check
+when Step 5 routes replication through the registry.
+
+- [ ] **Step 5: Route the existing call sites through the registry**
+
+Build a `NetworkRegistry` holding one `HttpNetwork` in `src/cluster/mod.rs`'s
+`run`, and replace the direct `reqwest` calls in `contact_peer` and in
+`replication.rs`'s `signed_get` with `registry.send(address, request)`. Keep the
+`MAX_JOIN_BYTES` and `replication_max_object_bytes` checks where they are — they
+now bound `ClusterResponse::body` instead of a streaming read.
+
+- [ ] **Step 6: Run everything**
+
+Run: `cargo test --workspace --all-targets --locked -- --test-threads=1`
+Expected: PASS, including `tests/cluster_e2e.rs` unchanged — routing through the
+trait must not alter behavior over HTTP.
+
+Run: `cargo clippy --workspace --all-targets --locked -- -D warnings`
+Expected: silent.
+
+Run: `./scripts/check-file-size.sh`
+Expected: only the four pre-existing `apps/model-hub/web` violations.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add Cargo.toml Cargo.lock DEPENDENCIES.md src/cluster/network.rs src/cluster/mod.rs src/cluster/replication.rs
+git commit -m "feat(cluster): the network is a trait, and HTTP is one of them"
+```
+
+---
+
 ## Done when
 
 - `cargo test --workspace --all-targets --locked -- --test-threads=1` passes.
@@ -538,3 +910,6 @@ git commit -m "test(cluster): two daemons converge, and a stranger does not"
 - Two daemons started from byte-identical configuration on different hosts hold distinct identities and both appear in each other's `/api/v1/nodes`.
 - A daemon restarted with no configured seeds rejoins from its persisted directory.
 - A daemon holding the wrong admission secret never enters the directory.
+- `ClusterNetwork` has one implementation, HTTP, and `NetworkRegistry` routes a
+  mixed address list, so Phase 2 adds iroh without touching membership or
+  replication.

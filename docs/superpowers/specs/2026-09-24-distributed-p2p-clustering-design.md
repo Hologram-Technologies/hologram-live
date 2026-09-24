@@ -79,20 +79,113 @@ The honest caveat: `iroh` core is 1.0 with a stable wire protocol, but
 API across releases. This design takes a dependency on `iroh-blobs` and
 deliberately does not take one on `iroh-gossip`.
 
-**Rejected: Veilid.** `veilid-core` is MPL-2.0. `deny.toml` permits MPL only as
-narrow per-crate exceptions for off-by-default transitive leaves, which a core
-networking dependency is not. Independently, `scripts/check-kappa-pin.sh:50`
-already fails the build if `veilid` appears anywhere in the daemon's dependency
-graph. Adopting it would require reversing an existing gate and granting a
-licence exception for a central component. On technical merit its anonymity
-routing adds latency this workload does not need, and its DHT stores small
-records rather than blobs.
+**Not the default, but not excluded: Veilid.** An earlier draft of this document
+called Veilid rejected on the grounds that `scripts/check-kappa-pin.sh:50`
+already fails the build when `veilid` appears in the dependency graph. That gate
+is narrower than the claim: it runs `cargo tree --package hologram-live
+--features oci`, so it forbids Veilid from the *default and oci* graph, not from
+the crate's optional feature set. Behind an off-by-default feature, Veilid would
+clear that gate as written.
+
+Two real reservations remain. `veilid-core` is MPL-2.0, and whether
+`cargo-deny-action` flags an optional, off-by-default dependency depends on its
+feature resolution — unverified here, and to be settled before any Veilid
+feature merges. On technical merit its anonymity routing adds latency this
+workload does not need, and its DHT stores small records rather than blobs, so
+it is a poor fit for object replication even when it is a fine fit for reaching
+a peer.
+
+Veilid is therefore a *candidate implementation of the network trait below*,
+not the default transport and not a rejected option.
 
 **Not primary: Reticulum.** It targets high-latency, low-bandwidth austere
 links such as LoRa and packet radio. The Rust ecosystem is fragmented across
 several incomplete implementations with an open reference-parity effort as of
-2026-09-20. It remains a plausible future optional transport for disconnected or
-edge deployments and is out of scope here.
+2026-09-20. It remains a plausible future implementation of the network trait for
+disconnected or edge deployments, and no implementation of it is in scope here.
+
+## The network is a trait
+
+No transport is privileged. The cluster speaks to peers through one trait, and
+HTTP, iroh, Veilid, Reticulum, or anything later are implementations of it that
+can coexist in one running cluster.
+
+```rust
+pub trait ClusterNetwork: Send + Sync {
+    /// URL scheme or address prefix this network claims, e.g. "https", "iroh".
+    fn scheme(&self) -> &'static str;
+    /// This node's address on this network, as peers should record it.
+    fn local_address(&self) -> Option<String>;
+    /// Whether this network can reach the given address.
+    fn accepts(&self, address: &str) -> bool;
+    /// One request/response exchange with a peer.
+    async fn send(&self, peer: &str, request: ClusterRequest)
+        -> Result<ClusterResponse>;
+    /// Serve inbound exchanges into the shared cluster service.
+    async fn listen(&self, service: ClusterService) -> Result<()>;
+    /// Addresses learned without configuration. Empty is a valid answer.
+    async fn discover(&self, limit: usize) -> Result<Vec<String>> { Ok(Vec::new()) }
+}
+```
+
+Three properties make this a thin seam rather than a second protocol.
+
+**Identity is not the network's business.** A node's `node_id` is its ed25519
+public key on every network. The proof in the section above authenticates the
+*request*, not the connection, so it is carried unchanged over any transport. A
+network that happens to authenticate its own connections — iroh does, because the
+EndpointId *is* the key — is a belt-and-braces bonus, not a prerequisite. A
+network that authenticates nothing, such as plain HTTP, is equally safe here
+because the proof does not depend on it.
+
+**The service is not the network's business either.** `ClusterService` is the
+existing axum cluster router. Every implementation serves the same handlers over
+whatever byte stream it has, so adding a network adds addressing, dialling, and
+discovery — never a parallel set of handlers, and never a second wire format to
+keep in sync.
+
+**Addresses are scheme-tagged and a cluster may be mixed.** A `NetworkRegistry`
+holds the active implementations and dispatches an address to whichever one
+`accepts` it. `https://node.example:11435` goes to the HTTP network,
+`iroh:ed25519:…` to the iroh network. This is what lets a cluster migrate one
+node at a time instead of in a flag day, and it is why `cluster.seeds` is a list
+of addresses rather than a list of URLs.
+
+Phase 1 defines the trait and lands exactly one implementation, HTTP, wrapping
+the reqwest client and axum router the daemon already has. That is deliberate:
+the extraction is verifiable against a working, tested cluster, and Phase 2 then
+adds iroh as a second implementation rather than as a refactor of the first.
+
+## Can kappa-registry handle the servers?
+
+Not the membership, and it already handles the objects.
+
+kappa-registry is the object *data plane* behind `RegistryProvider` (ADR 021):
+content-addressed blobs, sidecar OCI manifests carrying kind and filename as
+annotations, and paginated tag listing. Object identity is already
+`blake3:<64 hex>` on both sides.
+
+It is the wrong substrate for membership for four reasons, each measurable
+rather than aesthetic. Heartbeats are frequent small mutable writes, and a
+kappa record is addressed by the hash of its bytes, so every heartbeat rewrites
+a tag. Listing members means a tag walk that reads one manifest per tag — ADR
+021 measured 0.78 s at 459 objects and 6.96 s at 5,000 — which a 15-second
+heartbeat cannot absorb. There is no TTL, so pruning becomes a walk-and-delete.
+And there is no compare-and-swap, so it cannot provide the ownership fencing
+that the epoch check only detects.
+
+The decisive objection is architectural: routing membership through one registry
+endpoint makes a "distributed P2P network" depend on a central service, which is
+the property this design exists to remove. `registry.provider` also defaults to
+`local`, so most installations have no kappa at all.
+
+There is one genuinely good use, and it is recorded here as a future option
+rather than built now: a kappa-backed **rendezvous directory**, where a node
+publishes its address as a small object under a well-known tag so a new node can
+bootstrap without a hand-configured seed. That keeps kappa out of the heartbeat
+path while using exactly what it is good at — durable, shared, content-addressed
+storage. It would be an implementation of `ClusterNetwork::discover`, not a
+replacement for membership.
 
 ## Phase 1 — a cluster that works, over HTTP
 
@@ -240,9 +333,10 @@ keeps the graph lean and keeps the forbidden-crate gate green.
 **One handler set, not two.** Under ALPN `hologram/cluster/1`, an accepted iroh
 bidirectional stream is handed to `hyper::server::conn::http1` serving the same
 axum cluster router that the HTTP listener serves. Handlers, extractors, OpenAPI
-annotations, and the existing tests carry over unchanged. Outbound requests go
-through `ClusterTransport { Http(reqwest::Client), Iroh(Endpoint) }` exposing a
-single `send`, so `membership.rs` and `replication.rs` never branch on transport.
+annotations, and the existing tests carry over unchanged. Outbound requests go through the
+`ClusterNetwork` trait defined above — iroh becomes a second implementation
+beside HTTP in the `NetworkRegistry` — so `membership.rs` and `replication.rs`
+never branch on transport.
 
 A peer address becomes `PeerAddress::{ Origin(Url), Endpoint(EndpointId) }`, and
 `advertise_endpoint` becomes optional when `p2p` is active. A node with no
@@ -318,7 +412,9 @@ migrates a cluster node by node rather than in a flag day.
 
 ## Out of scope
 
-Leases and fencing tokens for exclusive mutable ownership (Phase 3). Replica-set
+Any `ClusterNetwork` implementation other than HTTP (iroh is Phase 2; Veilid and
+Reticulum are later and optional). A kappa-backed rendezvous directory. Leases
+and fencing tokens for exclusive mutable ownership (Phase 3). Replica-set
 sharding of objects (follows Phase 2). `iroh-gossip` membership. Reticulum as a
 transport. Any change to the OCI feature's Kappa-backed data plane, which
 remains the authority for blobs, manifests, and tags.
@@ -330,3 +426,10 @@ remains the authority for blobs, manifests, and tags.
 - `p2p` is off by default, so P2P is opt-in at compile time, not in a stock
   binary.
 - Same-endpoint replay within the clock window is accepted for idempotent reads.
+- The network is a trait from Phase 1, with HTTP as its only implementation
+  there, so Phase 2 adds a transport instead of refactoring one.
+- Veilid is reclassified from rejected to an optional future implementation; the
+  MPL-2.0 question under `cargo-deny` must be settled before such a feature
+  merges.
+- kappa-registry stays the object data plane and does not become the membership
+  store; a rendezvous directory is left as a future `discover` implementation.

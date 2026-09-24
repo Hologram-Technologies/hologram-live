@@ -126,7 +126,16 @@
     "listRegistryRepositories",
     "listModelTags",
     "getModelManifest",
-    "getModelBlob"
+    "putManifest",
+    "deleteManifest",
+    "getModelBlob",
+    "deleteBlob",
+    "startBlobUpload",
+    "getBlobUploadStatus",
+    "appendBlobUpload",
+    "finishBlobUpload",
+    "cancelBlobUpload",
+    "listReferrers"
    ],
    "examples": [
     "ollama pull hub.uor.foundation/qwen/qwen3-0.6b-gguf:Q4_K_M",

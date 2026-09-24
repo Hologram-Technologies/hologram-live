@@ -1,0 +1,52 @@
+# Hologram Registry with its own write gate: `docker login hub.uor.foundation`, per-user, revocable, and every
+# write in the registry's audit log under the name that made it. This is what would replace the shared password
+# Caddy checks today (Caddyfile.hub, @write).
+#
+# NOT IN USE. Read the measurement in ../README.md, "Moving the write gate into the registry" first: turning this
+# on also ends anonymous *raw HTTP* reads, which is a promise the hub's own front page makes.
+#
+#   /auth/token is the realm a client is sent to by the 401 challenge. It must be reachable from outside, so
+#   Caddy has to route it to the registry alongside /v2/.
+#   htpasswd is what a person logs in WITH; the token is what the registry then trusts. Generate it with
+#   `htpasswd -bB registry.htpasswd <user> <password>`, one line per person, mode 600.
+
+version: 0.1
+log:
+  level: info
+  fields:
+    service: registry
+    environment: production
+storage:
+  delete:
+    enabled: true
+  cache:
+    blobdescriptor: inmemory
+  filesystem:
+    rootdirectory: /var/lib/registry
+  tag:
+    concurrencylimit: 5
+http:
+  addr: :5000
+  # Behind Caddy: the registry must build absolute URLs a client outside can follow.
+  host: https://hub.uor.foundation
+  debug:
+    addr: :5001
+    prometheus:
+      enabled: true
+      path: /metrics
+auth:
+  token:
+    realm: https://hub.uor.foundation/auth/token
+    service: hub.uor.foundation
+    issuer: hub.uor.foundation
+    # This registry issues as well as validates, which the reference does not: a single binary that wants
+    # anonymous pull and authenticated push has nowhere else to send a client.
+    local: true
+  htpasswd:
+    realm: Registry Realm
+    path: /etc/registry/htpasswd
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3

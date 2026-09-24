@@ -10,7 +10,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import MarkdownIt from "markdown-it";
 
-const GROUPS = ["Start", "Concepts", "Connect", "Reference"];
+export const GROUPS = ["Start", "Concepts", "Connect", "Reference"];
 // The reader's order, not the document's: what you call first sits first.
 const TAG_ORDER = ["Models", "Files", "Registry", "MCP", "Objects", "Account", "Health", "Discovery"];
 // Paths a page may link to with a leading slash that the site does not ship itself, because another service
@@ -153,11 +153,11 @@ export function sidebar(pages, current, base) {
     .join("")}</ul>`).join("")}</nav>`;
 }
 
-export function article(page, pages, base) {
+export function article(page, pages, base, tag = "") {
   const i = pages.findIndex((p) => p.slug === page.slug);
   const prev = pages[i - 1], next = pages[i + 1];
   return `<article class="docs-page">
-<header class="docs-head"><p class="docs-group">${esc(page.group)}</p><h1>${esc(page.title)}</h1><p class="docs-lead">${esc(page.description)}</p><a class="docs-twin" href="${href(page.slug, base, { md: true })}" title="This page as Markdown">Markdown</a></header>
+<header class="docs-head"><p class="docs-group">${esc(page.group)}</p><div class="docs-title"><h1>${esc(page.title)}</h1>${tag}</div><p class="docs-lead">${esc(page.description)}</p><a class="docs-twin" href="${href(page.slug, base, { md: true })}" title="This page as Markdown">Markdown</a></header>
 ${page.html}
 <footer class="docs-foot">${prev ? `<a class="prev" href="${href(prev.slug, base)}"><span>Previous</span>${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a class="next" href="${href(next.slug, base)}"><span>Next</span>${esc(next.title)}</a>` : ""}</footer>
 </article>`;

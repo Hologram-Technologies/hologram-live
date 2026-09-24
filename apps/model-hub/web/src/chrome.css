@@ -140,7 +140,10 @@ ul { list-style: none; margin: 0; padding: 0; }
    with a dot for whether it answered. Three pages, one row, so crossing between them moves nothing. Built
    pages write it in build.mjs; the pages that ship as their own files write the same markup, and
    qa/menu.mjs holds all three to it. */
-.lead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-8) 0 var(--space-5); }
+/* The same air above the row as below it, on every page: what sits under the row is a sibling that follows
+   it, not always the next one (the Models page keeps its hidden index control between), so the rule below
+   in styles.css uses ~ and the row itself carries the whole of both margins. */
+.lead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-10) 0; }
 .lead h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
 /* The address. A chip the height of the count beside it, in the mono the address is written in. */
 .endpoint { display: inline-flex; align-items: center; gap: var(--space-2); height: var(--hh-control); padding: 0 var(--space-3); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim); white-space: nowrap; }

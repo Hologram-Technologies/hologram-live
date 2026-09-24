@@ -256,6 +256,23 @@ function document(server, evidence) {
       },
     };
   }
+  spec.paths["/models/"] = {
+    get: {
+      tags: ["Discovery"],
+      operationId: "getModelsPage",
+      summary: "The models, browsed",
+      description: "The browse page: every model the hub lists, with its files, sizes and addresses. For people; anything that is not a browser gets the section brief instead of 236 KB of markup. A page below this one, such as a single model, is untouched by that and always answers HTML.",
+      responses: {
+        200: {
+          description: "The page to a browser; to anything else the section brief, the same bytes as `/models`.",
+          headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
+          content: { "text/html": { schema: { type: "string" } }, "text/markdown": { schema: { type: "string", description: "The section brief." } } },
+        },
+        ...NOT_SERVED,
+      },
+      ...probe("/models/", { headers: { accept: "text/html" }, contentType: "text/html" }),
+    },
+  };
   spec.paths["/docs"] = {
     get: {
       tags: ["Discovery"],
@@ -307,9 +324,16 @@ function document(server, evidence) {
       tags: ["Discovery"],
       operationId: "getRegistryPage",
       summary: "The hub's own registry, browsed",
-      description: "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly.",
-      responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, ...NOT_SERVED },
-      ...probe("/registry/", { contentType: "text/html" }),
+      description: "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly, and anything that is not a browser gets the section brief instead of the markup.",
+      responses: {
+        200: {
+          description: "The page to a browser; to anything else the section brief, the same bytes as `/registry`.",
+          headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
+          content: { "text/html": { schema: { type: "string" } }, "text/markdown": { schema: { type: "string", description: "The section brief." } } },
+        },
+        ...NOT_SERVED,
+      },
+      ...probe("/registry/", { headers: { accept: "text/html" }, contentType: "text/html" }),
     },
   };
   // The Spaces page: apps that run entirely in the visitor's browser, each in its own sealed frame. The page

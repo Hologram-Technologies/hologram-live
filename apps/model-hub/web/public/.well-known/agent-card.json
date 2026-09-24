@@ -40,6 +40,7 @@
     "getAgentBrief",
     "getModelsSection",
     "getRegistrySection",
+    "getModelsPage",
     "getDocs",
     "getDocsIndex",
     "getDocsPage",

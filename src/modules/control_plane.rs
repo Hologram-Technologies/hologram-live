@@ -41,6 +41,7 @@ impl LiveModule for ControlPlaneModule {
         Router::new()
             .route("/api/v1/nodes", get(list_nodes))
             .route("/api/v1/nodes/owner", get(get_mutable_owner))
+            .route("/api/v1/nodes/placement", get(get_capable_owner))
     }
 
     fn openapi(&self) -> utoipa::openapi::OpenApi {
@@ -50,7 +51,7 @@ impl LiveModule for ControlPlaneModule {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(list_nodes, get_mutable_owner, join_cluster),
+    paths(list_nodes, get_mutable_owner, get_capable_owner, join_cluster),
     components(schemas(NodeRecord, ClusterJoinRequest, ClusterJoinResponse)),
     tags((name = "control-plane", description = "Node inventory"))
 )]
@@ -101,6 +102,47 @@ pub async fn get_mutable_owner(
                 "no reachable cluster owner".to_owned(),
             ))
         })?;
+    Ok(Json(owner))
+}
+
+#[derive(serde::Deserialize)]
+pub struct PlacementQuery {
+    resource: String,
+    operation: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/nodes/placement",
+    params(
+        ("resource" = String, Query, description = "Stable placement key"),
+        ("operation" = String, Query, description = "Required advertised operation")
+    ),
+    responses((status = 200, body = NodeRecord), (status = 404, description = "No capable reachable node"))
+)]
+pub async fn get_capable_owner(
+    State(state): State<AppState>,
+    Query(query): Query<PlacementQuery>,
+) -> Result<Json<NodeRecord>, HttpError> {
+    if query.resource.is_empty()
+        || query.resource.len() > 4_096
+        || query.operation.is_empty()
+        || query.operation.len() > 256
+    {
+        return Err(HttpError(crate::error::LiveError::Protocol(
+            "resource and operation must be non-empty and within their size bounds".to_owned(),
+        )));
+    }
+    let owner = tokio::task::spawn_blocking(move || {
+        state.capable_owner(&query.resource, &query.operation)
+    })
+    .await
+    .map_err(|error| crate::error::LiveError::Conflict(format!("select placement: {error}")))??
+    .ok_or_else(|| {
+        HttpError(crate::error::LiveError::NotFound(
+            "no reachable node advertises the required operation".to_owned(),
+        ))
+    })?;
     Ok(Json(owner))
 }
 

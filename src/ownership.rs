@@ -11,9 +11,29 @@ use crate::protocol::NodeRecord;
 /// Nodes with no reachable endpoint are excluded. Ties are resolved by node
 /// id, making selection independent of discovery order.
 pub fn owner<'a>(resource: &str, nodes: &'a [NodeRecord]) -> Option<&'a NodeRecord> {
+    owner_for_operation(resource, nodes, None)
+}
+
+/// Picks a rendezvous-hash owner that advertises `required_operation`.
+///
+/// The caller can use this for read or execution placement before it forwards
+/// a request. `None` retains the ordinary mutable-state ownership behavior.
+pub fn owner_for_operation<'a>(
+    resource: &str,
+    nodes: &'a [NodeRecord],
+    required_operation: Option<&str>,
+) -> Option<&'a NodeRecord> {
     nodes
         .iter()
-        .filter(|node| !node.node_id.is_empty() && !node.endpoint.is_empty())
+        .filter(|node| {
+            !node.node_id.is_empty()
+                && !node.endpoint.is_empty()
+                && required_operation.is_none_or(|operation| {
+                    node.operations
+                        .iter()
+                        .any(|advertised| advertised == operation)
+                })
+        })
         .min_by_key(|node| {
             let mut hasher = blake3::Hasher::new();
             hasher.update(resource.as_bytes());
@@ -72,5 +92,15 @@ mod tests {
             })
             .collect::<std::collections::BTreeSet<_>>();
         assert!(owners.len() > 1, "ownership should spread independent keys");
+    }
+
+    #[test]
+    fn placement_requires_the_advertised_operation() {
+        let mut capable = node("capable");
+        capable.operations.push("holo.run".to_owned());
+        let nodes = [node("ineligible"), capable];
+        let selected =
+            owner_for_operation("holo:sample", &nodes, Some("holo.run")).expect("capable node");
+        assert_eq!(selected.node_id, "capable");
     }
 }

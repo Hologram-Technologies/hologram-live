@@ -25,6 +25,15 @@ fn port() -> u16 {
 }
 
 fn start(port: u16, seed: Option<u16>, token: &str) -> Server {
+    start_without_module(port, seed, token, None)
+}
+
+fn start_without_module(
+    port: u16,
+    seed: Option<u16>,
+    token: &str,
+    disabled_module: Option<&str>,
+) -> Server {
     let root = tempfile::tempdir().unwrap();
     let mut config = AppConfig::default();
     config.paths.config_dir = root.path().join("config");
@@ -38,6 +47,12 @@ fn start(port: u16, seed: Option<u16>, token: &str) -> Server {
         .unwrap_or_default();
     config.cluster.heartbeat_interval_secs = 1;
     config.cluster.node_ttl_secs = 3;
+    if let Some(disabled_module) = disabled_module {
+        config
+            .modules
+            .enabled
+            .retain(|module| module != disabled_module);
+    }
     "HOLOGRAM_CLUSTER_E2E_TOKEN".clone_into(&mut config.cluster.token_env);
     std::fs::create_dir_all(&config.paths.config_dir).unwrap();
     let file = config.paths.config_dir.join("live.toml");
@@ -61,6 +76,39 @@ fn start(port: u16, seed: Option<u16>, token: &str) -> Server {
         child,
         _root: root,
         port,
+    }
+}
+
+#[test]
+fn placement_selects_the_peer_that_advertises_the_operation() {
+    hologram_live::util::install_crypto_provider();
+    let token = "a sufficiently long shared cluster test token";
+    let first = start_without_module(port(), None, token, Some("dev.hologram.live.chat"));
+    let second = start(port(), Some(first.port), token);
+    let client = reqwest::blocking::Client::new();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let expected_endpoint = format!("http://127.0.0.1:{}", second.port);
+    loop {
+        let selected = client
+            .get(format!(
+                "http://127.0.0.1:{}/api/v1/nodes/placement",
+                first.port
+            ))
+            .query(&[("resource", "conversation:e2e"), ("operation", "chat.send")])
+            .send()
+            .ok()
+            .and_then(|response| response.error_for_status().ok())
+            .and_then(|response| response.json::<serde_json::Value>().ok());
+        if selected.as_ref().and_then(|node| node["endpoint"].as_str())
+            == Some(expected_endpoint.as_str())
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "capable peer was never selected: {selected:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 

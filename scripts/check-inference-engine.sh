@@ -5,6 +5,8 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   scripts/check-inference-engine.sh llamacpp /path/to/model.gguf
+  HOLOGRAM_TOKENIZER_PATH=/path/to/tokenizer.json scripts/check-inference-engine.sh candle /path/to/model.gguf
+  HOLOGRAM_TOKENIZER_PATH=/path/to/tokenizer.model HOLOGRAM_MODEL_ARCHITECTURE=llama3.2-1b scripts/check-inference-engine.sh burn /path/to/model.mpk
   VLLM_ENDPOINT=http://127.0.0.1:8000 scripts/check-inference-engine.sh vllm [model-id]
 
 Optional environment:
@@ -12,6 +14,8 @@ Optional environment:
   HOLOGRAM_TEST_GGUF           GGUF path when the second argument is omitted
   HOLOGRAM_LLAMA_FEATURES      Cargo features (default: llamacpp)
   HOLOGRAM_LLAMA_N_CTX         llama.cpp context size (default: 2048)
+  HOLOGRAM_TOKENIZER_PATH      tokenizer file for Candle or Burn
+  HOLOGRAM_MODEL_ARCHITECTURE  candle: llama; burn: supported Llama 3 variant
   INFERENCE_SMOKE_TIMEOUT_SECS request/startup timeout (default: 120)
   VLLM_API_KEY                 bearer token passed through to the vLLM adapter
 EOF
@@ -21,7 +25,7 @@ EOF
 ENGINE=${1:-}
 SUBJECT=${2:-}
 case "$ENGINE" in
-  llamacpp | vllm) ;;
+  llamacpp | candle | burn | vllm) ;;
   *) usage ;;
 esac
 
@@ -62,15 +66,48 @@ case "$ENGINE" in
     MODEL_ID=$MODEL_PATH
     VLLM_ENDPOINT_VALUE=http://127.0.0.1:8000
     FEATURES=${HOLOGRAM_LLAMA_FEATURES:-llamacpp}
+    TOKENIZER_PATH=
+    MODEL_ARCHITECTURE=
+    STREAM_KIND=native
+    ;;
+  candle | burn)
+    MODEL_PATH=$SUBJECT
+    TOKENIZER_PATH=${HOLOGRAM_TOKENIZER_PATH:-}
+    MODEL_ARCHITECTURE=${HOLOGRAM_MODEL_ARCHITECTURE:-}
+    if [ -z "$MODEL_PATH" ] || [ ! -f "$MODEL_PATH" ]; then
+      echo "error: pass a readable $ENGINE model path" >&2
+      exit 1
+    fi
+    if [ -z "$TOKENIZER_PATH" ] || [ ! -f "$TOKENIZER_PATH" ]; then
+      echo "error: set HOLOGRAM_TOKENIZER_PATH to a readable tokenizer file" >&2
+      exit 1
+    fi
+    if [ -z "$MODEL_ARCHITECTURE" ]; then
+      echo "error: set HOLOGRAM_MODEL_ARCHITECTURE for $ENGINE" >&2
+      exit 1
+    fi
+    MODEL_PATH=$(CDPATH= cd -- "$(dirname -- "$MODEL_PATH")" && pwd)/$(basename -- "$MODEL_PATH")
+    TOKENIZER_PATH=$(CDPATH= cd -- "$(dirname -- "$TOKENIZER_PATH")" && pwd)/$(basename -- "$TOKENIZER_PATH")
+    MODEL_ID=$MODEL_PATH
+    VLLM_ENDPOINT_VALUE=http://127.0.0.1:8000
+    FEATURES=$ENGINE
+    if [ "$ENGINE" = candle ]; then
+      STREAM_KIND=native
+    else
+      STREAM_KIND=emulated
+    fi
     ;;
   vllm)
     MODEL_PATH=
+    TOKENIZER_PATH=
+    MODEL_ARCHITECTURE=
     VLLM_ENDPOINT_VALUE=${VLLM_ENDPOINT:-http://127.0.0.1:8000}
     MODEL_ID=$SUBJECT
     if [ -z "$MODEL_ID" ]; then
       MODEL_ID=$(vllm_get -fsS "${VLLM_ENDPOINT_VALUE%/}/v1/models" | jq -er '.data[0].id')
     fi
     FEATURES=
+    STREAM_KIND=native
     ;;
 esac
 
@@ -109,6 +146,8 @@ trap cleanup EXIT INT TERM
 ENGINE_JSON=$(json_string "$ENGINE")
 MODEL_JSON=$(json_string "$MODEL_ID")
 MODEL_PATH_JSON=$(json_string "$MODEL_PATH")
+TOKENIZER_PATH_JSON=$(json_string "$TOKENIZER_PATH")
+MODEL_ARCHITECTURE_JSON=$(json_string "$MODEL_ARCHITECTURE")
 VLLM_ENDPOINT_JSON=$(json_string "$VLLM_ENDPOINT_VALUE")
 
 cat >"$CONFIG" <<EOF
@@ -123,6 +162,8 @@ default_model = ${MODEL_JSON}
 vllm_endpoint = ${VLLM_ENDPOINT_JSON}
 vllm_token_env = "VLLM_API_KEY"
 model_path = ${MODEL_PATH_JSON}
+tokenizer_path = ${TOKENIZER_PATH_JSON}
+model_architecture = ${MODEL_ARCHITECTURE_JSON}
 n_ctx = ${N_CTX}
 llamacpp_max_concurrent_requests = 1
 request_timeout_secs = ${TIMEOUT}
@@ -162,7 +203,7 @@ OPENAI_HEADERS="$WORK/openai.headers"
 OPENAI_RESPONSE=$(curl -fsS --max-time "$TIMEOUT" -D "$OPENAI_HEADERS" \
   -H 'content-type: application/json' --data-binary "$OPENAI_REQUEST" \
   "$BASE/v1/chat/completions")
-grep -iq '^x-hologram-stream: native' "$OPENAI_HEADERS"
+grep -iq "^x-hologram-stream: ${STREAM_KIND}" "$OPENAI_HEADERS"
 printf '%s\n' "$OPENAI_RESPONSE" | jq -e '
   .object == "chat.completion" and
   (.choices[0].message.content | type == "string") and
@@ -208,7 +249,7 @@ printf '%s\n' "$SHOW_RESPONSE" | jq -e --arg engine "$ENGINE" '
   .details.family == $engine
 ' >/dev/null
 
-if [ "$ENGINE" = "llamacpp" ]; then
+if [ "$ENGINE" = "llamacpp" ] || [ "$ENGINE" = "candle" ] || [ "$ENGINE" = "burn" ]; then
   OVERFLOW_REQUEST=$(printf '%s\n' "$OPENAI_REQUEST" | jq -c --argjson n_ctx "$N_CTX" '.max_tokens = $n_ctx')
   OVERFLOW_STATUS=$(curl -sS --max-time "$TIMEOUT" -o "$WORK/overflow.json" -w '%{http_code}' \
     -H 'content-type: application/json' --data-binary "$OVERFLOW_REQUEST" \

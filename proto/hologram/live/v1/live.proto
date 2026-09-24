@@ -259,6 +259,7 @@ message NodeRecord {
   string version = 2;
   repeated string operations = 3;
   uint64 last_seen_millis = 4;
+  string endpoint = 5;
 }
 
 message ModelInfo {

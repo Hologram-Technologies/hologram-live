@@ -12,6 +12,7 @@ pub mod audit;
 pub mod auth;
 pub mod chat;
 pub mod client;
+pub mod cluster;
 pub mod compile;
 pub mod config;
 pub mod error;
@@ -41,6 +42,7 @@ pub mod nodes;
 pub mod observability;
 #[cfg(feature = "oci")]
 pub mod oci_store;
+pub mod ownership;
 pub mod plugin;
 pub mod process;
 pub mod protocol;

@@ -1,22 +1,22 @@
 {
- "probed_at": "2026-09-24T10:17:22.390Z",
+ "probed_at": "2026-09-24T10:39:10.715Z",
  "base": "https://hub.uor.foundation",
  "sample": {
   "model": "sentence-transformers/all-MiniLM-L6-v2",
   "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
   "file": "sentence_bert_config.json",
-  "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5"
+  "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a"
  },
  "records": [
   {
    "id": "root.html",
    "method": "GET",
    "path": "/",
-   "ms": 93,
+   "ms": 126,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngtq7m93073ed-gzip\"",
+    "etag": "\"dlngxrsjtlft3ed-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -27,11 +27,11 @@
    "id": "root.descriptor",
    "method": "GET",
    "path": "/",
-   "ms": 88,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngui1gra5vuz-gzip\"",
+    "etag": "\"dlngysimchrouz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -39,7 +39,7 @@
     "format": "hologram.model-hub.descriptor/v1",
     "name": "Hologram Model Hub",
     "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-    "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+    "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
     "snapshot": "2026-09-24",
     "fetch": "/api/v1/objects/{id}",
     "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -64,11 +64,11 @@
    "id": "root.brief",
    "method": "GET",
    "path": "/",
-   "ms": 138,
+   "ms": 103,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngtq7m93073ed-gzip\"",
+    "etag": "\"dlngxrsjtlft3ed-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -79,11 +79,11 @@
    "id": "brief",
    "method": "GET",
    "path": "/agent.md",
-   "ms": 131,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngtq7m93073ed-gzip\"",
+    "etag": "\"dlngxrsjtlft3ed-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -94,11 +94,11 @@
    "id": "section.models",
    "method": "GET",
    "path": "/models",
-   "ms": 216,
+   "ms": 105,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngtq6gkrnq1uy-gzip\"",
+    "etag": "\"dlngxrqxh5jt1uy-gzip\"",
     "content-encoding": "gzip"
    },
    "body": "# hub.uor.foundation/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
@@ -108,11 +108,11 @@
    "id": "section.models.slash",
    "method": "GET",
    "path": "/models/",
-   "ms": 101,
+   "ms": 105,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngtq6gkrnq1uy-gzip\"",
+    "etag": "\"dlngxrqxh5jt1uy-gzip\"",
     "content-encoding": "gzip"
    },
    "body": "# hub.uor.foundation/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
@@ -122,11 +122,11 @@
    "id": "section.models.page",
    "method": "GET",
    "path": "/models/",
-   "ms": 222,
+   "ms": 186,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
-    "etag": "\"dlngtil3thlc528q-gzip\"",
+    "etag": "\"dlngxeisdhmk528q-gzip\"",
     "content-encoding": "gzip"
    },
    "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Models · Hologram Models Hub</title>\n<meta name=\"description\" content=\"The 500 trending models on Hugging Face, every file named by its bytes.\">\n<meta property=\"og:title\" content=\"Models · Holog…",
@@ -136,11 +136,11 @@
    "id": "section.registry",
    "method": "GET",
    "path": "/registry",
-   "ms": 94,
+   "ms": 95,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngtogtnp941gy-gzip\"",
+    "etag": "\"dlngxp8uj6zg1gy-gzip\"",
     "content-encoding": "gzip"
    },
    "body": "# hub.uor.foundation/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull hub.uor.foundation/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull hub.uor.foundation/<org>/<name>:latest\n …",
@@ -150,11 +150,11 @@
    "id": "descriptor",
    "method": "GET",
    "path": "/.well-known/model-hub.json",
-   "ms": 94,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngui1gra5vuz-gzip\"",
+    "etag": "\"dlngysimchrouz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -162,7 +162,7 @@
     "format": "hologram.model-hub.descriptor/v1",
     "name": "Hologram Model Hub",
     "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-    "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+    "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
     "snapshot": "2026-09-24",
     "fetch": "/api/v1/objects/{id}",
     "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -187,11 +187,11 @@
    "id": "llms",
    "method": "GET",
    "path": "/llms.txt",
-   "ms": 103,
+   "ms": 84,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dlngtof64e6q3ou-gzip\"",
+    "etag": "\"dlngxp5566o13ou-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -202,12 +202,12 @@
    "id": "openapi",
    "method": "GET",
    "path": "/openapi.json",
-   "ms": 140,
+   "ms": 106,
    "status": 200,
    "headers": {
     "content-type": "application/json",
     "cache-control": "public, max-age=300",
-    "etag": "\"dlngtq7kgs8e2u8i-gzip\"",
+    "etag": "\"dlngxrshfv2r2vsy-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -1380,8 +1380,8 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-            "snapshot": "2026-09-23",
+            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
             "publish": "POST /api/v1/objects with a publisher token",
@@ -1465,8 +1465,8 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-            "snapshot": "2026-09-23",
+            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
             "publish": "POST /api/v1/objects with a publisher token",
@@ -1764,6 +1764,60 @@
        }
       }
      },
+     "/models/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getModelsPage",
+       "summary": "The models, browsed",
+       "description": "The browse page: every model the hub lists, with its files, sizes and addresses. For people; anything that is not a browser gets the section brief instead of 236 KB of markup. A page below this one, such as a single model, is untouched by that and always answers HTML.",
+       "responses": {
+        "200": {
+         "description": "The page to a browser; to anything else the section brief, the same bytes as `/models`.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          },
+          "text/markdown": {
+           "schema": {
+            "type": "string",
+            "description": "The section brief."
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/models/",
+        "status": 200,
+        "headers": {
+         "accept": "text/html"
+        },
+        "contentType": "text/html"
+       }
+      }
+     },
      "/docs": {
       "get": {
        "tags": [
@@ -1941,14 +1995,28 @@
        ],
        "operationId": "getRegistryPage",
        "summary": "The hub's own registry, browsed",
-       "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly.",
+       "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly, and anything that is not a browser gets the section brief instead of the markup.",
        "responses": {
         "200": {
-         "description": "An HTML page.",
+         "description": "The page to a browser; to anything else the section brief, the same bytes as `/registry`.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
          "content": {
           "text/html": {
            "schema": {
             "type": "string"
+           }
+          },
+          "text/markdown": {
+           "schema": {
+            "type": "string",
+            "description": "The section brief."
            }
           }
          }
@@ -1967,6 +2035,9 @@
        "x-hologram-probe": {
         "path": "/registry/",
         "status": 200,
+        "headers": {
+         "accept": "text/html"
+        },
         "contentType": "text/html"
        }
       }
@@ -2291,17 +2362,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-23T23:47:07.147Z",
+              "checked": "2026-09-24T10:15:29.003Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-23T23:47:08.149Z",
+              "checked": "2026-09-24T10:15:30.876Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-23T23:47:08.232Z",
+              "checked": "2026-09-24T10:15:30.964Z",
               "reason": "verified"
              }
             },
@@ -2409,9 +2480,9 @@
              "private": false,
              "gated": false,
              "disabled": false,
-             "likes": 6112,
-             "downloads": 251354399,
-             "trendingScore": 422,
+             "likes": 6114,
+             "downloads": 250598416,
+             "trendingScore": 404,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "sentence-similarity",
              "library_name": "sentence-transformers",
@@ -2434,31 +2505,30 @@
              }
             },
             {
-             "_id": "bd31a9ad9e4705f6ddf97c7d",
-             "id": "google-bert/bert-base-uncased",
-             "modelId": "google-bert/bert-base-uncased",
-             "author": "google-bert",
-             "sha": "86b5e0934494bd15c9632b12f734a8a67f723594",
+             "_id": "3dba3c69368e47a8f7710954",
+             "id": "BAAI/bge-m3",
+             "modelId": "BAAI/bge-m3",
+             "author": "BAAI",
+             "sha": "5617a9f61b028005a4858fdac845db406aefb181",
              "private": false,
              "gated": false,
              "disabled": false,
-             "likes": 3368,
-             "downloads": 45461966,
-             "trendingScore": 64,
-             "createdAt": "2022-03-02T00:00:00.000Z",
-             "pipeline_tag": "fill-mask",
-             "library_name": "transformers",
+             "likes": 3618,
+             "downloads": 37173706,
+             "trendingScore": 284,
+             "createdAt": "2024-01-27T00:00:00.000Z",
+             "pipeline_tag": "sentence-similarity",
+             "library_name": "sentence-transformers",
              "tags": [
-              "fill-mask",
-              "transformers",
-              "safetensors"
+              "sentence-similarity",
+              "sentence-transformers",
+              "onnx"
              ],
              "hologram": {
-              "manifest": "blake3:bd31a9ad9e4705f6ddf97c7dc1c43b3ab26c4d583b0526955664d54f867571d4",
-              "files": 16,
-              "weight_bytes": 3453216078,
-              "parameters": 110106428,
-              "context": 512,
+              "manifest": "blake3:3dba3c69368e47a8f7710954783515b46431dfe7495c98f5f3bb0f978c31a5cd",
+              "files": 30,
+              "weight_bytes": 4585114582,
+              "context": 8194,
               "sources": [
                "Hugging Face",
                "ModelScope",
@@ -4798,7 +4868,7 @@
           "type": "string",
           "pattern": "^blake3:[0-9a-f]{64}$"
          },
-         "example": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f"
+         "example": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5"
         }
        ],
        "responses": {
@@ -4877,7 +4947,7 @@
        "summary": "One object, by the hash of its bytes",
        "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
        "x-hologram-probe": {
-        "path": "/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+        "path": "/api/v1/objects/blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
         "status": 200,
         "method": "HEAD"
        }
@@ -4891,11 +4961,11 @@
    "id": "wellknown.openapi",
    "method": "GET",
    "path": "/.well-known/openapi.json",
-   "ms": 130,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngtq7kgs8e2u8i-gzip\"",
+    "etag": "\"dlngxrshfv2r2vsy-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -6068,8 +6138,8 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-            "snapshot": "2026-09-23",
+            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
             "publish": "POST /api/v1/objects with a publisher token",
@@ -6153,8 +6223,8 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
-            "snapshot": "2026-09-23",
+            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
             "publish": "POST /api/v1/objects with a publisher token",
@@ -6452,6 +6522,60 @@
        }
       }
      },
+     "/models/": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getModelsPage",
+       "summary": "The models, browsed",
+       "description": "The browse page: every model the hub lists, with its files, sizes and addresses. For people; anything that is not a browser gets the section brief instead of 236 KB of markup. A page below this one, such as a single model, is untouched by that and always answers HTML.",
+       "responses": {
+        "200": {
+         "description": "The page to a browser; to anything else the section brief, the same bytes as `/models`.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          },
+          "text/markdown": {
+           "schema": {
+            "type": "string",
+            "description": "The section brief."
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/models/",
+        "status": 200,
+        "headers": {
+         "accept": "text/html"
+        },
+        "contentType": "text/html"
+       }
+      }
+     },
      "/docs": {
       "get": {
        "tags": [
@@ -6629,14 +6753,28 @@
        ],
        "operationId": "getRegistryPage",
        "summary": "The hub's own registry, browsed",
-       "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly.",
+       "description": "A page over `/v2/`: every repository and tag the hub's registry holds, each layer verified in the browser against its digest. For people; a client uses `/v2/` directly, and anything that is not a browser gets the section brief instead of the markup.",
        "responses": {
         "200": {
-         "description": "An HTML page.",
+         "description": "The page to a browser; to anything else the section brief, the same bytes as `/registry`.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
          "content": {
           "text/html": {
            "schema": {
             "type": "string"
+           }
+          },
+          "text/markdown": {
+           "schema": {
+            "type": "string",
+            "description": "The section brief."
            }
           }
          }
@@ -6655,6 +6793,9 @@
        "x-hologram-probe": {
         "path": "/registry/",
         "status": 200,
+        "headers": {
+         "accept": "text/html"
+        },
         "contentType": "text/html"
        }
       }
@@ -6979,17 +7120,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-23T23:47:07.147Z",
+              "checked": "2026-09-24T10:15:29.003Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-23T23:47:08.149Z",
+              "checked": "2026-09-24T10:15:30.876Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-23T23:47:08.232Z",
+              "checked": "2026-09-24T10:15:30.964Z",
               "reason": "verified"
              }
             },
@@ -7097,9 +7238,9 @@
              "private": false,
              "gated": false,
              "disabled": false,
-             "likes": 6112,
-             "downloads": 251354399,
-             "trendingScore": 422,
+             "likes": 6114,
+             "downloads": 250598416,
+             "trendingScore": 404,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "sentence-similarity",
              "library_name": "sentence-transformers",
@@ -7122,31 +7263,30 @@
              }
             },
             {
-             "_id": "bd31a9ad9e4705f6ddf97c7d",
-             "id": "google-bert/bert-base-uncased",
-             "modelId": "google-bert/bert-base-uncased",
-             "author": "google-bert",
-             "sha": "86b5e0934494bd15c9632b12f734a8a67f723594",
+             "_id": "3dba3c69368e47a8f7710954",
+             "id": "BAAI/bge-m3",
+             "modelId": "BAAI/bge-m3",
+             "author": "BAAI",
+             "sha": "5617a9f61b028005a4858fdac845db406aefb181",
              "private": false,
              "gated": false,
              "disabled": false,
-             "likes": 3368,
-             "downloads": 45461966,
-             "trendingScore": 64,
-             "createdAt": "2022-03-02T00:00:00.000Z",
-             "pipeline_tag": "fill-mask",
-             "library_name": "transformers",
+             "likes": 3618,
+             "downloads": 37173706,
+             "trendingScore": 284,
+             "createdAt": "2024-01-27T00:00:00.000Z",
+             "pipeline_tag": "sentence-similarity",
+             "library_name": "sentence-transformers",
              "tags": [
-              "fill-mask",
-              "transformers",
-              "safetensors"
+              "sentence-similarity",
+              "sentence-transformers",
+              "onnx"
              ],
              "hologram": {
-              "manifest": "blake3:bd31a9ad9e4705f6ddf97c7dc1c43b3ab26c4d583b0526955664d54f867571d4",
-              "files": 16,
-              "weight_bytes": 3453216078,
-              "parameters": 110106428,
-              "context": 512,
+              "manifest": "blake3:3dba3c69368e47a8f7710954783515b46431dfe7495c98f5f3bb0f978c31a5cd",
+              "files": 30,
+              "weight_bytes": 4585114582,
+              "context": 8194,
               "sources": [
                "Hugging Face",
                "ModelScope",
@@ -9486,7 +9626,7 @@
           "type": "string",
           "pattern": "^blake3:[0-9a-f]{64}$"
          },
-         "example": "blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f"
+         "example": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5"
         }
        ],
        "responses": {
@@ -9565,7 +9705,7 @@
        "summary": "One object, by the hash of its bytes",
        "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
        "x-hologram-probe": {
-        "path": "/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f",
+        "path": "/api/v1/objects/blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
         "status": 200,
         "method": "HEAD"
        }
@@ -9579,11 +9719,11 @@
    "id": "agentcard",
    "method": "GET",
    "path": "/.well-known/agent-card.json",
-   "ms": 147,
+   "ms": 97,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngtq6mj3kd3np-gzip\"",
+    "etag": "\"dlngxrr9dtd43oa-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -9664,11 +9804,11 @@
    "id": "robots",
    "method": "GET",
    "path": "/robots.txt",
-   "ms": 160,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dlngtq6kqsskdp\"",
+    "etag": "\"dlngxrr11r3edp\"",
     "accept-ranges": "bytes",
     "access-control-allow-origin": "*"
    },
@@ -9679,7 +9819,7 @@
    "id": "docs",
    "method": "GET",
    "path": "/docs",
-   "ms": 319,
+   "ms": 310,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
@@ -9694,11 +9834,11 @@
    "id": "docs.index",
    "method": "GET",
    "path": "/docs/",
-   "ms": 93,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
-    "etag": "\"dlngtody2ch7af0-gzip\"",
+    "etag": "\"dlngxp3nl7i5af0-gzip\"",
     "content-encoding": "gzip"
    },
    "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
@@ -9708,11 +9848,11 @@
    "id": "docs.page",
    "method": "GET",
    "path": "/docs/quickstart/",
-   "ms": 93,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
-    "etag": "\"dlngtoe2tt7bb8c-gzip\"",
+    "etag": "\"dlngxp3qkdghb8c-gzip\"",
     "content-encoding": "gzip"
    },
    "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Quickstart · Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"Find a model, download one file, and prove the bytes, in three requests and no key.\">\n<meta property=\"og:title\" …",
@@ -9722,11 +9862,11 @@
    "id": "docs.twin",
    "method": "GET",
    "path": "/docs/quickstart.md",
-   "ms": 84,
+   "ms": 98,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngtoe7l9xf2lm-gzip\"",
+    "etag": "\"dlngxp3sy3tj2lm-gzip\"",
     "content-encoding": "gzip"
    },
    "body": "> Documentation index: https://hub.uor.foundation/llms.txt\n\n# Quickstart\n\n> Find a model, download one file, and prove the bytes, in three requests and no key.\n\nYou want a file from a model and you want to know it is the right file. Three requests do it. Nothing to install, nothing to sign up for.\n\nEvery command on this page runs as written. `hexgrad/Kokoro-82M` is a real model in the index; swap …",
@@ -9736,7 +9876,7 @@
    "id": "docs.missing",
    "method": "GET",
    "path": "/docs/not-a-page/",
-   "ms": 83,
+   "ms": 105,
    "status": 404,
    "headers": {},
    "error": null
@@ -9745,11 +9885,11 @@
    "id": "archive",
    "method": "GET",
    "path": "/archive.json",
-   "ms": 113,
+   "ms": 107,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngtrqvczez3fs-gzip\"",
+    "etag": "\"dlngxw0lladh3fs-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -9807,11 +9947,11 @@
    "id": "pins",
    "method": "GET",
    "path": "/pins.json",
-   "ms": 114,
+   "ms": 98,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngtrqsdtgoejs-gzip\"",
+    "etag": "\"dlngxw0c2cx9ejs-gzip\"",
     "content-encoding": "gzip"
    },
    "body": {
@@ -10342,7 +10482,7 @@
    "id": "healthz",
    "method": "GET",
    "path": "/healthz",
-   "ms": 94,
+   "ms": 93,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10361,7 +10501,7 @@
    "id": "hub.health",
    "method": "GET",
    "path": "/api/hub/health",
-   "ms": 90,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10373,17 +10513,17 @@
     "sources": {
      "huggingface.co": {
       "ok": true,
-      "checked": "2026-09-24T10:16:59.517Z",
+      "checked": "2026-09-24T10:38:53.861Z",
       "reason": "verified"
      },
      "modelscope.cn": {
       "ok": true,
-      "checked": "2026-09-24T10:17:00.686Z",
+      "checked": "2026-09-24T10:38:55.152Z",
       "reason": "verified"
      },
      "ipfs": {
       "ok": true,
-      "checked": "2026-09-24T10:17:00.768Z",
+      "checked": "2026-09-24T10:38:55.232Z",
       "reason": "verified"
      }
     },
@@ -10399,7 +10539,7 @@
    "id": "models.list",
    "method": "GET",
    "path": "/api/models?limit=2&sort=downloads",
-   "ms": 109,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10421,7 +10561,7 @@
      "disabled": false,
      "likes": 6114,
      "downloads": 250598416,
-     "trendingScore": 404,
+     "trendingScore": 403,
      "createdAt": "2022-03-02T00:00:00.000Z",
      "pipeline_tag": "sentence-similarity",
      "library_name": "sentence-transformers",
@@ -10482,7 +10622,7 @@
    "id": "models.search",
    "method": "GET",
    "path": "/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&limit=2",
-   "ms": 88,
+   "ms": 98,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10563,7 +10703,7 @@
    "id": "models.info",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 100,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10601,7 +10741,7 @@
    "id": "models.info.revision",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-   "ms": 104,
+   "ms": 87,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10639,7 +10779,7 @@
    "id": "models.refs",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/refs",
-   "ms": 86,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10664,7 +10804,7 @@
    "id": "models.tree",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
-   "ms": 92,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10699,7 +10839,7 @@
    "id": "models.missing",
    "method": "GET",
    "path": "/api/models/nobody/not-a-real-model-xyz",
-   "ms": 360,
+   "ms": 176,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10718,7 +10858,7 @@
    "id": "models.revision.wrong",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/0000000",
-   "ms": 109,
+   "ms": 108,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10737,7 +10877,7 @@
    "id": "models.readonly",
    "method": "POST",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 99,
+   "ms": 86,
    "status": 405,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10756,7 +10896,7 @@
    "id": "resolve",
    "method": "HEAD",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 105,
+   "ms": 94,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10776,7 +10916,7 @@
    "id": "resolve.sha256sums",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/SHA256SUMS",
-   "ms": 118,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -10793,7 +10933,7 @@
    "id": "resolve.entry.missing",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/not-a-file.bin",
-   "ms": 88,
+   "ms": 234,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10812,7 +10952,7 @@
    "id": "via.ipfs",
    "method": "HEAD",
    "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 334,
+   "ms": 403,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10832,7 +10972,7 @@
    "id": "via.huggingface",
    "method": "HEAD",
    "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 101,
+   "ms": 88,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10852,7 +10992,7 @@
    "id": "via.list",
    "method": "GET",
    "path": "/via/ipfs/api/models?limit=1",
-   "ms": 321,
+   "ms": 264,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10872,7 +11012,7 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 3244,
+     "likes": 3245,
      "downloads": 0,
      "trendingScore": 500,
      "createdAt": "2026-09-18T00:00:00.000Z",
@@ -10901,7 +11041,7 @@
    "id": "xet",
    "method": "HEAD",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
-   "ms": 385,
+   "ms": 270,
    "status": 307,
    "headers": {
     "cache-control": "no-store",
@@ -10914,13 +11054,13 @@
   {
    "id": "objects.get",
    "method": "HEAD",
-   "path": "/api/v1/objects/blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
-   "ms": 135,
+   "path": "/api/v1/objects/blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
+   "ms": 106,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.hologram.model-hub.catalog.v1+json",
     "cache-control": "public, max-age=31536000, immutable",
-    "etag": "\"blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5\"",
+    "etag": "\"blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a\"",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "ETag, Content-Disposition"
    },
@@ -10930,7 +11070,7 @@
    "id": "objects.list.anon",
    "method": "GET",
    "path": "/api/v1/objects",
-   "ms": 249,
+   "ms": 256,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -10943,7 +11083,7 @@
    "id": "objects.search.anon",
    "method": "GET",
    "path": "/api/v1/objects/search?q=qwen",
-   "ms": 252,
+   "ms": 251,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -10956,7 +11096,7 @@
    "id": "objects.missing",
    "method": "GET",
    "path": "/api/v1/objects/blake3:0000000000000000000000000000000000000000000000000000000000000000",
-   "ms": 85,
+   "ms": 94,
    "status": 404,
    "headers": {
     "content-type": "application/json",
@@ -10974,7 +11114,7 @@
    "id": "capabilities",
    "method": "GET",
    "path": "/api/v1/capabilities",
-   "ms": 115,
+   "ms": 85,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -11040,7 +11180,7 @@
    "id": "modules",
    "method": "GET",
    "path": "/api/v1/modules",
-   "ms": 87,
+   "ms": 86,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -11081,7 +11221,7 @@
    "id": "api.v1.bare",
    "method": "GET",
    "path": "/api/v1",
-   "ms": 83,
+   "ms": 106,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -11093,7 +11233,7 @@
    "id": "oci.base",
    "method": "GET",
    "path": "/v2/",
-   "ms": 86,
+   "ms": 90,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -11105,7 +11245,7 @@
    "id": "oci.catalog",
    "method": "GET",
    "path": "/v2/_catalog",
-   "ms": 90,
+   "ms": 92,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -11123,7 +11263,7 @@
    "id": "oci.manifest.docker",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 121,
+   "ms": 110,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11145,7 +11285,7 @@
    "id": "oci.manifest.modelpack",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 262,
+   "ms": 204,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.oci.image.manifest.v1+json",
@@ -11228,7 +11368,7 @@
    "id": "oci.index.tags",
    "method": "GET",
    "path": "/v2/model-hub/index/tags/list",
-   "ms": 89,
+   "ms": 83,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -11246,7 +11386,7 @@
    "id": "account.health",
    "method": "GET",
    "path": "/api/account/health",
-   "ms": 106,
+   "ms": 96,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11262,7 +11402,7 @@
    "id": "account.me.anon",
    "method": "GET",
    "path": "/api/account/me",
-   "ms": 94,
+   "ms": 86,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11277,7 +11417,7 @@
    "id": "account.me.patch.anon",
    "method": "PATCH",
    "path": "/api/account/me",
-   "ms": 93,
+   "ms": 85,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11292,7 +11432,7 @@
    "id": "account.saved.anon",
    "method": "POST",
    "path": "/api/account/saved",
-   "ms": 118,
+   "ms": 91,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11322,7 +11462,7 @@
    "id": "account.request.anon",
    "method": "POST",
    "path": "/api/account/request",
-   "ms": 95,
+   "ms": 89,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11337,7 +11477,7 @@
    "id": "account.publisher.anon",
    "method": "POST",
    "path": "/api/account/publisher-request",
-   "ms": 83,
+   "ms": 86,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11352,7 +11492,7 @@
    "id": "account.unknown.anon",
    "method": "GET",
    "path": "/api/account/nope",
-   "ms": 88,
+   "ms": 86,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11367,7 +11507,7 @@
    "id": "mcp.get",
    "method": "GET",
    "path": "/mcp",
-   "ms": 84,
+   "ms": 85,
    "status": 405,
    "headers": {
     "access-control-allow-origin": "*",
@@ -11379,7 +11519,7 @@
    "id": "mcp.initialize",
    "method": "POST",
    "path": "/mcp",
-   "ms": 86,
+   "ms": 98,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11411,7 +11551,7 @@
    "id": "mcp.tools.list",
    "method": "POST",
    "path": "/mcp",
-   "ms": 89,
+   "ms": 96,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11522,7 +11662,7 @@
    "id": "mcp.tools.call",
    "method": "POST",
    "path": "/mcp",
-   "ms": 97,
+   "ms": 126,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11580,7 +11720,7 @@
    "id": "preflight.models",
    "method": "OPTIONS",
    "path": "/api/models",
-   "ms": 125,
+   "ms": 83,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*",
@@ -11592,7 +11732,7 @@
    "id": "preflight.objects",
    "method": "OPTIONS",
    "path": "/api/v1/objects",
-   "ms": 94,
+   "ms": 82,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*"
@@ -11603,7 +11743,7 @@
    "id": "closed.grpc",
    "method": "POST",
    "path": "/hologram.live.v1.HologramLive/Handshake",
-   "ms": 89,
+   "ms": 86,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -11615,7 +11755,7 @@
    "id": "nav.wallpapers",
    "method": "GET",
    "path": "/wallpapers/",
-   "ms": 160,
+   "ms": 91,
    "status": 404,
    "headers": {},
    "error": null

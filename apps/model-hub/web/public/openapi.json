@@ -2185,17 +2185,17 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-24T10:15:29.003Z",
+           "checked": "2026-09-24T10:16:59.517Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-24T10:15:30.876Z",
+           "checked": "2026-09-24T10:17:00.686Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-24T10:15:30.964Z",
+           "checked": "2026-09-24T10:17:00.768Z",
            "reason": "verified"
           }
          },

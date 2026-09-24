@@ -54,6 +54,30 @@ Run the service in the foreground instead with:
 ./target/release/hologram serve
 ```
 
+Every server advertises `http://127.0.0.1:11435` by default and generates a
+256-bit membership secret in its state directory at `cluster.token`. The file
+is reused across restarts and is owner-only on Unix. To form a multi-host
+cluster, securely give every node the same secret (at least 32 bytes), advertise
+the origin other nodes can reach, and seed a new node with any live member:
+
+```bash
+# first node; generates <state_dir>/cluster.token
+hologram serve --advertise https://registry-a.example.com
+
+# joining node; use the contents securely copied from the seed
+HOLOGRAM_CLUSTER_TOKEN='<seed cluster.token contents>' \
+  hologram serve \
+    --advertise https://registry-b.example.com \
+    --join https://registry-a.example.com
+```
+
+The joining node heartbeats immediately, learns the live membership set, and
+then heartbeats those peers directly. Failed seeds remain eligible for retry;
+members disappear from `/api/v1/nodes` after their TTL. Join messages use a
+short-lived keyed proof over the exact payload, so the cluster secret and the
+separate user authentication token are never sent over the wire. Non-loopback
+origins must use HTTPS.
+
 The default configuration and local endpoint are:
 
 ```text
@@ -103,13 +127,15 @@ The response comes from the inference engine selected in `live.toml`:
 
 ```toml
 [inference]
-engine = "echo"            # echo | weightc | ollama | llamacpp | vllm
-default_model = ""         # imported id (weightc/llamacpp) or served name (Ollama/vLLM)
+engine = "echo"            # echo | weightc | ollama | llamacpp | candle | burn | vllm
+default_model = ""         # imported id or remote served-model name
 weightc_path = "weightc"
 ollama_endpoint = "http://127.0.0.1:11434"
 vllm_endpoint = "http://127.0.0.1:8000"
 vllm_token_env = "VLLM_API_KEY"
-model_path = ""            # local GGUF file (llamacpp)
+model_path = ""            # GGUF (llamacpp/candle) or named-MPK checkpoint (burn)
+tokenizer_path = ""        # tokenizer.json (candle) or tokenizer.model (burn)
+model_architecture = ""    # candle: llama; burn: a supported Llama 3 variant
 n_ctx = 4096
 n_gpu_layers = 0
 llamacpp_max_concurrent_requests = 1
@@ -122,10 +148,16 @@ The default `echo` engine repeats the user message; it needs no model and no ext
 
 `llamacpp` loads a local GGUF model in-process and streams decoded pieces with exact token counts. Set `model_path` directly, or import a GGUF file and put its returned `blake3:...` id in `default_model`. It is off by default because it builds native C++ code and gives model execution the daemon's crash boundary. Build it with `cargo build --release --features llamacpp`; use `llamacpp-metal` or `llamacpp-cuda` for the corresponding GPU backend. These builds require CMake, Clang, and a C++ compiler.
 
+`candle` is the Rust-native local GGUF alternative. The initial adapter supports Candle's quantized Llama-family implementation, requires a matching Hugging Face `tokenizer.json`, streams native deltas, and reports exact token counts. Set `model_architecture = "llama"`; use `--features candle` for CPU, `candle-metal` for Apple GPUs, or `candle-cuda` for NVIDIA GPUs. Candle is not a universal GGUF dispatcher: unsupported model families fail during startup instead of being guessed.
+
+`burn` uses Tracel's Burn-LM Llama implementation on CPU. It requires a Burn named-MPK checkpoint, the matching Llama 3 `tokenizer.model`, and one of `llama3.2-1b`, `llama3.2-3b`, `llama3.1-8b`, or `llama3-8b` in `model_architecture`. Build with `--features burn`. Burn generation is currently buffered, so streaming API responses honestly report `x-hologram-stream: emulated`; GGUF files are not Burn checkpoints.
+
 Run the live acceptance gate against real engines before releasing an inference build. It starts an isolated Hologram server and checks model discovery, buffered and native-streaming OpenAI/Ollama requests, usage, cancellation, and llama.cpp context overflow:
 
 ```bash
 ./scripts/check-inference-engine.sh llamacpp /models/tiny.gguf
+HOLOGRAM_TOKENIZER_PATH=/models/tokenizer.json HOLOGRAM_MODEL_ARCHITECTURE=llama ./scripts/check-inference-engine.sh candle /models/tiny.gguf
+HOLOGRAM_TOKENIZER_PATH=/models/tokenizer.model HOLOGRAM_MODEL_ARCHITECTURE=llama3.2-1b ./scripts/check-inference-engine.sh burn /models/llama3.2-1b.mpk
 VLLM_ENDPOINT=http://127.0.0.1:8000 ./scripts/check-inference-engine.sh vllm org/model
 ```
 
@@ -1139,6 +1171,36 @@ Adding this section does not require a configuration rewrite: every section is
 defaulted, so a file written before `[registry]` existed keeps loading unchanged.
 
 The client can route to local or remote authorities after a capability handshake. Non-loopback remote endpoints require HTTPS, and authentication, authorization, TLS, and integrity errors never trigger fallback to another authority.
+
+Cluster membership defaults to the local server origin and needs no setup for a
+single node. Service installations set reachable origins and seeds in the same
+file used by `hologram start`:
+
+```toml
+[cluster]
+advertise_endpoint = "https://registry-a.example.com"
+seeds = ["https://registry-seed.example.com"]
+token_env = "HOLOGRAM_CLUSTER_TOKEN"
+heartbeat_interval_secs = 15
+request_timeout_secs = 5
+node_ttl_secs = 60
+max_peers = 64
+replication_max_objects_per_round = 1000
+replication_max_object_bytes = 536870912
+```
+
+When the environment variable named by `token_env` is absent, Hologram creates
+and reuses `<state_dir>/cluster.token`. A joining host must receive the seed's
+token through a secure channel, either in that environment variable or by
+copying it to the joining host's token file before startup. The token is never
+logged or exchanged by the join protocol.
+
+Hologram membership and Kappa data distribution are intentionally separate
+layers. Joining discovers Hologram frontends and their capabilities; it never
+replays a Docker upload or another mutation against a different server. With
+the OCI feature enabled, each frontend owns a Kappa-backed registry volume;
+Kappa's data-plane federation remains responsible for content convergence.
+Keeping the layers separate preserves Docker upload-session ownership.
 
 ## Architecture
 

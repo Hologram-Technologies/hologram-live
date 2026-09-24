@@ -26,7 +26,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | Tauri (`apps/desktop`)                       | desktop shell and managed `hologram` sidecar                      |
 | Cucumber (development only)                  | executable Gherkin public-boundary scenarios                      |
 
-The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary. Third-party plugin modules run as separate subprocesses speaking gRPC over a Unix socket rather than as loaded native code. The explicit exception is the off-by-default `llamacpp` feature recorded in ADR 033.
+The Rust daemon does not include an ORM, OIDC/SAML provider, dynamic native plugin loader, or multiple native RPC codecs. Kameo is deliberately process-local; gRPC is the network boundary. Third-party plugin modules run as separate subprocesses speaking gRPC over a Unix socket rather than as loaded native code. The explicit inference exceptions are the off-by-default `llamacpp`, `candle`, and `burn` features recorded in ADRs 033 and 034.
 
 `hologram-client` is deliberately standalone: it mirrors the wire shapes rather than importing them from `hologram-live`, because depending on the daemon would pull `wasmtime`, `axum`, and `tonic` into every consumer's build for the sake of a handful of JSON structures. Its only dependencies are `reqwest`, `rustls`, `serde`, and `serde_json`. The daemon takes it as a dev-dependency so a contract test can prove the mirrored types still agree; that keeps it out of the server's normal dependency graph, which the product-boundary gate checks.
 
@@ -40,6 +40,26 @@ Tauri is isolated in `apps/desktop`, and Astro is isolated in `apps/docs`. Neith
 | `encoding_rs` | stateful UTF-8 assembly across token-piece boundaries |
 
 The feature requires CMake, Clang, and a C++ compiler. `llamacpp-metal` and `llamacpp-cuda` select the corresponding native GPU backend; the default build resolves neither dependency.
+
+## Optional: Candle (`--features candle`)
+
+| Dependency | Purpose |
+| --- | --- |
+| `candle-core`, `candle-transformers` | in-process quantized Llama GGUF tensors, sampling, KV cache, and CPU/GPU kernels |
+| `tokenizers` | load the model's explicit `tokenizer.json` and encode/decode exact token ids |
+
+`candle-metal` and `candle-cuda` opt into their respective GPU kernels. The base feature is CPU-only; Candle's tokenizer dependency currently enables Oniguruma through Candle's own feature selection, so it is Rust-native inference rather than a strict no-native-code build. This adapter supports only the explicitly documented Llama-family implementation; adding a Candle crate does not make every Candle example or GGUF architecture a server capability.
+
+## Optional: Burn (`--features burn`)
+
+| Dependency | Purpose |
+| --- | --- |
+| `burn` | CPU tensor backend used by the initial adapter |
+| `burn-lm-llama`, `burn-lm-inference` | Tracel's Llama 3 model, tokenizer, sampling, and generated-text collector |
+
+The initial backend is CPU-only and consumes Burn named-MPK checkpoints rather than GGUF or raw Safetensors. Burn-LM currently pins Burn 0.18, so this optional graph remains isolated from the default binary and should be upgraded with Burn-LM rather than mixing model/runtime versions locally. Burn-LM's published inference module requires its `pretrained` feature and therefore resolves its download client and cache-directory dependencies; Hologram calls only the local `load_*` APIs and performs no model download.
+
+The optional Burn graph includes unmodified `colored` and `option-ext` source files under MPL-2.0. `deny.toml` records exceptions for exactly those two crates; MPL-2.0 is not admitted globally, and the default build resolves neither dependency.
 
 ## Optional: the registry (`--features oci`)
 

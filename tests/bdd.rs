@@ -23,6 +23,8 @@ struct BddWorld {
     search_page: Option<serde_json::Value>,
     previous_page_ids: Vec<String>,
     http_answer: Option<(u16, String)>,
+    cluster_replication_checked: bool,
+    cluster_placement_checked: bool,
 }
 
 impl Drop for BddWorld {
@@ -1145,6 +1147,64 @@ fn output_is_self_contained(world: &mut BddWorld) {
 #[given("a fresh Hologram home")]
 fn fresh_home(world: &mut BddWorld) {
     world.home = Some(tempfile::tempdir().expect("create home directory"));
+}
+
+#[given("two authenticated Hologram peers")]
+fn two_authenticated_peers(world: &mut BddWorld) {
+    world.cluster_replication_checked = false;
+    world.cluster_placement_checked = false;
+}
+
+#[when("an immutable object is stored on the seed peer")]
+fn store_on_seed_peer(world: &mut BddWorld) {
+    let status = Command::new(env!("CARGO"))
+        .args([
+            "test",
+            "--test",
+            "cluster_e2e",
+            "authenticated_peers_replicate_an_immutable_object",
+            "--",
+            "--exact",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("run cluster end-to-end test");
+    assert!(status.success(), "cluster end-to-end test failed");
+    world.cluster_replication_checked = true;
+}
+
+#[then("the joining peer eventually contains the same object")]
+fn joining_peer_contains_object(world: &mut BddWorld) {
+    assert!(
+        world.cluster_replication_checked,
+        "cluster convergence was not checked"
+    );
+}
+
+#[when("only one peer advertises the required operation")]
+fn one_peer_advertises_operation(world: &mut BddWorld) {
+    let status = Command::new(env!("CARGO"))
+        .args([
+            "test",
+            "--test",
+            "cluster_e2e",
+            "placement_selects_the_peer_that_advertises_the_operation",
+            "--",
+            "--exact",
+        ])
+        .current_dir(workspace_root())
+        .status()
+        .expect("run cluster placement end-to-end test");
+    assert!(status.success(), "cluster placement end-to-end test failed");
+    world.cluster_placement_checked = true;
+}
+
+#[then("placement selects that capable peer")]
+fn placement_selects_capable_peer(world: &mut BddWorld) {
+    assert!(
+        world.cluster_placement_checked,
+        "capability-aware cluster placement was not checked"
+    );
 }
 
 #[given("an initialized configuration on a test port")]

@@ -10,7 +10,7 @@ use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use scalar_api_reference::{get_asset_with_mime, scalar_html};
 use serde_json::json;
@@ -75,6 +75,22 @@ where
         .route("/docs", get(scalar_reference))
         .route("/docs/scalar.js", get(scalar_javascript))
         .merge(routers.open);
+    // Cluster routes authenticate their own signed requests. They are public
+    // only in routing terms: user credentials and administrative capability
+    // are not accepted there.
+    let public = public
+        .route(
+            crate::cluster::JOIN_PATH,
+            post(crate::modules::control_plane::join_cluster),
+        )
+        .route(
+            crate::cluster::OBJECTS_PATH,
+            get(crate::modules::control_plane::list_cluster_objects),
+        )
+        .route(
+            crate::cluster::OBJECT_PATH,
+            get(crate::modules::control_plane::get_cluster_object),
+        );
 
     // A certificate that cannot be read stops the start before anything binds.
     #[cfg(feature = "oci")]
@@ -119,6 +135,7 @@ where
             );
         }
     }
+    let cluster_task = crate::cluster::spawn(state.clone());
     let result = if let Some(admin_listener) = admin_listener {
         // ADR 028: the public port carries /v2/ and the public pages only;
         // the module API and gRPC, shutdown included, live on the socket.
@@ -151,6 +168,10 @@ where
             .await
             .map_err(|error| LiveError::Transport(format!("serve HTTP: {error}")))
     };
+    if let Some(cluster_task) = cluster_task {
+        cluster_task.abort();
+        let _ = cluster_task.await;
+    }
     state.chat().engine().shutdown().await;
     state.plugins().shutdown().await;
     let audit = state.audit().flush().await;

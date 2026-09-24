@@ -133,13 +133,22 @@ const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.
 // The header, one definition for the whole site, and the same row on every page: the brand lockup is the
 // wordmark alone, because the menu beside it is what says where you are, and nothing here changes between the
 // landing and the pages behind it. The repository is reached from the hero's star badge, not from this row.
+//
+// Everything after the brand lives in one group, .top-menu. Wide, the group is laid out as the row it always
+// was (display: contents). Narrow, the same group becomes a sheet under the header, and one control stands in
+// for it at the end of the row: the menu button. Same markup, same ids, same controls; only the layout folds.
 const header = ({ section = "", search = false } = {}) => `<header class="top">
   <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
   <div class="top-end">
-    ${topNav(section)}
-    ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
-    ${themeSwitch}
-    ${accountControl()}
+    <div class="top-menu" id="top-menu">
+      ${topNav(section)}
+      ${search ? `<form class="field compact top-search" action="${BROWSE}" role="search">${R.icon.search}<input type="search" name="q" placeholder="Search models" aria-label="Search models" autocomplete="off"></form>` : ""}
+      <div class="top-tools">
+        ${themeSwitch}
+        ${accountControl()}
+      </div>
+    </div>
+    <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="top-menu" aria-label="Menu" title="Menu">${R.icon.menu}${R.icon.close}</button>
   </div>
 </header>`;
 

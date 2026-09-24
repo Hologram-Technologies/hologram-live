@@ -184,7 +184,48 @@ ul { list-style: none; margin: 0; padding: 0; }
 /* Where you are, in the brand colour. aria-current carries the same fact to a screen reader, so the
    colour is a second telling and never the only one. */
 .top-nav a[aria-current] { color: var(--hh-accent-legible); }
-@media (max-width: 860px) { .top-nav { display: none; } }
+
+/* Everything after the brand is one group. Wide, the group is not a box at all: its children sit in the row
+   exactly where they always did. The two icon controls keep the row's own spacing between them. */
+.top-menu { display: contents; }
+.top-tools { display: flex; align-items: center; gap: var(--space-6); }
+/* The one control that stands in for the group on a narrow screen: the same circle as the theme switch, with
+   three lines in it, and a cross once the sheet is open. It does not exist on a wide screen. */
+.menu-button { display: none; place-items: center; width: var(--hh-control); height: var(--hh-control); border-radius: 50%; border: 1px solid var(--hh-line-strong); color: var(--hh-text); transition: border-color var(--hh-ease), transform var(--hh-ease); }
+.menu-button:hover, .menu-button[aria-expanded="true"] { border-color: var(--hh-line-focus); }
+.menu-button:active { transform: scale(.94); }
+.menu-button .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
+.menu-button .i + .i, .top.menu-open .menu-button .i:first-child { display: none; }
+.top.menu-open .menu-button .i + .i { display: block; }
+/* Folded. The group becomes a sheet hung from the header, the width of the header, opened by the button and
+   closed by it, by Escape, by a tap anywhere else, or by the window growing (chrome.js). Inside it the
+   sections are a list a thumb can hit, and the theme switch and sign-in wait on a row of their own at the
+   foot. Their popovers open in the sheet rather than beside their controls: a popover hung off a control at
+   the left edge of a phone has nowhere to go but off the screen. */
+@media (max-width: 960px) {
+  .menu-button { display: grid; }
+  .top-menu {
+    display: none; position: absolute; left: 0; right: 0; top: calc(100% + var(--space-3)); z-index: 40;
+    padding: var(--space-2);
+    background: var(--hh-popover); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-lg);
+    box-shadow: 0 var(--space-4) var(--space-12) var(--hh-shadow);
+    font-family: var(--font-sans); color: var(--hh-text);
+    transform-origin: top right;
+  }
+  .top.menu-open .top-menu { display: grid; animation: menu-in 160ms cubic-bezier(.2, .8, .2, 1); }
+  .top-nav { display: grid; gap: var(--space-1); font-size: var(--text-base); }
+  .top-nav a { display: flex; justify-content: space-between; min-height: var(--hh-field); padding: 0 var(--space-3); border-radius: var(--radius-md); color: var(--hh-text); transition: background var(--hh-ease); }
+  .top-nav a:hover, .top-nav a:focus-visible { background: var(--hh-fill); outline: 0; }
+  .top-nav .i { color: var(--hh-text-dim); }
+  .top-nav a[aria-current], .top-nav a[aria-current] .i { color: var(--hh-accent-legible); }
+  .top-tools { flex-wrap: wrap; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-1); border-top: 1px solid var(--hh-line); }
+  /* The sheet has the room the row did not: the sign-in reads as a word again. */
+  .top-menu #sign-in-button .label { display: inline; }
+  .top-menu #sign-in-button { width: auto; padding: 0 var(--space-4); border-radius: var(--radius-lg); }
+  /* The two controls' popovers unfold inside the sheet, on a full row under the controls. */
+  .top-menu .appearance, .top-menu .account { display: contents; }
+  .top-menu .menu { position: static; order: 3; flex-basis: 100%; width: auto; margin-top: var(--space-1); padding: var(--space-3) 0 0; background: none; border: 0; border-top: 1px solid var(--hh-line); border-radius: 0; box-shadow: none; animation: none; }
+}
 
 /* ---- theme switch */
 .appearance { position: relative; }

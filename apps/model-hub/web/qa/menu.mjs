@@ -30,8 +30,8 @@ const SECTIONS = ["Models", "Registry", "Spaces", "Buckets", "Docs"];
 // One page of every shape the site builds, and the section each belongs to. "" means no section is current:
 // the landing is the front door, it is not inside any section. The last field says what that page opens with:
 // `true` for a catalogue page, which opens with the shared lead row (name · count · address) above its
-// columns, and "own" for a page that opens with a row of its own on purpose. Buckets is the one "own": its
-// row carries the controls that make and open a bucket, which no other section has. A page marked neither
+// columns, and "own" for a page that opens with a row of its own on purpose (none today: Buckets had one, and
+// now opens with the shared row and keeps its controls on a row below it). A page marked neither
 // must not open with a lead row at all, which is what catches one arriving by accident.
 const PAGES = [
   ["landing", "/", ""],
@@ -39,7 +39,7 @@ const PAGES = [
   ["model", null, "Models"],           // filled in from dist below: whichever model page is first
   ["registry", "/registry/", "Registry", true, true],
   ["spaces", "/spaces/", "Spaces", true, true],
-  ["buckets", "/buckets/", "Buckets", "own", true],
+  ["buckets", "/buckets/", "Buckets", true, true],
   ["docs", "/docs/", "Docs", false, true],
   ["docs page", "/docs/quickstart/", "Docs"],
   ["not found", "/404.html", ""],

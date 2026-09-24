@@ -124,7 +124,19 @@ fn send(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &[u
     stream.flush().expect("flush");
 
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).expect("read");
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => raw.extend_from_slice(&chunk[..read]),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ConnectionReset && !raw.is_empty() =>
+            {
+                break;
+            }
+            Err(error) => panic!("read: {error}"),
+        }
+    }
     parse(&raw)
 }
 
@@ -140,7 +152,9 @@ fn try_send(
     body: &[u8],
 ) -> Option<Answer> {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(60))).ok()?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(60)))
+        .ok()?;
     let mut head = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: {}\r\n",
         body.len()
@@ -173,10 +187,17 @@ fn parse(raw: &[u8]) -> Answer {
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|code| code.parse().ok())
         .expect("a status");
-    let headers = lines
+    let headers: Vec<_> = lines
         .filter_map(|line| line.split_once(": "))
         .map(|(name, value)| (name.to_owned(), value.to_owned()))
         .collect();
+    if let Some(expected) = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .and_then(|(_, value)| value.parse::<usize>().ok())
+    {
+        assert_eq!(body.len(), expected, "complete response body");
+    }
     Answer {
         status,
         headers,
@@ -202,7 +223,13 @@ fn digest_of(bytes: &[u8]) -> String {
 /// POST, PATCH, PUT: one blob, the ordinary way a client pushes.
 fn push_blob(port: u16, repo: &str, bytes: &[u8]) -> (u16, String) {
     let digest = digest_of(bytes);
-    let begin = send(port, "POST", &format!("/v2/{repo}/blobs/uploads/"), &[], b"");
+    let begin = send(
+        port,
+        "POST",
+        &format!("/v2/{repo}/blobs/uploads/"),
+        &[],
+        b"",
+    );
     assert_eq!(begin.status, 202, "POST upload");
     let patch = send(
         port,
@@ -266,7 +293,10 @@ fn same_blob_twice() {
                 })
             })
             .collect();
-        handles.into_iter().map(|h| h.join().expect("thread")).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("thread"))
+            .collect()
     });
 
     let digest = digest_of(&bytes);
@@ -453,7 +483,10 @@ fn concurrent_patch_one_session() {
                 })
             })
             .collect();
-        handles.into_iter().map(|h| h.join().expect("thread")).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("thread"))
+            .collect()
     });
 
     let accepted = answers
@@ -533,7 +566,10 @@ fn tag_last_writer_wins() {
     );
     assert_eq!(got.status, 200);
     let winner = digest_of(&got.body);
-    assert!(digests.contains(&winner), "the tag names no manifest we wrote");
+    assert!(
+        digests.contains(&winner),
+        "the tag names no manifest we wrote"
+    );
 
     // Every digest stays linked: a push by digest is not undone by losing the
     // race for the tag.

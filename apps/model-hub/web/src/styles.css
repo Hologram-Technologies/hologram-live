@@ -160,7 +160,8 @@
 .land-track a:hover { color: var(--hh-text); }
 .land-track a:hover img { opacity: 1; filter: none; }
 /* A moving target is a bad target: the run stops while a pointer is over it, or while a link has focus. */
-.land-marquee:hover .land-track, .land-marquee:focus-within .land-track { animation-play-state: paused; }
+@media (hover: hover) { .land-marquee:hover .land-track { animation-play-state: paused; } }
+.land-marquee:focus-within .land-track { animation-play-state: paused; }
 /* The marks are the orgs' own avatars, and several are dark artwork on transparency: on the warm dark ground
    they would disappear. A light plate under each one, in the dark themes only, keeps the strip monochrome and
    readable the way the reference strip is. */
@@ -186,6 +187,21 @@
 }
 @media (max-width: 480px) { .land-track ul { gap: var(--space-10); padding-right: var(--space-10); } }
 @media (prefers-reduced-motion: reduce) { .land-dots, .land-planes, .land-track { animation: none; } }
+
+/* ---- a phone.
+   The headline is the page, so it takes the width: the two halves wrap as one line of text rather than as
+   two fixed lines, which lets the type grow past what the wide layout's vw rule allows. The command steps
+   down a size so it reads as the second action, not a second headline; the primary action gets a little more
+   air above it; and the strip, whose run is shorter here, keeps its pace by taking less time per loop. */
+@media (max-width: 720px) {
+  :root { --hh-display: clamp(var(--text-4xl), 12vw, var(--text-5xl)); }
+  .land-title span { display: inline; }
+  .land-second { font-size: var(--text-base); }
+  .land-actions { margin-top: var(--space-8); }
+  .land-track { animation-duration: 40s; }
+}
+@media (max-width: 720px) and (max-height: 820px) { .land-actions { margin-top: var(--space-6); } }
+@media (max-width: 720px) and (max-height: 620px) { .land-actions { margin-top: var(--space-4); } }
 
 /* Over a photo the figure only adds noise, and floating text loses its ground: the hero takes the glass every
    other surface already uses in Immersive, and the strip steps back further. */

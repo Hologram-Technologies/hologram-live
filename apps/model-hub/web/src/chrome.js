@@ -10,8 +10,29 @@ const $ = (s, el = document) => el.querySelector(s);
 
 // Everything the header does, for whatever part of the header this page has.
 export function mountChrome() {
+  foldingMenu();
   themeSwitch();
   if ($("#account")) account();
+}
+
+// The row folded into a sheet, on a narrow screen. The button at the end of the header opens and closes it;
+// a tap outside, Escape, or a widening window closes it too. The stylesheet decides when the row is folded
+// (the same breakpoint that hides the menu button when it is not), so this only keeps the state honest.
+function foldingMenu() {
+  const button = $("#menu-button"), top = button?.closest(".top"), sheet = $("#top-menu");
+  if (!button || !top || !sheet) return;
+  const open = (show) => { top.classList.toggle("menu-open", show); button.setAttribute("aria-expanded", String(show)); };
+  const isOpen = () => top.classList.contains("menu-open");
+  button.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const show = !isOpen();
+    open(show);
+    if (show && e.detail === 0) sheet.querySelector("a, button")?.focus();
+  });
+  document.addEventListener("click", (e) => { if (isOpen() && !e.target.closest(".top-menu, #menu-button")) open(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen()) { open(false); button.focus(); } });
+  const wide = matchMedia("(min-width: 961px)");
+  wide.addEventListener("change", () => { if (wide.matches) open(false); });
 }
 
 // Dark, Light, Immersive. Dark for first visits; the choice is kept on this device.

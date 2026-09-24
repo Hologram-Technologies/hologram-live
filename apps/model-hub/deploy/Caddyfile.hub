@@ -2,9 +2,13 @@ hub.uor.foundation {
 	# The Hugging Face dialect (HF_ENDPOINT=https://hub.uor.foundation). Clients send the user's Hugging Face token to
 	# whatever HF_ENDPOINT names: it is removed here, before anything of ours can see or log it.
 	@hf path_regexp hf ^(/via/[a-z.]+)?(/api/models(/|$)|/api/hub/health$|/mcp$|/[^/]+/[^/]+/resolve/)
-	# Ollama's registry dialect: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`. The hub's own OCI registry keeps
-	# its namespace, model-hub; every other /v2/<org>/<name>/ is a model answered by hub-resolve.
+	# Ollama's and ORAS's read dialects for MODELS: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`,
+	# `oras pull hub.uor.foundation/<org>/<name>:latest`. Reads only: a write under any name is registry business.
+	# hub-resolve answers the models it indexes and proxies every other name to the registry (HUB_REGISTRY), so an
+	# image pushed as `you/app` is pullable at the same URL a model is. The hub's own namespace, model-hub, goes
+	# straight to the registry.
 	@ollama {
+		method GET HEAD
 		path_regexp ollama ^/v2/[^/]+/[^/]+/(manifests|blobs|tags)/
 		not path /v2/model-hub/*
 	}
@@ -25,6 +29,11 @@ hub.uor.foundation {
 	# (Hologram Registry 1.0.0) with `basic_auth` as user `publisher` rather than a bearer token, and /_* is a
 	# separate handler still pointing at kappa for the days published before the switch. Diff the running
 	# Caddyfile before changing anything here. Recorded 2026-09-24 while testing the write paths.
+	#
+	# The write gate therefore stays at the proxy in this file, and is not moved by the routing change below:
+	# with Hologram Registry 1.0.0 behind it, `auth.token.local` could issue and validate per-user bearer tokens
+	# instead (#130), which is what `docker login` expects and what puts a writer's name in the audit log — but
+	# that is a host change to reconcile against the running Caddyfile, not something to assume from here.
 	@registry path /v2 /v2/* /_*
 	handle @registry {
 		@write {
@@ -32,7 +41,18 @@ hub.uor.foundation {
 			not header Authorization "Bearer {$HUB_REGISTRY_TOKEN}"
 		}
 		respond @write "write requires a registry token" 401
-		reverse_proxy hub-kappa:5000
+		request_body {
+			# One layer per request. The reference's own guide uses 2 GiB layers; a proxy that caps them lower
+			# turns a `docker push` into a 413 halfway through, after minutes of upload.
+			max_size 4GB
+		}
+		reverse_proxy hub-kappa:5000 {
+			# A large layer is one long request: do not cut it at the proxy's idle default.
+			transport http {
+				read_timeout 30m
+				write_timeout 30m
+			}
+		}
 	}
 
 	@preflight {

@@ -352,9 +352,30 @@ async function ociManifest(doc, files) {
   await keep(bytes); // also fetchable by its digest, which is how OCI clients ask the second time
   return bytes;
 }
+// ---- names that are not models belong to the registry. Caddy sends every GET/HEAD under /v2/<org>/<name>/ here
+// because it cannot know which names are models; this can. An image pushed as `you/app` is answered by the
+// registry, byte for byte, through this process: status, headers and body are relayed, nothing is rewritten.
+const REGISTRY = process.env.HUB_REGISTRY || "http://hub-kappa:5000";
+async function registry(req, res, path) {
+  let upstream;
+  try {
+    const headers = {};
+    for (const name of ["accept", "range", "if-none-match", "user-agent"]) if (req.headers[name]) headers[name] = req.headers[name];
+    upstream = await fetch(`${REGISTRY}${path}${req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""}`, { method: req.method, headers, redirect: "manual", signal: AbortSignal.timeout(120_000) });
+  } catch (error) {
+    return ociError(res, 502, "UNAVAILABLE", `the registry did not answer: ${error.message}`);
+  }
+  const out = {};
+  for (const [name, value] of upstream.headers) if (!/^(transfer-encoding|connection|content-encoding)$/i.test(name)) out[name] = value;
+  res.writeHead(upstream.status, out);
+  if (req.method === "HEAD" || !upstream.body) return res.end();
+  const { Readable } = await import("node:stream");
+  Readable.fromWeb(upstream.body).pipe(res);
+}
+
 async function ollama(req, res, id, kind, ref) {
   const doc = await model(id);
-  if (!doc) return ociError(res, 404, "NAME_UNKNOWN", `${id} is not in the Hologram index. Try: ollama pull hf.co/${id}`);
+  if (!doc) return registry(req, res, `/v2/${id}/${kind}/${ref}`);
   if (kind === "tags") {
     const quants = [...new Set(doc.files.filter((f) => /\.gguf$/i.test(f[0]) && !/mmproj|imatrix|-\d{5}-of-/i.test(f[0])).map((f) => quantOf(f[0])).filter(Boolean))];
     return json(res, 200, { name: doc.id, tags: ["latest", ...quants] });

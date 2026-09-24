@@ -12,7 +12,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { createBLAKE3 } from "hash-wasm";
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
-const BASE = arg("base", "https://hub.uor.foundation").replace(/\/$/, "");
+const BASE = arg("base", "https://gethologram.ai").replace(/\/$/, "");
 const N = Number(arg("n", 12));
 const OUT = arg("out", null);
 

@@ -70,9 +70,9 @@ STUB
 mkdir -p "$WORK/front"
 {
 	printf '{\n\tauto_https off\n\tadmin off\n}\n'
-	sed -e "1s|^hub.uor.foundation {|:80 {|" "$HERE/Caddyfile.hub"
+	sed -e "1s|^[^{]* {|:80 {|" "$HERE/Caddyfile.hub"
 } > "$WORK/front/Caddyfile"
-grep -q '^:80 {' "$WORK/front/Caddyfile" || { echo "Caddyfile.hub no longer starts with the hub.uor.foundation site block"; exit 1; }
+grep -q '^:80 {' "$WORK/front/Caddyfile" || { echo "Caddyfile.hub no longer starts with the hub site block"; exit 1; }
 
 docker network create "$NET" >/dev/null 2>&1 || true
 docker rm -f rehearse-front rehearse-site rehearse-stub >/dev/null 2>&1 || true
@@ -111,11 +111,11 @@ check() { # name method path expected-status [grep-pattern] [extra curl args...]
 echo "== one URL, three readers"
 check "a browser gets the page"    GET / 200 "<title>site</title>"       -H "accept: text/html,application/xhtml+xml"
 check "json by name: descriptor"   GET / 200 "descriptor/v1"             -H "accept: application/json"
-check "curl gets the brief"        GET / 200 "# hub.uor.foundation"      -H "accept: */*"
+check "curl gets the brief"        GET / 200 "# gethologram.ai"      -H "accept: */*"
 check "no Accept at all: brief"    GET / 200 "Hash what arrives"         -H "accept:"
 check "an unfurler still gets html" GET / 200 "<title>site</title>"      -H "accept: */*" -A "Slackbot-LinkExpanding 1.0"
 check "the front door is cors-open" GET / 200 "access-control-allow-origin: \*" -H "accept: */*"
-check "the brief by its own path"  GET /agent.md 200 "# hub.uor.foundation" -H "accept: */*"
+check "the brief by its own path"  GET /agent.md 200 "# gethologram.ai" -H "accept: */*"
 # The document promises text/markdown here; a file server that guessed octet-stream would make agents download it.
 check "the brief is markdown"      GET /agent.md 200 "content-type: text/markdown" -H "accept: */*"
 # A content-negotiated route that does not declare it lets a shared cache serve the wrong representation.
@@ -126,10 +126,10 @@ check "object search still routes" GET /api/v1/objects/search 401 "publish requi
 
 # A section's URL answers the way the root does, and only at the section root.
 echo "== a brief per section"
-check "curl /models gets the brief"    GET /models       200 "# hub.uor.foundation/models"   -H "accept: */*"
-check "and with the trailing slash"    GET /models/      200 "# hub.uor.foundation/models"   -H "accept: */*"
-check "curl /registry gets the brief"  GET /registry     200 "# hub.uor.foundation/registry" -H "accept: */*"
-check "and with the trailing slash"    GET /registry/    200 "# hub.uor.foundation/registry" -H "accept: */*"
+check "curl /models gets the brief"    GET /models       200 "# gethologram.ai/models"   -H "accept: */*"
+check "and with the trailing slash"    GET /models/      200 "# gethologram.ai/models"   -H "accept: */*"
+check "curl /registry gets the brief"  GET /registry     200 "# gethologram.ai/registry" -H "accept: */*"
+check "and with the trailing slash"    GET /registry/    200 "# gethologram.ai/registry" -H "accept: */*"
 check "a browser still gets the page"  GET /models/      200 "models page"                   -H "accept: text/html,application/xhtml+xml"
 check "so does the registry page"      GET /registry/    200 "registry page"                 -H "accept: text/html"
 check "an unfurler still gets html"    GET /models/      200 "models page"                   -H "accept: */*" -A "Slackbot-LinkExpanding 1.0"

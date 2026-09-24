@@ -1,6 +1,6 @@
 name: model-hub-openapi
 
-# The document at hub.uor.foundation/openapi.json is the endpoint's contract, so it is gated like code.
+# The document at gethologram.ai/openapi.json is the endpoint's contract, so it is gated like code.
 #
 #   document  on every change: the committed document matches what the builder produces, it lints clean, and an
 #             agent framework can bind to it and complete find -> resolve -> verify. Runs against the built file,

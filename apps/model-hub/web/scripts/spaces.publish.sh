@@ -4,9 +4,9 @@
 # Reads need no token (the Spaces page probes /v2/spaces/<id>/manifests/latest anonymously); writes carry the
 # registry token Caddy checks. Idempotent: a blob already present is skipped by digest.
 #
-#   HUB_REGISTRY_TOKEN=… scripts/spaces.publish.sh [https://hub.uor.foundation] [space-id …]
+#   HUB_REGISTRY_TOKEN=… scripts/spaces.publish.sh [https://gethologram.ai] [space-id …]
 set -euo pipefail
-HUB="${1:-https://hub.uor.foundation}"; shift || true
+HUB="${1:-https://gethologram.ai}"; shift || true
 : "${HUB_REGISTRY_TOKEN:?set HUB_REGISTRY_TOKEN (the registry write token)}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SPACES="$HERE/public/spaces"

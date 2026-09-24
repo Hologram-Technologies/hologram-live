@@ -12,7 +12,7 @@ When Hugging Face is slow or down, a download that names only Hugging Face waits
 The hub keeps a health record per source and an order of preference. A `/resolve/` request is redirected to the first source in that order that is up and has the file. Every redirect says who was chosen in `X-Hub-Source`.
 
 ```bash
-curl -s https://hub.uor.foundation/api/hub/health
+curl -s https://gethologram.ai/api/hub/health
 ```
 
 ```json
@@ -39,7 +39,7 @@ The `hologram.sources` list in a search row tells you which of these hold a give
 Put `/via/<source>` in front of any `/resolve/` path. The expected hash is unchanged; only the host is.
 
 ```bash
-curl -sI https://hub.uor.foundation/via/ipfs/hexgrad/Kokoro-82M/resolve/main/EVAL.md
+curl -sI https://gethologram.ai/via/ipfs/hexgrad/Kokoro-82M/resolve/main/EVAL.md
 ```
 
 ```
@@ -56,7 +56,7 @@ X-Hub-Source: ipfs
 
 A name outside this table is not refused: the hub falls back to its normal order and `X-Hub-Source` reports what it actually chose. If a pin matters to you, read that header.
 
-`/via/<source>/api/models` runs a search with the source pinned for the rows it returns, so a client that sets `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs` reads only from IPFS.
+`/via/<source>/api/models` runs a search with the source pinned for the rows it returns, so a client that sets `HF_ENDPOINT=https://gethologram.ai/via/ipfs` reads only from IPFS.
 
 ## What the hub never does
 

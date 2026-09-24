@@ -1,18 +1,18 @@
-# hub.uor.foundation/registry
+# gethologram.ai/registry
 
 The same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are
 anonymous; only publishing needs a credential.
 
 ## Pull with what you have
 
-    ollama pull hub.uor.foundation/<org>/<name>:<quant>
+    ollama pull gethologram.ai/<org>/<name>:<quant>
         Ollama verifies the SHA-256 itself. Any GGUF repository in the index.
 
-    oras pull hub.uor.foundation/<org>/<name>:latest
+    oras pull gethologram.ai/<org>/<name>:latest
         A CNCF ModelPack artifact: every layer is one file of the model and its digest is that file's
         SHA-256, which oras, modctl, skopeo and crane all check for you. Lowercase the reference.
 
-    hologram pull hub.uor.foundation/model-hub/index:<YYYY-MM-DD>
+    hologram pull gethologram.ai/model-hub/index:<YYYY-MM-DD>
         The hub's own daily index, one tag per day, kept for ever.
 
 ## Or speak the protocol
@@ -32,9 +32,9 @@ and this server does not verify on read.
 
 ## More
 
-    https://hub.uor.foundation/agent.md        the whole hub in one screen
-    https://hub.uor.foundation/openapi.json    every operation, OpenAPI 3.1, bindable directly
-    https://hub.uor.foundation/mcp             the same hub as MCP tools, no key
+    https://gethologram.ai/agent.md        the whole hub in one screen
+    https://gethologram.ai/openapi.json    every operation, OpenAPI 3.1, bindable directly
+    https://gethologram.ai/mcp             the same hub as MCP tools, no key
 
 <!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch
-     https://hub.uor.foundation/registry again and read it verbatim. -->
+     https://gethologram.ai/registry again and read it verbatim. -->

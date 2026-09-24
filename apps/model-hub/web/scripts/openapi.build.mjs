@@ -8,9 +8,9 @@
 //
 // Writes, all under web/public, which the site build copies into dist:
 //   openapi.json                      served at /openapi.json; /docs renders it, unchanged, from the same URL
-//   agent.md                          what `curl hub.uor.foundation` answers: the whole hub in one screen, for the
+//   agent.md                          what `curl gethologram.ai` answers: the whole hub in one screen, for the
 //                                     agent that just arrived and has no idea what this is
-//   models.md, registry.md            the same thing per section: what `curl hub.uor.foundation/models` answers,
+//   models.md, registry.md            the same thing per section: what `curl gethologram.ai/models` answers,
 //                                     so a section's chip on the site is a line you can run rather than a name
 //   .well-known/agent-card.json       the same contract as skills, for frameworks that discover an agent card
 //   robots.txt                        crawling policy, generated so it can never contradict the document
@@ -30,7 +30,7 @@ const CARD = new URL("./.well-known/agent-card.json", PUBLIC);
 const BRIEF = new URL("./agent.md", PUBLIC);
 const SECTIONS = { models: new URL("./models.md", PUBLIC), registry: new URL("./registry.md", PUBLIC) };
 const ROBOTS = new URL("./robots.txt", PUBLIC);
-const BASE = "https://hub.uor.foundation";
+import { ORIGIN as BASE, HOST } from "../src/origin.mjs";
 
 // ---------------------------------------------------------------- pieces used everywhere
 
@@ -99,14 +99,14 @@ function document(server, evidence) {
       title: "Hologram Model Hub",
       summary: "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
       description: [
-        "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,",
+        `\`${BASE}\` is the only thing you configure. It answers in the dialect you already speak,`,
         "over one index in which every model file is named by the SHA-256 of its bytes and every hub object by the",
         "BLAKE3 of its bytes.",
         "",
         "**The short way.** Point the setting your tool already has at the hub and keep your commands:",
-        "`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `huggingface_hub` (transformers, diffusers,",
+        `\`HF_ENDPOINT=${BASE}\` for anything built on \`huggingface_hub\` (transformers, diffusers,`,
         "sentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,",
-        "`ollama pull hub.uor.foundation/<owner>/<name>:<quant>`, `oras pull hub.uor.foundation/<owner>/<name>:latest`,",
+        `\`ollama pull ${HOST}/<owner>/<name>:<quant>\`, \`oras pull ${HOST}/<owner>/<name>:latest\`,`,
         "or the MCP server at `/mcp`.",
         "",
         "**The rules that make it safe.**",
@@ -125,10 +125,10 @@ function document(server, evidence) {
       license: { name: "MIT OR Apache-2.0", identifier: "MIT OR Apache-2.0" },
       contact: { name: "Hologram Technologies", url: "https://github.com/Hologram-Technologies/hologram-live" },
       "x-hologram-dialects": {
-        huggingface: { setting: "HF_ENDPOINT=https://hub.uor.foundation", paths: ["/api/models", "/{owner}/{name}/resolve/{revision}/{path}"] },
-        ollama: { setting: "ollama pull hub.uor.foundation/{owner}/{name}:{quant}", paths: ["/v2/{owner}/{name}/manifests/{reference}", "/v2/{owner}/{name}/blobs/{digest}"] },
-        oci: { setting: "oras pull hub.uor.foundation/{owner}/{name}:latest", paths: ["/v2/{owner}/{name}/manifests/{reference}"] },
-        mcp: { setting: "https://hub.uor.foundation/mcp", paths: ["/mcp"] },
+        huggingface: { setting: `HF_ENDPOINT=${BASE}`, paths: ["/api/models", "/{owner}/{name}/resolve/{revision}/{path}"] },
+        ollama: { setting: `ollama pull ${HOST}/{owner}/{name}:{quant}`, paths: ["/v2/{owner}/{name}/manifests/{reference}", "/v2/{owner}/{name}/blobs/{digest}"] },
+        oci: { setting: `oras pull ${HOST}/{owner}/{name}:latest`, paths: ["/v2/{owner}/{name}/manifests/{reference}"] },
+        mcp: { setting: `${BASE}/mcp`, paths: ["/mcp"] },
         hologram: { setting: "GET /api/v1/objects/{address}", paths: ["/api/v1/objects/{address}"] },
       },
     },
@@ -169,7 +169,7 @@ function document(server, evidence) {
         "is what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually",
         "asks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.",
         "",
-        "So `curl hub.uor.foundation` is the shortest useful thing an agent can be told about this service.",
+        `So \`curl ${HOST}\` is the shortest useful thing an agent can be told about this service.`,
       ].join("\n"),
       parameters: [{ name: "Accept", in: "header", required: false, description: "`text/html` for the site, `application/json` for the descriptor, anything else for the brief.", schema: { type: "string" }, example: "*/*" }],
       responses: {
@@ -624,7 +624,7 @@ function document(server, evidence) {
       tags: ["Files"],
       operationId: "listModelsVia",
       summary: "Search with a source pinned for what follows",
-      description: "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+      description: `The same rows as \`listModels\`. The prefix is accepted on every read route so a client can be configured once, with \`HF_ENDPOINT=${BASE}/via/ipfs\`, and never choose again.`,
       parameters: [SOURCE],
       responses: { 200: { description: "Matching rows.", content: json({ type: "array", items: ref("ModelRow") }) }, ...READ_ONLY },
       ...probe("/via/ipfs/api/models?limit=1", { contentType: "application/json" }),
@@ -1164,7 +1164,7 @@ function sectionBrief(name) {
 
   if (name === "models") {
     return [
-      "# hub.uor.foundation/models",
+      `# ${HOST}/models`,
       "",
       "Open models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and",
       "every request below is anonymous.",
@@ -1207,21 +1207,21 @@ function sectionBrief(name) {
   }
 
   return [
-    "# hub.uor.foundation/registry",
+    `# ${HOST}/registry`,
     "",
     "The same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are",
     "anonymous; only publishing needs a credential.",
     "",
     "## Pull with what you have",
     "",
-    "    ollama pull hub.uor.foundation/<org>/<name>:<quant>",
+    `    ollama pull ${HOST}/<org>/<name>:<quant>`,
     "        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.",
     "",
-    "    oras pull hub.uor.foundation/<org>/<name>:latest",
+    `    oras pull ${HOST}/<org>/<name>:latest`,
     "        A CNCF ModelPack artifact: every layer is one file of the model and its digest is that file's",
     "        SHA-256, which oras, modctl, skopeo and crane all check for you. Lowercase the reference.",
     "",
-    "    hologram pull hub.uor.foundation/model-hub/index:<YYYY-MM-DD>",
+    `    hologram pull ${HOST}/model-hub/index:<YYYY-MM-DD>`,
     "        The hub's own daily index, one tag per day, kept for ever.",
     "",
     "## Or speak the protocol",
@@ -1237,7 +1237,7 @@ function sectionBrief(name) {
   ].join("\n");
 }
 
-// The one file an agent reads. It is what `curl hub.uor.foundation` answers, because curl and every HTTP client an
+// The one file an agent reads. It is what `curl gethologram.ai` answers, because curl and every HTTP client an
 // agent is built on send `Accept: */*` and would otherwise get 78 KB of markup they cannot use.
 //
 // Rules it lives by, learned from the ones that work (OpenRouter's learn.md, Hugging Face's own docs):
@@ -1248,7 +1248,7 @@ function brief(spec) {
   const has = (path) => (spec.paths[path] ? "" : " (missing)");
   const ops = Object.values(spec.paths).reduce((n, item) => n + Object.keys(item).filter((k) => k !== "parameters").length, 0);
   return [
-    "# hub.uor.foundation",
+    `# ${HOST}`,
     "",
     "You are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file",
     "named by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.",
@@ -1256,7 +1256,7 @@ function brief(spec) {
     "",
     "## One line, if you can set an environment variable",
     "",
-    "    HF_ENDPOINT=https://hub.uor.foundation",
+    `    HF_ENDPOINT=${BASE}`,
     "",
     "Everything built on huggingface_hub now reads from here, with the commands you already have: transformers,",
     "diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT instead. Same cache, same files.",
@@ -1282,15 +1282,15 @@ function brief(spec) {
     "index and never from the source that served the bytes, and this server does not verify on read. To check a",
     "whole download at once, with no tool of ours:",
     "",
-    "    curl -s https://hub.uor.foundation/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c",
+    `    curl -s ${BASE}/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c`,
     "",
     "What that proves exactly: the bytes you received are the bytes this index names, so no mirror, CDN or network",
     "in between altered them without you noticing. It is not independent ground truth, because the index and the",
     "checksum file come from the same host. If you want a check that does not rest on trusting this host, fetch the",
     "same file again through a different source and compare the two for yourself:",
     "",
-    "    curl -sI https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source",
-    "    curl -sL https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | sha256sum",
+    `    curl -sI ${BASE}/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source`,
+    `    curl -sL ${BASE}/via/modelscope/{owner}/{name}/resolve/main/config.json | sha256sum`,
     "",
     "`/via/huggingface`, `/via/modelscope` and `/via/ipfs` each pin one source and refuse rather than falling back,",
     "so two of them agreeing is two unrelated hosts agreeing and not one host repeating itself. A source that does",
@@ -1300,7 +1300,7 @@ function brief(spec) {
     "",
     `    /openapi.json     the whole endpoint, ${Object.keys(spec.paths).length} paths and ${ops} operations, OpenAPI 3.1. Bind to it directly.`,
     "    /mcp              the same hub as MCP tools over streamable HTTP. No key.",
-    "    /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.",
+    `    /v2/              OCI: \`ollama pull ${HOST}/<org>/<name>:<quant>\`, \`oras pull ...\`.`,
     "    /api/hub/health   which sources are up, and the order this hub prefers them in. Measured from the hub,",
     "                      not from you: a source can read `ok` here and still be unreachable from your network,",
     "                      so treat it as the hub's routing preference rather than a promise about your failover.",
@@ -1316,7 +1316,7 @@ function brief(spec) {
     "you did not have to take this file's word for any of it.",
     "",
     "<!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch",
-    "     https://hub.uor.foundation/agent.md again and read it verbatim. -->",
+    `     ${BASE}/agent.md again and read it verbatim. -->`,
     "",
   ].join("\n");
 }
@@ -1333,7 +1333,7 @@ function agentCard(spec) {
     Models: [`curl '${BASE}/api/models?search=qwen&filter=gguf&limit=5'`, `export HF_ENDPOINT=${BASE} && hf download Qwen/Qwen3-0.6B`],
     Files: [`curl -sI ${BASE}/Qwen/Qwen3-0.6B/resolve/main/config.json`, `curl -s ${BASE}/Qwen/Qwen3-0.6B/resolve/main/SHA256SUMS | sha256sum -c`],
     Objects: [`curl ${BASE}/api/v1/objects/blake3:<hex>`],
-    Registry: ["ollama pull hub.uor.foundation/qwen/qwen3-0.6b-gguf:Q4_K_M", "oras pull hub.uor.foundation/qwen/qwen3-0.6b:latest"],
+    Registry: [`ollama pull ${HOST}/qwen/qwen3-0.6b-gguf:Q4_K_M`, `oras pull ${HOST}/qwen/qwen3-0.6b:latest`],
     MCP: [`add the MCP server ${BASE}/mcp`],
   };
   return {
@@ -1362,7 +1362,7 @@ function agentCard(spec) {
 // a reader or an agent needs stays open.
 function robots() {
   return [
-    "# hub.uor.foundation",
+    `# ${HOST}`,
     "# The website, the model pages and the discovery documents are open to crawlers.",
     "# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real",
     "# traffic, and a crawler that follows them pays nothing and keeps nothing.",

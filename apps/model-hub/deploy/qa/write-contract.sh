@@ -19,7 +19,7 @@
 set -uo pipefail
 
 HUB=${HUB:-/root/hub}
-HOST=${HOST:-hub.uor.foundation}
+HOST=${HOST:-gethologram.ai}
 DRY=${1:-}
 pass=0; fail=0
 ok() { pass=$((pass + 1)); printf '  ok   %-54s %s\n' "$1" "${2:-}"; }

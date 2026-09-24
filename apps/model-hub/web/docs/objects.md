@@ -15,16 +15,16 @@ Two requests find a model; two more fetch and verify a file.
 
 ```bash
 # 1. the descriptor names today's catalog
-curl -s https://hub.uor.foundation/.well-known/model-hub.json | grep catalog
+curl -s https://gethologram.ai/.well-known/model-hub.json | grep catalog
 
 # 2. the catalog maps names to addresses
-curl -s https://hub.uor.foundation/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f -o catalog.json
+curl -s https://gethologram.ai/api/v1/objects/blake3:423d29497813ce4cb5a21cf5c50bf8fe6efa1a1f19dc203e0dec8e5bb21a516f -o catalog.json
 
 # 3. the model object: revision, licence, files with SHA-256, prev
-curl -s https://hub.uor.foundation/api/v1/objects/blake3:3cc11e52049117dfc397240fddc7a4d3aa392ded7f623986e4e5757371363d9e -o model.json
+curl -s https://gethologram.ai/api/v1/objects/blake3:3cc11e52049117dfc397240fddc7a4d3aa392ded7f623986e4e5757371363d9e -o model.json
 
 # 4. a source object: where one revision's bytes can be fetched
-curl -s https://hub.uor.foundation/api/v1/objects/blake3:1163c7df258abaa3b8494261198e064bbfc9bef62c1b5fb5a7ef72d24017c6d3
+curl -s https://gethologram.ai/api/v1/objects/blake3:1163c7df258abaa3b8494261198e064bbfc9bef62c1b5fb5a7ef72d24017c6d3
 ```
 
 ```json
@@ -78,7 +78,7 @@ Weights are not objects. A mirror that wants to hold bytes as well runs a Hologr
 Writes need a publisher token. Reads of a known address never do.
 
 ```bash
-curl -X POST https://hub.uor.foundation/api/v1/objects \
+curl -X POST https://gethologram.ai/api/v1/objects \
   -H "Authorization: Bearer $HOLOGRAM_PUBLISHER_TOKEN" \
   -H 'x-hologram-kind: model-hub.source' \
   -H 'x-hologram-filename: source.json' \

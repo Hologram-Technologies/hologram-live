@@ -14,7 +14,7 @@
 // The last step downloads one small file and checks its SHA-256 against the hash the index gave, which is the whole
 // point of the hub: the agent proves the bytes without trusting the host that served them.
 //
-//   node bind.mjs [--base https://hub.uor.foundation]
+//   node bind.mjs [--base https://gethologram.ai]
 //   node bind.mjs --spec ../../public/openapi.json    bind the document as built here, before it is deployed
 //
 // With --spec, the discovery checks still run against the live endpoint but a path it does not serve yet is reported
@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i > -1 ? process.argv[i + 1] : fallback; };
-const BASE = arg("base", "https://hub.uor.foundation").replace(/\/$/, "");
+const BASE = arg("base", "https://gethologram.ai").replace(/\/$/, "");
 const LOCAL_SPEC = arg("spec", null);
 const MAX_FILE = 2_000_000;
 

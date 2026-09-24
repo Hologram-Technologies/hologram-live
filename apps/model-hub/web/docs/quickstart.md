@@ -12,7 +12,7 @@ Every command on this page runs as written. `hexgrad/Kokoro-82M` is a real model
 ## 1. Find a model
 
 ```bash
-curl -s "https://hub.uor.foundation/api/models?search=kokoro&limit=2"
+curl -s "https://gethologram.ai/api/models?search=kokoro&limit=2"
 ```
 
 ```json
@@ -37,7 +37,7 @@ Truncated to the fields that matter: each row is Hugging Face's list shape plus 
 ## 2. List its files
 
 ```bash
-curl -s https://hub.uor.foundation/api/models/hexgrad/Kokoro-82M/tree/main
+curl -s https://gethologram.ai/api/models/hexgrad/Kokoro-82M/tree/main
 ```
 
 ```json
@@ -53,7 +53,7 @@ curl -s https://hub.uor.foundation/api/models/hexgrad/Kokoro-82M/tree/main
 ## 3. Fetch the file
 
 ```bash
-curl -sL https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/EVAL.md -o EVAL.md
+curl -sL https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/EVAL.md -o EVAL.md
 ```
 
 Without `-L` you see what the hub actually does: a `302` to a source that was up a moment ago. The weights never pass through the hub.
@@ -82,7 +82,7 @@ The hash on the left came from step 2, the index. The bytes came from step 3, a 
 Every tool built on `huggingface_hub` reads from the hub once you set one environment variable. Same commands, same cache.
 
 ```bash
-export HF_ENDPOINT=https://hub.uor.foundation
+export HF_ENDPOINT=https://gethologram.ai
 hf download hexgrad/Kokoro-82M EVAL.md
 ```
 

@@ -1,6 +1,6 @@
 // Probe every public route of the hub endpoint and record what it actually answers.
 // The recording is the evidence behind every example in deploy/openapi.json: no example is invented.
-//   node probe.mjs [--base https://hub.uor.foundation] [--out evidence.json]
+//   node probe.mjs [--base https://gethologram.ai] [--out evidence.json]
 // Read-only. It never sends a token and never asks for weight bytes: file routes are probed with HEAD.
 import { writeFile } from "node:fs/promises";
 
@@ -8,7 +8,7 @@ const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : fallback;
 };
-const BASE = arg("base", "https://hub.uor.foundation").replace(/\/$/, "");
+const BASE = arg("base", "https://gethologram.ai").replace(/\/$/, "");
 const OUT = arg("out", new URL("./evidence.json", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 
 // A model that is in the index today is discovered at run time, so the probe keeps working as the index changes.

@@ -5,6 +5,7 @@
 //
 // HOLOGRAM_API may point at a local hologram-api checkout or a URL (default: its GitHub Pages site).
 
+import { HOST } from "../src/origin.mjs";
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -16,7 +17,7 @@ const AVATARS = join(SITE, "public", "avatars");
 const HF = "https://huggingface.co";
 const API = process.env.HOLOGRAM_API || "https://humuhumu33.github.io/hologram-api";
 // Models whose bytes are stored on a Hologram registry, published as models/<owner>/<name>:<revision>.
-const HUB = process.env.MODEL_HUB_REGISTRY || "hub.uor.foundation";
+const HUB = process.env.MODEL_HUB_REGISTRY || HOST;
 const LIMIT = Number(process.argv[process.argv.indexOf("--limit") + 1]) || 500;
 // The repository whose stars the landing hero shows. Public metadata, one unauthenticated call per build.
 const REPO = process.env.MODEL_HUB_REPO || "Hologram-Technologies/hologram-live";

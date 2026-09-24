@@ -8,7 +8,7 @@ order: 6
 Your code already downloads models through `huggingface_hub`. It reads one variable to decide where from. Set it and nothing else changes: same commands, same cache directory, same file layout.
 
 ```bash
-export HF_ENDPOINT=https://hub.uor.foundation
+export HF_ENDPOINT=https://gethologram.ai
 ```
 
 ## What that reaches
@@ -18,7 +18,7 @@ export HF_ENDPOINT=https://hub.uor.foundation
 | `hf` CLI, `huggingface_hub` (`hf_hub_download`, `snapshot_download`, `HfApi`) | `HF_ENDPOINT` | 1.x and 0.36 |
 | `transformers`, `diffusers`, `sentence-transformers` (`from_pretrained`) | `HF_ENDPOINT` | metadata and download path |
 | vLLM, SGLang, TGI, KServe `hf://` | `HF_ENDPOINT` | same client path; a full serving run has not been recorded |
-| llama.cpp `-hf`, `llama-server -hf` | `MODEL_ENDPOINT=https://hub.uor.foundation/` | build 11028 |
+| llama.cpp `-hf`, `llama-server -hf` | `MODEL_ENDPOINT=https://gethologram.ai/` | build 11028 |
 | `transformers.js`, `@huggingface/hub` in a browser | the URL, cross-origin | every read route sends `Access-Control-Allow-Origin: *` |
 
 `docker model pull hf.co/…`, LM Studio and Jan hardcode huggingface.co and cannot be pointed here.
@@ -26,7 +26,7 @@ export HF_ENDPOINT=https://hub.uor.foundation
 ## Download a model
 
 ```bash
-export HF_ENDPOINT=https://hub.uor.foundation
+export HF_ENDPOINT=https://gethologram.ai
 hf download hexgrad/Kokoro-82M
 ```
 
@@ -34,7 +34,7 @@ Or from Python:
 
 ```python
 import os
-os.environ["HF_ENDPOINT"] = "https://hub.uor.foundation"
+os.environ["HF_ENDPOINT"] = "https://gethologram.ai"
 
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 
@@ -56,7 +56,7 @@ local = snapshot_download("hexgrad/Kokoro-82M")
 
 ```python
 import os
-os.environ["HF_ENDPOINT"] = "https://hub.uor.foundation"
+os.environ["HF_ENDPOINT"] = "https://gethologram.ai"
 
 from transformers import AutoConfig, AutoTokenizer
 config = AutoConfig.from_pretrained("Qwen/Qwen3-0.6B")
@@ -70,7 +70,7 @@ print(config.model_type, tokenizer("hub")["input_ids"])
 ## llama.cpp
 
 ```bash
-MODEL_ENDPOINT=https://hub.uor.foundation/ llama-server -hf bartowski/MiniCPM5-2B-GGUF:IQ2_M
+MODEL_ENDPOINT=https://gethologram.ai/ llama-server -hf bartowski/MiniCPM5-2B-GGUF:IQ2_M
 ```
 
 The GGUF lands in the shared Hugging Face cache layout and loads.
@@ -81,7 +81,7 @@ The GGUF lands in the shared Hugging Face cache layout and loads.
 
 ```bash
 cd "$(hf download hexgrad/Kokoro-82M)"
-curl -s https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | sha256sum -c
+curl -s https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | sha256sum -c
 ```
 
 `hf download` prints the snapshot directory it filled, so the first line lands you in it.
@@ -91,7 +91,7 @@ curl -s https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | 
 The list route is Hugging Face's, with the same filters, plus a `hologram` block per row. It answers in a few hundred bytes, not a catalogue.
 
 ```bash
-curl -s "https://hub.uor.foundation/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&sort=downloads&limit=5"
+curl -s "https://gethologram.ai/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&sort=downloads&limit=5"
 ```
 
 | Parameter | Meaning |

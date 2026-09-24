@@ -1,6 +1,6 @@
 name: model-hub-uptime
 
-# Probes hub.uor.foundation from outside its host. One open issue per outage: opened on the first failure,
+# Probes the hub (env HUB below) from outside its host. One open issue per outage: opened on the first failure,
 # commented on while it lasts, closed on recovery.
 
 on:
@@ -19,6 +19,8 @@ concurrency:
 jobs:
   probe:
     runs-on: ubuntu-24.04
+    env:
+      HUB: https://gethologram.ai
     steps:
       - name: Probe site and registry
         id: probe
@@ -30,22 +32,22 @@ jobs:
             echo "$1 $code"
             [ "$code" = 200 ] || fail="$fail $1=$code"
           }
-          check site https://hub.uor.foundation/
-          check browse https://hub.uor.foundation/models/
-          check model-page https://hub.uor.foundation/models/hexgrad/Kokoro-82M/
-          check registry https://hub.uor.foundation/v2/
-          check index-tags https://hub.uor.foundation/v2/model-hub/index/tags/list
+          check site $HUB/
+          check browse $HUB/models/
+          check model-page $HUB/models/hexgrad/Kokoro-82M/
+          check registry $HUB/v2/
+          check index-tags $HUB/v2/model-hub/index/tags/list
           grep -q '"tags":\[' /tmp/body || fail="$fail index-tags=empty"
           # A tag that lists is not a tag that pulls: ask for the newest one's
           # manifest, as a client would, and head one of the blobs it names.
           tag=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' /tmp/body | tail -1)
           if [ -n "$tag" ]; then
-            code=$(curl -s -o /tmp/manifest -w "%{http_code}" --max-time 20 -H 'Accept: application/vnd.oci.image.manifest.v1+json' "https://hub.uor.foundation/v2/model-hub/index/manifests/$tag" || echo 000)
+            code=$(curl -s -o /tmp/manifest -w "%{http_code}" --max-time 20 -H 'Accept: application/vnd.oci.image.manifest.v1+json' "$HUB/v2/model-hub/index/manifests/$tag" || echo 000)
             echo "index-manifest $code"
             [ "$code" = 200 ] || fail="$fail index-manifest=$code"
             digest=$(grep -o '"digest":"[^"]*"' /tmp/manifest | head -1 | cut -d'"' -f4)
             if [ -n "$digest" ]; then
-              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 -I "https://hub.uor.foundation/v2/model-hub/index/blobs/$digest" || echo 000)
+              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 -I "$HUB/v2/model-hub/index/blobs/$digest" || echo 000)
               echo "index-blob $code"
               [ "$code" = 200 ] || fail="$fail index-blob=$code"
             fi
@@ -59,7 +61,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FAILURES: ${{ steps.probe.outputs.failures }}
         run: |
-          title="Model Hub outage: hub.uor.foundation"
+          title="Model Hub outage: ${HUB#https://}"
           open=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           if [ -n "$FAILURES" ]; then

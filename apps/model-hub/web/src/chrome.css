@@ -133,16 +133,14 @@ ul { list-style: none; margin: 0; padding: 0; }
 .panel { background: var(--hh-surface); border-radius: var(--radius-lg); padding: var(--hh-pad); }
 
 /* ---- the lead: what a section page says first.
-   One row above the columns on every catalogue page — Models, Registry, Spaces — in the same order: the
-   section's name, how many of its things are listed, the address they are read from with a dot for whether
-   it answered, and at the end of the row one line of provenance saying where those things came from. Three
-   pages, one row, so crossing between them moves nothing. Built pages write it in build.mjs; the pages that
-   ship as their own files write the same markup, and qa/menu.mjs holds them to it. */
+   One row above the columns on every catalogue page — Models, Registry, Spaces — in the same order and
+   nothing else: the section's name, how many of its things are listed, and the address they are read from
+   with a dot for whether it answered. Three pages, one row, so crossing between them moves nothing. Built
+   pages write it in build.mjs; the pages that ship as their own files write the same markup, and
+   qa/menu.mjs holds all three to it. */
 .lead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-8) 0 var(--space-5); }
 .lead h1 { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.2; }
-.lead .prov { margin-left: auto; font-size: var(--text-sm); color: var(--hh-text-faint); }
-/* The address. A chip the height of the count beside it, in the mono the address is written in. On the Models
-   page it is the index control, which opens the day list; there its dot is drawn by .status. */
+/* The address. A chip the height of the count beside it, in the mono the address is written in. */
 .endpoint { display: inline-flex; align-items: center; gap: var(--space-2); height: var(--hh-control); padding: 0 var(--space-3); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim); white-space: nowrap; }
 .dot { width: var(--space-2); height: var(--space-2); border-radius: 50%; background: var(--hh-text-faint); flex: none; }
 .dot.ok { background: var(--hh-ok); }
@@ -412,12 +410,15 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
   background: linear-gradient(color-mix(in srgb, var(--background) var(--hh-veil), transparent), color-mix(in srgb, var(--background) var(--hh-veil), transparent)), var(--hh-wallpaper) center / cover no-repeat, var(--background);
 }
 :root[data-theme="immersive"] .panel,
-:root[data-theme="immersive"] .top,
 :root[data-theme="immersive"] .menu,
 :root[data-theme="immersive"] .sort [role="listbox"],
 :root[data-theme="immersive"] .sheet-footer { -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
+/* Over a photograph the header draws no plate, on every page, as the landing has always done: the row sits
+   on the picture and its words take a shadow instead, which costs the picture nothing. On the pages that
+   scroll, the veil above the row is what keeps content from colliding with it. */
+:root[data-theme="immersive"] .top { background: none; }
+:root[data-theme="immersive"] .top .brand, :root[data-theme="immersive"] .top-end, :root[data-theme="immersive"] .top-nav { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
 @media (max-width: 960px) {
-  :root[data-theme="immersive"] .top.menu-open { -webkit-backdrop-filter: none; backdrop-filter: none; }
   :root[data-theme="immersive"] .top-menu { background: color-mix(in srgb, var(--background) 78%, transparent); -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
 }
 :root[data-theme="immersive"] .veil {

@@ -515,23 +515,18 @@ const rail = createRail({
   data = await (await fetch("data/images.json")).json();
   $("host").textContent = location.host + "/v2/";
 
-  // Ours are read now, not from yesterday's file, and they lead the list.
-  const live = (await reg.base()) ? await liveRows() : [];
-  $("dot").className = "dot " + (live.length ? "ok" : "bad");
-  if (live.length) {
-    data.images = [...live, ...data.images.filter((r) => !r.here)];
-    data.facets.registry = { ...data.facets.registry, Hologram: live.length };
-    data.facets.kind = { ...data.facets.kind, Artifact: (data.facets.kind.Artifact || 0) + live.length };
-    data.facets.marks = { ...data.facets.marks, "Addressed here": live.length };
-    data.facets.publisher = { ...data.facets.publisher };
-    for (const r of live) data.facets.publisher[r.publisher] = (data.facets.publisher[r.publisher] || 0) + 1;
-    data.totals.here = live.length;
-    probe(live[0] && live[0].repo);
-  }
-  $("prov").textContent = `${data.totals.here} here, read live · ${data.totals.elsewhere} indexed elsewhere`;
+  // First paint waits on one file and nothing else.
+  //
+  // Every row this page shows is in the index it ships with, and the rail's counts are precomputed in it, so
+  // the page can be on screen the moment that file is parsed. Reading our own registry takes six more round
+  // trips — /v2/, the catalogue, a tag list per repository — and this used to wait for all of them before it
+  // drew anything, which is why the page arrived late while the Models page, whose cards are written into the
+  // HTML by the build, did not. Those reads now happen with the page already up, and fold their rows in when
+  // they land: the count and the Hologram chip go up, and the dot beside the address stops being grey.
   $("sources").textContent = "Sources: " + Object.keys(data.sources).join(", ") + ".";
   rail.render();
   render();
+
   $("q").addEventListener("input", () => { shown = PAGE; render(); });
   $("sheet-close").addEventListener("click", closeSheet);
   $("scrim").addEventListener("click", closeSheet);
@@ -543,4 +538,19 @@ const rail = createRail({
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
   $("sort").addEventListener("change", () => { shown = PAGE; render(); });
   $("more").addEventListener("click", () => { shown += PAGE; render(); });
+
+  // ---- our own rows, read live, and they lead the list once they are here
+  const live = (await reg.base()) ? await liveRows() : [];
+  $("dot").className = "dot " + (live.length ? "ok" : "bad");
+  if (!live.length) return;
+  data.images = [...live, ...data.images.filter((r) => !r.here)];
+  data.facets.registry = { ...data.facets.registry, Hologram: live.length };
+  data.facets.kind = { ...data.facets.kind, Artifact: (data.facets.kind.Artifact || 0) + live.length };
+  data.facets.marks = { ...data.facets.marks, "Addressed here": live.length };
+  data.facets.publisher = { ...data.facets.publisher };
+  for (const r of live) data.facets.publisher[r.publisher] = (data.facets.publisher[r.publisher] || 0) + 1;
+  data.totals.here = live.length;
+  rail.render();
+  render();
+  probe(live[0] && live[0].repo);
 })();

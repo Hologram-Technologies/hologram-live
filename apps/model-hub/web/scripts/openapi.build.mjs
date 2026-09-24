@@ -688,6 +688,44 @@ function document(server, evidence) {
       },
       ...probe(`/v2/${evidence.sample.model.toLowerCase()}/manifests/latest`, { headers: { accept: "application/vnd.oci.image.manifest.v1+json" }, contentType: "application/vnd.oci.image.manifest.v1+json" }),
     },
+    put: {
+      tags: ["Registry"],
+      operationId: "putManifest",
+      summary: "Push a manifest, by tag or by digest (OCI push)",
+      description: [
+        "Every layer and the config it names must already be in this repository, or the push is refused rather than",
+        "leaving a tag pointing at bytes that are not there. A manifest carrying a `subject` becomes a referrer of",
+        "that digest, and the answer says so in `OCI-Subject`.",
+        "",
+        "Writes need a credential: `docker login hub.uor.foundation`. Reads never do.",
+      ].join("\n"),
+      parameters: [OWNER, NAME, { name: "reference", in: "path", required: true, description: "A tag, or the manifest's own digest.", schema: { type: "string" }, example: "v1" }],
+      requestBody: { required: true, content: { "application/vnd.oci.image.manifest.v1+json": { schema: ref("OciManifest") }, "application/vnd.oci.image.index.v1+json": { schema: ref("OciManifest") } } },
+      responses: {
+        201: { description: "Stored.", headers: { "docker-content-digest": { description: "The digest of the manifest.", schema: { type: "string" } }, "oci-subject": { description: "Present when the manifest carries a `subject`.", schema: { type: "string" } } } },
+        400: ociErrorResponse(400, "The manifest is not valid, or its digest does not match the reference.", { errors: [{ code: "MANIFEST_INVALID", message: "manifest invalid" }] }),
+        404: ociErrorResponse(404, "It names a layer this repository does not hold.", { errors: [{ code: "MANIFEST_BLOB_UNKNOWN", message: "blob unknown to registry" }] }),
+        ...REGISTRY_WRITE,
+      },
+    },
+    delete: {
+      tags: ["Registry"],
+      operationId: "deleteManifest",
+      summary: "Delete a manifest, or drop a tag (OCI content management)",
+      description: [
+        "By digest, the manifest goes and every tag pointing at it goes with it. By tag, only the tag goes. The bytes",
+        "are swept by the next garbage collection, so a pull already in flight finishes.",
+        "",
+        "Writes need a credential: `docker login hub.uor.foundation`. Reads never do.",
+      ].join("\n"),
+      parameters: [OWNER, NAME, { name: "reference", in: "path", required: true, description: "A tag, or a manifest digest.", schema: { type: "string" }, example: "sha256:…" }],
+      responses: {
+        202: { description: "Gone." },
+        404: ociErrorResponse(404, "No such manifest.", { errors: [{ code: "MANIFEST_UNKNOWN", message: "manifest unknown" }] }),
+        405: { description: "Deletes are disabled on this deployment (`storage.delete.enabled`).", content: { "application/json": { schema: ref("OciError") } } },
+        ...REGISTRY_WRITE,
+      },
+    },
   };
   spec.paths["/v2/{owner}/{name}/blobs/{digest}"] = {
     get: {
@@ -700,6 +738,131 @@ function document(server, evidence) {
         200: { description: "A small layer, in full.", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
         307: { description: "A weight layer: follow `Location`, then verify the digest.", headers: { location: { description: "Where the bytes are.", schema: { type: "string", format: "uri" } } } },
         404: ociErrorResponse(404, "No such blob in this model at the indexed revision.", { errors: [{ code: "BLOB_UNKNOWN", message: "No layer with that digest in this model." }] }),
+      },
+    },
+    delete: {
+      tags: ["Registry"],
+      operationId: "deleteBlob",
+      summary: "Unlink a blob from a repository (OCI content management)",
+      description: [
+        "Removes this repository's link to the blob. A pull already in flight finishes, and the bytes go at the next",
+        "garbage collection; another repository holding the same blob keeps it.",
+        "",
+        "Writes need a credential: `docker login hub.uor.foundation`. Reads never do.",
+      ].join("\n"),
+      parameters: [OWNER, NAME, { name: "digest", in: "path", required: true, description: "The blob's digest.", schema: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" } }],
+      responses: {
+        202: { description: "Unlinked." },
+        404: ociErrorResponse(404, "Not linked in this repository.", { errors: [{ code: "BLOB_UNKNOWN", message: "blob unknown to registry" }] }),
+        ...REGISTRY_WRITE,
+      },
+    },
+  };
+
+  // ---- the registry's write, management and discovery routes.
+  // Reads above are answered for models from the index; these are the registry's own, under any name a client
+  // pushed to. They are what makes /v2/ a registry rather than a read mirror, and a document that omits them tells
+  // every client and agent that this endpoint is read-only.
+  const UPLOAD_OWNER = { ...OWNER, description: "The owning organisation or user.", example: "you" };
+  const UPLOAD_NAME = { ...NAME, description: "The repository name.", example: "app" };
+  const UPLOAD_ID = { name: "uuid", in: "path", required: true, description: "The upload session, from the `Location` of the request that opened it.", schema: { type: "string" }, example: "9f1c…" };
+  const registryAuth = "Writes need a credential: `docker login hub.uor.foundation`. Reads never do.";
+
+  spec.paths["/v2/{owner}/{name}/blobs/uploads/"] = {
+    post: {
+      tags: ["Registry"],
+      operationId: "startBlobUpload",
+      summary: "Start a blob upload (OCI push)",
+      description: [
+        "Opens an upload session and answers `202` with its `Location`. Two shortcuts the specification allows:",
+        "`?digest=` with the whole blob as the body finishes in one request (`201`), and `?mount=<digest>&from=<repo>`",
+        "takes a blob that already exists in another repository without sending its bytes again.",
+        "",
+        registryAuth,
+      ].join("\n"),
+      parameters: [UPLOAD_OWNER, UPLOAD_NAME],
+      responses: {
+        202: { description: "The session is open; `Location` names it.", headers: { location: { description: "Where to append to, and finish.", schema: { type: "string" } } } },
+        201: { description: "A monolithic upload or a cross-repository mount finished immediately.", headers: { "docker-content-digest": { description: "The blob's digest.", schema: { type: "string" } } } },
+        400: ociErrorResponse(400, "Malformed name, digest or mount.", { errors: [{ code: "NAME_INVALID", message: "invalid repository name" }] }),
+        ...REGISTRY_WRITE,
+      },
+    },
+  };
+  spec.paths["/v2/{owner}/{name}/blobs/uploads/{uuid}"] = {
+    get: {
+      tags: ["Registry"],
+      operationId: "getBlobUploadStatus",
+      summary: "Where an upload has got to",
+      description: "`Range` names the bytes the registry holds, so an interrupted push can resume instead of starting again.",
+      parameters: [UPLOAD_OWNER, UPLOAD_NAME, UPLOAD_ID],
+      responses: {
+        204: { description: "The session exists.", headers: { range: { description: "`0-<last byte received>`.", schema: { type: "string" } } } },
+        404: ociErrorResponse(404, "No such session.", { errors: [{ code: "BLOB_UPLOAD_UNKNOWN", message: "no such upload" }] }),
+      },
+    },
+    patch: {
+      tags: ["Registry"],
+      operationId: "appendBlobUpload",
+      summary: "Append bytes to an upload",
+      description: [
+        "Chunked push. A chunk must start where the last one ended: an offset that has gone stale, which is what two",
+        "clients racing one session produce, is refused with `416 RANGE_INVALID` rather than silently accepted.",
+        "",
+        registryAuth,
+      ].join("\n"),
+      parameters: [UPLOAD_OWNER, UPLOAD_NAME, UPLOAD_ID],
+      requestBody: { required: true, content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      responses: {
+        202: { description: "Accepted.", headers: { range: { description: "The bytes now held.", schema: { type: "string" } }, location: { description: "Where to send the next chunk.", schema: { type: "string" } } } },
+        416: ociErrorResponse(416, "The chunk does not start where the last one ended.", { errors: [{ code: "RANGE_INVALID", message: "invalid content range" }] }),
+        ...REGISTRY_WRITE,
+      },
+    },
+    put: {
+      tags: ["Registry"],
+      operationId: "finishBlobUpload",
+      summary: "Finish an upload",
+      description: [
+        "`?digest=` names the whole blob. The bytes are hashed and checked against it before anything becomes",
+        "reachable, so a truncated or corrupted upload can never become a layer.",
+        "",
+        registryAuth,
+      ].join("\n"),
+      parameters: [UPLOAD_OWNER, UPLOAD_NAME, UPLOAD_ID, { name: "digest", in: "query", required: true, description: "The digest of the whole blob.", schema: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" } }],
+      responses: {
+        201: { description: "The blob exists.", headers: { "docker-content-digest": { description: "The digest it was stored under.", schema: { type: "string" } } } },
+        400: ociErrorResponse(400, "The bytes do not hash to the digest given.", { errors: [{ code: "DIGEST_INVALID", message: "provided digest did not match uploaded content" }] }),
+        ...REGISTRY_WRITE,
+      },
+    },
+    delete: {
+      tags: ["Registry"],
+      operationId: "cancelBlobUpload",
+      summary: "Cancel an upload",
+      description: "Discards the session and its staged bytes. " + registryAuth,
+      parameters: [UPLOAD_OWNER, UPLOAD_NAME, UPLOAD_ID],
+      responses: { 204: { description: "Cancelled." }, 404: ociErrorResponse(404, "No such session.", { errors: [{ code: "BLOB_UPLOAD_UNKNOWN", message: "no such upload" }] }), ...REGISTRY_WRITE },
+    },
+  };
+  spec.paths["/v2/{owner}/{name}/referrers/{digest}"] = {
+    get: {
+      tags: ["Registry"],
+      operationId: "listReferrers",
+      summary: "What is attached to a digest: signatures, SBOMs, attestations (OCI content discovery)",
+      description: [
+        "An OCI index of every manifest whose `subject` is this digest — a `cosign` signature, an SBOM, a provenance",
+        "attestation. Empty when there are none, which is a `200` and not a `404`. `?artifactType=` narrows it, and",
+        "the answer says so in `OCI-Filters-Applied`.",
+      ].join("\n"),
+      parameters: [UPLOAD_OWNER, UPLOAD_NAME, { name: "digest", in: "path", required: true, description: "The subject's digest.", schema: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" } }, { name: "artifactType", in: "query", required: false, description: "Return only referrers of this artifact type.", schema: { type: "string" } }],
+      responses: {
+        200: {
+          description: "An OCI image index, possibly with no manifests.",
+          headers: { "oci-filters-applied": { description: "Names each filter the registry actually applied.", schema: { type: "string" } } },
+          content: { "application/vnd.oci.image.index.v1+json": { schema: ref("OciManifest") } },
+        },
+        400: ociErrorResponse(400, "Malformed digest.", { errors: [{ code: "DIGEST_INVALID", message: "invalid digest" }] }),
       },
     },
   };

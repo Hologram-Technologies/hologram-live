@@ -213,34 +213,40 @@ ul { list-style: none; margin: 0; padding: 0; }
 .menu-button .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
 .menu-button .i + .i, .top.menu-open .menu-button .i:first-child { display: none; }
 .top.menu-open .menu-button .i + .i { display: block; }
-/* Folded. The group becomes a sheet hung from the header, the width of the header, opened by the button and
-   closed by it, by Escape, by a tap anywhere else, or by the window growing (chrome.js). Inside it the
-   sections are a list a thumb can hit, and the theme switch and sign-in wait on a row of their own at the
-   foot. Their popovers open in the sheet rather than beside their controls: a popover hung off a control at
-   the left edge of a phone has nowhere to go but off the screen. */
+/* Folded. The group becomes the screen: a panel over the whole viewport, the brand and the close button
+   still in their corners above it, the sections as a column of display type a thumb cannot miss, and the
+   theme switch and sign-in on a row at the foot. The button opens it; it, Escape, a tap on a section, or
+   the window growing (chrome.js) closes it. The two controls' popovers unfold inside the panel rather than
+   beside their controls: a popover hung off a control at the left edge of a phone has nowhere to go. */
+@keyframes sheet-in { from { opacity: 0; transform: translateY(var(--space-3)); } }
 @media (max-width: 960px) {
   .menu-button { display: grid; }
   .top-menu {
-    display: none; position: absolute; left: 0; right: 0; top: calc(100% + var(--space-3)); z-index: 40;
-    padding: var(--space-2);
-    background: var(--hh-popover); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-lg);
-    box-shadow: 0 var(--space-4) var(--space-12) var(--hh-shadow);
-    font-family: var(--font-sans); color: var(--hh-text);
-    transform-origin: top right;
+    display: none; position: fixed; inset: 0; z-index: 40;
+    grid-template-rows: minmax(0, 1fr) auto; align-content: start;
+    padding: calc(var(--space-6) + var(--space-16) + var(--space-8)) var(--hh-gutter) var(--space-8);
+    overflow-y: auto; overscroll-behavior: contain;
+    background: var(--background); font-family: var(--font-sans); color: var(--hh-text);
   }
-  .top.menu-open .top-menu { display: grid; animation: menu-in 160ms cubic-bezier(.2, .8, .2, 1); }
-  .top-nav { display: grid; gap: var(--space-1); font-size: var(--text-base); }
-  .top-nav a { display: flex; justify-content: space-between; min-height: var(--hh-field); padding: 0 var(--space-3); border-radius: var(--radius-md); color: var(--hh-text); transition: background var(--hh-ease); }
-  .top-nav a:hover, .top-nav a:focus-visible { background: var(--hh-fill); outline: 0; }
-  .top-nav .i { color: var(--hh-text-dim); }
+  .top.menu-open .top-menu { display: grid; animation: sheet-in 220ms cubic-bezier(.2, .8, .2, 1); }
+  /* The header's own plate goes under the panel; its two corners stay on top of it. */
+  .top.menu-open .brand, .top.menu-open .menu-button { position: relative; z-index: 41; }
+  /* One thing scrolls while it is open, and it is the panel. */
+  :root:has(.top.menu-open) body { overflow: hidden; }
+  .top-nav { display: grid; align-content: start; gap: 0; font-family: var(--font-display); font-size: var(--text-3xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.1; }
+  .top-nav a { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-5) 0; border-bottom: 1px solid var(--hh-line); color: var(--hh-text); transition: color var(--hh-ease), opacity var(--hh-ease); }
+  .top-nav a:hover, .top-nav a:focus-visible { outline: 0; opacity: .7; }
+  .top-nav .i { width: var(--space-6); height: var(--space-6); color: var(--hh-text-dim); stroke-width: 1.5; }
   .top-nav a[aria-current], .top-nav a[aria-current] .i { color: var(--hh-accent-legible); }
-  .top-tools { flex-wrap: wrap; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-1); border-top: 1px solid var(--hh-line); }
-  /* The sheet has the room the row did not: the sign-in reads as a word again. */
+  .top-tools { flex-wrap: wrap; justify-content: space-between; gap: var(--space-3); padding-top: var(--space-8); }
+  /* The panel has the room the row did not: the sign-in reads as a word again, at the size of the page's buttons. */
   .top-menu #sign-in-button .label { display: inline; }
-  .top-menu #sign-in-button { width: auto; padding: 0 var(--space-4); border-radius: var(--radius-lg); }
-  /* The two controls' popovers unfold inside the sheet, on a full row under the controls. */
+  .top-menu #sign-in-button { width: auto; height: var(--hh-field); padding: 0 var(--space-5); border-radius: var(--radius-lg); font-size: var(--text-base); }
+  .top-menu .appearance > button, .top-menu .account-mark { width: var(--hh-field); height: var(--hh-field); }
+  /* The two controls' popovers unfold inside the panel, on a full row under the controls. */
   .top-menu .appearance, .top-menu .account { display: contents; }
-  .top-menu .menu { position: static; order: 3; flex-basis: 100%; width: auto; margin-top: var(--space-1); padding: var(--space-3) 0 0; background: none; border: 0; border-top: 1px solid var(--hh-line); border-radius: 0; box-shadow: none; animation: none; }
+  .top-menu .menu { position: static; order: 3; flex-basis: 100%; width: auto; margin-top: var(--space-2); padding: var(--space-4) 0 0; background: none; border: 0; border-top: 1px solid var(--hh-line); border-radius: 0; box-shadow: none; animation: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
 }
 
 /* ---- theme switch */
@@ -410,6 +416,10 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
 :root[data-theme="immersive"] .menu,
 :root[data-theme="immersive"] .sort [role="listbox"],
 :root[data-theme="immersive"] .sheet-footer { -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
+@media (max-width: 960px) {
+  :root[data-theme="immersive"] .top.menu-open { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  :root[data-theme="immersive"] .top-menu { background: color-mix(in srgb, var(--background) 78%, transparent); -webkit-backdrop-filter: var(--hh-glass); backdrop-filter: var(--hh-glass); }
+}
 :root[data-theme="immersive"] .veil {
   background: color-mix(in srgb, var(--background) 35%, transparent);
   -webkit-backdrop-filter: blur(var(--space-4)); backdrop-filter: blur(var(--space-4));

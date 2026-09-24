@@ -30,6 +30,8 @@ function foldingMenu() {
     if (show && e.detail === 0) sheet.querySelector("a, button")?.focus();
   });
   document.addEventListener("click", (e) => { if (isOpen() && !e.target.closest(".top-menu, #menu-button")) open(false); });
+  // A section chosen on the page you are already on: the panel closes rather than sitting over an unchanged page.
+  sheet.addEventListener("click", (e) => { if (e.target.closest(".top-nav a")) open(false); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen()) { open(false); button.focus(); } });
   const wide = matchMedia("(min-width: 961px)");
   wide.addEventListener("change", () => { if (wide.matches) open(false); });

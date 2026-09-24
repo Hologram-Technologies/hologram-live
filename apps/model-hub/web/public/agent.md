@@ -14,7 +14,9 @@ diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT in
 ## Or call it directly. Three requests, no key
 
     GET /api/models?search=qwen&limit=5
-        Find a model. A few hundred bytes, not a catalogue.
+        Find a model. A few hundred bytes, not a catalogue. This lists everything the hub holds, including
+        models that have fallen off the trending list; those come back as thin rows carrying the name and
+        `hologram.listed: false`, because their browse facts were never published with the bytes.
     GET /api/models/{owner}/{name}/tree/main
         Its files. Each one carries `oid`: the SHA-256 the bytes must have.
         Read that field carefully if you already know this dialect. Hugging Face puts a 40-character git

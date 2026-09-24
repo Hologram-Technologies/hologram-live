@@ -290,6 +290,10 @@
       "type": "integer",
       "description": "Parameter count, when it is known."
      },
+     "listed": {
+      "type": "boolean",
+      "description": "Absent or true on a model the current browse list carries, which is a row with the full facts. `false` on a model the browse list has forgotten: the hub still holds its bytes and serves every dialect for it, but the task, parameter count and download figures were never published with the object, so they are absent rather than zero."
+     },
      "context": {
       "type": "integer",
       "description": "Context length, when it is known."
@@ -2004,17 +2008,17 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-23T22:02:06.716Z",
+           "checked": "2026-09-23T23:47:07.147Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-23T22:02:08.215Z",
+           "checked": "2026-09-23T23:47:08.149Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-23T22:02:08.291Z",
+           "checked": "2026-09-23T23:47:08.232Z",
            "reason": "verified"
           }
          },
@@ -2063,7 +2067,7 @@
     ],
     "operationId": "listModels",
     "summary": "Search the index",
-    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**This route lists the browse set, not the whole index.** `X-Total-Count` is the size of what is\nsearchable, and the catalog object the descriptor points at addresses more models than that — around 575\nagainst 416 at the time of writing. A model missing from these results may still be fully served by\n`getModel`, `listModelFiles`, `resolveFile`, the registry and the IPFS pins; `BAAI/bge-base-en-v1.5` is one\nsuch today. If a name matters to you, ask for it directly rather than concluding from a search that the\nhub does not have it.\n\nQuery parameters are checked rather than coerced: a `limit` outside 1–500 or one that is not a whole number,\nand a `sort` outside the enum, each refuse with `400 BadParameter` and a sentence saying what is allowed.",
+    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**This route lists everything the hub holds**, not only what is trending today. Rows for models on the\ncurrent browse list carry the full facts — task, parameters, library, downloads, licence. Models the browse\nlist has forgotten, but whose bytes this hub has published and still serves, appear as thin rows: the name,\nthe index address, and `hologram.listed: false`. The facts a browse row carries were never published with\nthe object, so a thin row says so rather than reporting zeros as if they were measurements. Filter on\n`hologram.listed` if you want one kind or the other.\n\nQuery parameters are checked rather than coerced: a `limit` outside 1–500 or one that is not a whole number,\nand a `sort` outside the enum, each refuse with `400 BadParameter` and a sentence saying what is allowed.",
     "parameters": [
      {
       "name": "search",
@@ -2184,9 +2188,9 @@
           "private": false,
           "gated": false,
           "disabled": false,
-          "likes": 6111,
+          "likes": 6112,
           "downloads": 251354399,
-          "trendingScore": 423,
+          "trendingScore": 422,
           "createdAt": "2022-03-02T00:00:00.000Z",
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",

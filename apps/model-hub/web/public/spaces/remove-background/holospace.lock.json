@@ -1,17 +1,17 @@
 {
   "format": "hologram.space.lock/v1",
   "id": "remove-background",
-  "root": "sha256:edb9969bfa37e8596e649da046d21a623f9c4166c6463bf8f0bdc26cbeaafd2a",
+  "root": "sha256:67f360b2422fe0b87648450c34b8354c661a619fdc7585d64cd005ea641651bf",
   "manifest": "manifest.json",
   "ipfs": {
     "recipe": "unixfs-v1-2025",
-    "root": "bafybeihyfrsvi4nldco76z36vjf4pwrf36pjtkakeeqf53lfhjxhxgsg5i"
+    "root": "bafybeibbuewupr242gdurq7tpbtl6dmbqk4pytux2a6zhy4woomwragwt4"
   },
   "files": {
     "assets/index-17_Va4sS.js": {
-      "sha256": "ae058db84f4d4b7acc169b249d5a16dd6e15835d04f2e57fe022e6b2d03028b7",
+      "sha256": "ce9c3830e0ff19c8eff7246d21c94bc557d48e2198b15fa85533b253833033b6",
       "bytes": 700431,
-      "cid": "bafkreifoawg3qt2njn5myfu3esovufw5nykygxie6lsx7ybc42znambiw4",
+      "cid": "bafkreigotq4dbyh7dheo75zenuq4ss6fk7ki4imywfp2qvjtwjjygmbtwy",
       "mediaType": "text/javascript"
     },
     "assets/index-SojaDS6z.css": {
@@ -33,9 +33,9 @@
       "mediaType": "image/jpeg"
     },
     "holospace.json": {
-      "sha256": "5b381d01d5fbe25ac84b92981da722a73c329899ad4f52282f7fe7266ab663c8",
-      "bytes": 2723,
-      "cid": "bafkreic3haoqdvp34jnmqs4stao2oivhhqzjrgnnj5jcql3744tgvntdza",
+      "sha256": "b154159fc6c8d124bbba49bec2100639136f0add5e242063b113ec5bc219e705",
+      "bytes": 2731,
+      "cid": "bafkreifrkqkz7rwi2eslxosjx3bbabrzcnxqvxk6eqqghmit5rn4egphau",
       "mediaType": "application/json"
     },
     "icon.svg": {

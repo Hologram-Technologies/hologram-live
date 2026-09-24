@@ -6,9 +6,9 @@
       "name": "Kokoro TTS",
       "task": "Speech",
       "tagline": "Type a sentence, hear it. 82M parameters, on your GPU.",
-      "root": "sha256:7c68ab3dd7786465c17decb2a77901b4ac871d0f22855d3b58c0673e38849faa",
-      "ipfs": "bafybeibqfcbndvgrhgkjewrx57hthl6dyuz4nuuuokmb3egn5fpbj65omi",
-      "bytes": 25539547,
+      "root": "sha256:54e70cab2e30589311931c5dad0403b79c765586a904c841ea7ed4b9c193c420",
+      "ipfs": "bafybeihcdvqddpn6egmmnslcysvc7wy53mnfig732xsjfznowm5wrjdq3u",
+      "bytes": 25539555,
       "files": 12,
       "models": [
         "onnx-community/Kokoro-82M-v1.0-ONNX"
@@ -30,9 +30,9 @@
       "name": "Remove Background",
       "task": "Image",
       "tagline": "Drop a photo; the subject comes back cut out. RMBG 1.4.",
-      "root": "sha256:edb9969bfa37e8596e649da046d21a623f9c4166c6463bf8f0bdc26cbeaafd2a",
-      "ipfs": "bafybeihyfrsvi4nldco76z36vjf4pwrf36pjtkakeeqf53lfhjxhxgsg5i",
-      "bytes": 38358276,
+      "root": "sha256:67f360b2422fe0b87648450c34b8354c661a619fdc7585d64cd005ea641651bf",
+      "ipfs": "bafybeibbuewupr242gdurq7tpbtl6dmbqk4pytux2a6zhy4woomwragwt4",
+      "bytes": 38358284,
       "files": 12,
       "models": [
         "briaai/RMBG-1.4"
@@ -54,9 +54,9 @@
       "name": "SmolLM Chat",
       "task": "Chat",
       "tagline": "A 360M-parameter assistant. The whole conversation stays on your device.",
-      "root": "sha256:490ed91f493b946757ed43fe19078b58d834b7dcc0b26d7141aaf7ccba14ed22",
-      "ipfs": "bafybeifp2f63dzokecabzdwc7dgeru6aknhlzeevkuljx6my5aj6dxzdzu",
-      "bytes": 23089912,
+      "root": "sha256:211e0746c95158e1d280abbc834f35fba7c717e8167722a8da016e04452551b7",
+      "ipfs": "bafybeidxitrl5yqjaxbmbnkkjwfzzfzyxxqafyem2iicqz44xj7znqg4s4",
+      "bytes": 23089920,
       "files": 12,
       "models": [
         "HuggingFaceTB/SmolLM-360M-Instruct"

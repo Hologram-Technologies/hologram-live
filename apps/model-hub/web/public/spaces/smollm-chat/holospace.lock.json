@@ -1,11 +1,11 @@
 {
   "format": "hologram.space.lock/v1",
   "id": "smollm-chat",
-  "root": "sha256:490ed91f493b946757ed43fe19078b58d834b7dcc0b26d7141aaf7ccba14ed22",
+  "root": "sha256:211e0746c95158e1d280abbc834f35fba7c717e8167722a8da016e04452551b7",
   "manifest": "manifest.json",
   "ipfs": {
     "recipe": "unixfs-v1-2025",
-    "root": "bafybeifp2f63dzokecabzdwc7dgeru6aknhlzeevkuljx6my5aj6dxzdzu"
+    "root": "bafybeidxitrl5yqjaxbmbnkkjwfzzfzyxxqafyem2iicqz44xj7znqg4s4"
   },
   "files": {
     "assets/index-DB1xiIWM.css": {
@@ -33,9 +33,9 @@
       "mediaType": "image/png"
     },
     "holospace.json": {
-      "sha256": "8009431b1c58bb6d7df82989a03972734f43444dd88dd77ec247645897d67fe1",
-      "bytes": 2767,
-      "cid": "bafkreieabfbrwhcyxnwx36bjrgqds4ttj5buitoyrxlx5qshmrmjpvt74e",
+      "sha256": "bec78f69026c15b90e650b3a12355d3bd7d48c0e1e19ccc736941a006a67d650",
+      "bytes": 2775,
+      "cid": "bafkreif6y6hwsatmcw4q4zilhijdkxj327kiydq6dhgmonuudiaguz6wka",
       "mediaType": "application/json"
     },
     "icon.svg": {

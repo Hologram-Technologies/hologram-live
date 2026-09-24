@@ -64,6 +64,7 @@ const SPACES = [
     models: ["briaai/RMBG-1.4"], modelBytes: 176220000,
     page: "assets/index-17_Va4sS.js", prelude: "page",
     ort: "onnxruntime-web-1.17.1", ortIn: "page", ortPath: 'wasmPaths="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/"',
+    ortNoProxy: "env.backends.onnx.wasm.proxy=!0",
     example: "https://images.pexels.com/photos/5965592/pexels-photo-5965592.jpeg?auto=compress&cs=tinysrgb&w=1024",   // Pexels licence: free to use; vendored as example.jpg
     icon: `<rect x="16" y="18" width="32" height="28" rx="4"/><circle cx="27" cy="29" r="4"/><path d="M18 44l10-10 6 6 6-8 8 12"/>`,
   },
@@ -188,6 +189,9 @@ for (const s of SPACES) {
       if (s.workerRef) { const b = js.length; js = js.split(`new URL("${s.workerRef}",import.meta.url)`).join(`new URL("./${s.worker.split("/").pop()}",import.meta.url)`); if (js.length === b) throw new Error(s.id + ": worker URL rewrite did not apply"); }
       if (s.example) { const b = js.length; js = js.split(s.example).join("./example.jpg"); if (js.length === b) throw new Error(s.id + ": example URL rewrite did not apply"); }
       if (s.ortIn === "page") { const b = js.length; js = js.split(s.ortPath).join(`wasmPaths=${ortFrom("./")}`); if (js.length === b) throw new Error(s.id + ": ort path rewrite did not apply (page)"); }
+      // ONNX Runtime's proxy runs its wasm in a blob: worker, whose fetches no service worker sees — inside the OS the
+      // runtime files exist only through the /space/<κ>/ mount, so the wasm must load on the page's own thread.
+      if (s.ortNoProxy) { if (!js.includes(s.ortNoProxy)) throw new Error(s.id + ": ort proxy rewrite did not apply"); js = js.split(s.ortNoProxy).join(s.ortNoProxy.replace(/=!0$/, "=!1")); }
       writeFileSync(dest, js);
     } else if (f === s.worker) {
       let js = readFileSync(join(from, f), "utf8");
@@ -202,7 +206,9 @@ for (const s of SPACES) {
   const config = {
     format: "hologram.space/v1", id: s.id, name: s.name, task: s.task, tagline: s.tagline, entry: "index.html",
     space: { source: s.source, sdk: "static", models: s.models, modelHosts, modelBytes: s.modelBytes, modelFiles: pinned, ort: s.ort },
-    requires: ["webgpu", "opfs"], capabilities: { storage: ["holo-space:" + s.id] },
+    // storage under the Space's OWN identity (the catalog's schema:identifier): its store, not another app's —
+    // the OS grants that without asking; a foreign namespace would rightly raise the Holo Terms card
+    requires: ["webgpu", "opfs"], capabilities: { storage: ["org.hologram.Space." + s.id] },
   };
   const configBytes = Buffer.from(canon(config) + "\n");
   writeFileSync(join(to, "holospace.json"), configBytes);

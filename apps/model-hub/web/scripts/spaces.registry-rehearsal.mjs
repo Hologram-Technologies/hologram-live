@@ -13,10 +13,15 @@ const manifests = new Map();   // repo → Map(ref → { bytes, type, digest })
 const uploads = new Map();     // id → { repo, chunks: [] }
 const sha = (b) => "sha256:" + createHash("sha256").update(b).digest("hex");
 const read = (req) => new Promise((res) => { const c = []; req.on("data", (d) => c.push(d)); req.on("end", () => res(Buffer.concat(c))); });
-const json = (res, code, obj, extra = {}) => { const b = Buffer.from(JSON.stringify(obj)); res.writeHead(code, { "content-type": "application/json", "content-length": b.length, ...extra }); res.end(b); };
+// CORS as FR-R31 asks of the hub: reads from any origin (the OS's service worker resolves blobs cross-origin).
+const CORS = { "access-control-allow-origin": "*", "access-control-expose-headers": "Docker-Content-Digest, Content-Length, Location", "access-control-allow-methods": "GET, HEAD, OPTIONS" };
+// --tamper <sha256:hex>: serve that one blob with its first byte flipped — the resolver must refuse it (G7).
+const TAMPER = process.argv.includes("--tamper") ? process.argv[process.argv.indexOf("--tamper") + 1] : null;
+const json = (res, code, obj, extra = {}) => { const b = Buffer.from(JSON.stringify(obj)); res.writeHead(code, { "content-type": "application/json", "content-length": b.length, ...CORS, ...extra }); res.end(b); };
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x"); const p = u.pathname;
+  if (req.method === "OPTIONS") { res.writeHead(204, { ...CORS, "access-control-allow-headers": "Accept, Range, Content-Type" }); return res.end(); }
   if (p === "/v2/" || p === "/v2") return json(res, 200, {}, { "docker-distribution-api-version": "registry/2.0" });
   if (p === "/v2/_catalog") return json(res, 200, { repositories: [...manifests.keys()].sort() });
   let m;
@@ -36,8 +41,9 @@ http.createServer(async (req, res) => {
     }
   }
   if ((m = p.match(/^\/v2\/(.+)\/blobs\/(sha256:[a-f0-9]{64})$/))) {
-    const b = blobs.get(m[2]); if (!b) { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { "content-type": "application/octet-stream", "content-length": b.length, "docker-content-digest": m[2] }); return res.end(req.method === "HEAD" ? undefined : b);
+    let b = blobs.get(m[2]); if (!b) { res.writeHead(404, CORS); return res.end(); }
+    if (TAMPER && m[2] === TAMPER) { b = Buffer.from(b); b[0] ^= 0xff; }
+    res.writeHead(200, { "content-type": "application/octet-stream", "content-length": b.length, "docker-content-digest": m[2], ...CORS }); return res.end(req.method === "HEAD" ? undefined : b);
   }
   if ((m = p.match(/^\/v2\/(.+)\/manifests\/([^/]+)$/))) {
     const repo = m[1], ref = m[2];
@@ -49,8 +55,8 @@ http.createServer(async (req, res) => {
       manifests.get(repo).set(ref, { bytes, type, digest }); manifests.get(repo).set(digest, { bytes, type, digest });
       res.writeHead(201, { location: `/v2/${repo}/manifests/${digest}`, "docker-content-digest": digest }); return res.end();
     }
-    const e = (manifests.get(repo) || new Map()).get(ref); if (!e) { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { "content-type": e.type, "content-length": e.bytes.length, "docker-content-digest": e.digest }); return res.end(req.method === "HEAD" ? undefined : e.bytes);
+    const e = (manifests.get(repo) || new Map()).get(ref); if (!e) { res.writeHead(404, CORS); return res.end(); }
+    res.writeHead(200, { "content-type": e.type, "content-length": e.bytes.length, "docker-content-digest": e.digest, ...CORS }); return res.end(req.method === "HEAD" ? undefined : e.bytes);
   }
   res.writeHead(404); res.end();
 }).listen(PORT, "127.0.0.1", () => console.log(`rehearsal registry http://127.0.0.1:${PORT}/v2/`));

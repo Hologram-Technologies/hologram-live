@@ -1,11 +1,11 @@
 {
   "format": "hologram.space.lock/v1",
   "id": "kokoro-tts",
-  "root": "sha256:7c68ab3dd7786465c17decb2a77901b4ac871d0f22855d3b58c0673e38849faa",
+  "root": "sha256:54e70cab2e30589311931c5dad0403b79c765586a904c841ea7ed4b9c193c420",
   "manifest": "manifest.json",
   "ipfs": {
     "recipe": "unixfs-v1-2025",
-    "root": "bafybeibqfcbndvgrhgkjewrx57hthl6dyuz4nuuuokmb3egn5fpbj65omi"
+    "root": "bafybeihcdvqddpn6egmmnslcysvc7wy53mnfig732xsjfznowm5wrjdq3u"
   },
   "files": {
     "assets/index-DQNH7Ttg.js": {
@@ -33,9 +33,9 @@
       "mediaType": "image/svg+xml"
     },
     "holospace.json": {
-      "sha256": "78812fc849ea0f24aec9492f4580785636007ab4029a140a6e542dc34bf5aac4",
-      "bytes": 9226,
-      "cid": "bafkreidyqex4qspkb4sk5skjf5cya6cwgyahvnactikau3sufxbux5nkyq",
+      "sha256": "1a335d42732acefe6e49e25ab25f25e68915415e768f2cf38650ce0adca99bd1",
+      "bytes": 9234,
+      "cid": "bafkreia2gnoue4zkz37g4spclkzf6jpgrekucxtwr4wphbsqzyfnzkm32e",
       "mediaType": "application/json"
     },
     "icon.svg": {

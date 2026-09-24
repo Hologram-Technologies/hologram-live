@@ -6,72 +6,71 @@
 <title>Spaces · Hologram Models Hub</title>
 <meta name="description" content="Apps that run entirely in your browser, in their own sealed frame, with every model byte verified.">
 <!--chrome:head-->
+<link rel="stylesheet" href="../lib/catalog.css">
 <style>
-/* Same rule as the Registry page: its own components, the site's palette and header. */
-:root{
-  --ground:var(--hh-ground); --surface:var(--hh-surface); --fill:var(--hh-fill);
-  --line:var(--hh-line); --line2:var(--hh-line-strong);
-  --text:var(--hh-text); --dim:var(--hh-text-dim); --faint:var(--hh-text-faint);
-  --ok:var(--hh-ok); --bad:var(--hh-bad); --mono:var(--font-mono);
-}
-.lead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:30px 0 18px}
-.lead h1{font-size:30px;font-weight:500;letter-spacing:-.02em}
-.endpoint{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border:1px solid var(--line2);
-  border-radius:8px;font-family:var(--mono);font-size:12.5px;color:var(--dim)}
-.dot{width:7px;height:7px;border-radius:999px;background:var(--faint);flex:none}
-.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}
-
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:14px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:16px;display:grid;
-  grid-template-columns:40px minmax(0,1fr);grid-template-rows:auto auto 1fr auto;gap:4px 14px;min-height:150px;cursor:pointer;text-align:left;color:inherit}
-.card:hover{border-color:var(--line2)}
-.card:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-.card .logo{grid-row:1/3;width:40px;height:40px;border-radius:9px;background:var(--ground);display:grid;place-items:center;color:var(--text)}
+/* The catalogue components — the lead row, the rail, the bar, the cards — are the site's own (chrome.css and
+   lib/catalog.css, loaded above), so this page and the Registry page are the same page with different rows.
+   What is this page's alone: a Space's icon where a cover would be, and the stage a Space opens on. */
+.card .logo{display:grid;place-items:center;color:var(--text)}
 .card .logo svg{width:26px;height:26px}
-.card .tags,.card h3,.card p,.card .foot{grid-column:2}
-.card .tags{display:flex;gap:6px;flex-wrap:wrap}
-.tag{height:22px;display:inline-flex;align-items:center;padding:0 8px;border-radius:6px;border:1px solid var(--line2);
-  font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim)}
-.tag.here{border-color:color-mix(in srgb, var(--ok) 45%, transparent);color:var(--ok)}
-.tag.no{border-color:color-mix(in srgb, var(--bad) 45%, transparent);color:var(--bad)}
-.tag.official{border-color:color-mix(in srgb, var(--brand) 45%, transparent);color:var(--hh-accent-legible)}
-.card h3{font-family:var(--mono);font-size:15px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.card p{font-size:12.5px;color:var(--dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.card .foot{margin-top:auto;display:flex;gap:12px;font-size:12px;color:var(--faint);font-family:var(--mono)}
+.card .foot{font-family:var(--mono)}
 
-/* the stage: one Space, full width, in its own sealed frame */
-.stage{display:none;background:var(--surface);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+/* the stage: one Space, in its own sealed frame, at the head of the results */
+.stage{display:none;margin-bottom:14px;background:var(--surface);border:1px solid var(--line);border-radius:13px;overflow:hidden}
 .stage.on{display:block}
-.stage .bar{display:flex;align-items:center;gap:12px;height:48px;padding:0 8px 0 16px;border-bottom:1px solid var(--line)}
-.stage .bar h2{font-family:var(--mono);font-size:14px;font-weight:400}
-.stage .bar .k{font-family:var(--mono);font-size:12px;color:var(--faint)}
-.stage .bar .status{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim);display:inline-flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stage .bar a,.stage .bar button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;color:var(--dim);font-size:13px;background:none}
-.stage .bar a:hover,.stage .bar button:hover{color:var(--text);border-color:var(--line2)}
+.stage-bar{display:flex;align-items:center;gap:12px;height:48px;padding:0 8px 0 16px;border-bottom:1px solid var(--line)}
+.stage-bar h2{font-family:var(--mono);font-size:14px;font-weight:400}
+.stage-bar .k{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.stage-bar .status{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim);display:inline-flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage-bar a,.stage-bar button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;color:var(--dim);font-size:13px;background:none}
+.stage-bar a:hover,.stage-bar button:hover{color:var(--text);border-color:var(--line2)}
 .stage iframe{display:block;width:100%;height:min(78vh,860px);border:0;background:var(--ground)}
 .stage .need{padding:40px 24px;color:var(--dim);font-size:14px;max-width:60ch}
 .stage .need b{color:var(--text);font-weight:500}
-@media (max-width:640px){.stage .bar .k{display:none}.stage iframe{height:72vh}}
+@media (max-width:640px){.stage-bar .k{display:none}.stage iframe{height:72vh}}
+
+:root[data-theme="immersive"] .stage{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
 </style>
 </head>
 <body>
-<!--chrome:header-->
+
+<div class="veil" aria-hidden="true"></div>
 <div class="shell">
+<!--chrome:header-->
+
 <main>
-  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span></div>
+  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><span class="endpoint"><span class="dot" id="dot"></span><span id="host">…</span></span><p class="prov" id="prov"></p></div>
 
-  <section class="stage" id="stage" aria-live="polite">
-    <div class="bar">
-      <h2 id="s-name"></h2><span class="k" id="s-root"></span>
-      <span class="status" id="s-status"><span class="dot" id="s-dot"></span><span id="s-text">opening…</span></span>
-      <a id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open ↗</a>
-      <button type="button" id="s-close" aria-label="Close">×</button>
-    </div>
-    <div id="s-body"></div>
-  </section>
+  <div class="cols">
+    <aside class="rail" id="rail"></aside>
+    <section>
+      <div class="bar">
+        <label class="search" for="q">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="q" type="search" placeholder="Search Spaces, or paste a model name or a sha256 root" autocomplete="off">
+        </label>
+        <select class="sort" id="sort">
+          <option value="featured">Featured</option>
+          <option value="name">Name</option>
+          <option value="small">Smallest model</option>
+          <option value="large">Largest model</option>
+        </select>
+      </div>
 
-  <div class="grid" id="grid"></div>
+      <section class="stage" id="stage" aria-live="polite">
+        <div class="stage-bar">
+          <h2 id="s-name"></h2><span class="k" id="s-root"></span>
+          <span class="status" id="s-status"><span class="dot" id="s-dot"></span><span id="s-text">opening…</span></span>
+          <a id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open ↗</a>
+          <button type="button" id="s-close" aria-label="Close">×</button>
+        </div>
+        <div id="s-body"></div>
+      </section>
 
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="empty" hidden>Nothing matches those filters.</p>
+    </section>
+  </div>
 </main>
 </div>
 <script type="module" src="./app.js"></script>

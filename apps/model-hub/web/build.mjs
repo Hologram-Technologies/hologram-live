@@ -39,7 +39,7 @@ const starRepo = { name: STAR_REPO, url: `https://github.com/${STAR_REPO}`, star
 // The header pill. With an archive it opens every captured day; the Wayback idea, one control.
 function indexPill() {
   const latest = `Index ${R.day(data.snapshot)}`;
-  if (!archive) return `<a class="status" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
+  if (!archive) return `<a class="status endpoint" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
   const days = [...archive.days].sort((a, b) => b.date.localeCompare(a.date));
   const months = new Map();
   for (const d of days) {
@@ -52,9 +52,9 @@ function indexPill() {
   const groups = [...months].map(([key, list], i) => `<div class="archive-month"${i >= 3 ? " data-older" : ""}><h3>${monthName(key)}</h3>${list.map(row).join("")}</div>`);
   const older = groups.length > 3 ? `<details class="archive-older"><summary>Older</summary>${groups.slice(3).join("")}</details>` : "";
   return `<div class="archive" id="archive">
-      <button type="button" class="status" id="archive-button" aria-haspopup="menu" aria-expanded="false" aria-controls="archive-menu" title="Every day's index is stored on IPFS. Open any day."><span id="archive-label">${latest}</span>${R.icon.chevron}</button>
+      <button type="button" class="status endpoint" id="archive-button" aria-haspopup="menu" aria-expanded="false" aria-controls="archive-menu" title="Every day's index is stored on IPFS. Open any day."><span id="archive-label">${latest}</span>${R.icon.chevron}</button>
       <div class="menu" id="archive-menu" role="menu" aria-label="Index history" hidden>
-        <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i lead"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
+        <button type="button" role="menuitemradio" data-at="latest" aria-checked="true">${R.icon.check.replace('class="i"', 'class="i latest"')}<span class="label">Latest<span class="sub">${R.day(data.snapshot)}, ${models.length} models</span></span>${R.icon.check.replace('class="i"', 'class="i tick"')}</button>
         <div class="archive-days">${groups.slice(0, 3).join("")}${older}</div>
         <p class="menu-note">Each day's index is saved on IPFS and verified in your browser. Today opens at once; older days can take a minute the first time.</p>
         <div class="archive-foot"><button type="button" class="copy" id="archive-cid" data-copy="" title="Copy this day's IPFS address">CID${R.icon.copy}</button><button type="button" class="copy" id="archive-pull" data-copy="" title="Copy the hologram pull command for the current index">hologram pull${R.icon.copy}</button></div>
@@ -64,9 +64,9 @@ function indexPill() {
 }
 
 const WALLPAPERS = [
-  { key: "alps", name: "Alpine Dawn", by: "Unsplash", url: "https://unsplash.com/?utm_source=Hologram&utm_medium=referral" },
-  { key: "galaxy", name: "Galaxy", by: "Tiago Ferreira", url: "https://unsplash.com/@tiago_f_ferreira?utm_source=Hologram&utm_medium=referral" },
-  { key: "aurora", name: "Aurora", by: "Lightscape", url: "https://unsplash.com/@lightscape?utm_source=Hologram&utm_medium=referral" },
+  { key: "alps", name: "Alpine Dawn" },
+  { key: "galaxy", name: "Galaxy" },
+  { key: "aurora", name: "Aurora" },
 ];
 const THEMES = [["dark", "Dark", "moon"], ["light", "Light", "sun"], ["immersive", "Immersive", "image"]];
 
@@ -123,7 +123,6 @@ const themeSwitch = `<div class="appearance">
         <div class="walls" id="walls">
           <h3>Wallpaper</h3>
           <div class="wall-row" role="group" aria-label="Wallpaper">${WALLPAPERS.map((w) => `<button type="button" class="wall" role="menuitemradio" data-wallpaper="${w.key}" aria-checked="false" aria-label="${w.name}" title="${w.name}"><img src="${base}wallpapers/${w.key}-thumb.jpg" alt="" width="320" height="198" decoding="async"></button>`).join("")}</div>
-          <p class="credit" id="wall-credit"></p>
         </div>
       </div>
     </div>`;
@@ -215,19 +214,26 @@ const home = page({
 const initial = R.parseState("");
 const r = R.query(models, initial);
 const sortMenu = R.SORTS.map(([k, label]) => `<li role="option" data-sort="${k}" aria-selected="${k === initial.sort}">${label}${R.icon.check}</li>`).join("");
+// What the lead row says about the index as a whole, the way the Registry's says how many rows are read live:
+// how many of these models are verified — every file named by its bytes — and how many are not there yet.
+const states = models.reduce((c, m) => ((c[m.state] = (c[m.state] || 0) + 1), c), {});
+const provenance = [[states.addressed, "verified"], [states.pending, "queued"], [states.skipped, "unverified"]]
+  .filter(([n]) => n).map(([n, word]) => `${n.toLocaleString("en-US")} ${word}`).join(" · ");
 const browse = page({
   section: "models",
   title: R.title(initial),
   description: `The ${models.length} trending models on Hugging Face, every file named by its bytes.`,
-  body: `<main class="browse" id="browse">
+  // The lead row is the same row every catalogue page opens with (.lead, chrome.css): name, count, address,
+  // provenance. Here the address is the index control, which is also the way into every earlier day.
+  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}<p class="prov">${provenance}</p></div>
+<main class="browse" id="browse">
   <aside class="panel filters" aria-label="Filters">
     <button type="button" class="control square close-filters" id="close-filters" aria-label="Close filters">${R.icon.close}</button>
     <div id="filters-body">${R.filters(r, initial)}</div>
     <div class="sheet-footer"><button type="button" class="button primary" id="sheet-done">Show <span id="sheet-count">${r.results.length}</span> models</button></div>
   </aside>
-  <section class="panel" id="results" aria-label="Models">
+  <section id="results" aria-label="Models">
     <div class="results-head">
-    <div class="head"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}</div>
     <div class="bar">
       <label class="field search">${R.icon.search}<input id="q" type="search" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models"></label>
       <button type="button" class="open-filters" id="open-filters">${R.icon.sliders}Filters</button>

@@ -1,5 +1,7 @@
 // Proves the claim the header makes: every page of this site carries the same top-level menu, and the
-// section you are in is marked, in the accent, legibly.
+// section you are in is marked, in the accent, legibly. And the claim the catalogue pages make below it:
+// Models, Registry and Spaces each open with the same lead row — name, count, address, provenance — at the
+// same height, in the same face, so crossing between them moves nothing.
 //
 //   node apps/model-hub/web/qa/menu.mjs            (build dist first)
 //   CHROME=/path/to/chrome node .../menu.mjs
@@ -26,15 +28,19 @@ const DIST = join(SITE, "dist");
 const SECTIONS = ["Models", "Registry", "Spaces", "Docs"];
 
 // One page of every shape the site builds, and the section each belongs to. "" means no section is current:
-// the landing is the front door, it is not inside any of the three.
+// the landing is the front door, it is not inside any of the three. The last field marks a catalogue page:
+// one that opens with the lead row (name · count · address · provenance) above its columns.
 const PAGES = [
   ["landing", "/", ""],
-  ["browse", "/models/", "Models"],
+  ["browse", "/models/", "Models", true],
   ["model", null, "Models"],           // filled in from dist below: whichever model page is first
-  ["registry", "/registry/", "Registry"],
-  ["spaces", "/spaces/", "Spaces"],
+  ["registry", "/registry/", "Registry", true],
+  ["spaces", "/spaces/", "Spaces", true],
   ["not found", "/404.html", ""],
 ];
+// What every catalogue page's lead row is made of, in order. A page that opens with less, or with the same
+// parts in another order, moves the reader's eye when they cross into it.
+const LEAD = "name count address provenance";
 // Wide enough for the menu, and narrow enough to have hidden it. Both are checked.
 const WIDTHS = [2560, 1600, 1440, 1280, 1100, 1024, 900, 861, 860, 768, 390, 320];
 const THEMES = ["dark", "light"];
@@ -130,6 +136,15 @@ const READ = `(() => {
     account: !!document.querySelector("#account"),
     headerOverflow: Math.max(0, top.scrollWidth - top.clientWidth),
     pageOverflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
+    // The lead row a catalogue page opens with: its name, a count, an address, a line of provenance — in
+    // that order, above the columns, on Models, Registry and Spaces alike.
+    lead: (() => {
+      const lead = document.querySelector(".lead");
+      if (!lead) return null;
+      const kids = [...lead.children].filter((k) => !k.matches("script")).map((k) => k.matches("h1") ? "name" : k.matches(".pill") ? "count" : k.matches(".endpoint, .archive") ? "address" : k.matches(".prov") ? "provenance" : k.tagName.toLowerCase());
+      const top = lead.getBoundingClientRect().top;
+      return { name: lead.querySelector("h1")?.textContent.trim() || "", order: kids.join(" "), top: Math.round(top), font: getComputedStyle(lead.querySelector("h1")).fontFamily };
+    })(),
   };
 })()`;
 
@@ -174,6 +189,7 @@ async function load(url) {
 
 const problems = [];
 const rows = [];
+const leads = new Map(); // theme+width → where the first catalogue page put its lead row
 let checked = 0, lowest = Infinity;
 // Sign-in is only built when the build was given a Privy app id, so whether the control exists is a property
 // of the build, not of the page. What is checked is that every page agrees: the first page read sets the
@@ -182,7 +198,7 @@ let cluster = null, links = null;
 for (const theme of THEMES) {
   await load(`${origin}${BASE}/`);
   await cdp.evaluate(`localStorage.setItem("hologram-models-hub.theme", ${JSON.stringify(JSON.stringify({ mode: theme, wallpaper: "alps" }))})`);
-  for (const [page, path, section] of PAGES) {
+  for (const [page, path, section, catalogue] of PAGES) {
     for (const width of WIDTHS) {
       await cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: width < 768 });
       await load(origin + BASE + path);
@@ -199,6 +215,23 @@ for (const theme of THEMES) {
       if (r.account !== cluster.account) problems.push(`${where}: sign-in is ${r.account ? "present" : "missing"} and elsewhere it is not`);
       if (r.headerOverflow > 1) problems.push(`${where}: the header row overflows by ${r.headerOverflow}px`);
       if (r.pageOverflowX > 1) problems.push(`${where}: the page scrolls ${r.pageOverflowX}px sideways`);
+
+      // The lead row: every catalogue page opens with the same one, and it sits at the same height on each, so
+      // crossing from Models to Registry to Spaces moves nothing. A page outside the catalogue has none.
+      if (catalogue) {
+        if (!r.lead) problems.push(`${where}: no lead row`);
+        else {
+          if (r.lead.name !== section) problems.push(`${where}: the lead row says ${r.lead.name || "nothing"}, the section is ${section}`);
+          if (r.lead.order !== LEAD) problems.push(`${where}: the lead row reads ${r.lead.order}, expected ${LEAD}`);
+          const key = `${theme} ${width}`;
+          if (!leads.has(key)) leads.set(key, { page, top: r.lead.top, font: r.lead.font });
+          else {
+            const first = leads.get(key);
+            if (Math.abs(first.top - r.lead.top) > 1) problems.push(`${where}: the lead row sits at ${r.lead.top}px, on ${first.page} it sits at ${first.top}px`);
+            if (first.font !== r.lead.font) problems.push(`${where}: the lead row is set in ${r.lead.font}, on ${first.page} in ${first.font}`);
+          }
+        }
+      } else if (r.lead) problems.push(`${where}: a lead row on a page outside the catalogue`);
 
       if (r.current.length > 1) problems.push(`${where}: ${r.current.length} sections marked current`);
       if ((r.current[0] || "") !== section) problems.push(`${where}: current is ${r.current[0] || "nothing"}, expected ${section || "nothing"}`);
@@ -225,4 +258,4 @@ server.close();
 
 console.log(rows.join("\n"));
 if (problems.length) { console.error(`\n${problems.length} problems\n${problems.join("\n")}`); process.exit(1); }
-console.log(`\nthe menu holds: ${SECTIONS.join(" · ")} on ${PAGES.length} page shapes x ${THEMES.length} themes x ${WIDTHS.length} widths (${checked} checks); the section you are in is marked and reads at ${lowest}:1 or better`);
+console.log(`\nthe menu holds: ${SECTIONS.join(" · ")} on ${PAGES.length} page shapes x ${THEMES.length} themes x ${WIDTHS.length} widths (${checked} checks); the section you are in is marked and reads at ${lowest}:1 or better; the ${PAGES.filter((p) => p[3]).length} catalogue pages open with the same lead row (${LEAD}) at the same height`);

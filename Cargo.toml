@@ -57,6 +57,12 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 kameo = "0.22"
 encoding_rs = { version = "0.8", optional = true }
 llama-cpp-2 = { version = "=0.1.156", optional = true, default-features = false }
+candle-core = { version = "0.11", optional = true, default-features = false }
+candle-transformers = { version = "0.11", optional = true, default-features = false }
+tokenizers = { version = "0.22", optional = true, default-features = false, features = ["fancy-regex"] }
+burn = { version = "0.18", optional = true, default-features = false, features = ["std", "ndarray"] }
+burn-lm-inference = { version = "0.0.1", optional = true, default-features = false, features = ["legacy-v018"] }
+burn-lm-llama = { version = "0.0.1", optional = true, default-features = false, features = ["inference-server", "pretrained", "llama3"] }
 opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["grpc-tonic", "metrics", "trace", "tls-ring", "tls-roots"] }
 opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }
@@ -117,6 +123,15 @@ bdd = []
 llamacpp = ["dep:encoding_rs", "dep:llama-cpp-2"]
 llamacpp-cuda = ["llamacpp", "llama-cpp-2/cuda"]
 llamacpp-metal = ["llamacpp", "llama-cpp-2/metal"]
+# Rust-native GGUF execution through Hugging Face Candle. The initial adapter is
+# deliberately limited to Llama-family decoder models and requires an external
+# tokenizer.json; unsupported architectures fail during startup.
+candle = ["dep:candle-core", "dep:candle-transformers", "dep:tokenizers"]
+candle-cuda = ["candle", "candle-core/cuda", "candle-transformers/cuda"]
+candle-metal = ["candle", "candle-core/metal", "candle-transformers/metal"]
+# Burn-LM's Llama implementation. Burn checkpoints are not GGUF files: this
+# engine consumes a converted named-MPK checkpoint plus a tokenizer.model.
+burn = ["dep:burn", "dep:burn-lm-inference", "dep:burn-lm-llama"]
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
 oci = ["dep:jsonwebtoken", "dep:ring", "dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
 ring = ["dep:ring"]

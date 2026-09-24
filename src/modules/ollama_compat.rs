@@ -538,7 +538,11 @@ fn ndjson_response(
         while let Some(event) = events.next().await {
             match event {
                 Ok(CompletionEvent::Delta(text)) => {
-                    if sender.send(Ok(line(Some(text), false, None))).await.is_err() {
+                    if sender
+                        .send(Ok(line(Some(text), false, None)))
+                        .await
+                        .is_err()
+                    {
                         return;
                     }
                 }
@@ -685,7 +689,8 @@ fn show_from(model: &ModelInfo) -> ShowResponse {
         details: ModelDetails {
             format: match model.engine.as_str() {
                 "weightc" => "wcpu".to_owned(),
-                "llamacpp" => "gguf".to_owned(),
+                "llamacpp" | "candle" => "gguf".to_owned(),
+                "burn" => "mpk".to_owned(),
                 other => other.to_owned(),
             },
             family: model.engine.clone(),
@@ -1091,7 +1096,9 @@ mod tests {
         // failed stream must never claim `done: true` anywhere in the body
         // — that would let a swallowed error masquerade as a clean finish.
         assert!(
-            lines.iter().all(|line| line["done"] != serde_json::json!(true)),
+            lines
+                .iter()
+                .all(|line| line["done"] != serde_json::json!(true)),
             "no line may claim done: true after a mid-stream failure: {lines:?}"
         );
     }
@@ -1155,7 +1162,9 @@ mod tests {
         );
 
         assert!(
-            lines.iter().all(|line| line["done"] != serde_json::json!(true)),
+            lines
+                .iter()
+                .all(|line| line["done"] != serde_json::json!(true)),
             "no line may claim done: true after a mid-stream failure: {lines:?}"
         );
     }
@@ -1315,6 +1324,21 @@ mod tests {
     }
 
     #[test]
+    fn show_response_reports_native_formats_for_rust_engines() {
+        let mut model = ModelInfo {
+            id: "local".to_owned(),
+            name: "local".to_owned(),
+            engine: "candle".to_owned(),
+            source: "/models/local.gguf".to_owned(),
+            size: 0,
+            created_at_millis: 0,
+        };
+        assert_eq!(show_from(&model).details.format, "gguf");
+        model.engine = "burn".to_owned();
+        assert_eq!(show_from(&model).details.format, "mpk");
+    }
+
+    #[test]
     fn error_serializes_in_the_ollama_shape() {
         let response = OllamaError::not_found("missing").into_response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -1404,9 +1428,14 @@ mod tests {
             stream: Some(false),
             options: None,
         };
-        let response = chat_core(Arc::new(MeteredEngine), fixture.catalog.clone(), "", request)
-            .await
-            .expect("chat");
+        let response = chat_core(
+            Arc::new(MeteredEngine),
+            fixture.catalog.clone(),
+            "",
+            request,
+        )
+        .await
+        .expect("chat");
 
         assert_eq!(response.prompt_eval_count, Some(11));
         assert_eq!(response.eval_count, Some(22));

@@ -33,8 +33,6 @@ services:
     volumes:
       - ./site:/srv:ro
       - ./archive:/srv/archive:ro
-      # /benches/*: benchmark JSON from the hologram-website repository, pulled every 10 minutes (cutover-gethologram.sh).
-      - ./benches/public/benches:/srv/benches:ro
     mem_limit: 128m
     networks:
       default:

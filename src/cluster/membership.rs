@@ -39,9 +39,16 @@ impl PeerTable {
         table
     }
 
-    pub fn seed_from_directory(&mut self, nodes: &[NodeRecord]) {
+    /// Recovers the working set from the persisted directory on restart.
+    ///
+    /// `self_endpoint` is excluded: the directory contains this node's own
+    /// heartbeat record (`NodeDirectory::heartbeat` persists self), and
+    /// without this filter a restarted node would add itself as a peer and
+    /// burn one `fanout` slot every round, forever (it is never pruned,
+    /// since `prune_older_than` always preserves the local node id).
+    pub fn seed_from_directory(&mut self, nodes: &[NodeRecord], self_endpoint: &str) {
         for node in nodes {
-            if !node.endpoint.is_empty() {
+            if !node.endpoint.is_empty() && node.endpoint != self_endpoint {
                 self.insert(node.endpoint.clone());
             }
         }
@@ -126,7 +133,17 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         let mut now = 0;
         for _ in 0..(20_usize.div_ceil(4)) {
-            for endpoint in table.due(now, 4) {
+            let batch = table.due(now, 4);
+            // Fix round 1, finding 3: `record_success` clears backoff, so
+            // every peer is due every round regardless of `fanout` — without
+            // this bound, an implementation that ignored `fanout` entirely
+            // and returned every due peer would still pass on round one.
+            assert!(
+                batch.len() <= 4,
+                "due() must never return more than fanout entries, got {}",
+                batch.len()
+            );
+            for endpoint in batch {
                 seen.insert(endpoint.clone());
                 table.record_success(&endpoint, now);
             }
@@ -136,6 +153,21 @@ mod tests {
             seen.len(),
             20,
             "every peer must be contacted within n/fanout rounds"
+        );
+    }
+
+    // Fix round 1, finding 3: a direct case with more due peers than fanout,
+    // so the cap is pinned even without relying on the rotation test above.
+    #[test]
+    fn due_never_exceeds_the_requested_fanout() {
+        let mut table = PeerTable::new(Vec::new());
+        for endpoint in endpoints(10) {
+            table.insert(endpoint);
+        }
+        assert_eq!(
+            table.due(0, 3).len(),
+            3,
+            "ten peers are due and fanout is 3, so due() must return exactly 3"
         );
     }
 
@@ -159,13 +191,46 @@ mod tests {
     #[test]
     fn the_table_recovers_from_the_persisted_directory() {
         let mut table = PeerTable::new(Vec::new());
-        table.seed_from_directory(&[crate::protocol::NodeRecord {
-            node_id: "ed25519:aa".to_owned(),
-            version: "test".to_owned(),
-            operations: Vec::new(),
-            endpoint: "https://known.example".to_owned(),
-            last_seen_millis: 0,
-        }]);
+        table.seed_from_directory(
+            &[crate::protocol::NodeRecord {
+                node_id: "ed25519:aa".to_owned(),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: "https://known.example".to_owned(),
+                last_seen_millis: 0,
+            }],
+            "https://self.example",
+        );
+        assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
+    }
+
+    // Fix round 1, finding 1: `NodeDirectory::heartbeat` persists this node's
+    // own record, so the directory handed to `seed_from_directory` always
+    // contains self on every restart after the first cold start. Without the
+    // filter, self becomes an un-evictable peer (it is always preserved by
+    // `prune_older_than`) and permanently burns a fanout slot.
+    #[test]
+    fn seeding_from_the_directory_never_adds_this_node_as_its_own_peer() {
+        let mut table = PeerTable::new(Vec::new());
+        table.seed_from_directory(
+            &[
+                crate::protocol::NodeRecord {
+                    node_id: "ed25519:self".to_owned(),
+                    version: "test".to_owned(),
+                    operations: Vec::new(),
+                    endpoint: "https://self.example".to_owned(),
+                    last_seen_millis: 0,
+                },
+                crate::protocol::NodeRecord {
+                    node_id: "ed25519:peer".to_owned(),
+                    version: "test".to_owned(),
+                    operations: Vec::new(),
+                    endpoint: "https://known.example".to_owned(),
+                    last_seen_millis: 0,
+                },
+            ],
+            "https://self.example",
+        );
         assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
     }
 

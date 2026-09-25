@@ -140,7 +140,7 @@ async fn run(state: AppState) {
         .filter(|endpoint| endpoint != &self_endpoint)
         .collect();
     let mut table = PeerTable::new(seeds);
-    table.seed_from_directory(&state.nodes().list().unwrap_or_default());
+    table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint);
     let backoff_ceiling_millis = config.node_ttl_secs.saturating_mul(1000);
     let mut ticker = tokio::time::interval(Duration::from_secs(config.heartbeat_interval_secs));
 
@@ -213,17 +213,9 @@ async fn run(state: AppState) {
                 match state.nodes().prune_older_than(cutoff, &self_node.node_id) {
                     Ok(removed) if removed > 0 => {
                         tracing::info!(removed, "pruned stale cluster members");
-                        let remaining: BTreeSet<String> = state
-                            .nodes()
-                            .list()
-                            .unwrap_or_default()
-                            .iter()
-                            .map(|node| node.node_id.clone())
-                            .collect();
-                        for node in &before_prune {
-                            if !remaining.contains(&node.node_id) {
-                                table.evict(&normalize_endpoint(&node.endpoint));
-                            }
+                        let after_prune = state.nodes().list().unwrap_or_default();
+                        for endpoint in prune_evictions(&before_prune, &after_prune) {
+                            table.evict(&endpoint);
                         }
                     }
                     Ok(_) => {}
@@ -364,6 +356,30 @@ fn sign_headers(
 
 fn normalize_endpoint(endpoint: &str) -> String {
     endpoint.trim_end_matches('/').to_owned()
+}
+
+/// Endpoints that pruning actually orphaned: named by a `before` record whose
+/// node id did not survive pruning, and not claimed by any surviving
+/// record's endpoint either.
+///
+/// The directory is keyed by node id, not endpoint. A peer that rotates its
+/// identity while keeping the same `advertise_endpoint` ages its old node id
+/// out of the directory while a new node id with that same endpoint keeps
+/// heartbeating; diffing node ids alone would evict a still-live peer for at
+/// least a round. Checking the surviving endpoints too keeps that peer in
+/// the table.
+fn prune_evictions(before: &[NodeRecord], after: &[NodeRecord]) -> Vec<String> {
+    let surviving_ids: BTreeSet<&str> = after.iter().map(|node| node.node_id.as_str()).collect();
+    let surviving_endpoints: BTreeSet<String> = after
+        .iter()
+        .map(|node| normalize_endpoint(&node.endpoint))
+        .collect();
+    before
+        .iter()
+        .filter(|node| !surviving_ids.contains(node.node_id.as_str()))
+        .map(|node| normalize_endpoint(&node.endpoint))
+        .filter(|endpoint| !surviving_endpoints.contains(endpoint))
+        .collect()
 }
 
 pub fn validate_node_record(node: &NodeRecord) -> Result<()> {
@@ -508,5 +524,41 @@ mod tests {
             recipient_for("https://seed.example:11435/"),
             "https://seed.example:11435"
         );
+    }
+
+    fn node(node_id: &str, endpoint: &str) -> NodeRecord {
+        NodeRecord {
+            node_id: node_id.to_owned(),
+            version: "test".to_owned(),
+            operations: Vec::new(),
+            endpoint: endpoint.to_owned(),
+            last_seen_millis: 0,
+        }
+    }
+
+    // Fix round 1, finding 2: a genuinely stale peer, gone from the
+    // directory under any node id, must still be evicted.
+    #[test]
+    fn a_peer_absent_from_every_surviving_record_is_evicted() {
+        let before = vec![
+            node("ed25519:self", "https://self.example"),
+            node("ed25519:gone", "https://gone.example"),
+        ];
+        let after = vec![node("ed25519:self", "https://self.example")];
+        assert_eq!(
+            prune_evictions(&before, &after),
+            vec!["https://gone.example".to_owned()]
+        );
+    }
+
+    // Fix round 1, finding 2: the directory is keyed by node id, not
+    // endpoint. A peer that rotates identity while keeping the same
+    // advertise_endpoint must not be evicted just because its old node id
+    // aged out — a new node id with that same endpoint is still heartbeating.
+    #[test]
+    fn a_peer_that_rotated_identity_is_not_evicted() {
+        let before = vec![node("ed25519:old", "https://rotated.example")];
+        let after = vec![node("ed25519:new", "https://rotated.example")];
+        assert!(prune_evictions(&before, &after).is_empty());
     }
 }

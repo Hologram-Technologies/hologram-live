@@ -1,6 +1,7 @@
 //! Immutable object reconciliation against a cluster peer.
 
-use super::{proof, recipient_for, sign_headers, OBJECTS_PATH};
+use super::network::{ClusterResponse, NetworkRegistry};
+use super::{proof, recipient_for, signed_request, OBJECTS_PATH};
 use crate::app::AppState;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ObjectPage, ObjectQuery};
@@ -50,7 +51,7 @@ fn ends_replication_round(error: &LiveError) -> bool {
 
 pub(super) async fn replicate_peer(
     state: &AppState,
-    client: &reqwest::Client,
+    networks: &NetworkRegistry,
     endpoint: &str,
     token: &str,
 ) -> Result<()> {
@@ -74,8 +75,9 @@ pub(super) async fn replicate_peer(
                 query.append_pair("cursor", cursor);
             }
         }
-        let response = signed_get(state, client, inventory_url, token, &recipient).await?;
-        let inventory: ObjectPage = response.json().await.map_err(|error| {
+        let response =
+            signed_get(state, networks, endpoint, &inventory_url, token, &recipient).await?;
+        let inventory: ObjectPage = serde_json::from_slice(&response.body).map_err(|error| {
             LiveError::Protocol(format!(
                 "decode cluster object inventory from {endpoint}: {error}"
             ))
@@ -114,43 +116,37 @@ pub(super) async fn replicate_peer(
                     return Ok(false);
                 }
                 let url = cluster_url(endpoint, &format!("{OBJECTS_PATH}/{}", metadata.id))?;
-                let response = signed_get(state, client, url, token, &recipient).await?;
-                if !response.status().is_success() {
-                    let status = response.status();
-                    let message = format!(
-                        "fetch cluster object {} from {endpoint}: HTTP {status}",
-                        metadata.id
-                    );
-                    return Err(match status {
-                        reqwest::StatusCode::UNAUTHORIZED => LiveError::Authentication(message),
-                        reqwest::StatusCode::FORBIDDEN => LiveError::Authorization(message),
-                        _ => LiveError::Transport(message),
-                    });
+                let response =
+                    signed_get(state, networks, endpoint, &url, token, &recipient).await?;
+                if !response.is_success() {
+                    return Err(fetch_failure(
+                        response.status,
+                        format!(
+                            "fetch cluster object {} from {endpoint}: HTTP {}",
+                            metadata.id, response.status
+                        ),
+                    ));
                 }
                 let media_type = response
-                    .headers()
-                    .get(reqwest::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok())
+                    .header(reqwest::header::CONTENT_TYPE.as_str())
                     .unwrap_or("application/octet-stream")
                     .to_owned();
                 let filename = response
-                    .headers()
-                    .get("x-hologram-object-filename")
-                    .and_then(|v| v.to_str().ok())
+                    .header("x-hologram-object-filename")
                     .map(str::to_owned);
-                let mut bytes = Vec::new();
-                let mut response = response;
-                while let Some(chunk) = response.chunk().await.map_err(|error| {
-                    LiveError::Transport(format!("read cluster object {}: {error}", metadata.id))
-                })? {
-                    if (bytes.len() as u64).saturating_add(chunk.len() as u64) > max_bytes {
-                        return Err(LiveError::Capability(format!(
-                            "cluster object {} exceeds {max_bytes} byte transfer bound",
-                            metadata.id
-                        )));
-                    }
-                    bytes.extend_from_slice(&chunk);
+                // Still bounded here, and still before the bytes are hashed or
+                // stored. A `ClusterResponse` carries the body it read, so what
+                // was a per-chunk bound is now one bound on the whole body;
+                // `metadata.size > max_bytes` above already skipped whatever
+                // the peer admitted was oversize, and this catches a peer whose
+                // bytes do not match its own inventory.
+                if response.body.len() as u64 > max_bytes {
+                    return Err(LiveError::Capability(format!(
+                        "cluster object {} exceeds {max_bytes} byte transfer bound",
+                        metadata.id
+                    )));
                 }
+                let bytes = response.body;
                 let registry = state.registry().clone();
                 let kind = metadata.kind.clone();
                 let expected = metadata.id.clone();
@@ -200,6 +196,22 @@ pub(super) async fn replicate_peer(
     Ok(())
 }
 
+/// The status classification [`ends_replication_round`] depends on, kept on
+/// this side of the network seam so it survives the transport becoming
+/// pluggable: 401 is this node's standing with the peer, 403 the peer's
+/// decision about this node, and every other failure status is the peer being
+/// unusable this round. All three end the round; none is a fact about the one
+/// object being fetched. Matched on the numeric status rather than
+/// `reqwest::StatusCode` because a [`ClusterResponse`] comes from whichever
+/// network answered.
+fn fetch_failure(status: u16, message: String) -> LiveError {
+    match status {
+        401 => LiveError::Authentication(message),
+        403 => LiveError::Authorization(message),
+        _ => LiveError::Transport(message),
+    }
+}
+
 pub(super) fn cluster_url(endpoint: &str, path: &str) -> Result<reqwest::Url> {
     let mut url = reqwest::Url::parse(endpoint)
         .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
@@ -207,13 +219,17 @@ pub(super) fn cluster_url(endpoint: &str, path: &str) -> Result<reqwest::Url> {
     Ok(url)
 }
 
+/// `url` is built from `endpoint` by [`cluster_url`], so the path and query the
+/// proof binds are exactly the ones the request carries; `endpoint` is what the
+/// registry routes on, and `recipient` is the origin the proof was minted for.
 pub(super) async fn signed_get(
     state: &AppState,
-    client: &reqwest::Client,
-    url: reqwest::Url,
+    networks: &NetworkRegistry,
+    endpoint: &str,
+    url: &reqwest::Url,
     token: &str,
     recipient: &str,
-) -> Result<reqwest::Response> {
+) -> Result<ClusterResponse> {
     proof::reject_separators("GET", url.path(), url.query(), recipient)?;
     let request_proof = proof::sign_request(
         state.identity(),
@@ -223,10 +239,20 @@ pub(super) async fn signed_get(
         url.query(),
         &[],
     );
-    sign_headers(client.get(url), recipient, &request_proof, token)
-        .send()
+    networks
+        .send(
+            endpoint,
+            signed_request(
+                "GET",
+                url,
+                Vec::new(),
+                recipient,
+                &request_proof,
+                token,
+                None,
+            ),
+        )
         .await
-        .map_err(|error| LiveError::Transport(format!("send cluster replication request: {error}")))
 }
 
 #[cfg(test)]
@@ -275,6 +301,36 @@ mod tests {
         assert!(!ends_replication_round(&LiveError::Conflict(
             "store failure".to_owned()
         )));
+    }
+
+    // Task 10: the transport is now a trait, so an object fetch classifies a
+    // numeric status rather than a `reqwest::StatusCode`. 401 and 403 must
+    // still reach the variants `ends_replication_round` ends a round on, and
+    // for the reasons it ends it on them.
+    #[test]
+    fn an_unauthorized_or_forbidden_object_fetch_still_classifies_as_such() {
+        assert!(matches!(
+            fetch_failure(401, "HTTP 401".to_owned()),
+            LiveError::Authentication(_)
+        ));
+        assert!(matches!(
+            fetch_failure(403, "HTTP 403".to_owned()),
+            LiveError::Authorization(_)
+        ));
+        assert!(matches!(
+            fetch_failure(404, "HTTP 404".to_owned()),
+            LiveError::Transport(_)
+        ));
+        assert!(matches!(
+            fetch_failure(503, "HTTP 503".to_owned()),
+            LiveError::Transport(_)
+        ));
+        for status in [401_u16, 403, 404, 503] {
+            assert!(
+                ends_replication_round(&fetch_failure(status, format!("HTTP {status}"))),
+                "HTTP {status} must end the round"
+            );
+        }
     }
 
     #[test]
@@ -403,11 +459,13 @@ mod tests {
         let state = AppState::build(config, tracing)
             .await
             .expect("build a real AppState backed by a temp dir");
-        let client = reqwest::Client::new();
+        let networks = NetworkRegistry::new(vec![Arc::new(
+            crate::cluster::network::HttpNetwork::new(reqwest::Client::new()),
+        )]);
 
         replicate_peer(
             &state,
-            &client,
+            &networks,
             &endpoint,
             "a token the stub peer never checks",
         )

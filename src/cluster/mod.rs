@@ -7,6 +7,7 @@
 pub(crate) mod admission;
 pub(crate) mod identity;
 mod membership;
+pub(crate) mod network;
 pub(crate) mod proof;
 mod replication;
 
@@ -16,11 +17,13 @@ use crate::error::{LiveError, Result};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse, NodeRecord};
 use crate::util::now_millis;
 use membership::PeerTable;
+use network::{ClusterRequest, HttpNetwork, NetworkRegistry};
 use replication::replicate_peer;
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::{JoinHandle, JoinSet};
 
@@ -133,6 +136,16 @@ async fn run(state: AppState) {
             return;
         }
     };
+    // One network today, and the call sites below name none of them: every
+    // request goes out through the registry, which routes on the address's own
+    // scheme. Phase 2 pushes an iroh network into this same vector.
+    let networks = Arc::new(NetworkRegistry::new(vec![Arc::new(
+        HttpNetwork::new(client).with_advertised(Some(self_endpoint.clone())),
+    )]));
+    tracing::debug!(
+        addresses = ?networks.local_addresses(),
+        "cluster networks are ready"
+    );
     let seeds: Vec<String> = config
         .seeds
         .iter()
@@ -192,12 +205,12 @@ async fn run(state: AppState) {
                 let mut joins = JoinSet::new();
                 for endpoint in table.due(round_started_millis, config.fanout) {
                     let state = state.clone();
-                    let client = client.clone();
+                    let networks = networks.clone();
                     let token = token.clone();
                     let node = self_node.clone();
                     joins.spawn(async move {
                         let result =
-                            contact_peer(&state, &client, &endpoint, &token, node).await;
+                            contact_peer(&state, &networks, &endpoint, &token, node).await;
                         (endpoint, result)
                     });
                 }
@@ -220,7 +233,7 @@ async fn run(state: AppState) {
                             }
                             if table.replication_due(&endpoint, now_millis(), replication_interval_millis) {
                                 if let Err(error) =
-                                    replicate_peer(&state, &client, &endpoint, &token).await
+                                    replicate_peer(&state, &networks, &endpoint, &token).await
                                 {
                                     tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
                                 }
@@ -269,7 +282,7 @@ async fn run(state: AppState) {
 
 async fn contact_peer(
     state: &AppState,
-    client: &reqwest::Client,
+    networks: &NetworkRegistry,
     endpoint: &str,
     token: &str,
     node: NodeRecord,
@@ -301,36 +314,39 @@ async fn contact_peer(
     // than this phase carries; the header stays observability-only until
     // that lands.
     let epoch = crate::ownership::epoch(&state.admitted_with_self());
-    let response = sign_headers(client.post(url), &recipient, &request_proof, token)
-        .header(proof::EPOCH_HEADER, epoch)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(body)
-        .send()
-        .await
-        .map_err(|error| LiveError::Transport(format!("join cluster peer {endpoint}: {error}")))?;
-    if !response.status().is_success() {
+    let response = networks
+        .send(
+            endpoint,
+            signed_request(
+                "POST",
+                &url,
+                body,
+                &recipient,
+                &request_proof,
+                token,
+                Some(epoch),
+            ),
+        )
+        .await?;
+    if !response.is_success() {
         return Err(LiveError::Transport(format!(
             "join cluster peer {endpoint}: HTTP {}",
-            response.status()
+            response.status
         )));
     }
-    let mut response = response;
-    let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|error| LiveError::Transport(format!("read cluster peer {endpoint}: {error}")))?
-    {
-        if body.len().saturating_add(chunk.len()) > MAX_JOIN_BYTES {
-            return Err(LiveError::Protocol(format!(
-                "cluster peer {endpoint} response exceeds {MAX_JOIN_BYTES} bytes"
-            )));
-        }
-        body.extend_from_slice(&chunk);
+    // Still bounded here, and still before anything parses it: a
+    // `ClusterResponse` carries the body it read, so the bound a streaming
+    // read used to apply chunk by chunk now applies to the whole body. See
+    // the note on `ClusterResponse` in `network.rs`.
+    if response.body.len() > MAX_JOIN_BYTES {
+        return Err(LiveError::Protocol(format!(
+            "cluster peer {endpoint} response exceeds {MAX_JOIN_BYTES} bytes"
+        )));
     }
-    let response: ClusterJoinResponse = serde_json::from_slice(&body).map_err(|error| {
-        LiveError::Protocol(format!("decode cluster peer {endpoint} response: {error}"))
-    })?;
+    let response: ClusterJoinResponse =
+        serde_json::from_slice(&response.body).map_err(|error| {
+            LiveError::Protocol(format!("decode cluster peer {endpoint} response: {error}"))
+        })?;
     validate_node_record(&response.node)?;
     Ok(response)
 }
@@ -388,24 +404,33 @@ fn origin_parts(endpoint: &str) -> Option<(String, String, u16)> {
     ))
 }
 
-/// Attaches the per-node proof and the admission ticket for *our* identity.
+/// Carries the per-node proof and the admission ticket for *our* identity.
 /// The ticket is derived from the shared token and our node id, so it admits
 /// this node and no other even if it is captured in flight.
-fn sign_headers(
-    request: reqwest::RequestBuilder,
+///
+/// This is the whole of what used to be a set of HTTP headers, now data on a
+/// [`ClusterRequest`]: a network decides how to put it on the wire and never
+/// what it says. `recipient` in particular arrives already bound into
+/// `request_proof`'s signature, so no network can re-address the request.
+fn signed_request(
+    method: &'static str,
+    url: &reqwest::Url,
+    body: Vec<u8>,
     recipient: &str,
     request_proof: &proof::RequestProof,
     token: &str,
-) -> reqwest::RequestBuilder {
-    request
-        .header(proof::RECIPIENT_HEADER, recipient)
-        .header(proof::NODE_HEADER, &request_proof.node_id)
-        .header(proof::TIMESTAMP_HEADER, &request_proof.timestamp)
-        .header(proof::SIGNATURE_HEADER, &request_proof.signature)
-        .header(
-            proof::TICKET_HEADER,
-            admission::ticket(token, &request_proof.node_id),
-        )
+    epoch: Option<String>,
+) -> ClusterRequest {
+    ClusterRequest {
+        method,
+        path: url.path().to_owned(),
+        query: url.query().map(str::to_owned),
+        body,
+        recipient: recipient.to_owned(),
+        proof: request_proof.clone(),
+        ticket: Some(admission::ticket(token, &request_proof.node_id)),
+        epoch,
+    }
 }
 
 fn normalize_endpoint(endpoint: &str) -> String {

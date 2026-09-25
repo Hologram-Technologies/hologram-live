@@ -10,6 +10,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `reqwest`                                    | outbound HTTP over Rustls: verified update downloads, Ollama/vLLM inference, and mediated Component fetch |
 | `serde`, `serde_json`, `toml`                | typed configuration and public JSON                               |
 | `clap`                                       | CLI parsing                                                       |
+| `async-trait`                                | `dyn`-dispatched async for the pluggable cluster network trait |
 | `fs4`                                        | cross-platform daemon ownership lock                              |
 | `kameo`                                      | bounded actors, links, and supervision                            |
 | `tracing`, `tracing-subscriber`              | structured local diagnostics and runtime filtering                |

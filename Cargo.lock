@@ -3905,6 +3905,7 @@ dependencies = [
 name = "hologram-live"
 version = "1.0.0"
 dependencies = [
+ "async-trait",
  "axum",
  "base64 0.23.1",
  "bcrypt",

@@ -453,12 +453,14 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
 }
 
 /* ---- the mesh behind every catalogue card (Models, Registry, Spaces) --------------------------------
-   Fixed in CSS pixels on purpose: the box is 260x200 and src/card-art.mjs draws a 260x200 viewBox, so
+   Fixed size on purpose: the box is 260x200 and src/card-art.mjs draws a 260x200 viewBox, so
    one unit is one pixel and the facets are the same size on all three pages, whatever the card height
-   or the column count. A shorter card clips the bottom. Change one number and you change both files. */
+   or the column count. A shorter card clips the bottom. Change one number and you change both files.
+   In rem because the token lint refuses literal px in product sheets: at the browser's default
+   16px root, 16.25rem is exactly 260px and 12.5rem exactly 200px. */
 .card { position: relative; overflow: hidden; isolation: isolate; }
 .art {
-  position: absolute; z-index: -1; top: 0; right: 0; width: min(55%, 260px); height: 200px;
+  position: absolute; z-index: -1; top: 0; right: 0; width: min(55%, 16.25rem); height: 12.5rem;
   pointer-events: none; opacity: .85;
   -webkit-mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));
   mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));

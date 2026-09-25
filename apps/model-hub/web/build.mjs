@@ -77,7 +77,7 @@ const WALLPAPERS = [
   { key: "galaxy", name: "Galaxy" },
   { key: "aurora", name: "Aurora" },
 ];
-const THEMES = [["dark", "Dark", "moon"], ["light", "Light", "sun"], ["immersive", "Immersive", "image"]];
+const THEMES = [["immersive", "Immersive", "image"], ["dark", "Dark", "moon"], ["light", "Light", "sun"]];
 
 // ---- sign-in
 //
@@ -116,9 +116,9 @@ const topNav = (current = "") => `<nav class="top-nav" aria-label="Sections">${S
   .map(([key, label, mark, href]) => `<a href="${href}"${key === current ? ' aria-current="page"' : ""}>${label}${R.icon[mark]}</a>`)
   .join("")}</nav>`;
 
-// Runs before first paint: Dark for first visits, the saved choice after that. No flash.
+// Runs before first paint: Immersive for first visits, the saved choice after that. No flash.
 const prepaint = `(function(){var s={};try{s=JSON.parse(localStorage.getItem("hologram-models-hub.theme"))||{}}catch(e){}
-var m=["dark","light","immersive"].indexOf(s.mode)>=0?s.mode:"dark",w=${JSON.stringify(WALLPAPERS.map((w) => w.key))}.indexOf(s.wallpaper)>=0?s.wallpaper:"alps",r=document.documentElement;
+var m=["immersive","dark","light"].indexOf(s.mode)>=0?s.mode:"immersive",w=${JSON.stringify(WALLPAPERS.map((w) => w.key))}.indexOf(s.wallpaper)>=0?s.wallpaper:"alps",r=document.documentElement;
 r.setAttribute("data-theme",m);r.setAttribute("data-wallpaper",w);r.classList.toggle("dark",m!=="light");
 if(m==="immersive"){var l=document.createElement("link");l.rel="preload";l.as="image";l.href="${base}wallpapers/"+w+".jpg";document.head.appendChild(l)}
 // Someone signed in here before: say so now, not after auth.js has loaded and Privy has answered. Otherwise
@@ -184,7 +184,7 @@ const sectionTag = (name) => `<button type="button" class="endpoint section-tag 
 const describedBy = (name) => name ? `<link rel="describedby" type="text/markdown" href="${base}${name}.md">` : "";
 
 const page = ({ title, description, body, search = false, model = "", home = false, section = "", sectionRoot = false, styles = [] }) => `<!doctype html>
-<html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
+<html lang="en" class="dark" data-theme="immersive" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

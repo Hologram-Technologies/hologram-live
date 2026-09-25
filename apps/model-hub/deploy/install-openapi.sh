@@ -40,7 +40,7 @@ MARK='rewrite /.well-known/openapi.json /openapi.json'
 MARK_ARRIVING='rewrite @arriving /agent.md'
 MARK_VARY='header / Vary Accept'
 MARK_MALFORMED='@object_malformed'
-MARK_SECTIONS='@section_brief'
+MARK_SECTIONS='/buckets /buckets/ /docs/'
 MARK_JSON='@section_json'
 
 die() { echo "FAIL $*" >&2; exit 1; }

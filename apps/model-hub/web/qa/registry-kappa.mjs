@@ -7,9 +7,11 @@
 // cannot ship. The threshold is a floor, not a target: 30 rows are gone upstream today and stay listed.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { HOST } from "../src/origin.mjs";
 
 const REASONS = new Set(["gone", "error", "rate-limited-retry", "licence-refused"]);
-const KAPPA = /^hub\.uor\.foundation\/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$/;
+// The hub's own name comes from src/origin.mjs, the one file that holds it; a κ is an address on this host.
+const KAPPA = new RegExp(`^${HOST.replace(/[.]/g, "\\.")}/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$`);
 const TRUST = new Set(["upstream-digest", "upstream-attested", "first-seen"]);
 
 export async function checkKappa(dist, { floor = 0.9 } = {}) {

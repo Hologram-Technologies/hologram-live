@@ -3,7 +3,7 @@
 //   node build.mjs                 base / (set BASE=/path/ when served under a path;
 //                                  Git Bash: prefix MSYS_NO_PATHCONV=1)
 
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { checkSealed } from "./qa/registry-sealed.mjs";
 import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import * as R from "./src/render.mjs";
 import * as B from "./src/braille.mjs";
 import { overview, metaDescription } from "./src/overview.mjs";
+import { ORIGIN } from "./src/origin.mjs";
 import { landing } from "./src/landing.mjs";
 import * as D from "./src/docs.mjs";
 
@@ -29,7 +30,7 @@ const BROWSE = `${base}models/`;
 const STAR_REPO = process.env.MODEL_HUB_REPO || "Hologram-Technologies/hologram-live";
 const INDEX = "https://github.com/humuhumu33/hologram-api";
 // The one base URL every dialect answers on, whatever prefix this build is served under.
-const ENDPOINT = "https://hub.uor.foundation";
+const ENDPOINT = ORIGIN;
 
 const data = JSON.parse(await readFile(join(SITE, "data", "models.json"), "utf8"));
 const models = R.prepare(data.models, data.snapshot);
@@ -170,11 +171,13 @@ const chromeHead = [
   `<script type="module">import { mountChrome } from "${base}chrome.js"; mountChrome();</script>`,
 ].join("\n");
 
-// The tag beside every section heading. One shape and one meaning wherever a section is titled: the address
-// that answers with what this section does and how to use it. A browser asking for it gets the section's page;
-// anything else gets the brief. chrome.js fills in the host, asks the address whether it is answering, and
-// copies it when clicked; the head link beside it is the same address in a form a machine reads first.
-const sectionTag = (name) => `<button type="button" class="endpoint section-tag" data-section="${name}" aria-label="Copy the ${name} endpoint"><span class="dot"></span><span class="host">\u2026</span></button>`;
+// The tag beside every section heading: the landing's one line, per section. The hero teaches
+// `$ curl hub.uor.foundation`; each section repeats it with its own path, so the whole site is one lesson and
+// the tag is a command rather than an address a reader has to guess the verb for. Running it returns what the
+// section does and the requests that do it; a browser asking for the same URL gets the section's page.
+// chrome.js fills in the host and copies the whole command; the head link beside it is the same address in a
+// form a machine reads first.
+const sectionTag = (name) => `<button type="button" class="endpoint section-tag copy" data-section="${name}" aria-label="Copy the ${name} line"><span class="prompt" aria-hidden="true">$</span><span class="host">\u2026</span>${R.icon.copy}</button>`;
 const describedBy = (name) => name ? `<link rel="describedby" type="text/markdown" href="${base}${name}.md">` : "";
 
 const page = ({ title, description, body, search = false, model = "", home = false, section = "", sectionRoot = false, styles = [] }) => `<!doctype html>
@@ -453,7 +456,7 @@ for (const m of models) {
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
 const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "chrome.js", "render.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "chrome.js", "render.mjs", "card-art.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
 
 // ---- the documentation
 //
@@ -542,6 +545,25 @@ for (const section of ["registry", "spaces", "buckets"]) {
     .replace("<!--chrome:header-->", header({ section }))
     .replace("<!--chrome:tag-->", sectionTag(section));
   await writeFile(path, html);
+}
+
+// ---- one mesh, three pages
+//
+// Models, Registry and Spaces draw the same faceted card background. It was three copies of the same
+// twenty lines once, and they drifted: the Registry mesh ended up half as bright and half again as
+// coarse as the Models one, because a taller card scaled the same viewBox differently. Now there is one
+// generator (card-art.mjs) and one set of rules (chrome.css), and this refuses to ship a second copy.
+{
+  const shipped = await readdir(DIST, { recursive: true });
+  const dupes = [];
+  for (const f of shipped) {
+    if (!/[.](?:m?js|css)$/.test(f)) continue;
+    const body = await readFile(join(DIST, f), "utf8");
+    if (/function art\s*\(\s*seed/.test(body) && f !== "card-art.mjs") dupes.push(`${f} draws its own mesh`);
+    if (/^[.]art\s*[{]/m.test(body) && f !== "chrome.css") dupes.push(`${f} styles the mesh itself`);
+  }
+  if (dupes.length) throw new Error(["the card mesh has more than one home:", ...dupes].join("\n  "));
+  console.log("card mesh: one generator, one stylesheet, three pages");
 }
 
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this

@@ -6,10 +6,10 @@
 # artifact is the whole Space. Reads need no token; writes carry HUB_REGISTRY_TOKEN. Idempotent: a blob already
 # present is skipped by digest.
 #
-#   HUB_REGISTRY_TOKEN=… scripts/spaces.publish.sh [https://hub.uor.foundation] [space-id …]
+#   HUB_REGISTRY_TOKEN=… scripts/spaces.publish.sh [https://gethologram.ai] [space-id …]
 #   scripts/spaces.publish.sh http://127.0.0.1:5055        # the rehearsal registry needs no token
 set -euo pipefail
-HUB="${1:-https://hub.uor.foundation}"; shift || true
+HUB="${1:-https://gethologram.ai}"; shift || true
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SPACES="$HERE/public/spaces"
 # Git Bash hands python a /c/… path it cannot open; give it the Windows spelling when cygpath exists.

@@ -8,9 +8,9 @@
 //
 // Writes, all under web/public, which the site build copies into dist:
 //   openapi.json                      served at /openapi.json; /docs renders it, unchanged, from the same URL
-//   agent.md                          what `curl hub.uor.foundation` answers: the whole hub in one screen, for the
+//   agent.md                          what `curl gethologram.ai` answers: the whole hub in one screen, for the
 //                                     agent that just arrived and has no idea what this is
-//   models.md, registry.md            the same thing per section: what `curl hub.uor.foundation/models` answers,
+//   models.md, registry.md            the same thing per section: what `curl gethologram.ai/models` answers,
 //                                     so a section's chip on the site is a line you can run rather than a name
 //   .well-known/agent-card.json       the same contract as skills, for frameworks that discover an agent card
 //   robots.txt                        crawling policy, generated so it can never contradict the document
@@ -21,6 +21,7 @@
 //
 // Every example here is copied from qa/openapi/evidence.json, recorded by probe.mjs against the live hub.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { load as loadDocs, GROUPS as DOC_GROUPS } from "../src/docs.mjs";
 
@@ -35,8 +36,9 @@ const CARD = new URL("./.well-known/agent-card.json", PUBLIC);
 const BRIEF = new URL("./agent.md", PUBLIC);
 const SECTION_NAMES = ["models", "registry", "spaces", "buckets", "docs"];
 const SECTIONS = Object.fromEntries(SECTION_NAMES.map((n) => [n, new URL(`./${n}.md`, PUBLIC)]));
+const SECTION_JSON = Object.fromEntries(SECTION_NAMES.map((n) => [n, new URL(`./${n}.json`, PUBLIC)]));
 const ROBOTS = new URL("./robots.txt", PUBLIC);
-const BASE = "https://hub.uor.foundation";
+import { ORIGIN as BASE, HOST } from "../src/origin.mjs";
 
 // ---------------------------------------------------------------- pieces used everywhere
 
@@ -105,14 +107,14 @@ function document(server, evidence) {
       title: "Hologram Model Hub",
       summary: "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
       description: [
-        "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,",
+        `\`${BASE}\` is the only thing you configure. It answers in the dialect you already speak,`,
         "over one index in which every model file is named by the SHA-256 of its bytes and every hub object by the",
         "BLAKE3 of its bytes.",
         "",
         "**The short way.** Point the setting your tool already has at the hub and keep your commands:",
-        "`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `huggingface_hub` (transformers, diffusers,",
+        `\`HF_ENDPOINT=${BASE}\` for anything built on \`huggingface_hub\` (transformers, diffusers,`,
         "sentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,",
-        "`ollama pull hub.uor.foundation/<owner>/<name>:<quant>`, `oras pull hub.uor.foundation/<owner>/<name>:latest`,",
+        `\`ollama pull ${HOST}/<owner>/<name>:<quant>\`, \`oras pull ${HOST}/<owner>/<name>:latest\`,`,
         "or the MCP server at `/mcp`.",
         "",
         "**The rules that make it safe.**",
@@ -131,10 +133,10 @@ function document(server, evidence) {
       license: { name: "MIT OR Apache-2.0", identifier: "MIT OR Apache-2.0" },
       contact: { name: "Hologram Technologies", url: "https://github.com/Hologram-Technologies/hologram-live" },
       "x-hologram-dialects": {
-        huggingface: { setting: "HF_ENDPOINT=https://hub.uor.foundation", paths: ["/api/models", "/{owner}/{name}/resolve/{revision}/{path}"] },
-        ollama: { setting: "ollama pull hub.uor.foundation/{owner}/{name}:{quant}", paths: ["/v2/{owner}/{name}/manifests/{reference}", "/v2/{owner}/{name}/blobs/{digest}"] },
-        oci: { setting: "oras pull hub.uor.foundation/{owner}/{name}:latest", paths: ["/v2/{owner}/{name}/manifests/{reference}"] },
-        mcp: { setting: "https://hub.uor.foundation/mcp", paths: ["/mcp"] },
+        huggingface: { setting: `HF_ENDPOINT=${BASE}`, paths: ["/api/models", "/{owner}/{name}/resolve/{revision}/{path}"] },
+        ollama: { setting: `ollama pull ${HOST}/{owner}/{name}:{quant}`, paths: ["/v2/{owner}/{name}/manifests/{reference}", "/v2/{owner}/{name}/blobs/{digest}"] },
+        oci: { setting: `oras pull ${HOST}/{owner}/{name}:latest`, paths: ["/v2/{owner}/{name}/manifests/{reference}"] },
+        mcp: { setting: `${BASE}/mcp`, paths: ["/mcp"] },
         hologram: { setting: "GET /api/v1/objects/{address}", paths: ["/api/v1/objects/{address}"] },
       },
     },
@@ -175,7 +177,7 @@ function document(server, evidence) {
         "is what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually",
         "asks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.",
         "",
-        "So `curl hub.uor.foundation` is the shortest useful thing an agent can be told about this service.",
+        `So \`curl ${HOST}\` is the shortest useful thing an agent can be told about this service.`,
       ].join("\n"),
       parameters: [{ name: "Accept", in: "header", required: false, description: "`text/html` for the site, `application/json` for the descriptor, anything else for the brief.", schema: { type: "string" }, example: "*/*" }],
       responses: {
@@ -254,7 +256,14 @@ function document(server, evidence) {
           `${what}: the few requests that do the job, in the order you would make them, with the rule that makes`,
           "the bytes safe.",
           "",
-          "It adds no API — every route the brief names is already in this document. What was missing was an",
+          "",
+          "Ask for `application/json` and the same address answers a **section descriptor**: one fixed shape, the",
+          "same on all five sections, naming how to enumerate this section, how to reach one item, how to fetch",
+          "its bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content",
+          "address holding the whole of it, so the entire section is one verifiable fetch. Where it has none the",
+          "field is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.",
+          "",
+          "It adds no API — every route the descriptor names is already in this document. What was missing was an",
           "address that gathers them, which the site was already advertising. The trailing slash works either way,",
           "and a page below the section, such as a single model or one docs page, is untouched.",
           name === "registry" ? "\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns." : "",
@@ -262,9 +271,16 @@ function document(server, evidence) {
         ].filter(Boolean).join("\n"),
         responses: {
           200: {
-            description: "The section brief, or the section's page.",
-            headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
-            content: { "text/markdown": { schema: { type: "string" } }, "text/html": { schema: { type: "string" } } },
+            description: "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
+            headers: {
+              vary: { description: "`Accept`, because this route has three representations.", schema: { type: "string" } },
+              link: { description: "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.", schema: { type: "string" } },
+            },
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/SectionDescriptor" } },
+              "text/markdown": { schema: { type: "string" } },
+              "text/html": { schema: { type: "string" } },
+            },
           },
           ...NOT_SERVED,
         },
@@ -317,9 +333,16 @@ function document(server, evidence) {
       ].join("\n"),
       responses: {
         200: {
-          description: "The index to a browser; to anything else the section brief.",
-          headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
-          content: { "text/html": { schema: { type: "string" } }, "text/markdown": { schema: { type: "string", description: "The section brief." } } },
+          description: "The descriptor to a caller that asked for JSON, the section brief to any other non-browser, the index to a browser.",
+          headers: {
+            vary: { description: "`Accept`, because this route has three representations.", schema: { type: "string" } },
+            link: { description: "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.", schema: { type: "string" } },
+          },
+          content: {
+            "application/json": { schema: { $ref: "#/components/schemas/SectionDescriptor" } },
+            "text/html": { schema: { type: "string" } },
+            "text/markdown": { schema: { type: "string", description: "The section brief." } },
+          },
         },
         ...NOT_SERVED,
       },
@@ -647,7 +670,9 @@ function document(server, evidence) {
         404: hubError(404, "Unknown model, revision or file; `SourceHasNotGotIt` when the named source does not hold this file, naming the ones that do; or `UnknownSource` when the source name is not one this hub knows. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.", { error: "modelscope does not hold config.json of BAAI/bge-base-en-v1.5. This file is on: huggingface.co. Drop the /via/ prefix to let the hub choose." }),
         405: READ_ONLY[405],
       },
-      ...probe(`/via/ipfs/${evidence.sample.model}/resolve/main/${evidence.sample.file}`, { status: 302, method: "HEAD" }),
+      // Pinned to a source that holds the file: this operation is the redirect. The refusal when a source has
+      // not got it is described under 404 and recorded by the probe as via.missing.
+      ...probe(`/via/huggingface/${evidence.sample.model}/resolve/main/${evidence.sample.file}`, { status: 302, method: "HEAD" }),
     },
   };
   spec.paths["/via/{source}/api/models"] = {
@@ -655,7 +680,7 @@ function document(server, evidence) {
       tags: ["Files"],
       operationId: "listModelsVia",
       summary: "Search with a source pinned for what follows",
-      description: "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+      description: `The same rows as \`listModels\`. The prefix is accepted on every read route so a client can be configured once, with \`HF_ENDPOINT=${BASE}/via/ipfs\`, and never choose again.`,
       parameters: [SOURCE],
       responses: { 200: { description: "Matching rows.", content: json({ type: "array", items: ref("ModelRow") }) }, ...READ_ONLY },
       ...probe("/via/ipfs/api/models?limit=1", { contentType: "application/json" }),
@@ -944,7 +969,83 @@ function prune(spec) {
 function schemas() {
   const address = { type: "string", pattern: "^blake3:[0-9a-f]{64}$", description: "The BLAKE3 hash of an object's bytes, which is its name." };
   const sha256 = { type: "string", pattern: "^[0-9a-f]{64}$", description: "The SHA-256 of a file's bytes." };
+  const route = {
+    type: "object",
+    description: "One request, runnable as written once its `{placeholders}` are filled from this same document.",
+    required: ["method", "url", "returns"],
+    properties: {
+      dialect: { type: "string", enum: ["objects", "huggingface", "oci", "http"], description: "Which language this request is in." },
+      method: { type: "string", enum: ["GET"] },
+      url: { type: "string", description: "A path on this host. `{catalog.address}` means the value of that field in this document." },
+      returns: { type: "string" },
+      caps_at: { type: "integer", description: "The most this route will ever return in one call, when it cannot enumerate." },
+      note: { type: "string" },
+      artifact_type: { type: "string" },
+    },
+  };
   return {
+    SectionDescriptor: {
+      type: "object",
+      description: [
+        "One section of the hub, in the shape an agent executes rather than reads. The same fixed shape answers",
+        "at `/models`, `/registry`, `/spaces`, `/buckets` and `/docs/`, so it is learned once.",
+        "",
+        "Two guarantees, held by `qa/openapi/sections.mjs`: every URL in it is runnable as written, and where",
+        "`catalog.address` is not null it is a content address — the whole section in one verifiable fetch.",
+      ].join("\n"),
+      required: ["format", "section", "self", "about", "inventory", "catalog", "list", "item", "fetch", "verify", "brief", "page", "openapi"],
+      properties: {
+        format: { type: "string", const: "hologram.section.descriptor/v1" },
+        section: { type: "string", enum: ["models", "registry", "spaces", "buckets", "docs"] },
+        title: { type: "string" },
+        about: { type: "string", description: "One sentence: what this section holds." },
+        self: { type: "string", description: "The address that answered this." },
+        inventory: {
+          type: "object",
+          description: "How much is here, and how much of it this host actually serves bytes for. They are different numbers, and one section was overstating itself by a factor of 300 before they were separated.",
+          required: ["described", "served_here", "note"],
+          properties: {
+            described: { type: ["integer", "null"], description: "What this section lists. Null when only a live route can answer, which `list` then names." },
+            served_here: { type: ["integer", "null"], description: "How many of those this host serves the bytes of." },
+            note: { type: "string", description: "Where the rest live, in a sentence." },
+          },
+        },
+        catalog: {
+          type: ["object", "null"],
+          description: "One address holding the whole section. Null when the section has no snapshot; `list` then carries a live route instead.",
+          required: ["address", "fetch", "format"],
+          properties: {
+            address: { type: ["string", "null"], description: "A content address. Fetch it, hash the bytes, and the hash is this string." },
+            fetch: { type: "string" },
+            format: { type: "string" },
+            media_type: { type: "string" },
+            note: { type: "string" },
+          },
+        },
+        catalog_note: { type: "string", description: "Present when `catalog` is null: why, in one sentence." },
+        list: { type: "array", description: "Every way to enumerate this section, most useful first.", items: route },
+        item: { ...route, description: "How to reach one thing in this section." },
+        files: { ...route, description: "How to list one item's files, where that is a separate request." },
+        fetch: { ...route, description: "How to get the bytes." },
+        verify: {
+          type: "object",
+          description: "How to check what arrived. The expected hash never comes from whoever served the bytes.",
+          required: ["algorithm", "expected_from", "server_verifies_on_read"],
+          properties: {
+            algorithm: { type: "string", enum: ["sha256", "blake3", "none"] },
+            expected_from: { type: "string" },
+            server_verifies_on_read: { type: "boolean", description: "Always false. The client hashes, or nothing is proved." },
+            root: { type: "string" },
+            privacy: { type: "string" },
+          },
+        },
+        one_line: { type: "string", description: "The single command that makes an existing tool use this section, where one exists." },
+        pages: { type: "array", description: "Docs only: every page and its Markdown twin.", items: { type: "object" } },
+        brief: { type: "string" },
+        page: { type: "string" },
+        openapi: { type: "string" },
+      },
+    },
     Descriptor: {
       type: "object",
       description: "What the hub is and where everything under it lives. One fetch, no schema needed to read it.",
@@ -1051,7 +1152,7 @@ function schemas() {
       description: "Which byte sources are up, and the order the hub prefers them in.",
       required: ["sources", "order"],
       properties: {
-        sources: { type: "object", additionalProperties: { type: "object", required: ["ok", "checked"], properties: { ok: { type: "boolean", description: "Whether the hub reached it on its last probe." }, checked: { type: "string", format: "date-time" }, reason: { type: "string", description: "Why the hub believes it, in one word. `verified` means the hub fetched bytes and they hashed correctly — from the hub's network." } } } },
+        sources: { type: "object", additionalProperties: { type: "object", required: ["ok", "checked"], properties: { ok: { type: "boolean", description: "Whether the hub reached it on its last probe." }, checked: { type: ["string", "null"], format: "date-time", description: "When the hub last reached it, or null if it never has -- a source with no probe file on it is never checked, only offered." }, reason: { type: "string", description: "Why the hub believes it, in one word. `verified` means the hub fetched bytes and they hashed correctly — from the hub's network." } } } },
         order: { type: "array", items: { type: "string" }, description: "Preference order. A file goes to the first source here that is `ok` and holds it." },
       },
     },
@@ -1195,7 +1296,7 @@ function sectionBrief(name, docs = []) {
 
   if (name === "spaces") {
     return [
-      "# hub.uor.foundation/spaces",
+      `# ${HOST}/spaces`,
       "",
       "Apps that run entirely in the visitor's browser, each sealed under one address. Nothing runs on a server:",
       "the page is a folder of static files, the model comes from the host the Space names, and the work happens on",
@@ -1226,7 +1327,7 @@ function sectionBrief(name, docs = []) {
 
   if (name === "buckets") {
     return [
-      "# hub.uor.foundation/buckets",
+      `# ${HOST}/buckets`,
       "",
       "Storage for models, datasets and checkpoints, where every object carries the address of its own bytes. A",
       "bucket is an OCI index tree under `/v2/`, so anything that speaks the distribution protocol can walk one,",
@@ -1262,7 +1363,7 @@ function sectionBrief(name, docs = []) {
   if (name === "docs") {
     // A reader gets /docs/<page>/; you get /docs/<page>.md, the same words with no markup.
     return [
-      "# hub.uor.foundation/docs",
+      `# ${HOST}/docs`,
       "",
       "The written documentation, in reading order. Every page has a Markdown twin at the address below: the same",
       "words, with no navigation, no markup and no scripts.",
@@ -1279,10 +1380,15 @@ function sectionBrief(name, docs = []) {
 
   if (name === "models") {
     return [
-      "# hub.uor.foundation/models",
+      `# ${HOST}/models`,
       "",
       "Open models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and",
       "every request below is anonymous.",
+      "",
+      "To read the whole catalogue rather than a page of it, start at the descriptor and fetch the one address it",
+      "names: `curl -H 'accept: application/json' " + BASE + "/models` gives `catalog.address`, and that object is",
+      "every model in one request. `/api/models` is capped at 500 with no cursor, so it cannot enumerate a",
+      "catalogue larger than that.",
       "",
       "## One line, if you can set an environment variable",
       "",
@@ -1322,21 +1428,30 @@ function sectionBrief(name, docs = []) {
   }
 
   return [
-    "# hub.uor.foundation/registry",
+    `# ${HOST}/registry`,
     "",
     "The same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are",
     "anonymous; only publishing needs a credential.",
     "",
+    "## What this registry holds, and what it only describes",
+    "",
+    "The page lists every repository the hub knows about, most of them held by Docker Hub, Artifact Hub or",
+    "Microsoft Artifact Registry and pulled from there. Only the ones `/v2/_catalog` returns are served from",
+    "here. Ask it rather than the page count:",
+    "",
+    "    GET /v2/_catalog?n=1000",
+    "        every repository this registry serves the bytes of",
+    "",
     "## Pull with what you have",
     "",
-    "    ollama pull hub.uor.foundation/<org>/<name>:<quant>",
+    `    ollama pull ${HOST}/<org>/<name>:<quant>`,
     "        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.",
     "",
-    "    oras pull hub.uor.foundation/<org>/<name>:latest",
+    `    oras pull ${HOST}/<org>/<name>:latest`,
     "        A CNCF ModelPack artifact: every layer is one file of the model and its digest is that file's",
     "        SHA-256, which oras, modctl, skopeo and crane all check for you. Lowercase the reference.",
     "",
-    "    hologram pull hub.uor.foundation/model-hub/index:<YYYY-MM-DD>",
+    `    hologram pull ${HOST}/model-hub/index:<YYYY-MM-DD>`,
     "        The hub's own daily index, one tag per day, kept for ever.",
     "",
     "## Or speak the protocol",
@@ -1352,7 +1467,7 @@ function sectionBrief(name, docs = []) {
   ].join("\n");
 }
 
-// The one file an agent reads. It is what `curl hub.uor.foundation` answers, because curl and every HTTP client an
+// The one file an agent reads. It is what `curl gethologram.ai` answers, because curl and every HTTP client an
 // agent is built on send `Accept: */*` and would otherwise get 78 KB of markup they cannot use.
 //
 // Rules it lives by, learned from the ones that work (OpenRouter's learn.md, Hugging Face's own docs):
@@ -1363,7 +1478,7 @@ function brief(spec) {
   const has = (path) => (spec.paths[path] ? "" : " (missing)");
   const ops = Object.values(spec.paths).reduce((n, item) => n + Object.keys(item).filter((k) => k !== "parameters").length, 0);
   return [
-    "# hub.uor.foundation",
+    `# ${HOST}`,
     "",
     "You are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file",
     "named by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.",
@@ -1371,7 +1486,7 @@ function brief(spec) {
     "",
     "## One line, if you can set an environment variable",
     "",
-    "    HF_ENDPOINT=https://hub.uor.foundation",
+    `    HF_ENDPOINT=${BASE}`,
     "",
     "Everything built on huggingface_hub now reads from here, with the commands you already have: transformers,",
     "diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT instead. Same cache, same files.",
@@ -1397,15 +1512,15 @@ function brief(spec) {
     "index and never from the source that served the bytes, and this server does not verify on read. To check a",
     "whole download at once, with no tool of ours:",
     "",
-    "    curl -s https://hub.uor.foundation/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c",
+    `    curl -s ${BASE}/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c`,
     "",
     "What that proves exactly: the bytes you received are the bytes this index names, so no mirror, CDN or network",
     "in between altered them without you noticing. It is not independent ground truth, because the index and the",
     "checksum file come from the same host. If you want a check that does not rest on trusting this host, fetch the",
     "same file again through a different source and compare the two for yourself:",
     "",
-    "    curl -sI https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source",
-    "    curl -sL https://hub.uor.foundation/via/modelscope/{owner}/{name}/resolve/main/config.json | sha256sum",
+    `    curl -sI ${BASE}/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source`,
+    `    curl -sL ${BASE}/via/modelscope/{owner}/{name}/resolve/main/config.json | sha256sum`,
     "",
     "`/via/huggingface`, `/via/modelscope` and `/via/ipfs` each pin one source and refuse rather than falling back,",
     "so two of them agreeing is two unrelated hosts agreeing and not one host repeating itself. A source that does",
@@ -1415,7 +1530,7 @@ function brief(spec) {
     "",
     `    /openapi.json     the whole endpoint, ${Object.keys(spec.paths).length} paths and ${ops} operations, OpenAPI 3.1. Bind to it directly.`,
     "    /mcp              the same hub as MCP tools over streamable HTTP. No key.",
-    "    /v2/              OCI: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`, `oras pull ...`.",
+    `    /v2/              OCI: \`ollama pull ${HOST}/<org>/<name>:<quant>\`, \`oras pull ...\`.`,
     "    /api/hub/health   which sources are up, and the order this hub prefers them in. Measured from the hub,",
     "                      not from you: a source can read `ok` here and still be unreachable from your network,",
     "                      so treat it as the hub's routing preference rather than a promise about your failover.",
@@ -1431,7 +1546,7 @@ function brief(spec) {
     "you did not have to take this file's word for any of it.",
     "",
     "<!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch",
-    "     https://hub.uor.foundation/agent.md again and read it verbatim. -->",
+    `     ${BASE}/agent.md again and read it verbatim. -->`,
     "",
   ].join("\n");
 }
@@ -1448,7 +1563,7 @@ function agentCard(spec) {
     Models: [`curl '${BASE}/api/models?search=qwen&filter=gguf&limit=5'`, `export HF_ENDPOINT=${BASE} && hf download Qwen/Qwen3-0.6B`],
     Files: [`curl -sI ${BASE}/Qwen/Qwen3-0.6B/resolve/main/config.json`, `curl -s ${BASE}/Qwen/Qwen3-0.6B/resolve/main/SHA256SUMS | sha256sum -c`],
     Objects: [`curl ${BASE}/api/v1/objects/blake3:<hex>`],
-    Registry: ["ollama pull hub.uor.foundation/qwen/qwen3-0.6b-gguf:Q4_K_M", "oras pull hub.uor.foundation/qwen/qwen3-0.6b:latest"],
+    Registry: [`ollama pull ${HOST}/qwen/qwen3-0.6b-gguf:Q4_K_M`, `oras pull ${HOST}/qwen/qwen3-0.6b:latest`],
     MCP: [`add the MCP server ${BASE}/mcp`],
   };
   return {
@@ -1477,7 +1592,7 @@ function agentCard(spec) {
 // a reader or an agent needs stays open.
 function robots() {
   return [
-    "# hub.uor.foundation",
+    `# ${HOST}`,
     "# The website, the model pages and the discovery documents are open to crawlers.",
     "# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real",
     "# traffic, and a crawler that follows them pays nothing and keeps nothing.",
@@ -1498,6 +1613,202 @@ function robots() {
   ].join("\n");
 }
 
+
+
+// What the build honestly knows about how much is in each section. A number it cannot know is null, and the
+// descriptor then points at the live route that can answer -- a guessed count is worse than no count.
+// `registryHeld` and `catalog` come out of the probe recording, so they are whatever the live hub last said.
+function inventory(evidence, docs) {
+  const rec = (id) => (evidence.records || []).find((r) => r.id === id);
+  // probe.mjs stores a JSON body already parsed and everything else as text, so take it either way.
+  const json = (id) => { const b = rec(id)?.body; if (b && typeof b === "object") return b; try { return JSON.parse(b); } catch { return null; } };
+  const local = (p) => { try { return JSON.parse(readFileSync(new URL(p, HERE), "utf8")); } catch { return null; } };
+
+  // Lengths, not examples: probe.mjs shrinks every array in a body to three entries, so counting one of
+  // those would report 3 for anything longer. `sizes` is recorded before that shrink.
+  const size = (id, key) => (evidence.records || []).find((r) => r.id === id)?.sizes?.[key] ?? null;
+  const prefix = (doc, start, total) => {
+    const names = doc?.repositories;
+    if (!Array.isArray(names) || total === null || names.length !== total) return null;
+    return names.filter((n) => n.startsWith(start)).length;
+  };
+  const images = local("../public/registry/data/images.json");
+  const spaces = local("../public/spaces/spaces.json");
+  const held = json("oci.catalog");
+  const root = json("root.descriptor");
+
+  return {
+    registryRows: images?.images?.length ?? null,
+    registryHeld: size("oci.catalog", "repositories"),
+    spaces: spaces?.spaces?.length ?? null,
+    // A prefix count cannot come from `sizes`, and the example holds only the first three names, so these
+    // stay null unless the whole listing happens to fit in the example.
+    spacesPublished: prefix(held, "spaces/", size("oci.catalog", "repositories")),
+    buckets: prefix(held, "buckets/", size("oci.catalog", "repositories")),
+    catalog: root?.catalog ?? null,
+    models: null,        // the catalogue's size is in the catalogue; the descriptor points at it
+    docs: docs.length,
+  };
+}
+
+// ---------------------------------------------------------------- the section descriptor
+//
+// The brief above is for reading. This is the same section for executing: one fixed shape, five sections, so
+// an agent learns it once at the root and every section answers the same way. It adds no API -- it is a third
+// representation of an address that already answers HTML to a browser and markdown to a reader.
+//
+// Two rules it is held to, by qa/openapi/sections.mjs:
+//   - every URL in it is runnable as written, with {placeholders} fillable from the same document;
+//   - `catalog.address` is a content address, so "the whole section" is one verifiable fetch. It is null when
+//     the section genuinely has no snapshot. A section with nothing to point at says so; it does not borrow.
+//
+// `inventory` exists because one of these sections was overstating itself by a factor of 300. The Registry
+// page counts 2,149 repositories and this registry serves 7 of them; the rest are described here and pulled
+// from the registry that holds them. `described` and `served_here` are different numbers and always were.
+const SECTION_PATHS = { models: "/models", registry: "/registry", spaces: "/spaces", buckets: "/buckets", docs: "/docs/" };
+
+const VERIFY = {
+  sha256: {
+    algorithm: "sha256",
+    expected_from: "the catalog, the tree listing or the manifest -- never the source that served the bytes",
+    server_verifies_on_read: false,
+  },
+  blake3: {
+    algorithm: "blake3",
+    expected_from: "the address you asked for; an object's name is the BLAKE3 of its bytes",
+    server_verifies_on_read: false,
+  },
+};
+
+function sectionDescriptor(name, { docs = [], counts = {} } = {}) {
+  const path = SECTION_PATHS[name];
+  const base = {
+    format: "hologram.section.descriptor/v1",
+    section: name,
+    title: name[0].toUpperCase() + name.slice(1),
+    self: path,
+    brief: `/${name}.md`,
+    page: name === "docs" ? "/docs/" : `/${name}/`,
+    openapi: "/openapi.json",
+  };
+
+  if (name === "models") {
+    return {
+      ...base,
+      about: "Open models. Find one, prove it, and fetch it from whichever source is up. No account, no key.",
+      inventory: {
+        described: counts.models ?? null,
+        served_here: 0,
+        note: "the hub carries no weight bytes; a file request is a 302 to a source that has them, and the hash you check against comes from the index",
+      },
+      catalog: {
+        address: counts.catalog ?? null,
+        fetch: "/api/v1/objects/{address}",
+        format: "hologram.model-hub.catalog/v1",
+        media_type: "application/json",
+        note: "the whole catalogue in one fetch; read `objects[<owner>/<name>].model` for one model's own address",
+      },
+      list: [
+        { dialect: "objects", method: "GET", url: "/api/v1/objects/{catalog.address}", returns: "every model, addressed" },
+        { dialect: "huggingface", method: "GET", url: "/api/models?limit=500", returns: "a page of models", caps_at: 500, note: "no cursor: this dialect cannot enumerate a catalogue larger than 500. Use the catalog object." },
+        { dialect: "oci", method: "GET", url: "/v2/model-hub/index/tags/list", returns: "one tag per daily index" },
+      ],
+      item: { url: "/api/models/{owner}/{name}", returns: "one model in the Hugging Face dialect" },
+      files: { url: "/api/models/{owner}/{name}/tree/main", returns: "every file with its size and sha256" },
+      fetch: { url: "/{owner}/{name}/resolve/main/{path}", returns: "302 to a live source", note: "hash what arrives" },
+      verify: VERIFY.sha256,
+      one_line: `export HF_ENDPOINT=${BASE}`,
+    };
+  }
+
+  if (name === "registry") {
+    return {
+      ...base,
+      about: "OCI distribution. Pull models and artifacts with the client you already have.",
+      inventory: {
+        described: counts.registryRows ?? null,
+        served_here: counts.registryHeld ?? null,
+        note: "`described` counts what the page indexes, most of it held by Docker Hub, Artifact Hub and Microsoft Artifact Registry and pulled from those. `served_here` is what this registry serves bytes for -- the only ones /v2/ can give you.",
+      },
+      catalog: null,
+      catalog_note: "this section has no snapshot: /v2/_catalog is live truth, and a snapshot of somebody else's registry would be a claim we cannot keep",
+      list: [
+        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "every repository this registry serves" },
+        { dialect: "oci", method: "GET", url: "/v2/{repository}/tags/list", returns: "every tag of one repository" },
+      ],
+      item: { url: "/v2/{repository}/manifests/{reference}", returns: "an OCI manifest or index" },
+      fetch: { url: "/v2/{repository}/blobs/{digest}", returns: "one blob", note: "the digest is the sha256 of the bytes" },
+      verify: VERIFY.sha256,
+      one_line: `ollama pull ${HOST}/{owner}/{name}:{quant}`,
+    };
+  }
+
+  if (name === "spaces") {
+    return {
+      ...base,
+      about: "Apps that run entirely in the visitor's browser, each sealed under one root digest.",
+      inventory: {
+        described: counts.spaces ?? null,
+        served_here: counts.spacesPublished ?? 0,
+        note: "a Space is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed Space that is not published answers 404 there, and that is not an error.",
+      },
+      catalog: counts.spacesObject ? {
+        address: counts.spacesObject,
+        fetch: "/api/v1/objects/{address}",
+        format: "hologram.spaces.catalog/v1",
+        media_type: "application/json",
+      } : null,
+      catalog_note: counts.spacesObject ? undefined
+        : "the catalog is not published as an object yet, so this section has no address you can verify: read the static file named in `list`, and treat it as unaddressed",
+      list: [
+        { dialect: "http", method: "GET", url: "/spaces/spaces.json", returns: "every Space with its sealed root", note: "a static file, not content-addressed" },
+        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "repositories; published Spaces are named spaces/{id}" },
+      ],
+      item: { url: "/v2/spaces/{id}/manifests/latest", returns: "one Space as an OCI artifact", artifact_type: "application/vnd.hologram.space.v1+json" },
+      fetch: { url: "/v2/spaces/{id}/blobs/{digest}", returns: "one file of the Space" },
+      verify: { ...VERIFY.sha256, root: "every file is named in holospace.lock.json with its sha256, and `root` is the sha256 over that map; one changed byte changes the root" },
+    };
+  }
+
+  if (name === "buckets") {
+    return {
+      ...base,
+      about: "Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.",
+      inventory: {
+        described: counts.buckets ?? null,
+        served_here: counts.buckets ?? null,
+        note: "a bucket is an OCI index tree under /v2/, named buckets/{owner}/{name}. There is no separate bucket API.",
+      },
+      catalog: null,
+      catalog_note: "no catalogue object yet: discovery is the registry catalogue filtered by the buckets/ prefix",
+      list: [
+        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "every repository; the buckets are those named buckets/{owner}/{name}" },
+        { dialect: "oci", method: "GET", url: "/v2/buckets/{owner}/{name}/tags/list", returns: "every past state; a tag h-{milliseconds} is one publish and names its parent" },
+      ],
+      item: { url: "/v2/buckets/{owner}/{name}/manifests/latest", returns: "the bucket as it stands, an OCI index" },
+      fetch: { url: "/v2/buckets/{owner}/{name}/blobs/{digest}", returns: "one block" },
+      verify: { ...VERIFY.sha256, privacy: "a private bucket is encrypted in the browser before anything is sent, object names included; the hub stores bytes it cannot read" },
+    };
+  }
+
+  // docs
+  return {
+    ...base,
+    about: "The written documentation. Every page has a Markdown twin with no markup and no scripts.",
+    inventory: { described: docs.length || null, served_here: docs.length || null, note: "every page is served from this host" },
+    catalog: null,
+    catalog_note: "the index is /llms.txt, which lists every page and its twin in one request",
+    list: [
+      { dialect: "http", method: "GET", url: "/llms.txt", returns: "every page, grouped, with its address" },
+      { dialect: "http", method: "GET", url: "/docs.md", returns: "the same list as this section's brief" },
+    ],
+    item: { url: "/docs/{page}.md", returns: "one page as Markdown" },
+    fetch: { url: "/docs/{page}.md", returns: "the same; a docs page is its own bytes" },
+    verify: { algorithm: "none", expected_from: "documentation is served from this origin and carries no address", server_verifies_on_read: false },
+    pages: docs.map((p) => ({ slug: p.slug, title: p.title, group: p.group, url: `/docs/${p.slug}.md` })),
+  };
+}
+
 // ---------------------------------------------------------------- run
 
 async function main() {
@@ -1511,11 +1822,13 @@ async function main() {
   const server = JSON.parse(await readFile(SERVER_SPEC, "utf8"));
   const evidence = JSON.parse(await readFile(new URL("../qa/openapi/evidence.json", HERE), "utf8"));
   const docs = await loadDocs(DOCS_DIR);
+  const counts = inventory(evidence, docs);
   const spec = document(server, evidence);
   const files = [
     [OUT, JSON.stringify(spec, null, 1) + "\n"],
     [BRIEF, brief(spec)],
     ...SECTION_NAMES.map((n) => [SECTIONS[n], sectionBrief(n, docs)]),
+    ...SECTION_NAMES.map((n) => [SECTION_JSON[n], JSON.stringify(sectionDescriptor(n, { docs, counts }), null, 1) + "\n"]),
     [CARD, JSON.stringify(agentCard(spec), null, 1) + "\n"],
     [ROBOTS, robots()],
   ];
@@ -1536,6 +1849,7 @@ async function main() {
   console.log(`wrote public/openapi.json: ${Object.keys(spec.paths).length} paths, ${ops} operations, ${Object.keys(spec.components.schemas).length} schemas, ${Math.round(files[0][1].length / 1024)} KB`);
   console.log(`wrote public/agent.md: ${brief(spec).split("\n").length} lines`);
   for (const [name, url] of Object.entries(SECTIONS)) console.log(`wrote public/${name}.md: ${sectionBrief(name, docs).split("\n").length} lines`);
+  console.log(`wrote ${SECTION_NAMES.length} section descriptors: ${SECTION_NAMES.map((n) => `${n}.json`).join(", ")}`);
   console.log(`wrote public/.well-known/agent-card.json: ${agentCard(spec).skills.length} skills`);
   console.log("wrote public/robots.txt");
 }

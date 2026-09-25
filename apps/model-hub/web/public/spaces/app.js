@@ -1,3 +1,4 @@
+import { art } from "../card-art.mjs";
 // Spaces — the page. It reads its own catalog (spaces.json, sealed roots per Space), asks the registry on this
 // origin whether each Space is published there, and opens a Space in a sandboxed frame on this page. The
 // Space's runtime narrates itself on a BroadcastChannel (index read · bytes verified · served from the
@@ -88,31 +89,6 @@ const rail = createRail({
   lead: { marks: { value: ON_REGISTRY, className: "ours", title: "Published to this registry as a sealed artifact: its root is a digest you can check here" } },
 });
 
-// The Models page's faceted mesh, seeded by the entry's own address: same bytes, same surface.
-// Lit facets mark what this registry can check itself; everything else shows the bare wireframe.
-const ART_W = 260, ART_H = 120;
-function art(seed, lit) {
-  let h = 2166136261;
-  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  const r = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; };
-  const f = (n) => n.toFixed(1);
-  const cols = 9, rows = 4, gx = ART_W / (cols - 1), gy = ART_H / (rows - 1), p = [];
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    p.push([x * gx + (r() - 0.5) * gx * 0.5, y * gy + (y && y < rows - 1 ? (r() - 0.5) * gy * 0.5 : 0)]);
-  }
-  let edges = "", faces = "";
-  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols - 1; x++) {
-    const a = p[y * cols + x], b = p[y * cols + x + 1], c = p[(y + 1) * cols + x], d = p[(y + 1) * cols + x + 1];
-    for (const t of [[a, b, d], [a, d, c]]) {
-      const path = `M${t.map((q) => `${f(q[0])} ${f(q[1])}`).join("L")}Z`;
-      edges += path;
-      const v = r();
-      if (lit && v < 0.35) faces += `<path d="${path}" opacity="${f(0.02 + v * 0.12)}"/>`;
-    }
-  }
-  return `<svg class="art${lit ? " lit" : ""}" viewBox="0 0 ${ART_W} ${ART_H}" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">${faces}</g><path class="edges" d="${edges}"/></svg>`;
-}
-
 function card(s) {
   const need = missing(s);
   const el = document.createElement("button");
@@ -123,7 +99,7 @@ function card(s) {
   el.innerHTML = `<span class="logo"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${s.iconSvg || ""}</svg></span>
     <span class="tags"><span class="tag">${s.task}</span><span class="tag ${need.length ? "no" : "here"}">${need.length ? "needs " + need.join(" + ") : "runs here"}</span><span class="tag">${fmtMB(s.modelBytes)} model</span></span>
     <h3>${s.name}</h3><p>${s.tagline}</p>
-    <span class="foot">${foot.join("")}</span>${art(s.root, !need.length)}`;
+    <span class="foot">${foot.join("")}</span>${art(s.root)}`;
   el.addEventListener("click", () => open(s.id));
   return el;
 }

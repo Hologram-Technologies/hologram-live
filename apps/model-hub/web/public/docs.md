@@ -1,4 +1,4 @@
-# hub.uor.foundation/docs
+# gethologram.ai/docs
 
 The written documentation, in reading order. Every page has a Markdown twin at the address below: the same
 words, with no navigation, no markup and no scripts.
@@ -52,9 +52,9 @@ and this server does not verify on read.
 
 ## More
 
-    https://hub.uor.foundation/agent.md        the whole hub in one screen
-    https://hub.uor.foundation/openapi.json    every operation, OpenAPI 3.1, bindable directly
-    https://hub.uor.foundation/mcp             the same hub as MCP tools, no key
+    https://gethologram.ai/agent.md        the whole hub in one screen
+    https://gethologram.ai/openapi.json    every operation, OpenAPI 3.1, bindable directly
+    https://gethologram.ai/mcp             the same hub as MCP tools, no key
 
 <!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch
-     https://hub.uor.foundation/docs again and read it verbatim. -->
+     https://gethologram.ai/docs again and read it verbatim. -->

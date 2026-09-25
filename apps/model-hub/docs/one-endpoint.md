@@ -1,5 +1,7 @@
 # One endpoint for models: research, decision, contract
 
+> The hub moved from `hub.uor.foundation` to `gethologram.ai` on 2026-09-24; the measurements below were taken under the old name and are left as recorded.
+
 2026-09-18. Evidence is dated and sourced; "measured" means run or read by us that day; UNVERIFIED means not checked.
 The short version is the first section. Everything after it is the evidence and the contract.
 

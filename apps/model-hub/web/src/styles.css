@@ -144,8 +144,8 @@
 @keyframes hl-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { :root[data-highlight="resolve"] .hl::after { animation: none; } }
 
-.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-6); }
-.land-prompt { color: var(--hh-text-dim); margin-right: .5ch; }
+.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-8); }
+.prompt { color: var(--hh-text-dim); margin-right: .5ch; }
 .land-second { font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }
 
@@ -364,18 +364,6 @@
 .avatar { width: var(--hh-avatar); height: var(--hh-avatar); border-radius: 50%; object-fit: cover; background: var(--hh-fill); box-shadow: 0 0 0 1px var(--hh-line); }
 .avatar.initials { display: grid; place-items: center; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--hh-text); }
 
-.art {
-  position: absolute; z-index: -1; top: 0; right: 0; width: 55%; height: 100%;
-  pointer-events: none; opacity: .85;
-  -webkit-mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));
-  mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));
-  transition: opacity var(--hh-ease);
-}
-.art .facets { fill: var(--hh-text); }
-.art .edges { fill: none; stroke: var(--hh-text); stroke-width: .5; opacity: .07; }
-.art.lit .edges { opacity: .14; }
-.card:hover .art { opacity: 1; }
-
 .empty { grid-column: 1 / -1; display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-16) var(--space-4); color: var(--hh-text-dim); }
 .link { color: var(--hh-text); text-decoration: underline; text-underline-offset: var(--space-1); text-decoration-color: var(--hh-line-focus); }
 
@@ -413,9 +401,6 @@
 .facts .ok { color: var(--hh-ok); }
 .facts .dim { color: var(--hh-text-dim); }
 .facts .bad { color: var(--hh-bad); }
-.copy { display: inline-flex; align-items: center; gap: var(--space-2); color: inherit; transition: color var(--hh-ease); }
-.copy .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-text-dim); }
-.copy:hover, .copy:hover .i { color: var(--hh-text); }
 
 .scroll { overflow-x: auto; margin: 0 calc(-1 * var(--hh-pad)); padding: 0 var(--hh-pad); }
 table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }

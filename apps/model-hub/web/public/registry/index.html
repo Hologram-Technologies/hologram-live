@@ -44,8 +44,8 @@
 .cmdline{display:flex;align-items:center;gap:8px;padding:10px 10px;background:var(--ground);
   border:1px solid var(--line);border-radius:9px}
 .cmdline code{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;overflow:auto;white-space:nowrap}
-.copy{height:28px;padding:0 10px;border-radius:7px;background:var(--fill);font-size:12.5px;color:var(--dim);flex:none}
-.copy:hover{color:var(--text)}
+.sheet-copy{height:28px;padding:0 10px;border-radius:7px;background:var(--fill);font-size:12.5px;color:var(--dim);flex:none}
+.sheet-copy:hover{color:var(--text)}
 #more{margin:18px auto 0;display:block;width:auto;height:40px;padding:0 18px;border:1px solid var(--line2);border-radius:9px;color:var(--dim);font-size:14px}
 .here-word{color:var(--ok);font-weight:400}
 
@@ -102,7 +102,7 @@
   </div>
   <div class="cmdbox" id="s-cmdbox">
     <span class="lbl" id="s-cmdlabel">Pull it</span>
-    <div class="cmdline"><code id="s-cmd"></code><button class="copy" id="s-copy">Copy</button></div>
+    <div class="cmdline"><code id="s-cmd"></code><button class="sheet-copy" id="s-copy">Copy</button></div>
   </div>
   <dl class="facts" id="s-facts"></dl>
   <div class="sheet-foot">

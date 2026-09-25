@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Daily Model Hub index snapshot → hub.uor.foundation registry as model-hub/index:<YYYY-MM-DD>.
+# Daily Model Hub index snapshot → gethologram.ai registry as model-hub/index:<YYYY-MM-DD>.
 # Runs after build-site.sh (same data). Uses the official hologram CLI: compile a thin library .holo whose layers are
 # the day's files by BLAKE3, then `hologram push`. Pushes go to the registry over the internal docker network; the
 # registry token never leaves this server.

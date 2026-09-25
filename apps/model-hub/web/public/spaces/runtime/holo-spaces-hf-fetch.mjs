@@ -2,13 +2,13 @@
 //
 // A Space names its model by id (`onnx-community/Kokoro-82M-v1.0-ONNX`); the runtime (transformers.js,
 // kokoro-js, raw fetch) pulls files by URL from whatever HF-dialect host is configured — huggingface.co
-// today, hub.uor.foundation once the model is indexed there (both speak `/api/models/{id}/tree/{rev}`
+// today, gethologram.ai once the model is indexed there (both speak `/api/models/{id}/tree/{rev}`
 // and `/{id}/resolve/{rev}/{path}`, both send CORS). The HOST is a location; it is never the identity.
 // The identity of every file is the digest the TREE names for it, and this module makes that digest
 // the gate (Law L5): a byte that does not re-derive to its tree digest never reaches the model.
 //
 //   • LFS files carry `lfs.oid` = sha-256 of the bytes — the κ on the open-web axis (= CIDv1 sha2-256,
-//     = the registry's blob digest). hub.uor.foundation normalises every file's `oid` to sha-256.
+//     = the registry's blob digest). gethologram.ai normalises every file's `oid` to sha-256.
 //   • Non-LFS files on huggingface.co carry the GIT BLOB sha-1 (`sha1("blob <len>\0" + bytes)`), so a
 //     small config/tokenizer is verified on that axis — still a digest of the bytes named by the index,
 //     never by the host that served them.

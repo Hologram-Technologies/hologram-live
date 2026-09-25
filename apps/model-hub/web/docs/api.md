@@ -8,7 +8,7 @@ order: 11
 One base URL, no key for any read. Everything below is generated at build time from [`/openapi.json`](/openapi.json), the OpenAPI 3.1 document that describes the whole endpoint, so a route cannot appear here without being described there. The interactive rendering of the same document is at [`/docs`](/docs).
 
 ```
-https://hub.uor.foundation
+https://gethologram.ai
 ```
 
 | Placeholder | Meaning | Example |

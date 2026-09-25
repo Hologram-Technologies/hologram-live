@@ -12,7 +12,7 @@ hologram-live node comes with the Model Hub `.holo` application (issue
 ## Use it with your tools: `HF_ENDPOINT`
 
 ```bash
-export HF_ENDPOINT=https://hub.uor.foundation
+export HF_ENDPOINT=https://gethologram.ai
 hf download sentence-transformers/all-MiniLM-L6-v2
 ```
 
@@ -22,7 +22,7 @@ Hugging Face's dialect from the address index and sends every file request, as a
 last health probe: Hugging Face first (its CDN is the fastest), then ModelScope, then IPFS. No weight byte passes
 through the hub. `main` is the indexed revision, so a build gets the same bytes tomorrow. `/via/ipfs`,
 `/via/modelscope` or `/via/huggingface` in front of the path pins the first choice of source
-(`HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`). `…/resolve/main/SHA256SUMS` is generated for every model, so a
+(`HF_ENDPOINT=https://gethologram.ai/via/ipfs`). `…/resolve/main/SHA256SUMS` is generated for every model, so a
 download is checked with plain `sha256sum -c`; the clients themselves verify nothing.
 
 The dialect was recorded from the clients, not guessed (`web/qa/hf-dialect/recorder.mjs`): model info, the tree listing,
@@ -45,7 +45,7 @@ had failed at `.gitattributes`: the IPFS archives had been packed without dotfil
 ### Ollama, and the design behind both
 
 ```bash
-ollama pull hub.uor.foundation/bartowski/MiniCPM5-2B-GGUF:Q4_K_M
+ollama pull gethologram.ai/bartowski/MiniCPM5-2B-GGUF:Q4_K_M
 ```
 
 The same service speaks Ollama's registry dialect for every GGUF repository in the index: the manifest's model layer
@@ -54,8 +54,8 @@ digest itself. The chat template and parameters come from Hugging Face's own man
 the very bytes our index names, and kept so the pull still works when Hugging Face is away (measured: Ollama 0.34.2
 pulled, verified and ran a model; with Hugging Face blackholed the same pull completed from ModelScope).
 OCI clients get the same models as CNCF ModelPack artifacts from the same routes
-(`oras pull hub.uor.foundation/hexgrad/kokoro-82m:latest`, lowercase as OCI requires; measured: 72 files, every one
-matching), and agents get three tools over MCP at `https://hub.uor.foundation/mcp`.
+(`oras pull gethologram.ai/hexgrad/kokoro-82m:latest`, lowercase as OCI requires; measured: 72 files, every one
+matching), and agents get three tools over MCP at `https://gethologram.ai/mcp`.
 `GET /api/models?search=…` lists and searches in Hugging Face's shape (`HfApi.list_models` works), which is also the
 cheap path for agents. Why these dialects, what the research found, the path map and what comes next:
 [docs/one-endpoint.md](docs/one-endpoint.md).
@@ -91,7 +91,7 @@ captured day on or before that date, so a link to a day is a link to exactly wha
 Each day is captured once by `deploy/archive.sh` after the daily registry push: the day's files are packed into a
 CAR (IPFS archive) whose root CID is computed locally, pinned through Filebase, and accepted only if the CID Filebase
 reports is the same. The day is appended to the ledger `archive.json` (`hologram.model-hub.archive/v1`), served at
-[hub.uor.foundation/archive.json](https://hub.uor.foundation/archive.json) and pinned itself:
+[gethologram.ai/archive.json](https://gethologram.ai/archive.json) and pinned itself:
 
 | Field | Meaning |
 |---|---|

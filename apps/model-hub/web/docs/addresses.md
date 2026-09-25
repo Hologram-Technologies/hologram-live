@@ -14,8 +14,8 @@ A model is `<owner>/<name>`, exactly as on Hugging Face: `hexgrad/Kokoro-82M`. T
 | Dialect | The same model |
 | --- | --- |
 | Hugging Face | `hexgrad/Kokoro-82M` |
-| Ollama | `hub.uor.foundation/hexgrad/Kokoro-82M:<quant>` |
-| OCI | `hub.uor.foundation/hexgrad/kokoro-82m:latest` |
+| Ollama | `gethologram.ai/hexgrad/Kokoro-82M:<quant>` |
+| OCI | `gethologram.ai/hexgrad/kokoro-82m:latest` |
 | SBOM (purl) | `pkg:huggingface/hexgrad/Kokoro-82M@f3ff3571791e39611d31c381e3a41a3af07b4987` |
 
 ## Revisions
@@ -23,7 +23,7 @@ A model is `<owner>/<name>`, exactly as on Hugging Face: `hexgrad/Kokoro-82M`. T
 The hub indexes one revision per model: the commit that was current when the index last ran. `main` on the hub means that revision, and nothing else.
 
 ```bash
-curl -s https://hub.uor.foundation/api/models/hexgrad/Kokoro-82M/refs
+curl -s https://gethologram.ai/api/models/hexgrad/Kokoro-82M/refs
 ```
 
 ```json
@@ -37,7 +37,7 @@ curl -s https://hub.uor.foundation/api/models/hexgrad/Kokoro-82M/refs
 Asking for any other revision is refused with the one the hub has:
 
 ```bash
-curl -s https://hub.uor.foundation/api/models/hexgrad/Kokoro-82M/revision/deadbeef
+curl -s https://gethologram.ai/api/models/hexgrad/Kokoro-82M/revision/deadbeef
 ```
 
 ```json
@@ -60,7 +60,7 @@ Under the names sits a content-addressed store. Every object in it is named by t
 The catalog's address changes daily; the descriptor at the root points at today's:
 
 ```bash
-curl -s https://hub.uor.foundation/.well-known/model-hub.json
+curl -s https://gethologram.ai/.well-known/model-hub.json
 ```
 
 ```json
@@ -85,7 +85,7 @@ Inside the catalog, each name maps to a model address and its sources:
 And the model object holds the revision, the licence, every file with its SHA-256, and `prev`, the address of the revision before it, or `null` for the first one indexed:
 
 ```bash
-curl -s https://hub.uor.foundation/api/v1/objects/blake3:3cc11e52049117dfc397240fddc7a4d3aa392ded7f623986e4e5757371363d9e
+curl -s https://gethologram.ai/api/v1/objects/blake3:3cc11e52049117dfc397240fddc7a4d3aa392ded7f623986e4e5757371363d9e
 ```
 
 ```json
@@ -109,7 +109,7 @@ The `manifest` in a search row is this address, so a search result already tells
 The catalog has `prev` too. Follow it and you are reading the index as it stood the day before, with every address still valid. `/archive.json` lists every day the hub has indexed, with the IPFS CID of each day's index.
 
 ```bash
-curl -s https://hub.uor.foundation/archive.json | head -c 300
+curl -s https://gethologram.ai/archive.json | head -c 300
 ```
 
 Next: where the bytes actually come from, in [Sources and failover](sources).

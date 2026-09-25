@@ -165,3 +165,75 @@ test("a saved model round-trips and a request is recorded, issuing nothing", asy
   assert.match(line.did, /^[0-9a-f]{64}$/);
   assert.ok(!JSON.stringify(line).includes("did:privy:"));
 });
+
+// ---- Apps: likes and comments
+test("an App's likes and comments read anonymously, and writing needs a sign-in", async () => {
+  const { mkdtemp, readFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const dir = await mkdtemp(join(tmpdir(), "hub-apps-"));
+  process.env.HUB_ACCOUNT_STATE = dir;
+  const app = createApp({ publicKey, appId: APP_ID });
+  const alice = live();
+  const t = Math.floor(Date.now() / 1000);
+  const bob = mint({ claims: { sub: "did:privy:bob", iat: t - 10, exp: t + 3600 } });
+
+  // empty, anonymous
+  const empty = await call(app, { path: "/api/account/apps/kokoro-tts" });
+  assert.equal(empty.status, 200);
+  assert.deepEqual([empty.body.likes, empty.body.comments, empty.body.mine], [0, 0, null]);
+  assert.equal((await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/comments", body: { text: "hi" } })).status, 401);
+  assert.equal((await call(app, { path: "/api/account/apps/Not_An_App" })).status, 400);
+
+  // like, then take it back
+  assert.equal((await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/react", token: alice, body: { value: 1 } })).body.likes, 1);
+  assert.equal((await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/react", token: bob, body: { value: 1 } })).body.likes, 2);
+  assert.equal((await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/react", token: bob, body: { value: 0 } })).body.likes, 1);
+  assert.equal((await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/react", token: bob, body: { value: 7 } })).status, 400);
+
+  // a comment, a reply, a reply to the reply (joins the same thread), a like on the comment
+  const c = await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/comments", token: alice, body: { text: "  first  " } });
+  assert.equal(c.status, 201);
+  assert.equal(c.body.text, "first");
+  assert.match(c.body.handle, /^user-[0-9a-f]{6}$/);
+  const r1 = await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/comments", token: bob, body: { text: "reply", parent: c.body.id } });
+  const r2 = await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/comments", token: alice, body: { text: "reply to reply", parent: r1.body.id } });
+  assert.equal(r2.body.parent, c.body.id);
+  assert.equal((await call(app, { method: "POST", path: `/api/account/apps/kokoro-tts/comments/${c.body.id}/react`, token: bob, body: { value: 1 } })).body.likes, 1);
+  assert.equal((await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/comments", token: bob, body: { text: "   " } })).status, 400);
+  assert.equal((await call(app, { method: "POST", path: "/api/account/apps/kokoro-tts/comments", token: bob, body: { text: "x".repeat(2001) } })).status, 400);
+
+  // what anyone reads: one thread, two replies in order, nothing that names a person
+  const list = await call(app, { path: "/api/account/apps/kokoro-tts/comments" });
+  assert.equal(list.body.count, 3);
+  assert.equal(list.body.comments.length, 1);
+  assert.deepEqual(list.body.comments[0].replies.map((x) => x.text), ["reply", "reply to reply"]);
+  assert.equal(list.body.comments[0].mine, null);
+  assert.ok(!JSON.stringify(list.body).includes("did:privy"));
+  assert.ok(!JSON.stringify(list.body).includes("author"));
+
+  // signed in, the reader learns only which are theirs
+  const mine = await call(app, { path: "/api/account/apps/kokoro-tts/comments", token: bob });
+  assert.equal(mine.body.comments[0].mine.own, false);
+  assert.equal(mine.body.comments[0].mine.react, 1);
+  assert.equal(mine.body.comments[0].replies[0].mine.own, true);
+
+  // only the author deletes, and a comment takes its replies with it
+  assert.equal((await call(app, { method: "DELETE", path: `/api/account/apps/kokoro-tts/comments/${c.body.id}`, token: bob })).status, 403);
+  assert.equal((await call(app, { method: "DELETE", path: `/api/account/apps/kokoro-tts/comments/${c.body.id}`, token: alice })).status, 200);
+  assert.equal((await call(app, { path: "/api/account/apps/kokoro-tts/comments" })).body.count, 0);
+
+  // on disk: a hash for each author, never a DID
+  const disk = await readFile(join(dir, "apps", "kokoro-tts.json"), "utf8");
+  assert.ok(!disk.includes("did:privy"));
+});
+
+test("comments written at once are all kept", async () => {
+  const { mkdtemp } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  process.env.HUB_ACCOUNT_STATE = await mkdtemp(join(tmpdir(), "hub-apps-race-"));
+  const app = createApp({ publicKey, appId: APP_ID });
+  const t = Math.floor(Date.now() / 1000);
+  const tokens = Array.from({ length: 8 }, (_, i) => mint({ claims: { sub: `did:privy:u${i}`, iat: t - 10, exp: t + 3600 } }));
+  await Promise.all(tokens.map((token, i) => call(app, { method: "POST", path: "/api/account/apps/smollm-chat/comments", token, body: { text: `c${i}` } })));
+  assert.equal((await call(app, { path: "/api/account/apps/smollm-chat/comments" })).body.count, 8);
+});

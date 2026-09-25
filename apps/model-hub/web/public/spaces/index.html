@@ -20,69 +20,156 @@
 .card .logo svg{width:26px;height:26px}
 .card .foot{font-family:var(--mono)}
 
-/* ---- watch: one App open. The shape every reader already knows from a video page: the frame on the left,
-   as wide as the column allows and never taller than the screen, so it is whole without scrolling; its name,
-   who made it and what it does beneath; the other Apps down the right, each a thumbnail and a line, one
-   click from swapping in. The catalogue (lead row, rail, grid) leaves the page while an App is open and comes
-   back when it closes. Every size below is derived from the viewport, so the proportions hold on any screen. */
+/* ---- watch: one App open, in the shape every reader already knows from a video page. The frame, its title and
+   the row of actions under it are one block exactly as tall as the screen below the header, so all three are on
+   screen the moment it opens and nothing needs a scroll; the description and the comments follow beneath. The
+   other Apps line the right, under a search that filters them and a button that opens the same filter rail every
+   catalogue page has. The catalogue itself leaves the page while an App is open and returns when it closes. */
 main.watching .lead,main.watching .cols{display:none}
-.watch{display:none;--watch-chrome:188px;--watch-gap:24px;--next-w:402px}
-main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto;gap:16px var(--watch-gap);align-items:start;margin-top:4px}
+.watch{display:none;--next-w:402px}
+main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start}
 @media (min-width:1100px){main.watching .watch{grid-template-columns:minmax(0,1fr) var(--next-w)}}
-.watch-back{grid-column:1/-1;justify-self:start;display:inline-flex;align-items:center;gap:4px;height:36px;font-size:14px;color:var(--dim);transition:color 150ms}
-.watch-back:hover{color:var(--text)}
-.watch-back svg{width:16px;height:16px}
 .watch-main{min-width:0}
 
-/* the frame: the App in its sealed iframe, edge to edge, with nothing drawn over it. Its height is the screen's
-   minus the chrome above it, so the whole frame is on screen the moment it opens; the record beneath scrolls. */
-.player{position:relative;width:100%;height:clamp(420px,calc(100vh - var(--watch-chrome)),1400px);border-radius:14px;overflow:hidden;
-  background:var(--ground);box-shadow:0 0 0 1px var(--line),0 30px 80px -40px var(--hh-shadow)}
+.stage{display:flex;flex-direction:column;height:max(400px,calc(100dvh - var(--stage-top,120px) - 16px))}
+.player{position:relative;flex:1 1 auto;min-height:220px;border-radius:14px;overflow:hidden;background:var(--ground);
+  box-shadow:0 0 0 1px var(--line),0 30px 80px -40px var(--hh-shadow)}
 .player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--ground);opacity:0;animation:reveal 360ms cubic-bezier(.2,.7,.2,1) forwards}
 @keyframes reveal{to{opacity:1}}
 .player .need{position:absolute;inset:0;display:grid;place-content:center;padding:40px 24px;color:var(--dim);font-size:15px;line-height:1.6;text-align:center}
 .player .need p{max-width:60ch;margin:0 auto}
 .player .need b{color:var(--text);font-weight:500}
-@media (max-width:1099px){.player{height:clamp(360px,calc(100vh - var(--watch-chrome)),900px)}}
-@media (max-width:640px){.watch{--watch-chrome:150px}.player{height:clamp(320px,calc(100vh - var(--watch-chrome)),700px);border-radius:10px}}
+@media (max-width:640px){.player{border-radius:10px}.watch-actions{width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -2px;padding:2px}.watch-actions::-webkit-scrollbar{display:none}.pill{flex:none}.channel .who{margin-right:0}.channel{flex:1}.more-wrap .menu{position:fixed;left:12px;right:12px;bottom:12px;top:auto;min-width:0;padding:8px 0 calc(8px + env(safe-area-inset-bottom))}}
 @media (prefers-reduced-motion:reduce){.player iframe{animation:none;opacity:1}}
 
-/* beneath the frame: name, then the row a channel would have — mark, name, what it does, and the actions */
-.watch-title{margin:16px 0 10px;font-family:var(--font-display);font-size:var(--text-xl);font-weight:var(--weight-medium);letter-spacing:var(--tracking-display);line-height:1.3;overflow-wrap:anywhere}
-.watch-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.watch-row .mark{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:0 0 0 1px var(--line);color:var(--text);flex:none}
-.watch-row .mark svg{width:22px;height:22px}
-.watch-row .who{display:grid;gap:2px;min-width:0;flex:1 1 200px}
-.watch-row .who b{font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.watch-row .who span{font-size:12.5px;color:var(--dim);font-family:var(--mono)}
-.watch-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;min-width:0}
-.pill{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:36px;background:var(--fill);color:var(--text);font-size:14px;white-space:nowrap;transition:background 150ms,color 150ms,opacity 150ms}
-.pill:hover{background:color-mix(in srgb, var(--text) 12%, var(--fill))}
-.pill.primary{background:var(--text);color:var(--ground);font-weight:500}
-.pill.primary:hover{opacity:.88}
-.pill.status{font-family:var(--mono);font-size:12.5px;color:var(--dim);max-width:min(34ch,100%);overflow:hidden;text-overflow:ellipsis}
-.pill.status .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
-.pill.status .dot.ok{background:var(--ok)}
-.pill.status .dot.bad{background:var(--bad)}
-.pill svg{width:16px;height:16px;flex:none}
-@media (max-width:640px){.watch-actions{margin-left:0;width:100%}}
+.watch-title{flex:none;margin:12px 0 8px;font-family:var(--font-display);font-size:var(--text-xl);font-weight:var(--weight-medium);letter-spacing:var(--tracking-display);line-height:1.3;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.watch-row{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px 16px;flex-wrap:wrap}
+.channel{display:flex;align-items:center;gap:12px;min-width:0}
+.channel .mark{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:0 0 0 1px var(--line);color:var(--text);flex:none}
+.channel .mark svg{width:22px;height:22px}
+.channel .who{display:grid;gap:1px;min-width:0;margin-right:8px}
+.channel .who b{font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.channel .who span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.watch-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
-/* the description box: what an App is made of, in the words its own record carries */
-.watch-desc{margin-top:14px;padding:14px 16px;border-radius:12px;background:var(--fill);font-size:14px;line-height:1.6;color:var(--text)}
-.watch-desc .lede{color:var(--text);margin-bottom:8px}
-.watch-desc dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 18px;margin:0;font-size:13px}
-.watch-desc dt{color:var(--dim)}
-.watch-desc dd{margin:0;font-family:var(--mono);overflow-wrap:anywhere}
+/* one pill shape for every action under the frame, as YouTube draws them */
+.pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 16px;border-radius:36px;background:var(--fill);color:var(--text);
+  font-size:14px;font-weight:500;white-space:nowrap;transition:background 150ms,opacity 150ms;border:0}
+.pill:hover{background:color-mix(in srgb, var(--text) 12%, var(--fill))}
+.pill:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.pill.primary{background:var(--text);color:var(--ground)}
+.pill.primary:hover{opacity:.88;background:var(--text)}
+.pill svg{width:20px;height:20px;flex:none}
+.pill.icon{width:36px;padding:0;justify-content:center}
+.pill[aria-pressed="true"] svg{fill:currentColor}
+.seg{display:inline-flex;border-radius:36px;overflow:hidden;background:var(--fill)}
+.seg .pill{border-radius:0;background:transparent}
+.seg .pill:hover{background:color-mix(in srgb, var(--text) 12%, var(--fill))}
+.seg .pill + .pill{position:relative;padding:0 14px}
+.seg .pill + .pill::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:1px;background:var(--line2)}
+.more-wrap{position:relative;flex:none}
+.more-wrap .menu{position:absolute;right:0;top:calc(100% + 8px);z-index:20;min-width:220px;padding:8px 0;border-radius:12px;background:var(--surface);box-shadow:0 0 0 1px var(--line),0 16px 40px -12px var(--hh-shadow)}
+.more-wrap .menu button,.more-wrap .menu a{display:flex;align-items:center;gap:12px;width:100%;height:40px;padding:0 16px;font-size:14px;color:var(--text);text-align:left;background:none;border:0}
+.more-wrap .menu button:hover,.more-wrap .menu a:hover{background:var(--fill)}
+.more-wrap .menu svg{width:18px;height:18px;color:var(--dim)}
+.toast{position:fixed;left:24px;bottom:24px;z-index:60;padding:12px 16px;border-radius:8px;background:var(--text);color:var(--ground);font-size:14px;
+  box-shadow:0 12px 30px -10px var(--hh-shadow);opacity:0;transform:translateY(8px);transition:opacity 180ms,transform 180ms;pointer-events:none}
+.toast.on{opacity:1;transform:none}
+
+/* the description: collapsed to its first lines, the whole record on a click, as YouTube does */
+.watch-desc{margin-top:12px;padding:12px 16px;border-radius:12px;background:var(--fill);font-size:14px;line-height:1.6;color:var(--text);cursor:pointer;transition:background 150ms}
+.watch-desc:hover{background:color-mix(in srgb, var(--text) 10%, var(--fill))}
+.watch-desc.open{cursor:auto}
+.watch-desc.open:hover{background:var(--fill)}
+.desc-head{display:flex;flex-wrap:wrap;gap:4px 10px;font-weight:500;font-size:14px}
+.desc-head .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--faint);margin-right:6px;vertical-align:1px}
+.desc-head .dot.ok{background:var(--ok)}
+.desc-head .dot.bad{background:var(--bad)}
+.desc-head .status{font-family:var(--mono);font-weight:400;font-size:13px;color:var(--dim)}
+.desc-lede{margin-top:4px}
+.desc-more{font-weight:500;color:var(--text);background:none;border:0;padding:0;font-size:14px}
+.watch-desc:not(.open) .desc-full{display:none}
+.desc-full dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 18px;margin:12px 0;font-size:13px}
+.desc-full dt{color:var(--dim)}
+.desc-full dd{margin:0;font-family:var(--mono);overflow-wrap:anywhere}
 .watch-desc a{color:var(--text);text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:3px}
 .watch-desc a:hover{text-decoration-color:var(--text)}
-@media (max-width:480px){.watch-desc dl{grid-template-columns:minmax(0,1fr)}.watch-desc dt{margin-top:6px}}
+@media (max-width:480px){.desc-full dl{grid-template-columns:minmax(0,1fr)}.desc-full dt{margin-top:6px}}
 
-/* the right column: up next, then every other App as a row. It starts level with the frame's top edge. */
-.upnext{display:grid;gap:8px;align-content:start;min-width:0}
-.upnext .next-head{display:flex;align-items:baseline;gap:8px;min-width:0;padding:12px 16px;border-radius:12px;background:var(--surface);box-shadow:0 0 0 1px var(--line)}
-.upnext .next-head b{font-size:14px;font-weight:500;flex:none}
-.upnext .next-head span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.next{display:grid;grid-template-columns:168px minmax(0,1fr);gap:10px;padding:0;border-radius:10px;text-align:left;color:inherit;cursor:pointer;background:none;transition:transform 200ms cubic-bezier(.2,.7,.2,1)}
+/* comments, in YouTube's shape: the count and a sort, a box to add one, then each with its replies folded */
+.comments{margin-top:24px;padding-bottom:48px}
+.cm-top{display:flex;align-items:center;gap:32px;margin-bottom:24px}
+.cm-top h2{font-size:20px;font-weight:600;font-family:var(--font-display)}
+.cm-sort{position:relative}
+.cm-sort > button{display:inline-flex;align-items:center;gap:8px;height:36px;font-size:14px;font-weight:500;color:var(--text);background:none;border:0}
+.cm-sort svg{width:22px;height:22px}
+.cm-sort .menu{position:absolute;left:0;top:calc(100% + 4px);z-index:20;min-width:180px;padding:8px 0;border-radius:12px;background:var(--surface);box-shadow:0 0 0 1px var(--line),0 16px 40px -12px var(--hh-shadow)}
+.cm-sort .menu button{display:block;width:100%;height:44px;padding:0 16px;text-align:left;font-size:14px;color:var(--text);background:none;border:0}
+.cm-sort .menu button[aria-checked="true"]{background:var(--fill)}
+.cm-sort .menu button:hover{background:var(--fill)}
+.av{--h:220;width:40px;height:40px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:17px;font-weight:500;
+  background:hsl(var(--h) 45% 42%);color:hsl(var(--h) 60% 94%)}
+.av.small{width:24px;height:24px;font-size:12px}
+.av.me{background:var(--fill);color:var(--dim)}
+.cm-new{display:flex;gap:16px;align-items:flex-start;margin-bottom:32px}
+.cm-box{flex:1;min-width:0}
+.cm-box textarea{display:block;width:100%;min-height:26px;padding:2px 0 6px;resize:none;overflow:hidden;background:none;border:0;border-bottom:1px solid var(--line2);
+  color:var(--text);font:inherit;font-size:14px;line-height:1.5;outline:0;transition:border-color 150ms}
+.cm-box textarea:focus{border-bottom:2px solid var(--text);padding-bottom:5px}
+.cm-box textarea::placeholder{color:var(--dim)}
+.cm-box textarea:disabled{cursor:not-allowed}
+.cm-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.cm-btns[hidden]{display:none}
+.cm-btns .pill.primary:disabled{opacity:.35;cursor:default}
+.cm-note{font-size:13px;color:var(--dim);margin:-16px 0 24px 56px}
+.cm{display:flex;gap:16px;margin-bottom:24px;animation:reveal 240ms ease-out both;opacity:0}
+.cm.reply{margin:16px 0 0}
+.cm-main{flex:1;min-width:0}
+.cm-meta{display:flex;align-items:baseline;gap:6px;font-size:13px;margin-bottom:2px}
+.cm-meta b{font-weight:500}
+.cm-meta span{color:var(--dim)}
+.cm-text{font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.cm-text.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.cm-readmore{margin-top:4px;font-size:14px;font-weight:500;color:var(--dim);background:none;border:0;padding:0}
+.cm-act{display:flex;align-items:center;gap:4px;margin-top:4px;margin-left:-8px}
+.cm-act button{display:inline-flex;align-items:center;gap:6px;height:32px;min-width:32px;padding:0 8px;border-radius:32px;font-size:12px;color:var(--text);background:none;border:0}
+.cm-act button:hover{background:var(--fill)}
+.cm-act button svg{width:18px;height:18px}
+.cm-act button[aria-pressed="true"] svg{fill:currentColor}
+.cm-act .n{color:var(--dim);font-size:12px;min-width:12px}
+.cm-act .txt{font-weight:500;padding:0 12px}
+.cm-replies{display:inline-flex;align-items:center;gap:6px;height:36px;margin-top:4px;margin-left:-12px;padding:0 12px;border-radius:36px;font-size:14px;font-weight:500;color:var(--brand-legible,var(--hh-accent-legible));background:none;border:0}
+.cm-replies:hover{background:color-mix(in srgb, var(--brand) 12%, transparent)}
+.cm-replies svg{width:18px;height:18px;transition:transform 200ms}
+.cm-replies[aria-expanded="true"] svg{transform:rotate(180deg)}
+.cm-thread[hidden]{display:none}
+.cm-empty{padding:12px 0 24px;color:var(--dim);font-size:14px}
+.cm-compose-slot .cm-new{margin:12px 0 0}
+.cm-compose-slot .av{width:24px;height:24px;font-size:12px}
+
+/* the right column: a search that filters the other Apps, a button that opens the catalogue's own filter rail */
+.upnext{display:grid;gap:12px;align-content:start;min-width:0}
+.next-search{display:flex;gap:8px}
+.nsearch{flex:1;display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;min-width:0;background:var(--surface);color:var(--faint);
+  border:1px solid var(--line2);border-radius:10px;transition:border-color 150ms}
+.nsearch:focus-within{border-color:var(--hh-line-focus)}
+.nsearch svg{width:18px;height:18px;flex:none}
+.nsearch input{flex:1;min-width:0;background:none;border:0;outline:0;font:inherit;font-size:14px;color:var(--text)}
+.nfilter{position:relative;width:44px;height:44px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--surface);border:1px solid var(--line2);
+  color:var(--dim);transition:color 150ms,border-color 150ms,background 150ms}
+.nfilter:hover{color:var(--text);border-color:var(--hh-line-focus)}
+.nfilter[aria-expanded="true"]{color:var(--ground);background:var(--text);border-color:var(--text)}
+.nfilter svg{width:18px;height:18px}
+.nfilter .badge{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 5px;border-radius:18px;display:grid;place-items:center;
+  background:var(--brand);color:var(--brand-foreground);font-family:var(--mono);font-size:11px}
+.nfilter .badge[hidden]{display:none}
+.upnext .rail.npanel{position:static;max-height:none;padding:16px;border:1px solid var(--line);animation:drop 200ms cubic-bezier(.2,.7,.2,1)}
+.upnext .rail.npanel[hidden]{display:none}
+@keyframes drop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.nlist{display:grid;gap:8px}
+.next{display:grid;grid-template-columns:168px minmax(0,1fr);gap:10px;padding:0;border-radius:10px;text-align:left;color:inherit;cursor:pointer;background:none;border:0;
+  transition:transform 200ms cubic-bezier(.2,.7,.2,1)}
 .next:hover .thumb{box-shadow:0 0 0 1px var(--line2)}
 .next:active{transform:scale(.99)}
 .next:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
@@ -94,11 +181,12 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
 .next .text b{font-size:14px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .next .text span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .next .text .now{color:var(--ok)}
-/* between one column and two, the other Apps sit in a row of cards rather than a list */
-@media (min-width:640px) and (max-width:1099px){.upnext{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}.upnext .next-head{grid-column:1/-1}.next{grid-template-columns:minmax(0,1fr);gap:8px}}
+.nempty{padding:16px 4px;color:var(--dim);font-size:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+@media (min-width:640px) and (max-width:1099px){.nlist{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}.next{grid-template-columns:minmax(0,1fr);gap:8px}}
 @media (max-width:480px){.next{grid-template-columns:136px minmax(0,1fr)}}
 
-:root[data-theme="immersive"] .player,:root[data-theme="immersive"] .watch-desc,:root[data-theme="immersive"] .upnext .next-head,:root[data-theme="immersive"] .thumb,:root[data-theme="immersive"] .pill{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
+:root[data-theme="immersive"] .player,:root[data-theme="immersive"] .watch-desc,:root[data-theme="immersive"] .thumb,:root[data-theme="immersive"] .pill,
+:root[data-theme="immersive"] .nsearch,:root[data-theme="immersive"] .nfilter,:root[data-theme="immersive"] .seg{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
 </style>
 </head>
 <body>
@@ -131,24 +219,47 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
   </div>
 
   <section class="watch" id="watch" aria-live="polite">
-    <button type="button" class="watch-back" id="s-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Apps</button>
     <div class="watch-main">
-      <div class="player" id="player"></div>
-      <h1 class="watch-title" id="s-name"></h1>
-      <div class="watch-row">
-        <span class="mark" id="s-mark"></span>
-        <div class="who"><b id="s-task"></b><span id="s-root" title=""></span></div>
-        <div class="watch-actions">
-          <span class="pill status" id="s-status"><span class="dot" id="s-dot"></span><span id="s-text">opening…</span></span>
-          <button type="button" class="pill" id="s-copy" title="Copy this App's root digest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>κ</button>
-          <a class="pill" id="s-source" href="#" target="_blank" rel="noopener" title="Where this App came from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Source</a>
-          <a class="pill primary" id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9"/></svg></a>
+      <div class="stage" id="stage">
+        <div class="player" id="player"></div>
+        <h1 class="watch-title" id="s-name"></h1>
+        <div class="watch-row">
+          <div class="channel">
+            <span class="mark" id="s-mark"></span>
+            <div class="who"><b id="s-pub"></b><span id="s-sub"></span></div>
+            <a class="pill primary" id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" stroke-width="1.8"><path d="M14 4h6v6m0-6-9 9"/></svg></a>
+          </div>
+          <div class="watch-actions">
+            <div class="seg" role="group" aria-label="Rate this App">
+              <button type="button" class="pill" id="s-like" aria-pressed="false" title="I like this"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v11"/><path d="M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 8a2 2 0 0 1-1.9 1.4H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.8a2 2 0 0 0 1.8-1.1L12 2a3.1 3.1 0 0 1 3 3.9Z"/></svg><span id="s-likes"></span></button>
+              <button type="button" class="pill" id="s-dislike" aria-pressed="false" title="I dislike this"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V3"/><path d="M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.8a2 2 0 0 0-1.8 1.1L12 22a3.1 3.1 0 0 1-3-3.9Z"/></svg></button>
+            </div>
+            <button type="button" class="pill" id="s-share"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>Share</button>
+            <button type="button" class="pill" id="s-save" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16Z"/></svg><span>Save</span></button>
+            <div class="more-wrap">
+              <button type="button" class="pill icon" id="s-more" aria-haspopup="menu" aria-expanded="false" aria-controls="s-more-menu" aria-label="More"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+              <div class="menu" id="s-more-menu" role="menu" hidden>
+                <button type="button" role="menuitem" id="s-copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>Copy its κ</button>
+                <a role="menuitem" id="s-source" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>View the source</a>
+                <button type="button" role="menuitem" id="s-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>All Apps</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="watch-desc" id="s-desc"></div>
+      <div class="watch-desc" id="s-desc" tabindex="0"></div>
+      <section class="comments" id="comments" aria-label="Comments"></section>
     </div>
-    <aside class="upnext" id="upnext" aria-label="Other Apps"></aside>
+    <aside class="upnext" aria-label="Other Apps">
+      <div class="next-search">
+        <label class="nsearch" for="nq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input id="nq" type="search" placeholder="Search Apps" autocomplete="off" aria-label="Search Apps"></label>
+        <button type="button" class="nfilter" id="nfilter" aria-expanded="false" aria-controls="npanel" title="Filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span class="badge" id="nbadge" hidden></span></button>
+      </div>
+      <div class="rail npanel" id="npanel" hidden></div>
+      <div class="nlist" id="nlist"></div>
+    </aside>
   </section>
+  <div class="toast" id="toast" role="status"></div>
 </main>
 </div>
 <script type="module" src="./app.js"></script>

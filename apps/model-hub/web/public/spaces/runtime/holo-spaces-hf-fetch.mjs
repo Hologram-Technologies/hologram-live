@@ -148,11 +148,37 @@ export function opfsModelCache(store, { trees = [] } = {}) {
 //    right after, in a page or a worker, is already covered) with a wrapper that waits for the model
 //    trees to load and then delegates to `verifiedFetch`. Until the trees arrive, URLs are held, not
 //    passed through: no model byte can slip by unverified during the window. Returns the ready promise. ──
-export function installVerifiedFetch({ host, models, store = null, onEvent = null, g = globalThis } = {}) {
+//    `pinned` — digests sealed at publish time ({ modelId: { path: { axis, hex, size } } }): with it, no live
+//    index read is needed and the expectation cannot drift; `hosts` (first that answers) is the fallback
+//    when a model is not pinned. `altHosts` — other HF-dialect hosts to try the same path on when the
+//    app's own URL fails or its bytes are refused (each retry is verified against the same digest).
+export function indexFromPinned(modelId, files) { return { modelId, rev: "main", files: { ...files } }; }
+export function installVerifiedFetch({ host, hosts, models, pinned = null, altHosts = [], store = null, onEvent = null, g = globalThis } = {}) {
   const raw = g.fetch.bind(g);
   const ids = Array.isArray(models) ? models : [models];
-  const ready = Promise.all(ids.map((id) => loadTree(raw, host, id, "main")))
-    .then((trees) => verifiedFetch(raw, { trees, cache: store ? kappaCache(store) : null, onEvent }));
+  const HOSTS = hosts || (host ? [host] : []);
+  const say = (e) => { try { onEvent && onEvent(e); } catch {} };
+  const treeOf = async (id) => {
+    if (pinned && pinned[id]) return indexFromPinned(id, pinned[id]);
+    let last = null;
+    for (const h of HOSTS) { try { return await loadTree(raw, h, id, "main"); } catch (e) { last = e; say({ kind: "index-miss", host: h, model: id }); } }
+    throw last || new Error("no host for " + id);
+  };
+  const ready = Promise.all(ids.map(treeOf)).then((trees) => {
+    const vf = verifiedFetch(raw, { trees, cache: store ? kappaCache(store) : null, onEvent });
+    if (!altHosts.length) return vf;
+    return async (input, init) => {
+      const url = typeof input === "string" ? input : (input && input.url) || String(input);
+      const exp = expectedFor(url, trees);
+      try { const r = await vf(input, init); if (r.ok || !exp) return r; } catch (e) { if (!exp) throw e; say({ kind: "retry", path: exp.path, error: String(e && e.message || e) }); }
+      let last = null;
+      for (const h of altHosts) {
+        const alt = `${String(h).replace(/\/+$/, "")}/${exp.modelId}/resolve/main/${exp.path}`;
+        try { const r = await vf(alt, init); if (r.ok) { say({ kind: "served-alt", path: exp.path, host: h }); return r; } } catch (e) { last = e; say({ kind: "retry", path: exp.path, host: h, error: String(e && e.message || e) }); }
+      }
+      throw last || new Error(`no source served ${exp.path}`);
+    };
+  });
   g.fetch = async (input, init) => (await ready)(input, init);
   return ready;
 }

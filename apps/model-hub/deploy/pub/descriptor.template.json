@@ -11,6 +11,34 @@
  "capabilities": "/api/v1/capabilities",
  "registry": "/v2/",
  "guide": "/llms.txt",
+ "sections": {
+  "models": {
+   "url": "/models",
+   "descriptor": "/models.json",
+   "brief": "/models.md"
+  },
+  "registry": {
+   "url": "/registry",
+   "descriptor": "/registry.json",
+   "brief": "/registry.md"
+  },
+  "spaces": {
+   "url": "/spaces",
+   "descriptor": "/spaces.json",
+   "brief": "/spaces.md"
+  },
+  "buckets": {
+   "url": "/buckets",
+   "descriptor": "/buckets.json",
+   "brief": "/buckets.md"
+  },
+  "docs": {
+   "url": "/docs/",
+   "descriptor": "/docs.json",
+   "brief": "/docs.md"
+  }
+ },
+ "sections_note": "each answers three ways at one address: the page to a browser, the brief to a reader, and `hologram.section.descriptor/v1` to Accept: application/json",
  "addresses": {
   "objects": "blake3 of the object bytes",
   "files": "sha256 of the file bytes, listed in the model object"

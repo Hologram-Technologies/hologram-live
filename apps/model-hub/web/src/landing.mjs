@@ -106,7 +106,7 @@ export function landing({ base, models, endpoint, repo }) {
              screen -- what it is, the three calls that use it, and the rule that makes it safe -- so an agent
              handed nothing but this line is one request from working, and a person reading it learns the same
              thing. Nothing else in the hero is copyable, so nothing competes with it. */""}
-      <button type="button" class="land-second copy" data-copy="curl ${esc(host(endpoint))}" title="Copy curl ${esc(host(endpoint))}" aria-label="Copy the one line"><span class="land-prompt" aria-hidden="true">$</span>curl ${esc(host(endpoint))}${icon.copy}</button>
+      <button type="button" class="land-second copy" data-copy="curl ${esc(host(endpoint))}" title="Copy curl ${esc(host(endpoint))}" aria-label="Copy the one line"><span class="prompt" aria-hidden="true">$</span>curl ${esc(host(endpoint))}${icon.copy}</button>
     </div>
   </div>
 </main>

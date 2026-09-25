@@ -33,26 +33,17 @@ function sectionTag() {
   if (!el) return;
   const path = SECTION_TAG[el.dataset.section];
   if (!path) return;
-  const url = location.origin + path;
+  // The same shape as the landing's one line, and the same thing in the clipboard: the command, not the URL.
+  const line = `curl ${location.host}${path}`;
   const host = $(".host", el);
-  host.textContent = location.host + path;
-  el.title = `${url} — what this section is and how to use it. Click to copy.`;
-
-  // The dot is worth the round trip: the page you are reading was built hours ago, and the address either
-  // answers now or it does not. Asking for the brief is what an agent would do, so this asks for the same.
-  const dot = $(".dot", el);
-  (async () => {
-    try {
-      const r = await fetch(path, { method: "HEAD", headers: { accept: "text/markdown" } });
-      dot.className = "dot " + (r.ok ? "ok" : "bad");
-    } catch { dot.className = "dot bad"; }
-  })();
+  host.textContent = line;
+  el.title = `Copy ${line} — what this section is and how to use it`;
 
   el.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(url); } catch { return; }
+    try { await navigator.clipboard.writeText(line); } catch { return; }
     el.classList.add("copied");
     host.textContent = "copied";
-    setTimeout(() => { el.classList.remove("copied"); host.textContent = location.host + path; }, 1200);
+    setTimeout(() => { el.classList.remove("copied"); host.textContent = line; }, 1200);
   });
 }
 

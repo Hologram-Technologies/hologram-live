@@ -171,11 +171,13 @@ const chromeHead = [
   `<script type="module">import { mountChrome } from "${base}chrome.js"; mountChrome();</script>`,
 ].join("\n");
 
-// The tag beside every section heading. One shape and one meaning wherever a section is titled: the address
-// that answers with what this section does and how to use it. A browser asking for it gets the section's page;
-// anything else gets the brief. chrome.js fills in the host, asks the address whether it is answering, and
-// copies it when clicked; the head link beside it is the same address in a form a machine reads first.
-const sectionTag = (name) => `<button type="button" class="endpoint section-tag" data-section="${name}" aria-label="Copy the ${name} endpoint"><span class="dot"></span><span class="host">\u2026</span></button>`;
+// The tag beside every section heading: the landing's one line, per section. The hero teaches
+// `$ curl hub.uor.foundation`; each section repeats it with its own path, so the whole site is one lesson and
+// the tag is a command rather than an address a reader has to guess the verb for. Running it returns what the
+// section does and the requests that do it; a browser asking for the same URL gets the section's page.
+// chrome.js fills in the host and copies the whole command; the head link beside it is the same address in a
+// form a machine reads first.
+const sectionTag = (name) => `<button type="button" class="endpoint section-tag copy" data-section="${name}" aria-label="Copy the ${name} line"><span class="prompt" aria-hidden="true">$</span><span class="host">\u2026</span>${R.icon.copy}</button>`;
 const describedBy = (name) => name ? `<link rel="describedby" type="text/markdown" href="${base}${name}.md">` : "";
 
 const page = ({ title, description, body, search = false, model = "", home = false, section = "", sectionRoot = false, styles = [] }) => `<!doctype html>

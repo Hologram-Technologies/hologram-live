@@ -38,14 +38,28 @@ async function hit(id, path, { method = "GET", headers = {}, body = null, redire
     status: res ? res.status : null,
     headers: res ? Object.fromEntries(KEEP.filter((h) => res.headers.has(h)).map((h) => [h, res.headers.get(h)])) : {},
     body: text ? shrink(safe(text)) : undefined,
+    sizes: text ? lengths(safe(text)) : undefined,
     error,
   };
   console.log(`${String(record.status ?? "ERR").padEnd(4)} ${method.padEnd(4)} ${path.slice(0, 78)}`);
   return record;
 }
 
-// The whole body is parsed, then shrunk: an example keeps the shape of the answer, never its length.
+// The whole body is parsed, then shrunk: an example keeps the shape of the answer, never its length. That
+// makes any count read back out of an example wrong, so the lengths are taken first and kept beside it.
 const safe = (text) => { try { return JSON.parse(text); } catch { return text.slice(0, 600); } };
+const lengths = (value) => {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      const n = lengths(v);
+      if (n !== undefined) out[k] = n;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return undefined;
+};
 const shrink = (value, depth = 0) => {
   if (typeof value === "string") return value.length > 400 ? `${value.slice(0, 400)}…` : value;
   if (Array.isArray(value)) return value.slice(0, 3).map((v) => shrink(v, depth + 1));
@@ -87,6 +101,24 @@ async function main() {
     // Docs is the one section with no slashless address of its own: /docs is the server's API reference.
     ["section.docs", "/docs/", { headers: { accept: "*/*" } }],
     ["section.docs.page", "/docs/", { headers: { accept: "text/html" } }],
+    // The descriptor: the same five addresses, asked for by name.
+    ["section.models.json", "/models", { headers: { accept: "application/json" } }],
+    ["section.registry.json", "/registry", { headers: { accept: "application/json" } }],
+    ["section.spaces.json", "/spaces", { headers: { accept: "application/json" } }],
+    ["section.buckets.json", "/buckets", { headers: { accept: "application/json" } }],
+    ["section.docs.json", "/docs/", { headers: { accept: "application/json" } }],
+    // The descriptor: the same five addresses, asked for by name.
+    ["section.models.json", "/models", { headers: { accept: "application/json" } }],
+    ["section.registry.json", "/registry", { headers: { accept: "application/json" } }],
+    ["section.spaces.json", "/spaces", { headers: { accept: "application/json" } }],
+    ["section.buckets.json", "/buckets", { headers: { accept: "application/json" } }],
+    ["section.docs.json", "/docs/", { headers: { accept: "application/json" } }],
+    // The descriptor: the same five addresses, asked for by name.
+    ["section.models.json", "/models", { headers: { accept: "application/json" } }],
+    ["section.registry.json", "/registry", { headers: { accept: "application/json" } }],
+    ["section.spaces.json", "/spaces", { headers: { accept: "application/json" } }],
+    ["section.buckets.json", "/buckets", { headers: { accept: "application/json" } }],
+    ["section.docs.json", "/docs/", { headers: { accept: "application/json" } }],
     ["descriptor", "/.well-known/model-hub.json", { headers: CORS }],
     ["llms", "/llms.txt", { headers: CORS }],
     ["openapi", "/openapi.json", { headers: CORS }],
@@ -117,8 +149,10 @@ async function main() {
     ["resolve", `/${MODEL}/resolve/main/${FILE}`, { method: "HEAD", headers: CORS }],
     ["resolve.sha256sums", `/${MODEL}/resolve/main/SHA256SUMS`, { headers: CORS }],
     ["resolve.entry.missing", `/${MODEL}/resolve/main/not-a-file.bin`, {}],
-    ["via.ipfs", `/via/ipfs/${MODEL}/resolve/main/${FILE}`, { method: "HEAD" }],
+    // `via` pinned to a source that holds the file: the operation is the redirect. The refusal when a
+    // source has not got it is a different, documented answer, so it is recorded as its own route.
     ["via.huggingface", `/via/huggingface/${MODEL}/resolve/main/${FILE}`, { method: "HEAD" }],
+    ["via.missing", `/via/ipfs/${MODEL}/resolve/main/${FILE}`, { method: "HEAD" }],
     ["via.list", "/via/ipfs/api/models?limit=1", {}],
     ["xet", `/api/models/${MODEL}/xet-read-token/main`, { method: "HEAD" }],
     // objects

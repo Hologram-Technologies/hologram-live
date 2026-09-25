@@ -1,7 +1,7 @@
 [
   {
     "repo": "buckets/uor/spaces",
-    "description": "The three Spaces the hub ships: Kokoro TTS, Remove Background and SmolLM Chat, every file of each, as the sealed folders the Spaces page runs.",
+    "description": "The three Apps the hub ships: Kokoro TTS, Remove Background and SmolLM Chat, every file of each, as the sealed folders the Apps page runs.",
     "sources": ["dist/spaces/kokoro-tts", "dist/spaces/remove-background", "dist/spaces/smollm-chat"],
     "prefixed": true
   },

@@ -1,11 +1,11 @@
 import { art } from "../card-art.mjs";
-// Spaces — the page. It reads its own catalog (spaces.json, sealed roots per Space), asks the registry on this
-// origin whether each Space is published there, and opens a Space in a sandboxed frame on this page. The
-// Space's runtime narrates itself on a BroadcastChannel (index read · bytes verified · served from the
+// Apps — the page. It reads its own catalog (spaces.json, sealed roots per App), asks the registry on this
+// origin whether each App is published there, and opens an App in a sandboxed frame on this page. The
+// App's runtime narrates itself on a BroadcastChannel (index read · bytes verified · served from the
 // store · refused), and the bar shows exactly that — no more words than the runtime has facts.
 //
 // Same shape as the Models and Registry pages: the lead row, facets on the left, search and sort on top, a
-// card grid. The rail is the shared one (lib/rail.mjs); the facets are read off each Space's own record and
+// card grid. The rail is the shared one (lib/rail.mjs); the facets are read off each App's own record and
 // off what this browser and the registry say about it, and their counts narrow as you choose.
 import { createRail, ICONS as I } from "../lib/rail.mjs";
 
@@ -20,7 +20,7 @@ const RUNS = "Runs in this browser", ON_REGISTRY = "On the registry";
 
 let catalog = [], caps = { webgpu: false, opfs: false }, chan = null, current = null;
 const onRegistry = {}; // id → digest, once the registry has answered
-const registryDiffers = {}; // id → digest the registry holds under this name when it is NOT this Space's κ
+const registryDiffers = {}; // id → digest the registry holds under this name when it is NOT this App's κ
 const picked = { task: new Set(), marks: new Set(), model: new Set(), publisher: new Set(), needs: new Set(), size: new Set(), origin: new Set() };
 
 async function detect() {
@@ -31,14 +31,14 @@ async function detect() {
 }
 const missing = (s) => (s.requires || []).filter((r) => !caps[r]);
 
-// The registry on this origin: GET/HEAD need no token. A Space published as an OCI artifact under
+// The registry on this origin: GET/HEAD need no token. An App published as an OCI artifact under
 // spaces/<id> answers its manifest; until then it is on the page only, and the card says so by saying nothing.
 async function published(id) {
   try { const r = await fetch(`/v2/spaces/${id}/manifests/latest`, { headers: { Accept: ACCEPT } }); return r.ok ? (r.headers.get("docker-content-digest") || "yes") : null; }
   catch { return null; }
 }
 
-// ---- facets: every value a Space carries under a key
+// ---- facets: every value an App carries under a key
 function values(s, key) {
   switch (key) {
     case "task": return [s.task];
@@ -112,7 +112,7 @@ function render() {
 }
 
 async function icons() {
-  // each Space ships its icon; fetch once so the cards and the frame agree
+  // each App ships its icon; fetch once so the cards and the frame agree
   await Promise.all(catalog.map(async (s) => { try { const t = await (await fetch(`./${s.id}/icon.svg`)).text(); s.iconSvg = t.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, ""); } catch {} }));
 }
 
@@ -134,11 +134,11 @@ function listen(id) {
   };
 }
 
-// ---- watch: one Space open, in the shape of a video page
+// ---- watch: one App open, in the shape of a video page
 //
-// The frame takes the left column, its name and record sit beneath it, and every other Space lines the right,
-// one click from swapping in. Nothing is drawn over the frame: the Space is the picture. The catalogue leaves
-// the page while a Space is open and returns when it closes, and the address keeps ?open=<id> so the page can
+// The frame takes the left column, its name and record sit beneath it, and every other App lines the right,
+// one click from swapping in. Nothing is drawn over the frame: the App is the picture. The catalogue leaves
+// the page while an App is open and returns when it closes, and the address keeps ?open=<id> so the page can
 // be shared open.
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const iconSvg = (s, cls = "") => `<svg class="${cls}" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.iconSvg || ""}</svg>`;
@@ -151,7 +151,7 @@ function describe(s) {
     ["Task", esc(s.task)],
     ["Model", models],
     ["Model size", fmtMB(s.modelBytes)],
-    ["Space", `${s.files} files · ${fmtMB(s.bytes)}`],
+    ["App", `${s.files} files · ${fmtMB(s.bytes)}`],
     ["Root", `<span title="${esc(s.root)}">${esc(s.root)}</span>`],
     s.ipfs ? ["IPFS", esc(s.ipfs)] : null,
     s.ort ? ["Runtime", esc(s.ort)] : null,
@@ -196,7 +196,7 @@ function open(id) {
   player.innerHTML = "";
   const need = missing(s);
   if (need.length) {
-    player.innerHTML = `<p class="need">This Space needs <b>${need.map((n) => ({ webgpu: "WebGPU", opfs: "private file storage (OPFS)" })[n] || n).join("</b> and <b>")}</b>, which this browser does not offer. It runs on current Chrome, Edge and Safari on a device with a GPU.</p>`;
+    player.innerHTML = `<p class="need">This App needs <b>${need.map((n) => ({ webgpu: "WebGPU", opfs: "private file storage (OPFS)" })[n] || n).join("</b> and <b>")}</b>, which this browser does not offer. It runs on current Chrome, Edge and Safari on a device with a GPU.</p>`;
     status("bad", "cannot run here");
   } else {
     listen(id);
@@ -211,14 +211,14 @@ function open(id) {
   }
   upnext(id);
   $("main").classList.add("watching");
-  document.title = `${s.name} · Spaces · Hologram Models Hub`;
+  document.title = `${s.name} · Apps · Hologram Models Hub`;
   const u = new URL(location.href); u.searchParams.set("open", id); history.replaceState(null, "", u);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function close() {
   current = null; $("main").classList.remove("watching"); $("player").innerHTML = ""; $("upnext").innerHTML = "";
   if (chan) { try { chan.close(); } catch {} chan = null; }
-  document.title = "Spaces · Hologram Models Hub";
+  document.title = "Apps · Hologram Models Hub";
   const u = new URL(location.href); u.searchParams.delete("open"); history.replaceState(null, "", u);
 }
 
@@ -240,13 +240,13 @@ async function main() {
   });
   const want = new URLSearchParams(location.search).get("open");
   if (want && catalog.some((s) => s.id === want)) open(want);
-  // registry presence, per Space: a mark on the card, a chip in the rail, a count in the lead row
+  // registry presence, per App: a mark on the card, a chip in the rail, a count in the lead row
   // the registry's digest must be the card's κ (the manifest digest): the same bytes under the same name,
-  // or it is not this Space — a differing digest is shown as such, never as "on the registry"
+  // or it is not this App — a differing digest is shown as such, never as "on the registry"
   await Promise.all(catalog.map(async (s) => { const d = await published(s.id); if (d) { if (d === s.root) onRegistry[s.id] = d; else registryDiffers[s.id] = d; } }));
   rail.render();
   render();
-  // a Space already open learns what the registry said, too: its record and the rows beside it
+  // an App already open learns what the registry said, too: its record and the rows beside it
   if (current) { const s = catalog.find((x) => x.id === current); if (s) { $("s-desc").innerHTML = describe(s); upnext(current); } }
 }
 main();

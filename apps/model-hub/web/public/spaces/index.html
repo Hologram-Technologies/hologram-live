@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spaces · Hologram Models Hub</title>
+<title>Apps · Hologram Models Hub</title>
 <meta name="description" content="Apps that run entirely in your browser, in their own sealed frame, with every model byte verified.">
 <!--chrome:head-->
 <link rel="stylesheet" href="../lib/catalog.css">
@@ -15,15 +15,15 @@
 <style>
 /* The catalogue components — the lead row, the rail, the bar, the cards — are the site's own (chrome.css and
    lib/catalog.css, loaded above), so this page and the Registry page are the same page with different rows.
-   What is this page's alone: a Space's icon where a cover would be, and the watch layout a Space opens into. */
+   What is this page's alone: an App's icon where a cover would be, and the watch layout an App opens into. */
 .card .logo{display:grid;place-items:center;color:var(--text)}
 .card .logo svg{width:26px;height:26px}
 .card .foot{font-family:var(--mono)}
 
-/* ---- watch: one Space open. The shape every reader already knows from a video page: the frame on the left,
+/* ---- watch: one App open. The shape every reader already knows from a video page: the frame on the left,
    as wide as the column allows and never taller than the screen, so it is whole without scrolling; its name,
-   who made it and what it does beneath; the other Spaces down the right, each a thumbnail and a line, one
-   click from swapping in. The catalogue (lead row, rail, grid) leaves the page while a Space is open and comes
+   who made it and what it does beneath; the other Apps down the right, each a thumbnail and a line, one
+   click from swapping in. The catalogue (lead row, rail, grid) leaves the page while an App is open and comes
    back when it closes. Every size below is derived from the viewport, so the proportions hold on any screen. */
 main.watching .lead,main.watching .cols{display:none}
 .watch{display:none;--watch-chrome:188px;--watch-gap:24px;--next-w:402px}
@@ -34,7 +34,7 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
 .watch-back svg{width:16px;height:16px}
 .watch-main{min-width:0}
 
-/* the frame: the Space in its sealed iframe, edge to edge, with nothing drawn over it. Its height is the screen's
+/* the frame: the App in its sealed iframe, edge to edge, with nothing drawn over it. Its height is the screen's
    minus the chrome above it, so the whole frame is on screen the moment it opens; the record beneath scrolls. */
 .player{position:relative;width:100%;height:clamp(420px,calc(100vh - var(--watch-chrome)),1400px);border-radius:14px;overflow:hidden;
   background:var(--ground);box-shadow:0 0 0 1px var(--line),0 30px 80px -40px var(--hh-shadow)}
@@ -67,7 +67,7 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
 .pill svg{width:16px;height:16px;flex:none}
 @media (max-width:640px){.watch-actions{margin-left:0;width:100%}}
 
-/* the description box: what a Space is made of, in the words its own record carries */
+/* the description box: what an App is made of, in the words its own record carries */
 .watch-desc{margin-top:14px;padding:14px 16px;border-radius:12px;background:var(--fill);font-size:14px;line-height:1.6;color:var(--text)}
 .watch-desc .lede{color:var(--text);margin-bottom:8px}
 .watch-desc dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 18px;margin:0;font-size:13px}
@@ -77,7 +77,7 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
 .watch-desc a:hover{text-decoration-color:var(--text)}
 @media (max-width:480px){.watch-desc dl{grid-template-columns:minmax(0,1fr)}.watch-desc dt{margin-top:6px}}
 
-/* the right column: up next, then every other Space as a row. It starts level with the frame's top edge. */
+/* the right column: up next, then every other App as a row. It starts level with the frame's top edge. */
 .upnext{display:grid;gap:8px;align-content:start;min-width:0}
 .upnext .next-head{display:flex;align-items:baseline;gap:8px;min-width:0;padding:12px 16px;border-radius:12px;background:var(--surface);box-shadow:0 0 0 1px var(--line)}
 .upnext .next-head b{font-size:14px;font-weight:500;flex:none}
@@ -94,7 +94,7 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
 .next .text b{font-size:14px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .next .text span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .next .text .now{color:var(--ok)}
-/* between one column and two, the other Spaces sit in a row of cards rather than a list */
+/* between one column and two, the other Apps sit in a row of cards rather than a list */
 @media (min-width:640px) and (max-width:1099px){.upnext{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}.upnext .next-head{grid-column:1/-1}.next{grid-template-columns:minmax(0,1fr);gap:8px}}
 @media (max-width:480px){.next{grid-template-columns:136px minmax(0,1fr)}}
 
@@ -108,7 +108,7 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
 <!--chrome:header-->
 
 <main id="main">
-  <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><!--chrome:tag--></div>
+  <div class="lead"><h1>Apps</h1><span class="pill" id="count">…</span><!--chrome:tag--></div>
 
   <div class="cols">
     <aside class="rail" id="rail"></aside>
@@ -116,7 +116,7 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
       <div class="bar">
         <label class="search" for="q">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-          <input id="q" type="search" placeholder="Search Spaces, or paste a model name or a sha256 root" autocomplete="off">
+          <input id="q" type="search" placeholder="Search Apps, or paste a model name or a sha256 root" autocomplete="off">
         </label>
         <select class="sort" id="sort">
           <option value="featured">Featured</option>
@@ -131,7 +131,7 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
   </div>
 
   <section class="watch" id="watch" aria-live="polite">
-    <button type="button" class="watch-back" id="s-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Spaces</button>
+    <button type="button" class="watch-back" id="s-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Apps</button>
     <div class="watch-main">
       <div class="player" id="player"></div>
       <h1 class="watch-title" id="s-name"></h1>
@@ -140,14 +140,14 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-templ
         <div class="who"><b id="s-task"></b><span id="s-root" title=""></span></div>
         <div class="watch-actions">
           <span class="pill status" id="s-status"><span class="dot" id="s-dot"></span><span id="s-text">opening…</span></span>
-          <button type="button" class="pill" id="s-copy" title="Copy this Space's root digest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>κ</button>
-          <a class="pill" id="s-source" href="#" target="_blank" rel="noopener" title="Where this Space came from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Source</a>
+          <button type="button" class="pill" id="s-copy" title="Copy this App's root digest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>κ</button>
+          <a class="pill" id="s-source" href="#" target="_blank" rel="noopener" title="Where this App came from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Source</a>
           <a class="pill primary" id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9"/></svg></a>
         </div>
       </div>
       <div class="watch-desc" id="s-desc"></div>
     </div>
-    <aside class="upnext" id="upnext" aria-label="Other Spaces"></aside>
+    <aside class="upnext" id="upnext" aria-label="Other Apps"></aside>
   </section>
 </main>
 </div>

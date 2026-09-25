@@ -44,7 +44,7 @@ const starRepo = { name: STAR_REPO, url: `https://github.com/${STAR_REPO}`, star
 // The index control: with an archive it opens every captured day; the Wayback idea, one control.
 //
 // It is no longer in the lead row — that row carries the section's own address now, as the Registry and
-// Spaces rows do. The control stays in the page, hidden: a link to ?at=<day> must still open that day, and
+// Apps rows do. The control stays in the page, hidden: a link to ?at=<day> must still open that day, and
 // the banner above the results is what says which day you are reading. Hidden, not removed.
 function indexPill() {
   const latest = `Index ${R.day(data.snapshot)}`;
@@ -106,7 +106,7 @@ const accountControl = () => privy ? `<div class="account" id="account">
 const SECTIONS = [
   ["models", "Models", "grid", BROWSE],
   ["registry", "Registry", "box", `${base}registry/`],
-  ["spaces", "Spaces", "cpu", `${base}spaces/`],
+  ["spaces", "Apps", "cpu", `${base}spaces/`],
   ["buckets", "Buckets", "bucket", `${base}buckets/`],
   ["docs", "Docs", "file", `${base}docs/`],
 ];
@@ -519,9 +519,9 @@ await writeFile(join(DIST, ".nojekyll"), "");
 // of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
 // one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
 // very same header() and topNav() every other page is built with.
-// Each Space is served exactly as its artifact is laid out: the shared public/spaces/runtime/ (one copy in
+// Each App is served exactly as its artifact is laid out: the shared public/spaces/runtime/ (one copy in
 // git) is placed inside every dist/spaces/<id>/runtime/ — the verified fetch, the store, the style and only
-// the ONNX Runtime pin that Space names — so a page that says ./runtime/… finds the same bytes here, on the
+// the ONNX Runtime pin that App names — so a page that says ./runtime/… finds the same bytes here, on the
 // registry, on IPFS and in the OS.
 {
   const spacesDir = join(DIST, "spaces");
@@ -535,7 +535,7 @@ await writeFile(join(DIST, ".nojekyll"), "");
   await rm(join(spacesDir, "runtime"), { recursive: true, force: true });   // nothing references the shared copy
 }
 
-// The Spaces and Buckets pages ship the same way: their own components, the site's header.
+// The Apps and Buckets pages ship the same way: their own components, the site's header.
 for (const section of ["registry", "spaces", "buckets"]) {
   const path = join(DIST, section, "index.html");
   let html = await readFile(path, "utf8");
@@ -552,7 +552,7 @@ for (const section of ["registry", "spaces", "buckets"]) {
 
 // ---- one mesh, three pages
 //
-// Models, Registry and Spaces draw the same faceted card background. It was three copies of the same
+// Models, Registry and Apps draw the same faceted card background. It was three copies of the same
 // twenty lines once, and they drifted: the Registry mesh ended up half as bright and half again as
 // coarse as the Models one, because a taller card scaled the same viewBox differently. Now there is one
 // generator (card-art.mjs) and one set of rules (chrome.css), and this refuses to ship a second copy.

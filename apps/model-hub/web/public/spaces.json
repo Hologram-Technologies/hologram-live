@@ -10,7 +10,7 @@
  "inventory": {
   "described": 3,
   "served_here": 0,
-  "note": "a Space is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed Space that is not published answers 404 there, and that is not an error."
+  "note": "an App is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed App that is not published answers 404 there, and that is not an error."
  },
  "catalog": null,
  "catalog_note": "the catalog is not published as an object yet, so this section has no address you can verify: read the static file named in `list`, and treat it as unaddressed",
@@ -19,24 +19,24 @@
    "dialect": "http",
    "method": "GET",
    "url": "/spaces/spaces.json",
-   "returns": "every Space with its sealed root",
+   "returns": "every App with its sealed root",
    "note": "a static file, not content-addressed"
   },
   {
    "dialect": "oci",
    "method": "GET",
    "url": "/v2/_catalog?n=1000",
-   "returns": "repositories; published Spaces are named spaces/{id}"
+   "returns": "repositories; published Apps are named spaces/{id}"
   }
  ],
  "item": {
   "url": "/v2/spaces/{id}/manifests/latest",
-  "returns": "one Space as an OCI artifact",
+  "returns": "one App as an OCI artifact",
   "artifact_type": "application/vnd.hologram.space.v1+json"
  },
  "fetch": {
   "url": "/v2/spaces/{id}/blobs/{digest}",
-  "returns": "one file of the Space"
+  "returns": "one file of the App"
  },
  "verify": {
   "algorithm": "sha256",

@@ -3,6 +3,11 @@
 Open models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and
 every request below is anonymous.
 
+To read the whole catalogue rather than a page of it, start at the descriptor and fetch the one address it
+names: `curl -H 'accept: application/json' https://gethologram.ai/models` gives `catalog.address`, and that object is
+every model in one request. `/api/models` is capped at 500 with no cursor, so it cannot enumerate a
+catalogue larger than that.
+
 ## One line, if you can set an environment variable
 
     HF_ENDPOINT=https://gethologram.ai

@@ -3,6 +3,15 @@
 The same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are
 anonymous; only publishing needs a credential.
 
+## What this registry holds, and what it only describes
+
+The page lists every repository the hub knows about, most of them held by Docker Hub, Artifact Hub or
+Microsoft Artifact Registry and pulled from there. Only the ones `/v2/_catalog` returns are served from
+here. Ask it rather than the page count:
+
+    GET /v2/_catalog?n=1000
+        every repository this registry serves the bytes of
+
 ## Pull with what you have
 
     ollama pull gethologram.ai/<org>/<name>:<quant>

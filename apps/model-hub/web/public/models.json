@@ -1,0 +1,63 @@
+{
+ "format": "hologram.section.descriptor/v1",
+ "section": "models",
+ "title": "Models",
+ "self": "/models",
+ "brief": "/models.md",
+ "page": "/models/",
+ "openapi": "/openapi.json",
+ "about": "Open models. Find one, prove it, and fetch it from whichever source is up. No account, no key.",
+ "inventory": {
+  "described": null,
+  "served_here": 0,
+  "note": "the hub carries no weight bytes; a file request is a 302 to a source that has them, and the hash you check against comes from the index"
+ },
+ "catalog": {
+  "address": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
+  "fetch": "/api/v1/objects/{address}",
+  "format": "hologram.model-hub.catalog/v1",
+  "media_type": "application/json",
+  "note": "the whole catalogue in one fetch; read `objects[<owner>/<name>].model` for one model's own address"
+ },
+ "list": [
+  {
+   "dialect": "objects",
+   "method": "GET",
+   "url": "/api/v1/objects/{catalog.address}",
+   "returns": "every model, addressed"
+  },
+  {
+   "dialect": "huggingface",
+   "method": "GET",
+   "url": "/api/models?limit=500",
+   "returns": "a page of models",
+   "caps_at": 500,
+   "note": "no cursor: this dialect cannot enumerate a catalogue larger than 500. Use the catalog object."
+  },
+  {
+   "dialect": "oci",
+   "method": "GET",
+   "url": "/v2/model-hub/index/tags/list",
+   "returns": "one tag per daily index"
+  }
+ ],
+ "item": {
+  "url": "/api/models/{owner}/{name}",
+  "returns": "one model in the Hugging Face dialect"
+ },
+ "files": {
+  "url": "/api/models/{owner}/{name}/tree/main",
+  "returns": "every file with its size and sha256"
+ },
+ "fetch": {
+  "url": "/{owner}/{name}/resolve/main/{path}",
+  "returns": "302 to a live source",
+  "note": "hash what arrives"
+ },
+ "verify": {
+  "algorithm": "sha256",
+  "expected_from": "the catalog, the tree listing or the manifest -- never the source that served the bytes",
+  "server_verifies_on_read": false
+ },
+ "one_line": "export HF_ENDPOINT=https://gethologram.ai"
+}

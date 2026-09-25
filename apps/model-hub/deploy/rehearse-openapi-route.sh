@@ -25,7 +25,7 @@ mkdir -p "$WORK/site/.well-known"
 cp "$WEB/public/openapi.json" "$WORK/site/openapi.json"
 cp "$WEB/public/robots.txt" "$WORK/site/robots.txt"
 cp "$WEB/public/agent.md" "$WORK/site/agent.md"
-for s in models registry spaces buckets docs; do cp "$WEB/public/$s.md" "$WORK/site/$s.md"; done
+for s in models registry spaces buckets docs; do cp "$WEB/public/$s.md" "$WORK/site/$s.md"; cp "$WEB/public/$s.json" "$WORK/site/$s.json"; done
 # The section pages, and one page below them, so the matcher can be shown not to swallow the deeper routes.
 mkdir -p "$WORK/site/models/Qwen/Qwen3-0.6B" "$WORK/site/registry" "$WORK/site/spaces" "$WORK/site/buckets" "$WORK/site/docs/quickstart"
 printf '<!doctype html><title>models page</title>\n' > "$WORK/site/models/index.html"
@@ -139,6 +139,16 @@ check "and with the trailing slash"    GET /spaces/      200 "# gethologram.ai/s
 check "curl /buckets gets the brief"   GET /buckets      200 "# gethologram.ai/buckets"  -H "accept: */*"
 check "and with the trailing slash"    GET /buckets/     200 "# gethologram.ai/buckets"  -H "accept: */*"
 check "curl /docs/ gets the brief"     GET /docs/        200 "# gethologram.ai/docs"     -H "accept: */*"
+
+# The third representation: asked for by name it is the descriptor, and the brief matcher must not take it.
+check "json gets the descriptor"       GET /models       200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "and with the trailing slash"    GET /models/      200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "registry too"                   GET /registry     200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "spaces too"                     GET /spaces       200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "buckets too"                    GET /buckets      200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "docs too"                       GET /docs/        200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "a browser is unaffected"        GET /models/      200 "models page"                    -H "accept: text/html"
+check "the tag link is advertised"     GET /models       200 "rel=alternate"                  -H "accept: */*"
 check "a browser still gets the page"  GET /models/      200 "models page"                   -H "accept: text/html,application/xhtml+xml"
 check "so does the registry page"      GET /registry/    200 "registry page"                 -H "accept: text/html"
 check "an unfurler still gets html"    GET /models/      200 "models page"                   -H "accept: */*" -A "Slackbot-LinkExpanding 1.0"

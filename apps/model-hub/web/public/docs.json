@@ -1,0 +1,130 @@
+{
+ "format": "hologram.section.descriptor/v1",
+ "section": "docs",
+ "title": "Docs",
+ "self": "/docs/",
+ "brief": "/docs.md",
+ "page": "/docs/",
+ "openapi": "/openapi.json",
+ "about": "The written documentation. Every page has a Markdown twin with no markup and no scripts.",
+ "inventory": {
+  "described": 14,
+  "served_here": 14,
+  "note": "every page is served from this host"
+ },
+ "catalog": null,
+ "catalog_note": "the index is /llms.txt, which lists every page and its twin in one request",
+ "list": [
+  {
+   "dialect": "http",
+   "method": "GET",
+   "url": "/llms.txt",
+   "returns": "every page, grouped, with its address"
+  },
+  {
+   "dialect": "http",
+   "method": "GET",
+   "url": "/docs.md",
+   "returns": "the same list as this section's brief"
+  }
+ ],
+ "item": {
+  "url": "/docs/{page}.md",
+  "returns": "one page as Markdown"
+ },
+ "fetch": {
+  "url": "/docs/{page}.md",
+  "returns": "the same; a docs page is its own bytes"
+ },
+ "verify": {
+  "algorithm": "none",
+  "expected_from": "documentation is served from this origin and carries no address",
+  "server_verifies_on_read": false
+ },
+ "pages": [
+  {
+   "slug": "index",
+   "title": "Overview",
+   "group": "Start",
+   "url": "/docs/index.md"
+  },
+  {
+   "slug": "quickstart",
+   "title": "Quickstart",
+   "group": "Start",
+   "url": "/docs/quickstart.md"
+  },
+  {
+   "slug": "verification",
+   "title": "Verification",
+   "group": "Concepts",
+   "url": "/docs/verification.md"
+  },
+  {
+   "slug": "addresses",
+   "title": "Names, revisions and addresses",
+   "group": "Concepts",
+   "url": "/docs/addresses.md"
+  },
+  {
+   "slug": "sources",
+   "title": "Sources and failover",
+   "group": "Concepts",
+   "url": "/docs/sources.md"
+  },
+  {
+   "slug": "huggingface",
+   "title": "Hugging Face tools",
+   "group": "Connect",
+   "url": "/docs/huggingface.md"
+  },
+  {
+   "slug": "ollama",
+   "title": "Ollama",
+   "group": "Connect",
+   "url": "/docs/ollama.md"
+  },
+  {
+   "slug": "oci",
+   "title": "OCI artifacts",
+   "group": "Connect",
+   "url": "/docs/oci.md"
+  },
+  {
+   "slug": "mcp",
+   "title": "MCP",
+   "group": "Connect",
+   "url": "/docs/mcp.md"
+  },
+  {
+   "slug": "objects",
+   "title": "Objects",
+   "group": "Connect",
+   "url": "/docs/objects.md"
+  },
+  {
+   "slug": "api",
+   "title": "API reference",
+   "group": "Reference",
+   "url": "/docs/api.md"
+  },
+  {
+   "slug": "errors",
+   "title": "Errors",
+   "group": "Reference",
+   "url": "/docs/errors.md"
+  },
+  {
+   "slug": "limits",
+   "title": "Limits and scope",
+   "group": "Reference",
+   "url": "/docs/limits.md"
+  },
+  {
+   "slug": "spaces",
+   "title": "Spaces",
+   "group": "Concepts",
+   "url": "/docs/spaces.md"
+  }
+ ]
+}

@@ -107,6 +107,350 @@
    }
   },
   "schemas": {
+   "SectionDescriptor": {
+    "type": "object",
+    "description": "One section of the hub, in the shape an agent executes rather than reads. The same fixed shape answers\nat `/models`, `/registry`, `/spaces`, `/buckets` and `/docs/`, so it is learned once.\n\nTwo guarantees, held by `qa/openapi/sections.mjs`: every URL in it is runnable as written, and where\n`catalog.address` is not null it is a content address — the whole section in one verifiable fetch.",
+    "required": [
+     "format",
+     "section",
+     "self",
+     "about",
+     "inventory",
+     "catalog",
+     "list",
+     "item",
+     "fetch",
+     "verify",
+     "brief",
+     "page",
+     "openapi"
+    ],
+    "properties": {
+     "format": {
+      "type": "string",
+      "const": "hologram.section.descriptor/v1"
+     },
+     "section": {
+      "type": "string",
+      "enum": [
+       "models",
+       "registry",
+       "spaces",
+       "buckets",
+       "docs"
+      ]
+     },
+     "title": {
+      "type": "string"
+     },
+     "about": {
+      "type": "string",
+      "description": "One sentence: what this section holds."
+     },
+     "self": {
+      "type": "string",
+      "description": "The address that answered this."
+     },
+     "inventory": {
+      "type": "object",
+      "description": "How much is here, and how much of it this host actually serves bytes for. They are different numbers, and one section was overstating itself by a factor of 300 before they were separated.",
+      "required": [
+       "described",
+       "served_here",
+       "note"
+      ],
+      "properties": {
+       "described": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "What this section lists. Null when only a live route can answer, which `list` then names."
+       },
+       "served_here": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "How many of those this host serves the bytes of."
+       },
+       "note": {
+        "type": "string",
+        "description": "Where the rest live, in a sentence."
+       }
+      }
+     },
+     "catalog": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "One address holding the whole section. Null when the section has no snapshot; `list` then carries a live route instead.",
+      "required": [
+       "address",
+       "fetch",
+       "format"
+      ],
+      "properties": {
+       "address": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "A content address. Fetch it, hash the bytes, and the hash is this string."
+       },
+       "fetch": {
+        "type": "string"
+       },
+       "format": {
+        "type": "string"
+       },
+       "media_type": {
+        "type": "string"
+       },
+       "note": {
+        "type": "string"
+       }
+      }
+     },
+     "catalog_note": {
+      "type": "string",
+      "description": "Present when `catalog` is null: why, in one sentence."
+     },
+     "list": {
+      "type": "array",
+      "description": "Every way to enumerate this section, most useful first.",
+      "items": {
+       "type": "object",
+       "description": "One request, runnable as written once its `{placeholders}` are filled from this same document.",
+       "required": [
+        "method",
+        "url",
+        "returns"
+       ],
+       "properties": {
+        "dialect": {
+         "type": "string",
+         "enum": [
+          "objects",
+          "huggingface",
+          "oci",
+          "http"
+         ],
+         "description": "Which language this request is in."
+        },
+        "method": {
+         "type": "string",
+         "enum": [
+          "GET"
+         ]
+        },
+        "url": {
+         "type": "string",
+         "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+        },
+        "returns": {
+         "type": "string"
+        },
+        "caps_at": {
+         "type": "integer",
+         "description": "The most this route will ever return in one call, when it cannot enumerate."
+        },
+        "note": {
+         "type": "string"
+        },
+        "artifact_type": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "item": {
+      "type": "object",
+      "description": "How to reach one thing in this section.",
+      "required": [
+       "method",
+       "url",
+       "returns"
+      ],
+      "properties": {
+       "dialect": {
+        "type": "string",
+        "enum": [
+         "objects",
+         "huggingface",
+         "oci",
+         "http"
+        ],
+        "description": "Which language this request is in."
+       },
+       "method": {
+        "type": "string",
+        "enum": [
+         "GET"
+        ]
+       },
+       "url": {
+        "type": "string",
+        "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+       },
+       "returns": {
+        "type": "string"
+       },
+       "caps_at": {
+        "type": "integer",
+        "description": "The most this route will ever return in one call, when it cannot enumerate."
+       },
+       "note": {
+        "type": "string"
+       },
+       "artifact_type": {
+        "type": "string"
+       }
+      }
+     },
+     "files": {
+      "type": "object",
+      "description": "How to list one item's files, where that is a separate request.",
+      "required": [
+       "method",
+       "url",
+       "returns"
+      ],
+      "properties": {
+       "dialect": {
+        "type": "string",
+        "enum": [
+         "objects",
+         "huggingface",
+         "oci",
+         "http"
+        ],
+        "description": "Which language this request is in."
+       },
+       "method": {
+        "type": "string",
+        "enum": [
+         "GET"
+        ]
+       },
+       "url": {
+        "type": "string",
+        "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+       },
+       "returns": {
+        "type": "string"
+       },
+       "caps_at": {
+        "type": "integer",
+        "description": "The most this route will ever return in one call, when it cannot enumerate."
+       },
+       "note": {
+        "type": "string"
+       },
+       "artifact_type": {
+        "type": "string"
+       }
+      }
+     },
+     "fetch": {
+      "type": "object",
+      "description": "How to get the bytes.",
+      "required": [
+       "method",
+       "url",
+       "returns"
+      ],
+      "properties": {
+       "dialect": {
+        "type": "string",
+        "enum": [
+         "objects",
+         "huggingface",
+         "oci",
+         "http"
+        ],
+        "description": "Which language this request is in."
+       },
+       "method": {
+        "type": "string",
+        "enum": [
+         "GET"
+        ]
+       },
+       "url": {
+        "type": "string",
+        "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+       },
+       "returns": {
+        "type": "string"
+       },
+       "caps_at": {
+        "type": "integer",
+        "description": "The most this route will ever return in one call, when it cannot enumerate."
+       },
+       "note": {
+        "type": "string"
+       },
+       "artifact_type": {
+        "type": "string"
+       }
+      }
+     },
+     "verify": {
+      "type": "object",
+      "description": "How to check what arrived. The expected hash never comes from whoever served the bytes.",
+      "required": [
+       "algorithm",
+       "expected_from",
+       "server_verifies_on_read"
+      ],
+      "properties": {
+       "algorithm": {
+        "type": "string",
+        "enum": [
+         "sha256",
+         "blake3",
+         "none"
+        ]
+       },
+       "expected_from": {
+        "type": "string"
+       },
+       "server_verifies_on_read": {
+        "type": "boolean",
+        "description": "Always false. The client hashes, or nothing is proved."
+       },
+       "root": {
+        "type": "string"
+       },
+       "privacy": {
+        "type": "string"
+       }
+      }
+     },
+     "one_line": {
+      "type": "string",
+      "description": "The single command that makes an existing tool use this section, where one exists."
+     },
+     "pages": {
+      "type": "array",
+      "description": "Docs only: every page and its Markdown twin.",
+      "items": {
+       "type": "object"
+      }
+     },
+     "brief": {
+      "type": "string"
+     },
+     "page": {
+      "type": "string"
+     },
+     "openapi": {
+      "type": "string"
+     }
+    }
+   },
    "Descriptor": {
     "type": "object",
     "description": "What the hub is and where everything under it lives. One fetch, no schema needed to read it.",
@@ -1488,19 +1832,30 @@
     ],
     "operationId": "getModelsSection",
     "summary": "The models section, answered two ways",
-    "description": "The site shows this address beside the models heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nfinding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
+    "description": "The site shows this address beside the models heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nfinding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
     "responses": {
      "200": {
-      "description": "The section brief, or the section's page.",
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
       "headers": {
        "vary": {
-        "description": "`Accept`, because this route has two representations.",
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
         "schema": {
          "type": "string"
         }
        }
       },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/markdown": {
         "schema": {
          "type": "string"
@@ -1541,19 +1896,30 @@
     ],
     "operationId": "getRegistrySection",
     "summary": "The registry section, answered two ways",
-    "description": "The site shows this address beside the registry heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\npulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.\n\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns.",
+    "description": "The site shows this address beside the registry heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\npulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.\n\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns.",
     "responses": {
      "200": {
-      "description": "The section brief, or the section's page.",
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
       "headers": {
        "vary": {
-        "description": "`Accept`, because this route has two representations.",
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
         "schema": {
          "type": "string"
         }
        }
       },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/markdown": {
         "schema": {
          "type": "string"
@@ -1594,19 +1960,30 @@
     ],
     "operationId": "getSpacesSection",
     "summary": "The spaces section, answered two ways",
-    "description": "The site shows this address beside the spaces heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nbrowser-only apps, each sealed under one root digest, and how to read one from the registry: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
+    "description": "The site shows this address beside the spaces heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nbrowser-only apps, each sealed under one root digest, and how to read one from the registry: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
     "responses": {
      "200": {
-      "description": "The section brief, or the section's page.",
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
       "headers": {
        "vary": {
-        "description": "`Accept`, because this route has two representations.",
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
         "schema": {
          "type": "string"
         }
        }
       },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/markdown": {
         "schema": {
          "type": "string"
@@ -1647,19 +2024,30 @@
     ],
     "operationId": "getBucketsSection",
     "summary": "The buckets section, answered two ways",
-    "description": "The site shows this address beside the buckets heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nwalking a bucket as an OCI index tree and checking every block against its address: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
+    "description": "The site shows this address beside the buckets heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nwalking a bucket as an OCI index tree and checking every block against its address: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
     "responses": {
      "200": {
-      "description": "The section brief, or the section's page.",
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
       "headers": {
        "vary": {
-        "description": "`Accept`, because this route has two representations.",
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
         "schema": {
          "type": "string"
         }
        }
       },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/markdown": {
         "schema": {
          "type": "string"
@@ -1794,16 +2182,27 @@
     "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document.\nEvery page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.\n\nThis is also the address the site shows beside the Docs heading, the same tag every section carries. A\nbrowser gets this index; anything else gets the section brief, which lists every page and the address of\nits twin, generated from the pages themselves. The slash is load-bearing: `/docs` without one is the\nserver's own API reference, on a different upstream.",
     "responses": {
      "200": {
-      "description": "The index to a browser; to anything else the section brief.",
+      "description": "The descriptor to a caller that asked for JSON, the section brief to any other non-browser, the index to a browser.",
       "headers": {
        "vary": {
-        "description": "`Accept`, because this route has two representations.",
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
         "schema": {
          "type": "string"
         }
        }
       },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/html": {
         "schema": {
          "type": "string"

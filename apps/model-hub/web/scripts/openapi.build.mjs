@@ -21,6 +21,7 @@
 //
 // Every example here is copied from qa/openapi/evidence.json, recorded by probe.mjs against the live hub.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { load as loadDocs, GROUPS as DOC_GROUPS } from "../src/docs.mjs";
 
@@ -35,6 +36,7 @@ const CARD = new URL("./.well-known/agent-card.json", PUBLIC);
 const BRIEF = new URL("./agent.md", PUBLIC);
 const SECTION_NAMES = ["models", "registry", "spaces", "buckets", "docs"];
 const SECTIONS = Object.fromEntries(SECTION_NAMES.map((n) => [n, new URL(`./${n}.md`, PUBLIC)]));
+const SECTION_JSON = Object.fromEntries(SECTION_NAMES.map((n) => [n, new URL(`./${n}.json`, PUBLIC)]));
 const ROBOTS = new URL("./robots.txt", PUBLIC);
 import { ORIGIN as BASE, HOST } from "../src/origin.mjs";
 
@@ -254,7 +256,14 @@ function document(server, evidence) {
           `${what}: the few requests that do the job, in the order you would make them, with the rule that makes`,
           "the bytes safe.",
           "",
-          "It adds no API — every route the brief names is already in this document. What was missing was an",
+          "",
+          "Ask for `application/json` and the same address answers a **section descriptor**: one fixed shape, the",
+          "same on all five sections, naming how to enumerate this section, how to reach one item, how to fetch",
+          "its bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content",
+          "address holding the whole of it, so the entire section is one verifiable fetch. Where it has none the",
+          "field is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.",
+          "",
+          "It adds no API — every route the descriptor names is already in this document. What was missing was an",
           "address that gathers them, which the site was already advertising. The trailing slash works either way,",
           "and a page below the section, such as a single model or one docs page, is untouched.",
           name === "registry" ? "\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns." : "",
@@ -262,9 +271,16 @@ function document(server, evidence) {
         ].filter(Boolean).join("\n"),
         responses: {
           200: {
-            description: "The section brief, or the section's page.",
-            headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
-            content: { "text/markdown": { schema: { type: "string" } }, "text/html": { schema: { type: "string" } } },
+            description: "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
+            headers: {
+              vary: { description: "`Accept`, because this route has three representations.", schema: { type: "string" } },
+              link: { description: "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.", schema: { type: "string" } },
+            },
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/SectionDescriptor" } },
+              "text/markdown": { schema: { type: "string" } },
+              "text/html": { schema: { type: "string" } },
+            },
           },
           ...NOT_SERVED,
         },
@@ -317,9 +333,16 @@ function document(server, evidence) {
       ].join("\n"),
       responses: {
         200: {
-          description: "The index to a browser; to anything else the section brief.",
-          headers: { vary: { description: "`Accept`, because this route has two representations.", schema: { type: "string" } } },
-          content: { "text/html": { schema: { type: "string" } }, "text/markdown": { schema: { type: "string", description: "The section brief." } } },
+          description: "The descriptor to a caller that asked for JSON, the section brief to any other non-browser, the index to a browser.",
+          headers: {
+            vary: { description: "`Accept`, because this route has three representations.", schema: { type: "string" } },
+            link: { description: "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.", schema: { type: "string" } },
+          },
+          content: {
+            "application/json": { schema: { $ref: "#/components/schemas/SectionDescriptor" } },
+            "text/html": { schema: { type: "string" } },
+            "text/markdown": { schema: { type: "string", description: "The section brief." } },
+          },
         },
         ...NOT_SERVED,
       },
@@ -944,7 +967,83 @@ function prune(spec) {
 function schemas() {
   const address = { type: "string", pattern: "^blake3:[0-9a-f]{64}$", description: "The BLAKE3 hash of an object's bytes, which is its name." };
   const sha256 = { type: "string", pattern: "^[0-9a-f]{64}$", description: "The SHA-256 of a file's bytes." };
+  const route = {
+    type: "object",
+    description: "One request, runnable as written once its `{placeholders}` are filled from this same document.",
+    required: ["method", "url", "returns"],
+    properties: {
+      dialect: { type: "string", enum: ["objects", "huggingface", "oci", "http"], description: "Which language this request is in." },
+      method: { type: "string", enum: ["GET"] },
+      url: { type: "string", description: "A path on this host. `{catalog.address}` means the value of that field in this document." },
+      returns: { type: "string" },
+      caps_at: { type: "integer", description: "The most this route will ever return in one call, when it cannot enumerate." },
+      note: { type: "string" },
+      artifact_type: { type: "string" },
+    },
+  };
   return {
+    SectionDescriptor: {
+      type: "object",
+      description: [
+        "One section of the hub, in the shape an agent executes rather than reads. The same fixed shape answers",
+        "at `/models`, `/registry`, `/spaces`, `/buckets` and `/docs/`, so it is learned once.",
+        "",
+        "Two guarantees, held by `qa/openapi/sections.mjs`: every URL in it is runnable as written, and where",
+        "`catalog.address` is not null it is a content address — the whole section in one verifiable fetch.",
+      ].join("\n"),
+      required: ["format", "section", "self", "about", "inventory", "catalog", "list", "item", "fetch", "verify", "brief", "page", "openapi"],
+      properties: {
+        format: { type: "string", const: "hologram.section.descriptor/v1" },
+        section: { type: "string", enum: ["models", "registry", "spaces", "buckets", "docs"] },
+        title: { type: "string" },
+        about: { type: "string", description: "One sentence: what this section holds." },
+        self: { type: "string", description: "The address that answered this." },
+        inventory: {
+          type: "object",
+          description: "How much is here, and how much of it this host actually serves bytes for. They are different numbers, and one section was overstating itself by a factor of 300 before they were separated.",
+          required: ["described", "served_here", "note"],
+          properties: {
+            described: { type: ["integer", "null"], description: "What this section lists. Null when only a live route can answer, which `list` then names." },
+            served_here: { type: ["integer", "null"], description: "How many of those this host serves the bytes of." },
+            note: { type: "string", description: "Where the rest live, in a sentence." },
+          },
+        },
+        catalog: {
+          type: ["object", "null"],
+          description: "One address holding the whole section. Null when the section has no snapshot; `list` then carries a live route instead.",
+          required: ["address", "fetch", "format"],
+          properties: {
+            address: { type: ["string", "null"], description: "A content address. Fetch it, hash the bytes, and the hash is this string." },
+            fetch: { type: "string" },
+            format: { type: "string" },
+            media_type: { type: "string" },
+            note: { type: "string" },
+          },
+        },
+        catalog_note: { type: "string", description: "Present when `catalog` is null: why, in one sentence." },
+        list: { type: "array", description: "Every way to enumerate this section, most useful first.", items: route },
+        item: { ...route, description: "How to reach one thing in this section." },
+        files: { ...route, description: "How to list one item's files, where that is a separate request." },
+        fetch: { ...route, description: "How to get the bytes." },
+        verify: {
+          type: "object",
+          description: "How to check what arrived. The expected hash never comes from whoever served the bytes.",
+          required: ["algorithm", "expected_from", "server_verifies_on_read"],
+          properties: {
+            algorithm: { type: "string", enum: ["sha256", "blake3", "none"] },
+            expected_from: { type: "string" },
+            server_verifies_on_read: { type: "boolean", description: "Always false. The client hashes, or nothing is proved." },
+            root: { type: "string" },
+            privacy: { type: "string" },
+          },
+        },
+        one_line: { type: "string", description: "The single command that makes an existing tool use this section, where one exists." },
+        pages: { type: "array", description: "Docs only: every page and its Markdown twin.", items: { type: "object" } },
+        brief: { type: "string" },
+        page: { type: "string" },
+        openapi: { type: "string" },
+      },
+    },
     Descriptor: {
       type: "object",
       description: "What the hub is and where everything under it lives. One fetch, no schema needed to read it.",
@@ -1284,6 +1383,11 @@ function sectionBrief(name, docs = []) {
       "Open models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and",
       "every request below is anonymous.",
       "",
+      "To read the whole catalogue rather than a page of it, start at the descriptor and fetch the one address it",
+      "names: `curl -H 'accept: application/json' " + BASE + "/models` gives `catalog.address`, and that object is",
+      "every model in one request. `/api/models` is capped at 500 with no cursor, so it cannot enumerate a",
+      "catalogue larger than that.",
+      "",
       "## One line, if you can set an environment variable",
       "",
       `    HF_ENDPOINT=${BASE}`,
@@ -1326,6 +1430,15 @@ function sectionBrief(name, docs = []) {
     "",
     "The same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are",
     "anonymous; only publishing needs a credential.",
+    "",
+    "## What this registry holds, and what it only describes",
+    "",
+    "The page lists every repository the hub knows about, most of them held by Docker Hub, Artifact Hub or",
+    "Microsoft Artifact Registry and pulled from there. Only the ones `/v2/_catalog` returns are served from",
+    "here. Ask it rather than the page count:",
+    "",
+    "    GET /v2/_catalog?n=1000",
+    "        every repository this registry serves the bytes of",
     "",
     "## Pull with what you have",
     "",
@@ -1498,6 +1611,192 @@ function robots() {
   ].join("\n");
 }
 
+
+
+// What the build honestly knows about how much is in each section. A number it cannot know is null, and the
+// descriptor then points at the live route that can answer -- a guessed count is worse than no count.
+// `registryHeld` and `catalog` come out of the probe recording, so they are whatever the live hub last said.
+function inventory(evidence, docs) {
+  const rec = (id) => (evidence.records || []).find((r) => r.id === id);
+  // probe.mjs stores a JSON body already parsed and everything else as text, so take it either way.
+  const json = (id) => { const b = rec(id)?.body; if (b && typeof b === "object") return b; try { return JSON.parse(b); } catch { return null; } };
+  const local = (p) => { try { return JSON.parse(readFileSync(new URL(p, HERE), "utf8")); } catch { return null; } };
+
+  const images = local("../public/registry/data/images.json");
+  const spaces = local("../public/spaces/spaces.json");
+  const held = json("oci.catalog");
+  const root = json("root.descriptor");
+
+  return {
+    registryRows: images?.images?.length ?? null,
+    registryHeld: Array.isArray(held?.repositories) ? held.repositories.length : null,
+    spaces: spaces?.spaces?.length ?? null,
+    spacesPublished: Array.isArray(held?.repositories) ? held.repositories.filter((r) => r.startsWith("spaces/")).length : null,
+    buckets: Array.isArray(held?.repositories) ? held.repositories.filter((r) => r.startsWith("buckets/")).length : null,
+    catalog: root?.catalog ?? null,
+    models: null,        // the catalogue's size is in the catalogue; the descriptor points at it
+    docs: docs.length,
+  };
+}
+
+// ---------------------------------------------------------------- the section descriptor
+//
+// The brief above is for reading. This is the same section for executing: one fixed shape, five sections, so
+// an agent learns it once at the root and every section answers the same way. It adds no API -- it is a third
+// representation of an address that already answers HTML to a browser and markdown to a reader.
+//
+// Two rules it is held to, by qa/openapi/sections.mjs:
+//   - every URL in it is runnable as written, with {placeholders} fillable from the same document;
+//   - `catalog.address` is a content address, so "the whole section" is one verifiable fetch. It is null when
+//     the section genuinely has no snapshot. A section with nothing to point at says so; it does not borrow.
+//
+// `inventory` exists because one of these sections was overstating itself by a factor of 300. The Registry
+// page counts 2,149 repositories and this registry serves 7 of them; the rest are described here and pulled
+// from the registry that holds them. `described` and `served_here` are different numbers and always were.
+const SECTION_PATHS = { models: "/models", registry: "/registry", spaces: "/spaces", buckets: "/buckets", docs: "/docs/" };
+
+const VERIFY = {
+  sha256: {
+    algorithm: "sha256",
+    expected_from: "the catalog, the tree listing or the manifest -- never the source that served the bytes",
+    server_verifies_on_read: false,
+  },
+  blake3: {
+    algorithm: "blake3",
+    expected_from: "the address you asked for; an object's name is the BLAKE3 of its bytes",
+    server_verifies_on_read: false,
+  },
+};
+
+function sectionDescriptor(name, { docs = [], counts = {} } = {}) {
+  const path = SECTION_PATHS[name];
+  const base = {
+    format: "hologram.section.descriptor/v1",
+    section: name,
+    title: name[0].toUpperCase() + name.slice(1),
+    self: path,
+    brief: `/${name}.md`,
+    page: name === "docs" ? "/docs/" : `/${name}/`,
+    openapi: "/openapi.json",
+  };
+
+  if (name === "models") {
+    return {
+      ...base,
+      about: "Open models. Find one, prove it, and fetch it from whichever source is up. No account, no key.",
+      inventory: {
+        described: counts.models ?? null,
+        served_here: 0,
+        note: "the hub carries no weight bytes; a file request is a 302 to a source that has them, and the hash you check against comes from the index",
+      },
+      catalog: {
+        address: counts.catalog ?? null,
+        fetch: "/api/v1/objects/{address}",
+        format: "hologram.model-hub.catalog/v1",
+        media_type: "application/json",
+        note: "the whole catalogue in one fetch; read `objects[<owner>/<name>].model` for one model's own address",
+      },
+      list: [
+        { dialect: "objects", method: "GET", url: "/api/v1/objects/{catalog.address}", returns: "every model, addressed" },
+        { dialect: "huggingface", method: "GET", url: "/api/models?limit=500", returns: "a page of models", caps_at: 500, note: "no cursor: this dialect cannot enumerate a catalogue larger than 500. Use the catalog object." },
+        { dialect: "oci", method: "GET", url: "/v2/model-hub/index/tags/list", returns: "one tag per daily index" },
+      ],
+      item: { url: "/api/models/{owner}/{name}", returns: "one model in the Hugging Face dialect" },
+      files: { url: "/api/models/{owner}/{name}/tree/main", returns: "every file with its size and sha256" },
+      fetch: { url: "/{owner}/{name}/resolve/main/{path}", returns: "302 to a live source", note: "hash what arrives" },
+      verify: VERIFY.sha256,
+      one_line: `export HF_ENDPOINT=${BASE}`,
+    };
+  }
+
+  if (name === "registry") {
+    return {
+      ...base,
+      about: "OCI distribution. Pull models and artifacts with the client you already have.",
+      inventory: {
+        described: counts.registryRows ?? null,
+        served_here: counts.registryHeld ?? null,
+        note: "`described` counts what the page indexes, most of it held by Docker Hub, Artifact Hub and Microsoft Artifact Registry and pulled from those. `served_here` is what this registry serves bytes for -- the only ones /v2/ can give you.",
+      },
+      catalog: null,
+      catalog_note: "this section has no snapshot: /v2/_catalog is live truth, and a snapshot of somebody else's registry would be a claim we cannot keep",
+      list: [
+        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "every repository this registry serves" },
+        { dialect: "oci", method: "GET", url: "/v2/{repository}/tags/list", returns: "every tag of one repository" },
+      ],
+      item: { url: "/v2/{repository}/manifests/{reference}", returns: "an OCI manifest or index" },
+      fetch: { url: "/v2/{repository}/blobs/{digest}", returns: "one blob", note: "the digest is the sha256 of the bytes" },
+      verify: VERIFY.sha256,
+      one_line: `ollama pull ${HOST}/{owner}/{name}:{quant}`,
+    };
+  }
+
+  if (name === "spaces") {
+    return {
+      ...base,
+      about: "Apps that run entirely in the visitor's browser, each sealed under one root digest.",
+      inventory: {
+        described: counts.spaces ?? null,
+        served_here: counts.spacesPublished ?? 0,
+        note: "a Space is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed Space that is not published answers 404 there, and that is not an error.",
+      },
+      catalog: counts.spacesObject ? {
+        address: counts.spacesObject,
+        fetch: "/api/v1/objects/{address}",
+        format: "hologram.spaces.catalog/v1",
+        media_type: "application/json",
+      } : null,
+      catalog_note: counts.spacesObject ? undefined
+        : "the catalog is not published as an object yet, so this section has no address you can verify: read the static file named in `list`, and treat it as unaddressed",
+      list: [
+        { dialect: "http", method: "GET", url: "/spaces/spaces.json", returns: "every Space with its sealed root", note: "a static file, not content-addressed" },
+        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "repositories; published Spaces are named spaces/{id}" },
+      ],
+      item: { url: "/v2/spaces/{id}/manifests/latest", returns: "one Space as an OCI artifact", artifact_type: "application/vnd.hologram.space.v1+json" },
+      fetch: { url: "/v2/spaces/{id}/blobs/{digest}", returns: "one file of the Space" },
+      verify: { ...VERIFY.sha256, root: "every file is named in holospace.lock.json with its sha256, and `root` is the sha256 over that map; one changed byte changes the root" },
+    };
+  }
+
+  if (name === "buckets") {
+    return {
+      ...base,
+      about: "Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.",
+      inventory: {
+        described: counts.buckets ?? null,
+        served_here: counts.buckets ?? null,
+        note: "a bucket is an OCI index tree under /v2/, named buckets/{owner}/{name}. There is no separate bucket API.",
+      },
+      catalog: null,
+      catalog_note: "no catalogue object yet: discovery is the registry catalogue filtered by the buckets/ prefix",
+      list: [
+        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "every repository; the buckets are those named buckets/{owner}/{name}" },
+        { dialect: "oci", method: "GET", url: "/v2/buckets/{owner}/{name}/tags/list", returns: "every past state; a tag h-{milliseconds} is one publish and names its parent" },
+      ],
+      item: { url: "/v2/buckets/{owner}/{name}/manifests/latest", returns: "the bucket as it stands, an OCI index" },
+      fetch: { url: "/v2/buckets/{owner}/{name}/blobs/{digest}", returns: "one block" },
+      verify: { ...VERIFY.sha256, privacy: "a private bucket is encrypted in the browser before anything is sent, object names included; the hub stores bytes it cannot read" },
+    };
+  }
+
+  // docs
+  return {
+    ...base,
+    about: "The written documentation. Every page has a Markdown twin with no markup and no scripts.",
+    inventory: { described: docs.length || null, served_here: docs.length || null, note: "every page is served from this host" },
+    catalog: null,
+    catalog_note: "the index is /llms.txt, which lists every page and its twin in one request",
+    list: [
+      { dialect: "http", method: "GET", url: "/llms.txt", returns: "every page, grouped, with its address" },
+      { dialect: "http", method: "GET", url: "/docs.md", returns: "the same list as this section's brief" },
+    ],
+    item: { url: "/docs/{page}.md", returns: "one page as Markdown" },
+    fetch: { url: "/docs/{page}.md", returns: "the same; a docs page is its own bytes" },
+    verify: { algorithm: "none", expected_from: "documentation is served from this origin and carries no address", server_verifies_on_read: false },
+    pages: docs.map((p) => ({ slug: p.slug, title: p.title, group: p.group, url: `/docs/${p.slug}.md` })),
+  };
+}
+
 // ---------------------------------------------------------------- run
 
 async function main() {
@@ -1511,11 +1810,13 @@ async function main() {
   const server = JSON.parse(await readFile(SERVER_SPEC, "utf8"));
   const evidence = JSON.parse(await readFile(new URL("../qa/openapi/evidence.json", HERE), "utf8"));
   const docs = await loadDocs(DOCS_DIR);
+  const counts = inventory(evidence, docs);
   const spec = document(server, evidence);
   const files = [
     [OUT, JSON.stringify(spec, null, 1) + "\n"],
     [BRIEF, brief(spec)],
     ...SECTION_NAMES.map((n) => [SECTIONS[n], sectionBrief(n, docs)]),
+    ...SECTION_NAMES.map((n) => [SECTION_JSON[n], JSON.stringify(sectionDescriptor(n, { docs, counts }), null, 1) + "\n"]),
     [CARD, JSON.stringify(agentCard(spec), null, 1) + "\n"],
     [ROBOTS, robots()],
   ];
@@ -1536,6 +1837,7 @@ async function main() {
   console.log(`wrote public/openapi.json: ${Object.keys(spec.paths).length} paths, ${ops} operations, ${Object.keys(spec.components.schemas).length} schemas, ${Math.round(files[0][1].length / 1024)} KB`);
   console.log(`wrote public/agent.md: ${brief(spec).split("\n").length} lines`);
   for (const [name, url] of Object.entries(SECTIONS)) console.log(`wrote public/${name}.md: ${sectionBrief(name, docs).split("\n").length} lines`);
+  console.log(`wrote ${SECTION_NAMES.length} section descriptors: ${SECTION_NAMES.map((n) => `${n}.json`).join(", ")}`);
   console.log(`wrote public/.well-known/agent-card.json: ${agentCard(spec).skills.length} skills`);
   console.log("wrote public/robots.txt");
 }

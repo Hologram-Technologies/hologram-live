@@ -165,9 +165,19 @@ gethologram.ai, gethologram.ai {
 		# follows it gets the browse page, a quarter of a megabyte of markup. This adds no API: every route the briefs
 		# name already existed. /v2/ is deliberately untouched, because it is a protocol endpoint and OCI clients
 		# depend on exactly what it returns.
+		# A caller that asks for JSON by name gets the section descriptor: one fixed shape on all five
+		# sections, naming how to enumerate this one, reach an item, fetch its bytes and check them.
+		# Declared before @section_brief for the reason @agent precedes @arriving at the root: JSON also
+		# fails the html test, and a caller that named a type should be given it.
+		@section_json {
+			path /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/
+			header Accept *application/json*
+		}
+		rewrite @section_json /{path.0}.json
 		@section_brief {
 			path /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/
 			not header Accept *text/html*
+			not header Accept *application/json*
 			not header User-Agent *bot*
 			not header User-Agent *Bot*
 			not header User-Agent *Slack*
@@ -186,6 +196,17 @@ gethologram.ai, gethologram.ai {
 		header /spaces.md Access-Control-Allow-Origin "*"
 		header /buckets.md Access-Control-Allow-Origin "*"
 		header /docs.md Access-Control-Allow-Origin "*"
+		header /models.json Access-Control-Allow-Origin "*"
+		header /registry.json Access-Control-Allow-Origin "*"
+		header /spaces.json Access-Control-Allow-Origin "*"
+		header /buckets.json Access-Control-Allow-Origin "*"
+		header /docs.json Access-Control-Allow-Origin "*"
+		# RFC 8288, so an agent finds the descriptor and the brief without parsing HTML.
+		header /models* Link "</models.json>; rel=alternate, </models.md>; rel=describedby, </openapi.json>; rel=service-desc"
+		header /registry* Link "</registry.json>; rel=alternate, </registry.md>; rel=describedby, </openapi.json>; rel=service-desc"
+		header /spaces* Link "</spaces.json>; rel=alternate, </spaces.md>; rel=describedby, </openapi.json>; rel=service-desc"
+		header /buckets* Link "</buckets.json>; rel=alternate, </buckets.md>; rel=describedby, </openapi.json>; rel=service-desc"
+		header /docs/* Link "</docs.json>; rel=alternate, </docs.md>; rel=describedby, </openapi.json>; rel=service-desc"
 		# Archived days are read by the browser from any origin and verified there.
 		header /archive/* Access-Control-Allow-Origin "*"
 		header /archive.json Access-Control-Allow-Origin "*"

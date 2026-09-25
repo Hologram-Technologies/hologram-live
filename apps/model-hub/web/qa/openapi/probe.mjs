@@ -87,6 +87,24 @@ async function main() {
     // Docs is the one section with no slashless address of its own: /docs is the server's API reference.
     ["section.docs", "/docs/", { headers: { accept: "*/*" } }],
     ["section.docs.page", "/docs/", { headers: { accept: "text/html" } }],
+    // The descriptor: the same five addresses, asked for by name.
+    ["section.models.json", "/models", { headers: { accept: "application/json" } }],
+    ["section.registry.json", "/registry", { headers: { accept: "application/json" } }],
+    ["section.spaces.json", "/spaces", { headers: { accept: "application/json" } }],
+    ["section.buckets.json", "/buckets", { headers: { accept: "application/json" } }],
+    ["section.docs.json", "/docs/", { headers: { accept: "application/json" } }],
+    // The descriptor: the same five addresses, asked for by name.
+    ["section.models.json", "/models", { headers: { accept: "application/json" } }],
+    ["section.registry.json", "/registry", { headers: { accept: "application/json" } }],
+    ["section.spaces.json", "/spaces", { headers: { accept: "application/json" } }],
+    ["section.buckets.json", "/buckets", { headers: { accept: "application/json" } }],
+    ["section.docs.json", "/docs/", { headers: { accept: "application/json" } }],
+    // The descriptor: the same five addresses, asked for by name.
+    ["section.models.json", "/models", { headers: { accept: "application/json" } }],
+    ["section.registry.json", "/registry", { headers: { accept: "application/json" } }],
+    ["section.spaces.json", "/spaces", { headers: { accept: "application/json" } }],
+    ["section.buckets.json", "/buckets", { headers: { accept: "application/json" } }],
+    ["section.docs.json", "/docs/", { headers: { accept: "application/json" } }],
     ["descriptor", "/.well-known/model-hub.json", { headers: CORS }],
     ["llms", "/llms.txt", { headers: CORS }],
     ["openapi", "/openapi.json", { headers: CORS }],

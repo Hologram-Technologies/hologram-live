@@ -458,7 +458,7 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
    or the column count. A shorter card clips the bottom. Change one number and you change both files. */
 .card { position: relative; overflow: hidden; isolation: isolate; }
 .art {
-  position: absolute; z-index: -1; top: 0; right: 0; width: min(55%, 260px); height: 200px;
+  position: absolute; z-index: -1; top: 0; right: 0; width: min(55%, 260px); height: 200px; /* px on purpose: equals the 260x200 viewBox */
   pointer-events: none; opacity: .85;
   -webkit-mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));
   mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));

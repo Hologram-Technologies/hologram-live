@@ -1,6 +1,6 @@
 // Proves the claim the header makes: every page of this site carries the same top-level menu, and the
 // section you are in is marked, in the accent, legibly. And the claim the catalogue pages make below it:
-// Models, Registry and Spaces each open with the same lead row — name, count, address — at the same height,
+// Models, Registry and Apps each open with the same lead row — name, count, address — at the same height,
 // in the same face, so crossing between them moves nothing.
 //
 //   node apps/model-hub/web/qa/menu.mjs            (build dist first)
@@ -25,7 +25,11 @@ const DIST = join(SITE, "dist");
 
 // What the menu is. Written out here rather than imported, so a change to build.mjs has to be made twice
 // on purpose instead of once by accident.
-const SECTIONS = ["Models", "Registry", "Spaces", "Buckets", "Docs"];
+const SECTIONS = ["Models", "Registry", "Apps", "Buckets", "Docs"];
+// The address a section answers on, where it is not its label in lower case. Apps kept the address it had as
+// Spaces (/spaces, and spaces/<id> on the registry), so links and clients bound to it keep working.
+const SECTION_KEY = { Apps: "spaces" };
+const keyOf = (section) => SECTION_KEY[section] || section.toLowerCase();
 
 // One page of every shape the site builds, and the section each belongs to. "" means no section is current:
 // the landing is the front door, it is not inside any section. The last field says what that page opens with:
@@ -38,7 +42,7 @@ const PAGES = [
   ["browse", "/models/", "Models", true, true],
   ["model", null, "Models"],           // filled in from dist below: whichever model page is first
   ["registry", "/registry/", "Registry", true, true],
-  ["spaces", "/spaces/", "Spaces", true, true],
+  ["spaces", "/spaces/", "Apps", true, true],
   ["buckets", "/buckets/", "Buckets", true, true],
   ["docs", "/docs/", "Docs", false, true],
   ["docs page", "/docs/quickstart/", "Docs"],
@@ -143,7 +147,7 @@ const READ = `(() => {
     headerOverflow: Math.max(0, top.scrollWidth - top.clientWidth),
     pageOverflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     // The lead row a catalogue page opens with: its name, a count, an address, a line of provenance — in
-    // that order, above the columns, on Models, Registry and Spaces alike.
+    // that order, above the columns, on Models, Registry and Apps alike.
     // The section tag: the same control beside the heading of every section, whatever else that section's
     // opening row carries. What is measured is what a reader compares across pages -- that it is there, that it
     // sits to the right of the title on the same line, and that it is the same object drawn the same way.
@@ -283,7 +287,7 @@ for (const theme of THEMES) {
         if (!r.tag) problems.push(`${where}: the ${section} heading carries no section tag`);
         else {
           tagged.add(section);
-          if (r.tag.section !== section.toLowerCase()) problems.push(`${where}: the tag says ${r.tag.section}, the section is ${section}`);
+          if (r.tag.section !== keyOf(section)) problems.push(`${where}: the tag says ${r.tag.section}, the section is ${section}`);
           // It has to read as the landing's line: the same prompt, the same copy mark, the same verb.
           if (r.tag.prompt !== "$") problems.push(`${where}: the tag has no shell prompt`);
           if (!r.tag.icon) problems.push(`${where}: the tag has no copy mark`);
@@ -311,7 +315,7 @@ for (const theme of THEMES) {
       } else if (r.tag) problems.push(`${where}: a section tag on a page that is not a section front page`);
 
       // The lead row: every catalogue page opens with the same one, and it sits at the same height on each, so
-      // crossing from Models to Registry to Spaces moves nothing. A page outside the catalogue has none.
+      // crossing from Models to Registry to Apps moves nothing. A page outside the catalogue has none.
       if (catalogue === true) {
         if (!r.lead) problems.push(`${where}: no lead row`);
         else {

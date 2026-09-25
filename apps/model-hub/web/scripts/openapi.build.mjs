@@ -390,14 +390,14 @@ function document(server, evidence) {
       ...probe("/registry/", { headers: { accept: "text/html" }, contentType: "text/html" }),
     },
   };
-  // The Spaces page: apps that run entirely in the visitor's browser, each in its own sealed frame. The page
-  // reads its catalog from the site and asks `/v2/spaces/<id>/manifests/latest` whether a Space is published.
+  // The Apps page: apps that run entirely in the visitor's browser, each in its own sealed frame. The page
+  // reads its catalog from the site and asks `/v2/spaces/<id>/manifests/latest` whether an App is published.
   spec.paths["/spaces/"] = {
     get: {
       tags: ["Discovery"],
       operationId: "getSpacesPage",
       summary: "Apps that run entirely in the browser, each in its own sealed frame",
-      description: "Three demo Spaces (speech, image, chat). Every file of a Space is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. A Space published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
+      description: "Five demo Apps (speech, image, chat, vision, depth). Every file of an App is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. An App published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
       responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, ...NOT_SERVED },
       ...probe("/spaces/", { contentType: "text/html" }),
     },
@@ -406,8 +406,8 @@ function document(server, evidence) {
     get: {
       tags: ["Discovery"],
       operationId: "getSpacesCatalog",
-      summary: "The Spaces catalog: id, sealed root, files, models and their sizes",
-      description: "`{ format: \"hologram.spaces.catalog/v1\", spaces: [{ id, name, task, tagline, root, bytes, files, models, modelHost, modelBytes, source, requires, entry }] }`. `root` is SHA-256 over the Space's file map; `entry` is the page to open.",
+      summary: "The Apps catalog: id, sealed root, files, models and their sizes",
+      description: "`{ format: \"hologram.spaces.catalog/v1\", spaces: [{ id, name, task, tagline, root, bytes, files, models, modelHost, modelBytes, source, requires, entry }] }`. `root` is SHA-256 over the App's file map; `entry` is the page to open.",
       responses: { 200: { description: "JSON.", content: { "application/json": { schema: { type: "object" } } } }, ...NOT_SERVED },
       ...probe("/spaces/spaces.json", { contentType: "application/json" }),
     },
@@ -1299,27 +1299,27 @@ function sectionBrief(name, docs = []) {
       `# ${HOST}/spaces`,
       "",
       "Apps that run entirely in the visitor's browser, each sealed under one address. Nothing runs on a server:",
-      "the page is a folder of static files, the model comes from the host the Space names, and the work happens on",
+      "the page is a folder of static files, the model comes from the host the App names, and the work happens on",
       "the visitor's own GPU.",
       "",
       "## What is here",
       "",
       "    GET /spaces/spaces.json",
-      "        The catalog: every Space, and the SHA-256 root its whole folder seals under.",
+      "        The catalog: every App, and the SHA-256 root its whole folder seals under.",
       "",
       "    GET /v2/spaces/{id}/manifests/latest",
-      "        A published Space as an OCI artifact — config `holospace.json`, one layer per file, artifact type",
+      "        A published App as an OCI artifact — config `holospace.json`, one layer per file, artifact type",
       "        `application/vnd.hologram.space.v1+json`, the sealed root in an annotation. Reads need no token.",
-      "        A Space that is listed but not yet published answers 404 here, and that is not an error.",
+      "        An App that is listed but not yet published answers 404 here, and that is not an error.",
       "",
       "## What sealed means",
       "",
-      "Every file of a Space is named in `holospace.lock.json` with its SHA-256, and the lock's `root` is the",
-      "SHA-256 over that map. Change one byte anywhere and the root changes. Before a Space's code runs, its model",
+      "Every file of an App is named in `holospace.lock.json` with its SHA-256, and the lock's `root` is the",
+      "SHA-256 over that map. Change one byte anywhere and the root changes. Before an App's code runs, its model",
       "files are held until their bytes re-derive to the digest the model index gave; a byte that does not match is",
       "refused, so the app sees a failed load rather than a wrong file.",
       "",
-      "Each Space runs in a sandboxed frame with its own storage and a policy allowing exactly its own files, the",
+      "Each App runs in a sandboxed frame with its own storage and a policy allowing exactly its own files, the",
       "brand kit, and the one model host it declares. No CDN script, no third party, no camera, no microphone.",
       ...common,
     ].join("\n");
@@ -1545,7 +1545,7 @@ function brief(spec) {
     "                      not from you: a source can read `ok` here and still be unreachable from your network,",
     "                      so treat it as the hub's routing preference rather than a promise about your failover.",
     "    /spaces/          apps that run entirely in the browser, each in its own sealed frame; the catalog with every",
-    "                      Space's root digest and models is /spaces/spaces.json, and a published Space is the OCI",
+    "                      App's root digest and models is /spaces/spaces.json, and a published App is the OCI",
     "                      artifact at /v2/spaces/<id>.",
     "    /docs/            the documentation: quickstart, the concepts, one page per dialect, the reference. Each page also at /docs/<page>.md.",
     "    /llms.txt         the same thing at more length, and the index of every docs page.",
@@ -1760,7 +1760,7 @@ function sectionDescriptor(name, { docs = [], counts = {} } = {}) {
       inventory: {
         described: counts.spaces ?? null,
         served_here: counts.spacesPublished ?? 0,
-        note: "a Space is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed Space that is not published answers 404 there, and that is not an error.",
+        note: "an App is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed App that is not published answers 404 there, and that is not an error.",
       },
       catalog: counts.spacesObject ? {
         address: counts.spacesObject,
@@ -1771,11 +1771,11 @@ function sectionDescriptor(name, { docs = [], counts = {} } = {}) {
       catalog_note: counts.spacesObject ? undefined
         : "the catalog is not published as an object yet, so this section has no address you can verify: read the static file named in `list`, and treat it as unaddressed",
       list: [
-        { dialect: "http", method: "GET", url: "/spaces/spaces.json", returns: "every Space with its sealed root", note: "a static file, not content-addressed" },
-        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "repositories; published Spaces are named spaces/{id}" },
+        { dialect: "http", method: "GET", url: "/spaces/spaces.json", returns: "every App with its sealed root", note: "a static file, not content-addressed" },
+        { dialect: "oci", method: "GET", url: "/v2/_catalog?n=1000", returns: "repositories; published Apps are named spaces/{id}" },
       ],
-      item: { url: "/v2/spaces/{id}/manifests/latest", returns: "one Space as an OCI artifact", artifact_type: "application/vnd.hologram.space.v1+json" },
-      fetch: { url: "/v2/spaces/{id}/blobs/{digest}", returns: "one file of the Space" },
+      item: { url: "/v2/spaces/{id}/manifests/latest", returns: "one App as an OCI artifact", artifact_type: "application/vnd.hologram.space.v1+json" },
+      fetch: { url: "/v2/spaces/{id}/blobs/{digest}", returns: "one file of the App" },
       verify: { ...VERIFY.sha256, root: "every file is named in holospace.lock.json with its sha256, and `root` is the sha256 over that map; one changed byte changes the root" },
     };
   }

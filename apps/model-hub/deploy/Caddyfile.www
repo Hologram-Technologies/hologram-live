@@ -1,0 +1,5 @@
+# www redirects to the apex. Its own site block, appended to the front door's Caddyfile by cutover-gethologram.sh,
+# so nothing inside the hub block moves. The hub block itself lists both names: see Caddyfile.hub.
+www.gethologram.ai {
+	redir https://gethologram.ai{uri} permanent
+}

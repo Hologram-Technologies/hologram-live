@@ -6,19 +6,22 @@
 #   ./install-openapi.sh verify     probe the live endpoint only
 #   ./install-openapi.sh rollback   restore the newest backup this script made and reload
 #
-# What it changes, and nothing else: three surgical edits inside the existing hub.uor.foundation block of the front
+# What it changes, and nothing else: three surgical edits inside the existing gethologram.ai block of the front
 # Caddyfile. The block is edited IN PLACE, never rewritten and never renamed: Caddy bind-mounts that single file and
 # the tokens live inline in it.
 #   1. /openapi.json leaves the Hologram Server's route list, so it falls through to the site, which now ships the
 #      document that describes the whole endpoint rather than the server's own six paths.
 #   2. /.well-known/openapi.json is rewritten onto /openapi.json, and /openapi.json and /robots.txt are made readable
 #      from another origin.
-#   3. GET / answers agent.md to anything that is neither a browser nor asking for JSON, so `curl hub.uor.foundation`
+#   3. GET / answers agent.md to anything that is neither a browser nor asking for JSON, so `curl gethologram.ai`
 #      returns the hub in one screen instead of 77 KB of markup; and the front door becomes readable cross-origin.
 #   4. GET / declares Vary: Accept, so a shared cache cannot serve one caller's representation to another.
 #   5. A malformed object address refuses in the documented JSON shape instead of the catch-all's text/plain.
 #   6. /models and /registry answer their own brief to anything that is not a browser, so the endpoint the site
 #      shows beside each section heading is a line you can run rather than a name you have to interpret.
+#      /docs carries its slash: /docs without one is the server's own API reference, on a different upstream.
+#   7. The same five addresses answer a JSON section descriptor to a caller that asks for one by name, and
+#      carry RFC 8288 Link headers to it, so an agent can execute a section rather than read about it.
 #
 # Each edit is applied only if it is missing, so this is safe to run against a host that has had an earlier version
 # of this script: it adds what is absent and leaves the rest alone.
@@ -30,14 +33,15 @@ set -euo pipefail
 
 CADDYFILE=${CADDYFILE:-/root/twenty/Caddyfile}
 SITE=${SITE:-/root/hub/site}
-HOST=${HOST:-hub.uor.foundation}
+HOST=${HOST:-gethologram.ai}
 STAMP=$(date -u +%Y-%m-%d)
 BACKUP="$CADDYFILE.bak-$STAMP-openapi"
 MARK='rewrite /.well-known/openapi.json /openapi.json'
 MARK_ARRIVING='rewrite @arriving /agent.md'
 MARK_VARY='header / Vary Accept'
 MARK_MALFORMED='@object_malformed'
-MARK_SECTIONS='@section_brief'
+MARK_SECTIONS='/buckets /buckets/ /docs/'
+MARK_JSON='@section_json'
 
 die() { echo "FAIL $*" >&2; exit 1; }
 say() { echo "  $*"; }
@@ -53,7 +57,7 @@ CADDY=${CADDY:-}
 preconditions() {
 	[ "$(id -u)" = 0 ] || die "run as root"
 	[ -f "$CADDYFILE" ] || die "no Caddyfile at $CADDYFILE"
-	grep -q "^$HOST {" "$CADDYFILE" || die "$CADDYFILE has no '$HOST {' block: this script only edits that block"
+	grep -qE "^([^{]*, )?$HOST(, [^{]*)? \{" "$CADDYFILE" || die "$CADDYFILE has no site block naming $HOST: this script only edits that block"
 	[ -f "$SITE/openapi.json" ] || die "$SITE/openapi.json is missing. Build the site from a revision that contains apps/model-hub/web/public/openapi.json first (build-site.sh), or the flip would take /openapi.json off the air."
 	grep -q '"openapi": "3.1.0"' "$SITE/openapi.json" || die "$SITE/openapi.json is not an OpenAPI 3.1 document"
 	grep -q '"title": "Hologram Model Hub"' "$SITE/openapi.json" || die "$SITE/openapi.json is not the hub's document: the site build is older than this change"
@@ -68,7 +72,7 @@ preconditions() {
 applied() {
 	grep -qF "$MARK" "$CADDYFILE" && grep -qF "$MARK_ARRIVING" "$CADDYFILE" \
 		&& grep -qF "$MARK_VARY" "$CADDYFILE" && grep -qF "$MARK_MALFORMED" "$CADDYFILE" \
-		&& grep -qF "$MARK_SECTIONS" "$CADDYFILE" \
+		&& grep -qF "$MARK_SECTIONS" "$CADDYFILE" && grep -qF "$MARK_JSON" "$CADDYFILE" \
 		&& ! grep -qE 'path /healthz /openapi\.json ' "$CADDYFILE"
 }
 
@@ -78,7 +82,11 @@ import io, re, sys
 path, host = sys.argv[1], sys.argv[2]
 text = io.open(path, encoding="utf-8").read()
 
-start = text.index(f"{host} {{")
+# The label may carry several names (`gethologram.ai, hub.uor.foundation {`); find the block whose label names this host.
+label = re.search(r"^(?:[^{\n]*, )?" + re.escape(host) + r"(?:, [^{\n]*)? \{", text, re.M)
+if not label:
+    raise SystemExit(f"no site block names {host}")
+start = label.start()
 depth, i = 0, start
 while True:
     if text[i] == "{":
@@ -124,7 +132,7 @@ if "rewrite @arriving /agent.md" not in block:
     block = block.replace(agent_anchor, agent_anchor + (
         '\t\t@arriving {\n'
         '\t\t\tpath /\n'
-        '\t\t\tnot header Accept *text/html*\n'
+        '\t\t\tnot header Accept *text/html*\n\t\t\tnot header Accept *application/json*\n'
         '\t\t\tnot header Accept *application/json*\n'
         '\t\t\t# Link unfurlers send */* too, and a preview of markdown is a worse card than a preview of the page.\n'
         '\t\t\tnot header User-Agent *bot*\n'
@@ -178,9 +186,49 @@ if robots_anchor not in block:
     raise SystemExit("the robots header is not where expected; refusing to guess where to insert")
 if "@section_brief" not in block:
     block = block.replace(robots_anchor, robots_anchor + (
-        '\t\t# Each section answers the way the root does: the page to a browser, the section\'s own brief to everything\n\t\t# else. The site shows an endpoint beside every section heading, and a name is not usable -- an agent that\n\t\t# follows it gets the browse page, a quarter of a megabyte of markup. This adds no API: every route the briefs\n\t\t# name already existed. /v2/ is deliberately untouched, because it is a protocol endpoint and OCI clients\n\t\t# depend on exactly what it returns.\n\t\t@section_brief {\n\t\t\tpath /models /models/ /registry /registry/\n\t\t\tnot header Accept *text/html*\n\t\t\tnot header User-Agent *bot*\n\t\t\tnot header User-Agent *Bot*\n\t\t\tnot header User-Agent *Slack*\n\t\t\tnot header User-Agent *Twitter*\n\t\t\tnot header User-Agent *Discord*\n\t\t\tnot header User-Agent *facebookexternalhit*\n\t\t}\n\t\trewrite @section_brief /{path.0}.md\n\t\theader /models* Vary Accept\n\t\theader /registry* Vary Accept\n\t\theader /models.md Access-Control-Allow-Origin "*"\n\t\theader /registry.md Access-Control-Allow-Origin "*"\n'
+        '\t\t# Each section answers the way the root does: the page to a browser, the section\'s own brief to everything\n\t\t# else. The site shows an endpoint beside every section heading, and a name is not usable -- an agent that\n\t\t# follows it gets the browse page, a quarter of a megabyte of markup. This adds no API: every route the briefs\n\t\t# name already existed. /v2/ is deliberately untouched, because it is a protocol endpoint and OCI clients\n\t\t# depend on exactly what it returns.\n\t\t# A caller that asks for JSON by name gets the section descriptor: one fixed shape on all five\n\t\t# sections, naming how to enumerate this one, reach an item, fetch its bytes and check them.\n\t\t# Declared before @section_brief for the reason @agent precedes @arriving at the root: JSON also\n\t\t# fails the html test, and a caller that named a type should be given it.\n\t\t@section_json {\n\t\t\tpath /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/\n\t\t\theader Accept *application/json*\n\t\t}\n\t\trewrite @section_json /{path.0}.json\n\t\t@section_brief {\n\t\t\tpath /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/\n\t\t\tnot header Accept *text/html*\n\t\t\tnot header User-Agent *bot*\n\t\t\tnot header User-Agent *Bot*\n\t\t\tnot header User-Agent *Slack*\n\t\t\tnot header User-Agent *Twitter*\n\t\t\tnot header User-Agent *Discord*\n\t\t\tnot header User-Agent *facebookexternalhit*\n\t\t}\n\t\trewrite @section_brief /{path.0}.md\n\t\theader /models* Vary Accept\n\t\theader /registry* Vary Accept\n\t\theader /spaces* Vary Accept\n\t\theader /buckets* Vary Accept\n\t\theader /docs/* Vary Accept\n\t\theader /models.md Access-Control-Allow-Origin "*"\n\t\theader /registry.md Access-Control-Allow-Origin "*"\n\t\theader /spaces.md Access-Control-Allow-Origin "*"\n\t\theader /buckets.md Access-Control-Allow-Origin "*"\n\t\theader /docs.md Access-Control-Allow-Origin "*"\n\t\theader /models.json Access-Control-Allow-Origin "*"\n\t\theader /registry.json Access-Control-Allow-Origin "*"\n\t\theader /spaces.json Access-Control-Allow-Origin "*"\n\t\theader /buckets.json Access-Control-Allow-Origin "*"\n\t\theader /docs.json Access-Control-Allow-Origin "*"\n\t\t# RFC 8288, so an agent finds the descriptor and the brief without parsing HTML.\n\t\theader /models* Link "</models.json>; rel=alternate, </models.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /registry* Link "</registry.json>; rel=alternate, </registry.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /spaces* Link "</spaces.json>; rel=alternate, </spaces.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /buckets* Link "</buckets.json>; rel=alternate, </buckets.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /docs/* Link "</docs.json>; rel=alternate, </docs.md>; rel=describedby, </openapi.json>; rel=service-desc"\n'
     ), 1)
     done.append("gave /models and /registry their own briefs")
+else:
+    # Already there, from when only two sections had one. Widen it to all five rather than leave the three new
+    # tags pointing at an address that answers a page.
+    old_paths = "\t\t\tpath /models /models/ /registry /registry/\n"
+    new_paths = "\t\t\tpath /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/\n"
+    if old_paths in block:
+        block = block.replace(old_paths, new_paths, 1)
+        done.append("widened the section briefs to spaces, buckets and docs")
+    old_cors = '\t\theader /registry.md Access-Control-Allow-Origin "*"\n'
+    new_cors = ('\t\theader /registry.md Access-Control-Allow-Origin "*"\n'
+                '\t\theader /spaces.md Access-Control-Allow-Origin "*"\n'
+                '\t\theader /buckets.md Access-Control-Allow-Origin "*"\n'
+                '\t\theader /docs.md Access-Control-Allow-Origin "*"\n')
+    if old_cors in block and "/spaces.md Access-Control" not in block:
+        block = block.replace(old_cors, new_cors, 1)
+    old_vary = "\t\theader /registry* Vary Accept\n"
+    new_vary = ("\t\theader /registry* Vary Accept\n"
+                "\t\theader /spaces* Vary Accept\n"
+                "\t\theader /buckets* Vary Accept\n"
+                "\t\theader /docs/* Vary Accept\n")
+    if old_vary in block and "/spaces* Vary" not in block:
+        block = block.replace(old_vary, new_vary, 1)
+    # The descriptors and their Link headers, for a host that already carries the brief matcher.
+    if "@section_json" not in block:
+        brief_head = '\t\t@section_brief {\n'
+        if brief_head not in block:
+            raise SystemExit("the @section_brief matcher is not where expected; refusing to guess where to insert")
+        block = block.replace(brief_head, '\t\t# A caller that asks for JSON by name gets the section descriptor: one fixed shape on all five\n\t\t# sections, naming how to enumerate this one, reach an item, fetch its bytes and check them.\n\t\t# Declared before @section_brief for the reason @agent precedes @arriving at the root: JSON also\n\t\t# fails the html test, and a caller that named a type should be given it.\n\t\t@section_json {\n\t\t\tpath /models /models/ /registry /registry/ /spaces /spaces/ /buckets /buckets/ /docs/\n\t\t\theader Accept *application/json*\n\t\t}\n\t\trewrite @section_json /{path.0}.json\n' + brief_head, 1)
+        brief_at = block.index(brief_head)
+        html_test = '\t\t\tnot header Accept *text/html*\n'
+        head, tail = block[:brief_at], block[brief_at:]
+        if html_test not in tail:
+            raise SystemExit("@section_brief does not test Accept for html; refusing to guess where to insert")
+        if '\t\t\tnot header Accept *application/json*\n' not in tail:
+            block = head + tail.replace(html_test, html_test + '\t\t\tnot header Accept *application/json*\n', 1)
+        docs_cors = '\t\theader /docs.md Access-Control-Allow-Origin "*"\n'
+        if docs_cors not in block:
+            raise SystemExit("the /docs.md CORS line is not where expected; refusing to guess where to insert")
+        block = block.replace(docs_cors, docs_cors + '\t\theader /models.json Access-Control-Allow-Origin "*"\n\t\theader /registry.json Access-Control-Allow-Origin "*"\n\t\theader /spaces.json Access-Control-Allow-Origin "*"\n\t\theader /buckets.json Access-Control-Allow-Origin "*"\n\t\theader /docs.json Access-Control-Allow-Origin "*"\n\t\t# RFC 8288, so an agent finds the descriptor and the brief without parsing HTML.\n\t\theader /models* Link "</models.json>; rel=alternate, </models.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /registry* Link "</registry.json>; rel=alternate, </registry.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /spaces* Link "</spaces.json>; rel=alternate, </spaces.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /buckets* Link "</buckets.json>; rel=alternate, </buckets.md>; rel=describedby, </openapi.json>; rel=service-desc"\n\t\theader /docs/* Link "</docs.json>; rel=alternate, </docs.md>; rel=describedby, </openapi.json>; rel=service-desc"\n', 1)
+        done.append("gave every section a JSON descriptor and RFC 8288 Link headers")
 
 if not done:
     raise SystemExit("already applied; nothing to change")
@@ -208,10 +256,27 @@ verify() {
 	probe "the brief"           /agent.md                     200 'Hash what arrives'
 	probe "vary on the root"    /                             200 'vary: Accept'
 	probe "malformed address"   /api/v1/objects/notanaddress  400 'LIVE_BAD_REQUEST'
-	probe "the models brief"    /models                       200 'hub.uor.foundation/models'
-	probe "the registry brief"  /registry                     200 'hub.uor.foundation/registry'
+	probe "the models brief"    /models                       200 "$HOST/models"
+	probe "the registry brief"  /registry                     200 "$HOST/registry"
+	probe "the spaces brief"    /spaces                       200 "$HOST/spaces"
+	probe "the buckets brief"   /buckets                      200 "$HOST/buckets"
+	probe "the docs brief"      /docs/                        200 "$HOST/docs"
+	# The third representation. Asked for by name, it has to be the descriptor and not the brief.
+	json_probe() { # name path
+		local name=$1 path=$2 code body
+		body=$(mktemp)
+		code=$(curl -s -o "$body" -w '%{http_code}' -H 'accept: application/json' "https://$HOST$path" || echo 000)
+		if [ "$code" != "200" ]; then echo "  FAIL $name: $path -> $code, expected 200"; fails=$((fails + 1)); rm -f "$body"; return; fi
+		if ! grep -q 'hologram.section.descriptor/v1' "$body"; then echo "  FAIL $name: $path did not answer a section descriptor"; fails=$((fails + 1)); rm -f "$body"; return; fi
+		echo "  ok   $name"; rm -f "$body"
+	}
+	json_probe "the models descriptor"   /models
+	json_probe "the registry descriptor" /registry
+	json_probe "the spaces descriptor"   /spaces
+	json_probe "the buckets descriptor"  /buckets
+	json_probe "the docs descriptor"     /docs/
 	# The headline claim: what curl actually gets from the bare name.
-	if curl -s --max-time 20 -H 'accept: */*' "https://$HOST/" | head -1 | grep -q '^# hub.uor.foundation'; then
+	if curl -s --max-time 20 -H 'accept: */*' "https://$HOST/" | head -1 | grep -q "^# $HOST"; then
 		echo "  ok   the bare name answers the brief"
 	else
 		echo "  FAIL the bare name still answers markup: curl https://$HOST returns HTML, not agent.md"

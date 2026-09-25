@@ -1,3 +1,4 @@
+import { art } from "../card-art.mjs";
 // The Images page. Same shape as the models page: facets on the left, search and sort on top, a card grid.
 // It reads one static file. There is no query service, because the index is a file and filtering is a filter.
 
@@ -82,7 +83,7 @@ function matches(r) {
   if (picked.license.size && !picked.license.has(r.license)) return false;
   if (picked.updated.size && !picked.updated.has(r.updatedBucket)) return false;
   if (picked.marks.size) {
-    const has = { "Addressed here": r.here, Official: r.official, Signed: r.signed, "Verified publisher": r.verified };
+    const has = { "Addressed here": r.here || !!r.kappa, Official: r.official, Signed: r.signed, "Verified publisher": r.verified };
     for (const m of picked.marks) if (!has[m]) return false;
   }
   if (picked.architecture.size && !(r.architectures || []).some((a) => picked.architecture.has(a))) return false;
@@ -183,14 +184,8 @@ async function probe(sample) {
 // An empty repository is still a repository, so it appears with an honest count.
 async function liveRows() {
   const repos = await reg.catalogue().catch(() => []);
-  const rows = (await Promise.all(repos.map(async (repo) => {
+  const rows = await Promise.all(repos.map(async (repo) => {
     const tags = await reg.tags(repo).catch(() => []);
-    // A repository the catalogue still lists after its last tag went holds
-    // nothing anyone can pull. The reference keeps the name until a garbage
-    // collection too, so this is not ours to fix in the registry; but a row
-    // reading "No tags yet." with a pull command that cannot work is worse
-    // than no row, so the browse page does not show one.
-    if (!tags.length) return null;
     return {
       id: `${location.host}/${repo}`,
       repo,
@@ -199,7 +194,7 @@ async function liveRows() {
       name: repo.split("/").slice(1).join("/") || repo,
       publisher: repo.split("/")[0],
       kind: "Artifact",
-      description: `${tags.length} tag${tags.length > 1 ? "s" : ""} in this registry.`,
+      description: tags.length ? `${tags.length} tag${tags.length > 1 ? "s" : ""} in this registry.` : "No tags yet.",
       pulls: null, stars: null, license: null, category: null,
       updated: null, updatedBucket: null, repoBucket: null, sizeBucket: null,
       official: false, verified: false, signed: false,
@@ -212,7 +207,7 @@ async function liveRows() {
       home: null,
       provenance: "read live from this registry",
     };
-  }))).filter(Boolean);
+  }));
   return rows;
 }
 
@@ -369,6 +364,10 @@ function cover(img, r) {
 
 // The command that actually uses this thing, which is not the same command for every kind.
 function useCommand(r) {
+  // A row with a κ is pullable from this host by the exact bytes, whatever tool the kind usually takes.
+  if (r.kappa && r.held === "whole" && r.kind === "Helm chart") return ["Pull the chart from here", "helm pull oci://" + r.kappa.replace(/@.*$/, "") + " --version " + r.tag];
+  if (r.kappa && r.held === "whole") return ["Pull the exact bytes from here", "oras pull " + r.kappa];
+  if (r.kappa) return ["Pull the exact bytes from here", "docker pull " + r.kappa];
   // docker.io is implied, and library/ is how Docker writes "official" in a path, not in a command.
   const ref = r.id.replace(/^docker\.io\//, "").replace(/^library\//, "");
   if (r.kind === "Model") return ["Pull the model", "docker model pull " + ref];
@@ -378,6 +377,12 @@ function useCommand(r) {
   if (r.kind === "Artifact") return ["Pull the artifact", "oras pull " + r.id + (r.tag ? ":" + r.tag : "")];
   return ["Pull it", "docker pull " + ref];
 }
+
+const TRUST = {
+  "upstream-digest": "the upstream registry reports this same digest",
+  "upstream-attested": "the bytes hash to the digest the upstream published",
+  "first-seen": "no upstream hash exists; first recorded here",
+};
 
 function openSheet(r) {
   if (r.live) return openOurs(r);
@@ -389,13 +394,20 @@ function openSheet(r) {
   $("s-cmd").textContent = command;
   const tags = [];
   if (r.here) tags.push('<span class="tag here">here</span>');
+  if (r.kappa) tags.push('<span class="tag here">' + r.trust + "</span>");
   if (r.official) tags.push('<span class="tag official">official</span>');
   if (r.verified) tags.push('<span class="tag">verified</span>');
   if (r.signed) tags.push('<span class="tag">signed</span>');
   tags.push('<span class="tag">' + r.registry + "</span>");
   $("s-tags").innerHTML = tags.join("");
 
+  // The κ: this row's address in our registry, equal to the upstream's own digest (upstream-digest), to a hash the
+  // upstream published (upstream-attested), or first seen here (first-seen). Held whole, or metadata here and
+  // layers by redirect to the upstream.
   const facts = [
+    ["Address", r.kappa || null],
+    ["Trust", r.kappa ? TRUST[r.trust] || r.trust : null],
+    ["Held", r.kappa ? (r.held === "whole" ? "whole artifact, here" : "manifest and config here, layers redirect to the upstream") : null],
     ["Kind", r.kind],
     ["Publisher", r.publisher],
     ["Category", r.category],
@@ -427,44 +439,26 @@ function closeSheet() {
   $("scrim").hidden = true;
 }
 
-// The Models page's faceted mesh, seeded by the entry's own address: same bytes, same surface.
-// Lit facets mark what this registry can check itself; everything else shows the bare wireframe.
-const ART_W = 260, ART_H = 120;
-function art(seed, lit) {
-  let h = 2166136261;
-  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  const r = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; };
-  const f = (n) => n.toFixed(1);
-  const cols = 9, rows = 4, gx = ART_W / (cols - 1), gy = ART_H / (rows - 1), p = [];
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    p.push([x * gx + (r() - 0.5) * gx * 0.5, y * gy + (y && y < rows - 1 ? (r() - 0.5) * gy * 0.5 : 0)]);
-  }
-  let edges = "", faces = "";
-  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols - 1; x++) {
-    const a = p[y * cols + x], b = p[y * cols + x + 1], c = p[(y + 1) * cols + x], d = p[(y + 1) * cols + x + 1];
-    for (const t of [[a, b, d], [a, d, c]]) {
-      const path = `M${t.map((q) => `${f(q[0])} ${f(q[1])}`).join("L")}Z`;
-      edges += path;
-      const v = r();
-      if (lit && v < 0.35) faces += `<path d="${path}" opacity="${f(0.02 + v * 0.12)}"/>`;
-    }
-  }
-  return `<svg class="art${lit ? " lit" : ""}" viewBox="0 0 ${ART_W} ${ART_H}" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">${faces}</g><path class="edges" d="${edges}"/></svg>`;
-}
+// An indexed row is a page (/registry/<id>/, built for every row, with the profile its source published); a row
+// read live from this registry opens the sheet, because what it shows is fetched and checked right here.
+const pagePath = (id) => id.split("/").map((s) => encodeURIComponent(s)).join("/");
+
 
 function card(r) {
-  const el = document.createElement("button");
-  el.type = "button";
+  const sheet = r.live || r.here;
+  const el = document.createElement(sheet ? "button" : "a");
+  if (sheet) el.type = "button"; else el.href = `${pagePath(r.id)}/`;
   el.className = "card" + (r.here ? " ours" : "");
   const tags = [];
   if (r.here) tags.push(`<span class="tag here">here</span>`);
+  if (r.kappa && !r.here) tags.push(`<span class="tag here">κ</span>`);
   if (r.official) tags.push(`<span class="tag official">official</span>`);
   tags.push(`<span class="tag"></span>`);
   if (r.signed) tags.push(`<span class="tag">signed</span>`);
-  el.innerHTML = `<img class="logo" alt="" loading="lazy"><div class="tags">${tags.join("")}</div><h3></h3><p></p><div class="foot"></div>${art(r.id, !!r.here)}`;
+  el.innerHTML = `<img class="logo" alt="" loading="lazy"><div class="tags">${tags.join("")}</div><h3></h3><p></p><div class="foot"></div>${art(r.id)}`;
   cover(el.querySelector("img"), r);
-  el.addEventListener("click", () => openSheet(r));
-  el.querySelectorAll(".tag")[r.here || r.official ? (r.here && r.official ? 2 : 1) : 0].textContent = r.registry;
+  if (sheet) el.addEventListener("click", () => openSheet(r));
+  el.querySelectorAll(".tag")[(r.here || r.kappa ? 1 : 0) + (r.official ? 1 : 0)].textContent = r.registry;
   el.querySelector("h3").textContent = r.id.replace(/^docker\.io\//, "");
   el.querySelector("p").textContent = r.description || "No description from this source.";
   const foot = [];
@@ -472,7 +466,7 @@ function card(r) {
   if (r.stars != null && r.stars > 0) foot.push(`${num(r.stars)} stars`);
   if (r.size != null) foot.push(bytes(r.size));
   if ((r.architectures || []).length) foot.push(`${r.architectures.length} platforms`);
-  if (r.here) foot.push("checkable");
+  if (r.here || r.kappa) foot.push("checkable");
   el.querySelector(".foot").textContent = foot.join(" · ") || r.provenance;
   el.title = `${r.id}\n${r.provenance}`;
   return el;
@@ -519,25 +513,19 @@ const rail = createRail({
 
 (async function start() {
   data = await (await fetch("data/images.json")).json();
-  $("host").textContent = location.host + "/v2/";
 
-  // Ours are read now, not from yesterday's file, and they lead the list.
-  const live = (await reg.base()) ? await liveRows() : [];
-  $("dot").className = "dot " + (live.length ? "ok" : "bad");
-  if (live.length) {
-    data.images = [...live, ...data.images.filter((r) => !r.here)];
-    data.facets.registry = { ...data.facets.registry, Hologram: live.length };
-    data.facets.kind = { ...data.facets.kind, Artifact: (data.facets.kind.Artifact || 0) + live.length };
-    data.facets.marks = { ...data.facets.marks, "Addressed here": live.length };
-    data.facets.publisher = { ...data.facets.publisher };
-    for (const r of live) data.facets.publisher[r.publisher] = (data.facets.publisher[r.publisher] || 0) + 1;
-    data.totals.here = live.length;
-    probe(live[0] && live[0].repo);
-  }
-  $("prov").textContent = `${data.totals.here} here, read live · ${data.totals.elsewhere} indexed elsewhere`;
+  // First paint waits on one file and nothing else.
+  //
+  // Every row this page shows is in the index it ships with, and the rail's counts are precomputed in it, so
+  // the page can be on screen the moment that file is parsed. Reading our own registry takes six more round
+  // trips — /v2/, the catalogue, a tag list per repository — and this used to wait for all of them before it
+  // drew anything, which is why the page arrived late while the Models page, whose cards are written into the
+  // HTML by the build, did not. Those reads now happen with the page already up, and fold their rows in when
+  // they land: the count and the Hologram chip go up, and the dot beside the address stops being grey.
   $("sources").textContent = "Sources: " + Object.keys(data.sources).join(", ") + ".";
   rail.render();
   render();
+
   $("q").addEventListener("input", () => { shown = PAGE; render(); });
   $("sheet-close").addEventListener("click", closeSheet);
   $("scrim").addEventListener("click", closeSheet);
@@ -549,4 +537,18 @@ const rail = createRail({
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
   $("sort").addEventListener("change", () => { shown = PAGE; render(); });
   $("more").addEventListener("click", () => { shown += PAGE; render(); });
+
+  // ---- our own rows, read live, and they lead the list once they are here
+  const live = (await reg.base()) ? await liveRows() : [];
+  if (!live.length) return;
+  data.images = [...live, ...data.images.filter((r) => !r.here)];
+  data.facets.registry = { ...data.facets.registry, Hologram: live.length };
+  data.facets.kind = { ...data.facets.kind, Artifact: (data.facets.kind.Artifact || 0) + live.length };
+  data.facets.marks = { ...data.facets.marks, "Addressed here": live.length + data.images.filter((r) => r.kappa && !r.here).length };
+  data.facets.publisher = { ...data.facets.publisher };
+  for (const r of live) data.facets.publisher[r.publisher] = (data.facets.publisher[r.publisher] || 0) + 1;
+  data.totals.here = live.length;
+  rail.render();
+  render();
+  probe(live[0] && live[0].repo);
 })();

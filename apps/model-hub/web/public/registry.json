@@ -1,0 +1,46 @@
+{
+ "format": "hologram.section.descriptor/v1",
+ "section": "registry",
+ "title": "Registry",
+ "self": "/registry",
+ "brief": "/registry.md",
+ "page": "/registry/",
+ "openapi": "/openapi.json",
+ "about": "OCI distribution. Pull models and artifacts with the client you already have.",
+ "inventory": {
+  "described": 2149,
+  "served_here": null,
+  "note": "`described` counts what the page indexes, most of it held by Docker Hub, Artifact Hub and Microsoft Artifact Registry and pulled from those. `served_here` is what this registry serves bytes for -- the only ones /v2/ can give you."
+ },
+ "catalog": null,
+ "catalog_note": "this section has no snapshot: /v2/_catalog is live truth, and a snapshot of somebody else's registry would be a claim we cannot keep",
+ "list": [
+  {
+   "dialect": "oci",
+   "method": "GET",
+   "url": "/v2/_catalog?n=1000",
+   "returns": "every repository this registry serves"
+  },
+  {
+   "dialect": "oci",
+   "method": "GET",
+   "url": "/v2/{repository}/tags/list",
+   "returns": "every tag of one repository"
+  }
+ ],
+ "item": {
+  "url": "/v2/{repository}/manifests/{reference}",
+  "returns": "an OCI manifest or index"
+ },
+ "fetch": {
+  "url": "/v2/{repository}/blobs/{digest}",
+  "returns": "one blob",
+  "note": "the digest is the sha256 of the bytes"
+ },
+ "verify": {
+  "algorithm": "sha256",
+  "expected_from": "the catalog, the tree listing or the manifest -- never the source that served the bytes",
+  "server_verifies_on_read": false
+ },
+ "one_line": "ollama pull gethologram.ai/{owner}/{name}:{quant}"
+}

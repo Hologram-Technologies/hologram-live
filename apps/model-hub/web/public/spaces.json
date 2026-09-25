@@ -1,0 +1,47 @@
+{
+ "format": "hologram.section.descriptor/v1",
+ "section": "spaces",
+ "title": "Spaces",
+ "self": "/spaces",
+ "brief": "/spaces.md",
+ "page": "/spaces/",
+ "openapi": "/openapi.json",
+ "about": "Apps that run entirely in the visitor's browser, each sealed under one root digest.",
+ "inventory": {
+  "described": 3,
+  "served_here": 0,
+  "note": "a Space is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed Space that is not published answers 404 there, and that is not an error."
+ },
+ "catalog": null,
+ "catalog_note": "the catalog is not published as an object yet, so this section has no address you can verify: read the static file named in `list`, and treat it as unaddressed",
+ "list": [
+  {
+   "dialect": "http",
+   "method": "GET",
+   "url": "/spaces/spaces.json",
+   "returns": "every Space with its sealed root",
+   "note": "a static file, not content-addressed"
+  },
+  {
+   "dialect": "oci",
+   "method": "GET",
+   "url": "/v2/_catalog?n=1000",
+   "returns": "repositories; published Spaces are named spaces/{id}"
+  }
+ ],
+ "item": {
+  "url": "/v2/spaces/{id}/manifests/latest",
+  "returns": "one Space as an OCI artifact",
+  "artifact_type": "application/vnd.hologram.space.v1+json"
+ },
+ "fetch": {
+  "url": "/v2/spaces/{id}/blobs/{digest}",
+  "returns": "one file of the Space"
+ },
+ "verify": {
+  "algorithm": "sha256",
+  "expected_from": "the catalog, the tree listing or the manifest -- never the source that served the bytes",
+  "server_verifies_on_read": false,
+  "root": "every file is named in holospace.lock.json with its sha256, and `root` is the sha256 over that map; one changed byte changes the root"
+ }
+}

@@ -17,7 +17,7 @@ set -euo pipefail
 HUB=${HUB:-/root/hub}
 KEY=${KEY:-$HUB/mcp-registry-key.pem}
 MANIFEST=${MANIFEST:-$HUB/mcp-server.json}
-DOMAIN=${DOMAIN:-hub.uor.foundation}
+DOMAIN=${DOMAIN:-gethologram.ai}
 REGISTRY=${REGISTRY:-https://registry.modelcontextprotocol.io}
 
 die() { echo "FAIL $*" >&2; exit 1; }

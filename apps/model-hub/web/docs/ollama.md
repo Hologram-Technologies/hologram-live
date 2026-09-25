@@ -8,20 +8,20 @@ order: 7
 Ollama can pull from any registry that speaks its dialect. The hub does, so every GGUF quantisation in the index is one `ollama pull` away, and Ollama checks the SHA-256 of every layer before the model is usable.
 
 ```bash
-ollama pull hub.uor.foundation/ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M
-ollama run  hub.uor.foundation/ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M
+ollama pull gethologram.ai/ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M
+ollama run  gethologram.ai/ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M
 ```
 
 ## The name
 
 ```
-hub.uor.foundation/<owner>/<name>:<quant>
+gethologram.ai/<owner>/<name>:<quant>
 ```
 
 `<quant>` is the quantisation tag of a single-file GGUF in the repository: `Q4_K_M`, `IQ2_M`, `Q8_0` and so on. `latest` is also a tag. The tags a model has:
 
 ```bash
-curl -s https://hub.uor.foundation/v2/ornith-ai/ornith-1.5-9b-gguf/tags/list
+curl -s https://gethologram.ai/v2/ornith-ai/ornith-1.5-9b-gguf/tags/list
 ```
 
 ```json
@@ -40,7 +40,7 @@ Owner and name are lowercase on this route; OCI references are case-sensitive an
 The same three requests, by hand:
 
 ```bash
-curl -s https://hub.uor.foundation/v2/ornith-ai/ornith-1.5-9b-gguf/manifests/Q4_K_M
+curl -s https://gethologram.ai/v2/ornith-ai/ornith-1.5-9b-gguf/manifests/Q4_K_M
 ```
 
 ```json
@@ -57,7 +57,7 @@ curl -s https://hub.uor.foundation/v2/ornith-ai/ornith-1.5-9b-gguf/manifests/Q4_
 ```
 
 ```bash
-curl -sI https://hub.uor.foundation/v2/ornith-ai/ornith-1.5-9b-gguf/blobs/sha256:70c112196e0b7023803c9762752e46d29e612a92c83f995bc3ba1ceb07e8fab6
+curl -sI https://gethologram.ai/v2/ornith-ai/ornith-1.5-9b-gguf/blobs/sha256:70c112196e0b7023803c9762752e46d29e612a92c83f995bc3ba1ceb07e8fab6
 ```
 
 ```

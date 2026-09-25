@@ -23,11 +23,14 @@ git -C "$SRC" reset --quiet --hard FETCH_HEAD
 echo "source $BRANCH $(git -C "$SRC" rev-parse --short HEAD)"
 
 # Build inside node:22-alpine so the host's Node version never matters.
+# scripts/registry.mjs refreshes every Registry row's profile and logo from Docker Hub, Artifact Hub and Microsoft
+# (metadata only, resumable, keeps yesterday's profile when a source is down); the committed copies under
+# public/registry/data/ are what it starts from, so a build with no network still ships every page.
 docker run --rm \
   -v "$SRC/apps/model-hub/web:/web" -w /web \
   --env-file "$HUB/build.env" \
   -e BASE=/ \
-  node:22-alpine sh -c 'npm ci --no-fund --no-audit >/dev/null && node scripts/data.mjs --limit 500 && node scripts/lint-tokens.mjs && node build.mjs'
+  node:22-alpine sh -c 'npm ci --no-fund --no-audit >/dev/null && node scripts/data.mjs --limit 500 && { [ ! -f scripts/registry.mjs ] || node scripts/registry.mjs; } && node scripts/lint-tokens.mjs && node build.mjs'
 
 NEW="$SRC/apps/model-hub/web/dist"
 test -f "$NEW/index.html"
@@ -58,6 +61,9 @@ mkdir -p "$HUB/site/.well-known"
 # still exists from before 2026-09-23, delete it; it is not read.
 # The site container mounts ./archive on /srv/archive; the mount point must exist inside the read-only site.
 mkdir -p "$HUB/site/archive"
+# /benches/*: the benchmark JSON pulled from hologram-website into ./benches (cutover-gethologram.sh); copied, not mounted,
+# because a mount point inside this directory would vanish at the next swap and stop the site container.
+[ -d "$HUB/benches/public/benches" ] && { mkdir -p "$HUB/site/benches"; cp -a "$HUB/benches/public/benches/." "$HUB/site/benches/"; }
 # site and resolve mount directories inside ./site; after the swap they must look again.
 docker compose -f "$HUB/docker-compose.yml" restart site resolve >/dev/null
 rm -rf "$HUB/site.prev"

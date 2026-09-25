@@ -150,7 +150,7 @@ const cmd = {
 			r.skipped ? skipped++ : made++;
 		}
 		// Pinned models that fell off today's trending list still belong in the hub.
-		const pins = flag("--pins") ? JSON.parse(readFileSync(flag("--pins"), "utf8")) : await (await fetch("https://hub.uor.foundation/pins.json")).json();
+		const pins = flag("--pins") ? JSON.parse(readFileSync(flag("--pins"), "utf8")) : await (await fetch("https://gethologram.ai/pins.json")).json();
 		for (const [id, pin] of Object.entries(pins.models)) {
 			if (!objects[id]) {
 				const doc = await (await fetch(`${API}/v1/huggingface.co/${id}/latest.json`)).json();

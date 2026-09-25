@@ -1,6 +1,6 @@
 // Stress the endpoint one operation at a time, across the dimensions that actually catch things.
 //
-//   node qa/openapi/stress.mjs [--base https://hub.uor.foundation] [--out ../../../../reports/.../results.json]
+//   node qa/openapi/stress.mjs [--base https://gethologram.ai] [--out ../../../../reports/.../results.json]
 //
 // Every check is declarative: an id, the plane it belongs to, the dimension it tests, a request, and what we
 // expect. Nothing is asserted that is not also recorded, so a run is a diffable artifact rather than a pass/fail.
@@ -10,7 +10,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
-const BASE = arg("base", "https://hub.uor.foundation").replace(/\/$/, "");
+const BASE = arg("base", "https://gethologram.ai").replace(/\/$/, "");
 const OUT = arg("out", null);
 
 const KEEP = ["content-type", "cache-control", "etag", "location", "x-repo-commit", "x-linked-etag", "x-linked-size",
@@ -95,7 +95,7 @@ async function run() {
     (r) => ({ ok: r.json?.format === "hologram.model-hub.descriptor/v1", note: `catalog ${r.json?.catalog?.slice(0, 18)}…` }));
   await check("disco.root.any", "discovery", "negotiation", "curl/fetch/requests get the brief",
     { path: "/", headers: { accept: "*/*" } },
-    (r) => ({ ok: /text\/markdown/.test(r.headers["content-type"] || "") && r.text.startsWith("# hub.uor.foundation"), note: `${r.headers["content-type"]} ${r.text.length}B` }));
+    (r) => ({ ok: /text\/markdown/.test(r.headers["content-type"] || "") && r.text.startsWith(`# ${new URL(BASE).host}`), note: `${r.headers["content-type"]} ${r.text.length}B` }));
   await check("disco.root.noaccept", "discovery", "negotiation", "no Accept header at all",
     { path: "/", headers: {} },
     (r) => ({ ok: /text\/markdown/.test(r.headers["content-type"] || ""), note: r.headers["content-type"] }));

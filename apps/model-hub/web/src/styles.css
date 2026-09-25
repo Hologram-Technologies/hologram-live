@@ -70,9 +70,8 @@
   display: inline-flex; align-items: center; gap: var(--space-3);
   height: var(--hh-control); padding: 0 var(--space-4);
   border: 1px solid var(--hh-line); border-radius: var(--hh-control);
-  font-family: var(--font-mono); font-size: var(--text-sm); color: var(--hh-text-dim);
+  font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text-dim);
   transition: color var(--hh-ease), border-color var(--hh-ease);
-  position: relative; top: -.18em;
 }
 .land-badge .lockup, .land-badge .tally { display: inline-flex; align-items: center; gap: var(--space-2); }
 .land-badge .i { width: var(--hh-icon); height: var(--hh-icon); }
@@ -84,7 +83,11 @@
 .land-badge + .land-title { margin-top: var(--space-6); }
 .land-title { font-family: var(--font-display); font-size: var(--hh-display); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: .95; }
 .land-title span { display: block; }
-.land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--hh-lead); color: var(--hh-text-dim); }
+/* The one exception to the site's single text size (--hh-ui): the line under the headline is the claim the
+   page makes, not a control, and at the interface size it read as one. Two steps up on a wide screen, one on
+   a phone, where the headline itself is already smaller. */
+.land-sub { margin-top: var(--space-6); max-width: 52rem; font-size: var(--text-xl); color: var(--hh-text-dim); }
+@media (max-width: 720px) { .land-sub { font-size: var(--text-lg); } }
 /* ---- the highlighted word.
    The subline carries one claim and the word "self-verifying" is it. Seven treatments live here at once,
    chosen by data-highlight on <html>; HIGHLIGHT= at build time picks the one that ships. The word inherits
@@ -141,9 +144,9 @@
 @keyframes hl-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { :root[data-highlight="resolve"] .hl::after { animation: none; } }
 
-.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-6); }
-.land-prompt { color: var(--hh-text-dim); margin-right: .5ch; }
-.land-second { font-family: var(--font-mono); font-size: var(--hh-lead); color: var(--hh-text); transition: opacity var(--hh-ease); position: relative; top: .18em; }
+.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-8); }
+.prompt { color: var(--hh-text-dim); margin-right: .5ch; }
+.land-second { font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }
 
 /* The strip on the bottom edge: two identical runs, sliding exactly half the track, so the loop has no seam. */
@@ -170,14 +173,13 @@
 :root.dark .land-track img { background: var(--hh-text); }
 @keyframes land-slide { to { transform: translateX(-50%); } }
 
-@media (min-width: 720px) and (min-height: 700px) { :root { --hh-lead: var(--text-xl); } }
 @media (max-height: 820px) {
   :root { --hh-strip-mark: var(--space-8); --hh-strip-top: var(--space-4); --hh-strip-bottom: var(--space-6); --hh-strip-gap: var(--space-12); --hh-strip-label: var(--text-lg); }
   .land { padding: var(--space-4) 0; }
   .land-sub, .land-actions, .land-badge + .land-title { margin-top: var(--space-4); }
 }
 @media (max-height: 620px) {
-  :root { --hh-strip-mark: var(--space-6); --hh-strip-top: var(--space-3); --hh-strip-bottom: var(--space-4); --hh-strip-gap: var(--space-10); --hh-strip-label: var(--text-sm); --hh-lead: var(--text-base); }
+  :root { --hh-strip-mark: var(--space-6); --hh-strip-top: var(--space-3); --hh-strip-bottom: var(--space-4); --hh-strip-gap: var(--space-10); --hh-strip-label: var(--text-sm); }
   .land { padding: var(--space-3) 0; }
   .land-sub, .land-actions, .land-badge + .land-title { margin-top: var(--space-3); }
 }
@@ -191,13 +193,12 @@
 
 /* ---- a phone.
    The headline is the page, so it takes the width: the two halves wrap as one line of text rather than as
-   two fixed lines, which lets the type grow past what the wide layout's vw rule allows. The command steps
-   down a size so it reads as the second action, not a second headline; the primary action gets a little more
-   air above it; and the strip, whose run is shorter here, keeps its pace by taking less time per loop. */
+   two fixed lines, which lets the type grow past what the wide layout's vw rule allows. The primary action
+   gets a little more air above it, and the strip, whose run is shorter here, keeps its pace by taking less
+   time per loop. */
 @media (max-width: 720px) {
   :root { --hh-display: clamp(var(--text-4xl), 12vw, var(--text-5xl)); }
   .land-title span { display: inline; }
-  .land-second { font-size: var(--text-base); }
   .land-actions { margin-top: var(--space-8); }
   .land-track { animation-duration: 40s; }
 }
@@ -207,12 +208,11 @@
 /* Over a photo the figure only adds noise, and floating text loses its ground: the hero takes the glass every
    other surface already uses in Immersive, and the strip steps back further. */
 :root[data-theme="immersive"] .land-art { display: none; }
-/* Nothing is drawn around the hero in Immersive and the photograph is not dimmed: no slab, no header plate,
-   the wallpaper at the same strength the application shows it. Legibility comes from a shadow under the type,
-   which costs the picture nothing. The strip keeps a band, the one thing that makes it read over a bright sky. */
-:root[data-theme="immersive"][data-page="landing"] .top { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Nothing is drawn around the hero in Immersive and the photograph is not dimmed: no slab, the wallpaper at
+   the same strength the application shows it. Legibility comes from a shadow under the type, which costs the
+   picture nothing. (The header draws no plate either, on every page now: chrome.css.) The strip keeps a
+   band, the one thing that makes it read over a bright sky. */
 :root[data-theme="immersive"] .land-copy { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
-:root[data-theme="immersive"][data-page="landing"] .top .brand, :root[data-theme="immersive"][data-page="landing"] .top-end, :root[data-theme="immersive"][data-page="landing"] .top-nav { text-shadow: 0 var(--space-1) var(--space-4) color-mix(in srgb, var(--background) 80%, transparent); }
 :root[data-theme="immersive"] .land-sub { color: var(--hh-text); }
 :root[data-theme="immersive"] .land-marquee { background: color-mix(in srgb, var(--background) 45%, transparent); }
 :root[data-theme="immersive"] .land-track img { opacity: .4; }
@@ -223,7 +223,7 @@
 @media (min-width: 1024px) { .browse { grid-template-columns: minmax(18.75rem, 23.75rem) minmax(0, 1fr); } }
 /* Under the lead row the columns start where the row's own air ends, the same distance the Registry and
    Spaces pages keep; the margin above is for the panels that open with no row (404, signing in). */
-.lead + .browse { margin-top: 0; }
+.lead ~ .browse { margin-top: 0; }
 
 .filters { padding: var(--space-4) var(--space-4) var(--space-12); position: sticky; top: calc(var(--space-16) + var(--space-12)); max-height: calc(100vh - var(--space-16) - var(--space-16)); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--hh-fill) transparent; }
 .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1) 0; padding-bottom: var(--space-4); border-bottom: 1px solid var(--hh-line); }
@@ -278,23 +278,20 @@
 /* Wraps: the sort control cannot shrink past its own words, and without this the whole page scrolls
    sideways on a laptop narrow enough to put the filter rail beside a two-column grid. */
 .bar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-3); margin: var(--space-4) 0 var(--space-6); }
-.bar .search { flex: 0 1 40%; min-width: 17.5rem; }
+/* The search takes the row, as it does on the Registry and Spaces pages: it is the one control here that
+   rewards being wide, and the sort keeps its own width at the end. */
+.bar .search { flex: 1; min-width: 0; }
 /* The results stand on the ground, as they do on the Registry and Spaces pages: no slab behind them. The
    search and the sort are surfaces of their own, the height and radius the other two pages give theirs. */
 .results-head .bar { margin: 0 0 var(--space-4); }
+/* The search and the sort are one row of controls and stand the same height, 48px, on every catalogue page.
+   (The sort button's own rule below carries the height too: it comes later and would otherwise win.) */
 .bar .search, .sort > button { height: var(--space-12); background: var(--hh-surface); border-color: var(--hh-line-strong); border-radius: var(--radius-lg); }
 .bar .search { padding: 0 var(--space-4); }
 .open-filters { display: none; }
 .results-head { position: relative; z-index: 5; }
 .sort { position: relative; margin-left: auto; }
-.switch { display: inline-flex; align-items: center; gap: var(--space-3); height: var(--hh-field); margin-left: auto; padding: 0 var(--space-1); font-size: var(--text-sm); color: var(--hh-text); white-space: nowrap; }
-.switch + .sort { margin-left: 0; }
-.switch .track { position: relative; width: var(--space-8); height: var(--space-5); border-radius: var(--space-5); background: var(--hh-fill); box-shadow: inset 0 0 0 1px var(--hh-line-strong); transition: background var(--hh-ease), box-shadow var(--hh-ease); }
-.switch .thumb { position: absolute; top: 2px; left: 2px; width: var(--space-4); height: var(--space-4); border-radius: 50%; background: var(--hh-text-dim); transition: transform 200ms cubic-bezier(.2, .8, .2, 1), background var(--hh-ease); }
-.switch:hover .track { box-shadow: inset 0 0 0 1px var(--hh-line-focus); }
-.switch[aria-checked="true"] .track { background: var(--hh-ok); box-shadow: none; }
-.switch[aria-checked="true"] .thumb { transform: translateX(var(--space-3)); background: var(--background); }
-.sort > button { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); height: var(--hh-field); min-width: 11.25rem; padding: 0 var(--space-4); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md); transition: border-color var(--hh-ease); }
+.sort > button { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); height: var(--space-12); min-width: 11.25rem; padding: 0 var(--space-4); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-lg); background: var(--hh-surface); transition: border-color var(--hh-ease); }
 .sort > button:hover, .sort > button[aria-expanded="true"] { border-color: var(--hh-line-focus); }
 .sort > button .i { color: var(--hh-text-dim); transition: transform 200ms cubic-bezier(.2, .8, .2, 1); }
 .sort > button[aria-expanded="true"] .i { transform: rotate(180deg); }
@@ -367,18 +364,6 @@
 .avatar { width: var(--hh-avatar); height: var(--hh-avatar); border-radius: 50%; object-fit: cover; background: var(--hh-fill); box-shadow: 0 0 0 1px var(--hh-line); }
 .avatar.initials { display: grid; place-items: center; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--hh-text); }
 
-.art {
-  position: absolute; z-index: -1; top: 0; right: 0; width: 55%; height: 100%;
-  pointer-events: none; opacity: .85;
-  -webkit-mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));
-  mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));
-  transition: opacity var(--hh-ease);
-}
-.art .facets { fill: var(--hh-text); }
-.art .edges { fill: none; stroke: var(--hh-text); stroke-width: .5; opacity: .07; }
-.art.lit .edges { opacity: .14; }
-.card:hover .art { opacity: 1; }
-
 .empty { grid-column: 1 / -1; display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-16) var(--space-4); color: var(--hh-text-dim); }
 .link { color: var(--hh-text); text-decoration: underline; text-underline-offset: var(--space-1); text-decoration-color: var(--hh-line-focus); }
 
@@ -416,9 +401,6 @@
 .facts .ok { color: var(--hh-ok); }
 .facts .dim { color: var(--hh-text-dim); }
 .facts .bad { color: var(--hh-bad); }
-.copy { display: inline-flex; align-items: center; gap: var(--space-2); color: inherit; transition: color var(--hh-ease); }
-.copy .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-text-dim); }
-.copy:hover, .copy:hover .i { color: var(--hh-text); }
 
 .scroll { overflow-x: auto; margin: 0 calc(-1 * var(--hh-pad)); padding: 0 var(--hh-pad); }
 table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
@@ -612,3 +594,21 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 .ov-provenance { font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.6; }
 .ov-provenance .copy { font-family: var(--font-mono); }
 
+
+/* ---- registry artifact page (src/registry-page.mjs): the model page's shape with what an image has and a model does not */
+.avatar.cover { border-radius: var(--radius-md); object-fit: contain; padding: var(--space-1); background: var(--hh-fill); }
+.hero .org .mono, .facts .mono, .ov-facts .mono { font-family: var(--font-mono); }
+.hero .org a { color: inherit; text-decoration: underline; text-decoration-color: var(--hh-line-focus); text-underline-offset: var(--space-1); }
+.ov-run { display: grid; gap: var(--space-3); }
+.ov-run .cmd { display: grid; gap: var(--space-1); }
+.ov-run .lbl { font-size: var(--text-sm); color: var(--hh-text); }
+.ov-run .lbl .dim, .ov-facts .dim, td .dim, dd .dim { color: var(--hh-text-dim); }
+.ov-facts .bad { color: var(--hh-bad); }
+.ov-run .cmdline { display: flex; align-items: center; gap: var(--space-3); margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--hh-line); border-radius: var(--radius-md); background: var(--hh-fill); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ov-run .cmdline code { flex: 1; min-width: 0; }
+.ov-run .cmdline .copy { flex: none; font-family: var(--font-sans); font-size: var(--text-sm); color: var(--hh-text-dim); }
+.ov-list li { display: inline-flex; align-items: center; gap: var(--space-2); }
+.ov-list li a .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-text-dim); }
+#tags td.path { max-width: 18rem; }
+#tags td .tag { margin-left: var(--space-2); }
+#tags td.dl .dl-yes .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }

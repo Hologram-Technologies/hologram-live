@@ -262,7 +262,17 @@ impl AppState {
             nodes.retain(|node| node.node_id != local.node_id);
             nodes.push(local);
         }
-        let admitted = self.admission().admitted();
+        // `Admission` answers who *else* this node trusts; it was never asked
+        // to vouch for this node's own identity, since nothing authenticates a
+        // node to itself. Left alone that silently excludes the local node
+        // from ever owning anything by its own reckoning, however the
+        // rendezvous hash falls — confirmed empirically: a two-node cluster's
+        // seed never won any of 64 sampled resource keys from its own vantage
+        // point, only ever deferring to the peer it had admitted. Self-trust
+        // needs no external admission, so it is added here rather than in
+        // `Admission` itself, which stays about authenticating *others*.
+        let mut admitted = self.admission().admitted();
+        admitted.insert(self.identity().node_id());
         Ok(
             crate::ownership::owner_for_operation(resource, &nodes, required_operation, &admitted)
                 .cloned(),

@@ -112,6 +112,79 @@ fn placement_selects_the_peer_that_advertises_the_operation() {
     }
 }
 
+/// Ownership must mean the same thing on both sides of a join, not just from
+/// the seed that happens to be the one everyone queries.
+///
+/// `TokenAdmission` is authenticated in only one direction by construction: a
+/// joiner proves itself to the seed with a signed, ticket-bearing request,
+/// but a join *response* carries no signature, so nothing symmetric happens
+/// automatically. Before admission was made symmetric (pinning the peer
+/// identity a successful join response claims) and the local node was
+/// trusted for itself, this exact scenario reproduced two distinct failures
+/// that `placement_selects_the_peer_that_advertises_the_operation` could not
+/// see because it only ever queries the seed: the joiner's own admitted set
+/// stayed empty forever, so it could place nothing at all — not even
+/// operations it advertises itself — and separately, neither side ever
+/// trusted its own identity, so a node could never be selected as owner by
+/// its own reckoning regardless of the rendezvous hash.
+#[test]
+fn placement_agrees_from_both_sides_of_the_cluster() {
+    hologram_live::util::install_crypto_provider();
+    let token = "a sufficiently long shared cluster test token";
+    let first = start_without_module(port(), None, token, Some("dev.hologram.live.chat"));
+    let second = start(port(), Some(first.port), token);
+    let client = reqwest::blocking::Client::new();
+    let expected_endpoint = format!("http://127.0.0.1:{}", second.port);
+
+    let placement = |queried_port: u16| {
+        client
+            .get(format!(
+                "http://127.0.0.1:{queried_port}/api/v1/nodes/placement"
+            ))
+            .query(&[("resource", "conversation:e2e"), ("operation", "chat.send")])
+            .send()
+            .ok()
+            .and_then(|response| response.error_for_status().ok())
+            .and_then(|response| response.json::<serde_json::Value>().ok())
+    };
+
+    // Wait for the seed's view to converge first, exactly as the sibling test
+    // does — this only proves the *seed* can name the capable peer.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let selected = placement(first.port);
+        if selected.as_ref().and_then(|node| node["endpoint"].as_str())
+            == Some(expected_endpoint.as_str())
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "capable peer was never selected from the seed: {selected:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Now ask the *joiner* the same question about itself. Symmetric
+    // admission needs one more round trip than the seed's own view (the
+    // joiner learns to trust the seed only once it has processed a join
+    // response), so this polls independently rather than asserting once.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let selected = placement(second.port);
+        if selected.as_ref().and_then(|node| node["endpoint"].as_str())
+            == Some(expected_endpoint.as_str())
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the joiner could not name itself as the capable peer for its own operation: {selected:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 #[test]
 fn authenticated_peers_replicate_an_immutable_object() {
     hologram_live::util::install_crypto_provider();

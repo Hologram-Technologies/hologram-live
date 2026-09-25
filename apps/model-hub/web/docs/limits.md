@@ -39,7 +39,7 @@ curl -s https://hub.uor.foundation/api/v1/capabilities
 {
   "protocol_version": 1,
   "server_version": "1.0.0",
-  "server_id": "blake3:f0f219a02da8703831b6ae0c97c74cbb9dba43b890151d9fb5e036be9412c50e",
+  "server_id": "ed25519:b0a1e6c0cf0d4aa5a31bb0e1a5d8fdbd3e1d40b3a5c8f2ee71f6c9a0d4b27e15",
   "role": "node",
   "maximum_message_bytes": 33554432,
   …

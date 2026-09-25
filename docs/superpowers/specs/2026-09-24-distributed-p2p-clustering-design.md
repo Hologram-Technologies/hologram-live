@@ -240,8 +240,13 @@ scopes — satisfies the same trait. That is the whole of the open-network seam.
 ### Request authentication
 
 Every cluster request carries `x-hologram-cluster-node`,
-`x-hologram-cluster-timestamp`, and `x-hologram-cluster-signature`. The
-signature is ed25519 over the canonical preimage
+`x-hologram-cluster-timestamp`, `x-hologram-cluster-signature`, and
+`x-hologram-cluster-recipient` — the last of these **required**, with no default
+and no fallback, since a recipient a receiver inferred for itself would defeat
+the point of binding one. It is the second breaking wire change in this phase,
+and it ships with the first. `x-hologram-cluster-ticket` carries the admission
+ticket where one is presented. The signature is ed25519 over the canonical
+preimage
 
 ```
 "dev.hologram.live.cluster.v2" ‖ method ‖ path ‖ canonical_query
@@ -283,26 +288,56 @@ defaults to 8; `max_peers` remains the directory bound.
 
 ### Ownership: the guarantee, stated exactly
 
-The candidate set narrows to *admitted* members, which ends outsider grinding of
-placement decisions. What this does not fix, and what rendezvous hashing over
-self-chosen identifiers cannot fix, is an already-admitted member generating
-keypairs until one hashes to a resource it wants to own. Within a closed cluster
-that member is trusted by construction. This is a recorded property of the
-design, not an open defect.
+The candidate set narrows to *admitted members plus this node itself*, which
+ends outsider grinding of placement decisions. Self-trust is not a convenience:
+`Admission` only ever names *other* parties — `cluster.trusted_keys` is
+configured about peers, and a pin records a peer that presented a ticket — so
+without it a node's own identity is in nobody's admitted set as far as that node
+can see. As implemented, a default single-node install then owned nothing at
+all, and a joiner could not even place an operation that only it advertises
+(`/api/v1/nodes/placement` answered `404` on the joiner while answering `200` on
+the seed). Nothing authenticates a node to itself, so self-trust is added where
+ownership is decided — `AppState::admitted_with_self` — and not inside an
+`Admission` implementation, which stays solely about authenticating others.
 
-A `membership_epoch` — a digest over the sorted admitted set — rides forwarded
-requests in `x-hologram-cluster-epoch`. A digest carries no ordering, so the
-receiver does not attempt to decide which of two epochs is newer. It compares
-for equality against its own current epoch and, on mismatch, refuses the request
-with `409` and returns its own epoch, so the sender refreshes membership and
-retries against the owner it then computes. This *detects* divergent ownership
-and forces reconvergence before a mutation lands; it does not prevent two
-partitions from each making progress in isolation.
+What this does not fix, and what rendezvous hashing over self-chosen identifiers
+cannot fix, is an already-admitted member generating keypairs until one hashes
+to a resource it wants to own. Within a closed cluster that member is trusted by
+construction. This is a recorded property of the design, not an open defect.
 
-The guarantee Phase 1 ships is therefore: **ownership converges under stable
-membership, and a partition may transiently produce two owners, which the epoch
-check surfaces.** Leases and fencing tokens for exclusive mutable ownership are
-Phase 3 and are out of scope here.
+Self-trust also makes an *asymmetric* `admission = "allowlist"` configuration
+fail open rather than closed: a node whose `trusted_keys` is narrower than its
+peers' still names an owner — some candidate its own list admits — for keys a
+wider-listed peer assigns elsewhere, and no node can detect the disagreement
+locally. The allowlist must be configured symmetrically.
+
+A `membership_epoch` — a digest over the sorted admitted set, self included —
+rides every outbound cluster request in `x-hologram-cluster-epoch`. A digest
+carries no ordering, so no receiver could decide which of two epochs is newer
+anyway.
+
+**Correction, against the implementation as shipped: the epoch is computed and
+sent, and no receiver enforces it.** An earlier draft of this section said the
+receiver compares it for equality and refuses a mismatch with `409`, returning
+its own epoch so the sender refreshes membership and retries. That was
+implemented and then reverted, because it broke a working two-node cluster
+deterministically — every request was answered `409` and membership never formed.
+The reason is that the epoch is a digest of the *admitted* set, which is local
+trust, not a converging membership view. Admission is reached one direction at a
+time: a joiner proves itself to a seed, and the seed only admits the joiner back
+after it has noticed the joiner in its own directory and dialled it, a round
+later. Under `admission = "token"` the two sides' digests are therefore unequal
+for at least one round after any membership change — and a hard equality check
+refuses exactly the requests that would have made them converge, so it 409s
+permanently rather than transiently. Enforcing it safely needs sender-side
+refresh-and-retry on a mismatch, which is tracked as issue #184. Until then the
+header is observability only.
+
+The guarantee Phase 1 ships is therefore, stated exactly: **ownership converges
+under stable membership, and a partition may transiently produce two owners.**
+Nothing currently detects or resolves that; the epoch would be the detection
+mechanism once #184 lands. Exclusive mutable ownership needs leases and fencing
+tokens, which are out of scope here and tracked as issue #180.
 
 ### Replication
 
@@ -386,7 +421,8 @@ Unit coverage: identity round-trip and file mode; golden vectors for the
 canonical signing preimage; rejection of a signature whose method, path, query,
 recipient, or body was altered; each `Admission` decision; the backoff and
 eviction state machine; that the fanout cursor reaches every peer within
-⌈n / fanout⌉ rounds; epoch supersession.
+⌈n / fanout⌉ rounds; that the epoch digest is stable over the sorted admitted
+set (there is no supersession to test — see the correction above).
 
 Integration coverage in `tests/`: a three-node in-process loopback cluster that
 converges, prunes stale members, **recovers from restart with no configured
@@ -421,7 +457,12 @@ remains the authority for blobs, manifests, and tags.
 
 ## Decisions recorded for review
 
-- `CapabilityManifest.server_id` changes value to the node's public key.
+- `CapabilityManifest.server_id` changes value to the node's public key, and
+  `x-hologram-cluster-recipient` becomes a required request header. Both are
+  breaking wire changes and ship together, so there is no mixed-version window.
+- The membership epoch is computed and sent but not enforced (issue #184).
+- Ownership candidates are admitted members *plus self*; an asymmetric
+  `allowlist` therefore fails open, and must be configured symmetrically.
 - Streaming object transfer is deferred to Phase 2 rather than fixed twice.
 - `p2p` is off by default, so P2P is opt-in at compile time, not in a stock
   binary.

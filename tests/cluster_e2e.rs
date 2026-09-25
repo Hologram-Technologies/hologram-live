@@ -6,8 +6,26 @@ use std::time::{Duration, Instant};
 
 struct Server {
     child: Child,
-    _root: tempfile::TempDir,
+    /// `None` only after [`Server::stop_keeping_state`] has handed the state
+    /// directory to a caller that wants to outlive this process.
+    root: Option<tempfile::TempDir>,
     port: u16,
+}
+impl Server {
+    /// Stops this daemon and hands back its state directory, so a second
+    /// process can be started on the same root.
+    ///
+    /// `TempDir` deletes its directory when it drops, and `Server` owns it, so
+    /// a restart test cannot simply drop the server: the persisted
+    /// `nodes.json`, `node.key` and `cluster-pinned.json` it means to restart
+    /// against would go with it.
+    fn stop_keeping_state(mut self) -> tempfile::TempDir {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        self.root
+            .take()
+            .expect("a server's state directory is taken at most once")
+    }
 }
 impl Drop for Server {
     fn drop(&mut self) {
@@ -34,7 +52,31 @@ fn start_without_module(
     token: &str,
     disabled_module: Option<&str>,
 ) -> Server {
-    let root = tempfile::tempdir().unwrap();
+    start_in(
+        tempfile::tempdir().unwrap(),
+        port,
+        seed,
+        token,
+        disabled_module,
+    )
+}
+
+/// Restarts a daemon on an existing state directory with **no** configured
+/// seeds, so the only thing it can rejoin from is what it persisted.
+fn restart_without_seeds(root: tempfile::TempDir, port: u16, token: &str) -> Server {
+    start_in(root, port, None, token, None)
+}
+
+/// The one place a daemon is actually spawned. `root` is a parameter rather
+/// than created here so a state directory can outlive one process, which is
+/// what `a_restarted_node_rejoins_without_any_configured_seed` needs.
+fn start_in(
+    root: tempfile::TempDir,
+    port: u16,
+    seed: Option<u16>,
+    token: &str,
+    disabled_module: Option<&str>,
+) -> Server {
     let mut config = AppConfig::default();
     config.paths.config_dir = root.path().join("config");
     config.paths.data_dir = root.path().join("data");
@@ -77,8 +119,36 @@ fn start_without_module(
     }
     Server {
         child,
-        _root: root,
+        root: Some(root),
         port,
+    }
+}
+
+/// The number of records `port`'s node directory currently lists, or `None`
+/// if it could not be asked.
+fn peer_count(client: &reqwest::blocking::Client, port: u16) -> Option<usize> {
+    client
+        .get(format!("http://127.0.0.1:{port}/api/v1/nodes"))
+        .send()
+        .ok()
+        .and_then(|response| response.error_for_status().ok())
+        .and_then(|response| response.json::<Vec<serde_json::Value>>().ok())
+        .map(|peers| peers.len())
+}
+
+/// Polls `port`'s node directory until it holds exactly `expected` records.
+fn await_peer_count(client: &reqwest::blocking::Client, port: u16, expected: usize) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let count = peer_count(client, port);
+        if count == Some(expected) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the node on port {port} never reached {expected} directory records; last saw {count:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
@@ -319,5 +389,91 @@ fn authenticated_peers_replicate_an_immutable_object() {
         }
         assert!(Instant::now() < deadline, "object never converged");
         std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Defect 8: a node restarted with **no** configured seeds must rejoin from the
+/// membership it persisted, not sit isolated with a directory full of peers it
+/// never dials.
+///
+/// The shape of this test matters, because the naive version proves nothing.
+/// `nodes.json` is reloaded into the node directory at startup, so a freshly
+/// restarted node answers `/api/v1/nodes` with its old peers immediately —
+/// even with the peer set left empty, which is exactly the defect. Worse, the
+/// seed would normally notice the restarted node in *its* directory and dial it
+/// back, so convergence could happen without the restarted node ever taking
+/// the initiative.
+///
+/// So this waits for the seed to prune the dead node out of its own directory
+/// first. That same prune feeds `prune_evictions`, which drops the endpoint
+/// from the seed's peer table, and the seed here has no configured seeds of its
+/// own to fall back on — after that point nothing on the seed's side can
+/// re-establish contact. The seed's directory returning to two records
+/// therefore proves the restarted node dialled *out*, and the only address it
+/// could have dialled came off its own disk.
+#[test]
+fn a_restarted_node_rejoins_without_any_configured_seed() {
+    hologram_live::util::install_crypto_provider();
+    let token = "a sufficiently long shared cluster test token";
+    let first = start(port(), None, token);
+    let second_port = port();
+    let second = start(second_port, Some(first.port), token);
+
+    let client = reqwest::blocking::Client::new();
+    await_peer_count(&client, first.port, 2);
+
+    // Take the joiner down, keeping its state directory: `node.key` (so it
+    // restarts under the same identity), `cluster-pinned.json` (so admission
+    // survives) and `nodes.json` (the persisted membership under test).
+    let root = second.stop_keeping_state();
+    await_peer_count(&client, first.port, 1);
+
+    let restarted = restart_without_seeds(root, second_port, token);
+    await_peer_count(&client, first.port, 2);
+    await_peer_count(&client, restarted.port, 2);
+}
+
+/// Defect 3: holding a *different* secret is not membership. A node whose
+/// admission ticket does not verify never enters the directory at all.
+///
+/// Task 7 established this by hand with three daemons — the rogue was refused
+/// at join with `403`, never appeared in either legitimate node's directory and
+/// was never pinned. This commits that as a test, and asserts it in both
+/// directions: the seed never records the intruder, and the intruder never
+/// records the seed, because a refused join returns no `ClusterJoinResponse`
+/// for it to learn from.
+///
+/// Both nodes are observed over several heartbeat rounds rather than sampled
+/// once, so a join that is merely slow to be accepted would still fail this.
+#[test]
+fn a_node_without_the_admission_secret_is_refused() {
+    hologram_live::util::install_crypto_provider();
+    let first = start(
+        port(),
+        None,
+        "a sufficiently long shared cluster test token",
+    );
+    let intruder = start(
+        port(),
+        Some(first.port),
+        "an entirely different long secret value",
+    );
+
+    let client = reqwest::blocking::Client::new();
+    // `heartbeat_interval_secs` is 1 in this harness, so this observes on the
+    // order of five join attempts.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        assert_eq!(
+            peer_count(&client, first.port),
+            Some(1),
+            "the intruder must never appear in the seed's directory"
+        );
+        assert_eq!(
+            peer_count(&client, intruder.port),
+            Some(1),
+            "a refused joiner learns nothing about the node that refused it"
+        );
+        std::thread::sleep(Duration::from_millis(200));
     }
 }

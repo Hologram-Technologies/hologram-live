@@ -47,6 +47,9 @@ fn start_without_module(
         .unwrap_or_default();
     config.cluster.heartbeat_interval_secs = 1;
     config.cluster.node_ttl_secs = 3;
+    // Anti-entropy is now decoupled from the heartbeat (default 60s); keep it
+    // fast here so replication still fires within these tests' deadlines.
+    config.cluster.replication_interval_secs = 1;
     if let Some(disabled_module) = disabled_module {
         config
             .modules

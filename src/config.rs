@@ -144,6 +144,11 @@ pub struct ClusterConfig {
     pub replication_max_objects_per_round: usize,
     /// Maximum bytes accepted for one immutable object transfer.
     pub replication_max_object_bytes: u64,
+    /// How often immutable-object anti-entropy runs against a contacted
+    /// peer, decoupled from `heartbeat_interval_secs` so that membership
+    /// heartbeats stay cheap while every node need not re-walk every peer's
+    /// full object inventory on every heartbeat tick.
+    pub replication_interval_secs: u64,
     /// Identities always eligible to participate, as `ed25519:<64 hex>`.
     pub trusted_keys: Vec<String>,
     /// `token` pins a new identity on first contact with a valid ticket;
@@ -176,6 +181,7 @@ impl Default for ClusterConfig {
             fanout: 8,
             replication_max_objects_per_round: 1_000,
             replication_max_object_bytes: 512 * 1024 * 1024,
+            replication_interval_secs: 60,
             trusted_keys: Vec::new(),
             admission: "token".to_owned(),
         }
@@ -889,6 +895,7 @@ impl AppConfig {
             || self.cluster.fanout == 0
             || self.cluster.replication_max_objects_per_round == 0
             || self.cluster.replication_max_object_bytes == 0
+            || self.cluster.replication_interval_secs == 0
             || self.cluster.node_ttl_secs <= self.cluster.heartbeat_interval_secs
         {
             return Err(LiveError::Config(

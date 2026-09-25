@@ -6,7 +6,8 @@
 //   node pipeline.mjs gate [repo...]           rebuild files from tensors and require Hugging Face's exact sha256
 //   node pipeline.mjs seal                     publish the day's index root over every gated model
 //   node pipeline.mjs car                      the day's root and objects as one verified CAR (for IPFS)
-//   node pipeline.mjs pin <repo...>            each tensor payload as its own IPFS object (IPFS_API = your Kubo)
+//   node pipeline.mjs pin <repo...|--list f>   each tensor payload as its own IPFS object, once; IPFS_API = a Kubo RPC
+//                                              (Filebase: IPFS_API=https://rpc.filebase.io IPFS_API_TOKEN=<key>); --budget-gb N
 //   node audit.mjs                             prove every hash is a κ: held objects, the sealed root down, the CAR
 //   node pipeline.mjs status                   one screen: models, tensors, bytes, queue, failures, latest root
 //   node pipeline.mjs nightly [--budget-gb N]  discover -> run -> gate -> seal -> car
@@ -75,6 +76,11 @@ async function run(repos) {
     if (spent >= budget) { log(`budget reached (${(spent / 1e9).toFixed(1)} GB)`); break; }
     log(`index ${repo}`);
     try {
+      // Same revision already indexed and gated: nothing to hash (one metadata call, no bytes).
+      if (models[repo]?.gated && !process.argv.includes("--force")) {
+        const { info } = await import("./lib/src.mjs");
+        if ((await info(repo)).sha === models[repo].rev) { log(`  already indexed at ${models[repo].rev.slice(0, 12)}`); continue; }
+      }
       const r = await indexModel(repo, { store, log });
       if (models[repo]?.rev === r.rev && models[repo]?.index === r.index) { log(`  unchanged`); continue; }
       writeFileSync(join(STATE, "sources", `${safe(repo)}.json`), JSON.stringify(r.sources));
@@ -114,9 +120,14 @@ export function alternativesIndex() {
 async function pin(repos) {
   const api = process.env.IPFS_API; if (!api) { console.error("set IPFS_API (a Kubo RPC endpoint you control)"); process.exit(1); }
   const { range, cdnUrl } = await import("./lib/src.mjs");
-  const { cidFromSha256 } = await import(pathToFileURL(process.env.IPFS_RECIPE || join(HERE, "lib", "ipfs-recipe.mjs")).href);
+  // raw-leaf CIDv1 of a sha256 (what a payload of at most 1 MiB must pin as); no dependencies, so pin runs anywhere
+  const cidFromSha256 = (hex) => { const bytes = Buffer.concat([Buffer.from([1, 0x55, 0x12, 0x20]), Buffer.from(hex, "hex")]); const A = "abcdefghijklmnopqrstuvwxyz234567"; let bits = 0, v = 0, o = "b"; for (const x of bytes) { v = (v << 8) | x; bits += 8; while (bits >= 5) { o += A[(v >>> (bits - 5)) & 31]; bits -= 5; } } if (bits) o += A[(v << (5 - bits)) & 31]; return o; };
   const pins = read("pins.json", {}), models = read("models.json", {});
+  const list = arg("--list"); if (!repos.length && list) repos = readFileSync(list, "utf8").split(/\r?\n/).map((l) => l.replace(/#.*/, "").trim()).filter(Boolean);
+  const budget = Number(arg("--budget-gb", "Infinity")) * 1e9; let spentAll = 0;
   for (const repo of repos) {
+    if (!models[repo]?.gated) { log(`pin ${repo}: not indexed and gated yet, skipped`); continue; }
+    if (spentAll >= budget) { log(`pin budget reached (${(spentAll / 1e9).toFixed(1)} GB)`); break; }
     const rows = JSON.parse(readFileSync(join(STATE, "sources", `${safe(repo)}.json`), "utf8"));
     const m = models[repo]; let added = 0, bytes = 0, reused = 0;
     for (const [k, r, rev, path, off, len] of rows) {
@@ -124,11 +135,13 @@ async function pin(repos) {
       const buf = await range(await cdnUrl(r, rev, path), off, off + len - 1);
       if (`sha256:${createHash("sha256").update(buf).digest("hex")}` !== k) throw new Error(`${repo}/${path}@${off}: bytes do not match ${k}`);
       const fd = new FormData(); fd.append("file", new Blob([buf]), k.slice(7));
-      const res = await fetch(`${api.replace(/\/$/, "")}/api/v0/add?cid-version=1&raw-leaves=true&chunker=size-1048576&pin=true&quieter=true`, { method: "POST", body: fd });
+      const headers = process.env.IPFS_API_TOKEN ? { authorization: `Bearer ${process.env.IPFS_API_TOKEN}` } : {};
+      const res = await fetch(`${api.replace(/\/$/, "")}/api/v0/add?cid-version=1&raw-leaves=true&chunker=size-1048576&pin=true&quieter=true`, { method: "POST", body: fd, headers });
       if (!res.ok) throw new Error(`ipfs add: ${res.status} ${await res.text()}`);
       const cid = JSON.parse((await res.text()).trim().split("\n").pop()).Hash;
       if (len <= 1 << 20 && cid !== cidFromSha256(k.slice(7)).toString()) throw new Error(`${k}: CID ${cid} is not its raw CID`);
-      pins[k] = { cid, len, at: new Date().toISOString() }; added++; bytes += len;
+      pins[k] = { cid, len, at: new Date().toISOString() }; added++; bytes += len; spentAll += len;
+      if (added % 50 === 0) write("pins.json", pins);                 // resumable mid-model
     }
     write("pins.json", pins);
     log(`pinned ${repo}: ${added} payloads (${(bytes / 1e6).toFixed(1)} MB) added, ${reused} already pinned by another model or format`);

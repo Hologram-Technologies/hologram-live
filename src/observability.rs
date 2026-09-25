@@ -150,6 +150,38 @@ pub fn init(tracing: &TracingConfig, telemetry: &TelemetryConfig) -> Result<Trac
     })
 }
 
+/// Test-only: a [`TracingHandle`] safe to obtain from more than one test in
+/// the same binary.
+///
+/// `init` calls `tracing_subscriber`'s global `try_init`, which returns
+/// `Err` — not panic — once a subscriber has already been installed in this
+/// process. `AppState::build` requires a `TracingHandle`, so any test that
+/// builds a real `AppState` (there is no lighter constructor) calls `init`
+/// on its way there; a second such test in the same binary would get that
+/// `Err`, and `.expect()`ing it would panic on whichever caller loses the
+/// race — `cargo test` runs a binary's tests on multiple threads by
+/// default, so which caller that is depends on scheduling.
+///
+/// Mirrors [`crate::util::install_crypto_provider`]'s `Once` pattern:
+/// installs the global subscriber at most once, process-wide, and hands
+/// every caller — including the first — the same [`TracingHandle`] (it is
+/// [`Clone`]) rather than a fresh attempt that could fail. Production
+/// startup (`src/cli/serve.rs`) calls [`init`] directly, never this
+/// wrapper, so a genuine failure to install tracing there is untouched and
+/// still propagates as an error on first use.
+#[cfg(test)]
+pub(crate) fn init_for_test(
+    tracing: &TracingConfig,
+    telemetry: &TelemetryConfig,
+) -> Result<TracingHandle> {
+    static HANDLE: std::sync::OnceLock<std::result::Result<TracingHandle, String>> =
+        std::sync::OnceLock::new();
+    HANDLE
+        .get_or_init(|| init(tracing, telemetry).map_err(|error| error.to_string()))
+        .clone()
+        .map_err(LiveError::Config)
+}
+
 fn build_telemetry(
     config: &TelemetryConfig,
 ) -> Result<(
@@ -210,4 +242,36 @@ fn parse_filter(value: &str) -> Result<EnvFilter> {
         .with_regex(false)
         .parse(value)
         .map_err(|error| LiveError::Config(format!("invalid tracing filter: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Fix round 2 on the cluster replication resilience work:
+    /// `AppState::build` requires a `TracingHandle`, and `init`'s global
+    /// `try_init` errors on a second call in the same process, so any two
+    /// tests in this binary that each build a real `AppState` would
+    /// otherwise race for that one slot — `cargo test` runs a binary's
+    /// tests on multiple threads by default, so `.expect()`ing `init`
+    /// directly would panic on whichever caller loses. Pins that
+    /// `init_for_test` survives exactly that shape of concurrent access:
+    /// every thread gets a usable handle, not just the one that happens to
+    /// install first.
+    #[test]
+    fn obtaining_the_test_tracing_handle_is_idempotent_across_threads() {
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    init_for_test(&TracingConfig::default(), &TelemetryConfig::default())
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread
+                .join()
+                .expect("obtaining the handle must not panic")
+                .expect("every caller must get a usable TracingHandle");
+        }
+    }
 }

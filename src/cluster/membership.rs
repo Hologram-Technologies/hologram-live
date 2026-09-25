@@ -15,7 +15,15 @@ struct PeerState {
     failures: u32,
     next_attempt_millis: u64,
     /// When this peer's immutable-object inventory was last reconciled. `0`
-    /// (its initial value) means "never", and is always due.
+    /// (its initial value) means "never". `replication_due` treats that as
+    /// due once `now_millis >= interval_millis` — under a real wall clock
+    /// (`now_millis` is epoch milliseconds, always far larger than any
+    /// realistic interval) that is true from the very first check, so in
+    /// production this reads as "always due" from a cold start. It is not
+    /// literally always due, though: under a synthetic test clock that
+    /// starts at `now = 0`, a peer first contacted before `now_millis`
+    /// reaches `interval_millis` is not due yet — it becomes due on a later
+    /// visit, once enough simulated time has passed.
     ///
     /// Tracked per peer rather than as one global timer: `due()` advances a
     /// fixed-size rotation cursor every round regardless of whether

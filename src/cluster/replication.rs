@@ -391,12 +391,14 @@ mod tests {
         config.paths.state_dir = temp.path().join("state");
         config.paths.cache_dir = temp.path().join("cache");
         // `AppState::build` is the only constructor `replicate_peer` can be
-        // driven through, and it calls `tracing_subscriber`'s global
-        // `try_init` once via the handle built below. This must stay the
-        // only test in this binary that calls `AppState::build` (grep
-        // confirms it is, as of this writing) — a second caller's
-        // `try_init` would fail.
-        let tracing = crate::observability::init(&config.tracing, &config.telemetry)
+        // driven through, and it needs a `TracingHandle`. Uses
+        // `observability::init_for_test` rather than `init` directly: a
+        // second test elsewhere in this binary that also builds an
+        // `AppState` would otherwise race this one for `try_init`'s
+        // global subscriber slot and `.expect()` a panic on whichever
+        // caller loses — `init_for_test` installs at most once and hands
+        // every caller the same handle (see its doc comment).
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
             .expect("init the test tracing subscriber");
         let state = AppState::build(config, tracing)
             .await

@@ -3917,6 +3917,7 @@ dependencies = [
  "candle-transformers",
  "clap",
  "cucumber",
+ "ed25519-dalek",
  "encoding_rs",
  "fs4",
  "getrandom 0.4.3",

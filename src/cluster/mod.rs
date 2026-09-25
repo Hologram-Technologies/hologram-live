@@ -4,6 +4,7 @@
 //! content, and deliberately does not retry an in-flight mutable mutation
 //! against another authority.
 
+pub(crate) mod identity;
 mod replication;
 
 use crate::app::AppState;

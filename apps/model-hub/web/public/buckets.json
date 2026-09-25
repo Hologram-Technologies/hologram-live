@@ -8,8 +8,8 @@
  "openapi": "/openapi.json",
  "about": "Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.",
  "inventory": {
-  "described": 0,
-  "served_here": 0,
+  "described": null,
+  "served_here": null,
   "note": "a bucket is an OCI index tree under /v2/, named buckets/{owner}/{name}. There is no separate bucket API."
  },
  "catalog": null,

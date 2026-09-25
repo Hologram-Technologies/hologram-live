@@ -895,8 +895,12 @@
          "description": "Whether the hub reached it on its last probe."
         },
         "checked": {
-         "type": "string",
-         "format": "date-time"
+         "type": [
+          "string",
+          "null"
+         ],
+         "format": "date-time",
+         "description": "When the hub last reached it, or null if it never has -- a source with no probe file on it is never checked, only offered."
         },
         "reason": {
          "type": "string",
@@ -1547,8 +1551,8 @@
          "format": "hologram.model-hub.descriptor/v1",
          "name": "Hologram Model Hub",
          "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-         "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
-         "snapshot": "2026-09-24",
+         "catalog": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
+         "snapshot": "2026-09-25",
          "fetch": "/api/v1/objects/{id}",
          "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
          "publish": "POST /api/v1/objects with a publisher token",
@@ -1632,8 +1636,8 @@
          "format": "hologram.model-hub.descriptor/v1",
          "name": "Hologram Model Hub",
          "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-         "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
-         "snapshot": "2026-09-24",
+         "catalog": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
+         "snapshot": "2026-09-25",
          "fetch": "/api/v1/objects/{id}",
          "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
          "publish": "POST /api/v1/objects with a publisher token",
@@ -2545,8 +2549,8 @@
          ],
          "format": "hologram.model-hub.archive/v1",
          "gateway": "https://ipfs.filebase.io/ipfs/",
-         "mirror": "https://gethologram.ai/archive/",
-         "registry": "gethologram.ai/model-hub/index"
+         "mirror": "https://hub.uor.foundation/archive/",
+         "registry": "hub.uor.foundation/model-hub/index"
         }
        }
       }
@@ -2707,18 +2711,18 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-24T10:38:53.861Z",
+           "checked": "2026-09-25T07:41:56.833Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-24T10:38:55.152Z",
+           "checked": "2026-09-25T07:41:27.864Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-24T10:38:55.232Z",
-           "reason": "verified"
+           "checked": null,
+           "reason": "no probe file on this source"
           }
          },
          "order": [
@@ -2887,9 +2891,9 @@
           "private": false,
           "gated": false,
           "disabled": false,
-          "likes": 6114,
+          "likes": 6119,
           "downloads": 250598416,
-          "trendingScore": 403,
+          "trendingScore": 395,
           "createdAt": "2022-03-02T00:00:00.000Z",
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",
@@ -2920,9 +2924,9 @@
           "private": false,
           "gated": false,
           "disabled": false,
-          "likes": 3618,
+          "likes": 3629,
           "downloads": 37173706,
-          "trendingScore": 284,
+          "trendingScore": 287,
           "createdAt": "2024-01-27T00:00:00.000Z",
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",
@@ -2938,8 +2942,7 @@
            "context": 8194,
            "sources": [
             "Hugging Face",
-            "ModelScope",
-            "IPFS"
+            "ModelScope"
            ]
           }
          }
@@ -3908,7 +3911,7 @@
      }
     },
     "x-hologram-probe": {
-     "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+     "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
      "status": 302,
      "method": "HEAD"
     }
@@ -4039,9 +4042,9 @@
         },
         "example": {
          "repositories": [
-          "demo/hello",
-          "live/crane",
-          "model-hub/index"
+          "buckets/uor/docs",
+          "buckets/uor/model-index",
+          "buckets/uor/spaces"
          ]
         }
        }
@@ -5327,7 +5330,7 @@
        "type": "string",
        "pattern": "^blake3:[0-9a-f]{64}$"
       },
-      "example": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a"
+      "example": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b"
      }
     ],
     "responses": {
@@ -5406,7 +5409,7 @@
     "summary": "One object, by the hash of its bytes",
     "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
     "x-hologram-probe": {
-     "path": "/api/v1/objects/blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
+     "path": "/api/v1/objects/blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
      "status": 200,
      "method": "HEAD"
     }

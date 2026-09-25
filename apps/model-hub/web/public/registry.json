@@ -9,7 +9,7 @@
  "about": "OCI distribution. Pull models and artifacts with the client you already have.",
  "inventory": {
   "described": 2149,
-  "served_here": 3,
+  "served_here": null,
   "note": "`described` counts what the page indexes, most of it held by Docker Hub, Artifact Hub and Microsoft Artifact Registry and pulled from those. `served_here` is what this registry serves bytes for -- the only ones /v2/ can give you."
  },
  "catalog": null,

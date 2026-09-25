@@ -13,7 +13,7 @@
   "note": "the hub carries no weight bytes; a file request is a 302 to a source that has them, and the hash you check against comes from the index"
  },
  "catalog": {
-  "address": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
+  "address": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
   "fetch": "/api/v1/objects/{address}",
   "format": "hologram.model-hub.catalog/v1",
   "media_type": "application/json",

@@ -670,7 +670,9 @@ function document(server, evidence) {
         404: hubError(404, "Unknown model, revision or file; `SourceHasNotGotIt` when the named source does not hold this file, naming the ones that do; or `UnknownSource` when the source name is not one this hub knows. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.", { error: "modelscope does not hold config.json of BAAI/bge-base-en-v1.5. This file is on: huggingface.co. Drop the /via/ prefix to let the hub choose." }),
         405: READ_ONLY[405],
       },
-      ...probe(`/via/ipfs/${evidence.sample.model}/resolve/main/${evidence.sample.file}`, { status: 302, method: "HEAD" }),
+      // Pinned to a source that holds the file: this operation is the redirect. The refusal when a source has
+      // not got it is described under 404 and recorded by the probe as via.missing.
+      ...probe(`/via/huggingface/${evidence.sample.model}/resolve/main/${evidence.sample.file}`, { status: 302, method: "HEAD" }),
     },
   };
   spec.paths["/via/{source}/api/models"] = {
@@ -1150,7 +1152,7 @@ function schemas() {
       description: "Which byte sources are up, and the order the hub prefers them in.",
       required: ["sources", "order"],
       properties: {
-        sources: { type: "object", additionalProperties: { type: "object", required: ["ok", "checked"], properties: { ok: { type: "boolean", description: "Whether the hub reached it on its last probe." }, checked: { type: "string", format: "date-time" }, reason: { type: "string", description: "Why the hub believes it, in one word. `verified` means the hub fetched bytes and they hashed correctly — from the hub's network." } } } },
+        sources: { type: "object", additionalProperties: { type: "object", required: ["ok", "checked"], properties: { ok: { type: "boolean", description: "Whether the hub reached it on its last probe." }, checked: { type: ["string", "null"], format: "date-time", description: "When the hub last reached it, or null if it never has -- a source with no probe file on it is never checked, only offered." }, reason: { type: "string", description: "Why the hub believes it, in one word. `verified` means the hub fetched bytes and they hashed correctly — from the hub's network." } } } },
         order: { type: "array", items: { type: "string" }, description: "Preference order. A file goes to the first source here that is `ok` and holds it." },
       },
     },
@@ -1622,6 +1624,14 @@ function inventory(evidence, docs) {
   const json = (id) => { const b = rec(id)?.body; if (b && typeof b === "object") return b; try { return JSON.parse(b); } catch { return null; } };
   const local = (p) => { try { return JSON.parse(readFileSync(new URL(p, HERE), "utf8")); } catch { return null; } };
 
+  // Lengths, not examples: probe.mjs shrinks every array in a body to three entries, so counting one of
+  // those would report 3 for anything longer. `sizes` is recorded before that shrink.
+  const size = (id, key) => (evidence.records || []).find((r) => r.id === id)?.sizes?.[key] ?? null;
+  const prefix = (doc, start, total) => {
+    const names = doc?.repositories;
+    if (!Array.isArray(names) || total === null || names.length !== total) return null;
+    return names.filter((n) => n.startsWith(start)).length;
+  };
   const images = local("../public/registry/data/images.json");
   const spaces = local("../public/spaces/spaces.json");
   const held = json("oci.catalog");
@@ -1629,10 +1639,12 @@ function inventory(evidence, docs) {
 
   return {
     registryRows: images?.images?.length ?? null,
-    registryHeld: Array.isArray(held?.repositories) ? held.repositories.length : null,
+    registryHeld: size("oci.catalog", "repositories"),
     spaces: spaces?.spaces?.length ?? null,
-    spacesPublished: Array.isArray(held?.repositories) ? held.repositories.filter((r) => r.startsWith("spaces/")).length : null,
-    buckets: Array.isArray(held?.repositories) ? held.repositories.filter((r) => r.startsWith("buckets/")).length : null,
+    // A prefix count cannot come from `sizes`, and the example holds only the first three names, so these
+    // stay null unless the whole listing happens to fit in the example.
+    spacesPublished: prefix(held, "spaces/", size("oci.catalog", "repositories")),
+    buckets: prefix(held, "buckets/", size("oci.catalog", "repositories")),
     catalog: root?.catalog ?? null,
     models: null,        // the catalogue's size is in the catalogue; the descriptor points at it
     docs: docs.length,

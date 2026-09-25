@@ -155,9 +155,11 @@ pub struct ClusterConfig {
     /// authenticates a node to itself), so an *asymmetric* allowlist — one
     /// node's `trusted_keys` omitting a peer that peer's own list includes —
     /// fails open rather than closed: the node with the narrower list simply
-    /// names itself the owner of resources the wider-list peer would have
-    /// assigned elsewhere, with no error and no local signal that the two
-    /// views disagree. Keep every member's `trusted_keys` identical.
+    /// names *some other candidate its own list admits* — itself, if no
+    /// other admitted node wins the rendezvous hash, but not necessarily —
+    /// for resources the wider-list peer would have assigned elsewhere, with
+    /// no error and no local signal that the two views disagree. Keep every
+    /// member's `trusted_keys` identical.
     pub admission: String,
 }
 

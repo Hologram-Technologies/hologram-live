@@ -4,6 +4,7 @@
 //! the peers whose origins sort late. Failures back off; configured seeds are
 //! the recovery path and are never dropped.
 
+use super::normalize_endpoint;
 use crate::protocol::NodeRecord;
 use std::collections::BTreeMap;
 
@@ -39,17 +40,47 @@ impl PeerTable {
         table
     }
 
-    /// Recovers the working set from the persisted directory on restart.
+    /// Recovers the working set from the persisted directory. Called once at
+    /// startup, and — since `run` (`src/cluster/mod.rs`) now re-seeds every
+    /// heartbeat round to let a seed notice and dial a joiner back — again on
+    /// every round after that.
     ///
     /// `self_endpoint` is excluded: the directory contains this node's own
     /// heartbeat record (`NodeDirectory::heartbeat` persists self), and
     /// without this filter a restarted node would add itself as a peer and
     /// burn one `fanout` slot every round, forever (it is never pruned,
     /// since `prune_older_than` always preserves the local node id).
-    pub fn seed_from_directory(&mut self, nodes: &[NodeRecord], self_endpoint: &str) {
+    ///
+    /// Endpoints are normalized before comparison and insertion, matching the
+    /// gossiped-peer path (`run`'s `for peer in response.peers` handling) and
+    /// `prune_evictions`. Without this, a directory entry written with a
+    /// trailing slash (or another spelling `normalize_endpoint` collapses)
+    /// would be stored under a table key that `evict` — always called with a
+    /// normalized endpoint — can never match, making that entry permanently
+    /// un-evictable and burning a fanout slot forever, the same bug class
+    /// Task 6 fixed for the self-seeding case.
+    ///
+    /// `max_peers` bounds growth the same way the gossiped-peer path already
+    /// does: `NodeDirectory` is an unbounded map fed by every inbound join,
+    /// so without a cap here a re-seed on every round could grow the table
+    /// past the configured bound even though `fanout` still caps how many of
+    /// its entries are dialed per round.
+    pub fn seed_from_directory(
+        &mut self,
+        nodes: &[NodeRecord],
+        self_endpoint: &str,
+        max_peers: usize,
+    ) {
         for node in nodes {
-            if !node.endpoint.is_empty() && node.endpoint != self_endpoint {
-                self.insert(node.endpoint.clone());
+            if self.len() >= max_peers {
+                break;
+            }
+            if node.endpoint.is_empty() {
+                continue;
+            }
+            let endpoint = normalize_endpoint(&node.endpoint);
+            if endpoint != self_endpoint {
+                self.insert(endpoint);
             }
         }
     }
@@ -200,6 +231,7 @@ mod tests {
                 last_seen_millis: 0,
             }],
             "https://self.example",
+            8,
         );
         assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
     }
@@ -230,8 +262,100 @@ mod tests {
                 },
             ],
             "https://self.example",
+            8,
         );
         assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
+    }
+
+    // Fix round 3, finding 3: the gossiped-peer path in `run` normalizes
+    // before inserting or comparing, and `prune_evictions` normalizes before
+    // calling `evict`. Before this fix, `seed_from_directory` inserted the
+    // raw directory endpoint, so a peer advertising a trailing slash got a
+    // table key `evict`'s normalized argument could never match — a
+    // permanently un-evictable entry burning a fanout slot forever, the same
+    // bug class Task 6 fixed for the self-seeding case.
+    #[test]
+    fn seed_from_directory_normalizes_a_trailing_slash_endpoint_so_it_stays_evictable() {
+        let mut table = PeerTable::new(Vec::new());
+        table.seed_from_directory(
+            &[crate::protocol::NodeRecord {
+                node_id: "ed25519:peer".to_owned(),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: "https://known.example/".to_owned(),
+                last_seen_millis: 0,
+            }],
+            "https://self.example",
+            8,
+        );
+        // The unnormalized key would never match this call, and the peer
+        // would remain forever.
+        table.evict("https://known.example");
+        assert!(
+            table.due(0, 8).is_empty(),
+            "a trailing-slash directory endpoint must still be evictable once normalized"
+        );
+    }
+
+    // Fix round 3, finding 2: the gossiped-peer path already stops inserting
+    // once `table.len() >= config.max_peers`; `seed_from_directory` re-runs
+    // every round now (fix round 2), reading from an unbounded
+    // `NodeDirectory`, so without the same cap it could grow the table past
+    // the configured bound even though `fanout` still caps dials per round.
+    #[test]
+    fn seed_from_directory_stops_growing_the_table_past_max_peers() {
+        let mut table = PeerTable::new(Vec::new());
+        let nodes: Vec<crate::protocol::NodeRecord> = (0..10)
+            .map(|index| crate::protocol::NodeRecord {
+                node_id: format!("ed25519:{index:02}"),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: format!("https://node{index:02}.example"),
+                last_seen_millis: 0,
+            })
+            .collect();
+        table.seed_from_directory(&nodes, "https://self.example", 3);
+        assert_eq!(
+            table.len(),
+            3,
+            "seed_from_directory must respect max_peers even though the directory offered more"
+        );
+    }
+
+    // Fix round 3, finding 1: `run` now calls `seed_from_directory` every
+    // heartbeat round, not just once at startup, so a peer that is still
+    // failing (and still present in the directory, since it has not yet
+    // aged out) must not have its backoff reset by the next re-seed —
+    // `insert`'s `entry().or_insert(..)` leaves an existing entry alone, but
+    // nothing previously asserted that directly.
+    #[test]
+    fn reseeding_from_the_directory_does_not_reset_an_in_progress_backoff() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://flaky.example".to_owned());
+        table.record_failure("https://flaky.example", 0, 60_000);
+        assert!(
+            table.due(1_000, 8).is_empty(),
+            "the peer is backing off before any re-seed"
+        );
+
+        // Simulate the periodic re-seed `run` performs every round: the same
+        // peer is still in the directory (it has not aged out).
+        table.seed_from_directory(
+            &[crate::protocol::NodeRecord {
+                node_id: "ed25519:flaky".to_owned(),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: "https://flaky.example".to_owned(),
+                last_seen_millis: 0,
+            }],
+            "https://self.example",
+            8,
+        );
+
+        assert!(
+            table.due(1_000, 8).is_empty(),
+            "re-seeding an already-known, still-backing-off peer must not clear its backoff"
+        );
     }
 
     #[test]

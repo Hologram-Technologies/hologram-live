@@ -140,7 +140,11 @@ async fn run(state: AppState) {
         .filter(|endpoint| endpoint != &self_endpoint)
         .collect();
     let mut table = PeerTable::new(seeds);
-    table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint);
+    table.seed_from_directory(
+        &state.nodes().list().unwrap_or_default(),
+        &self_endpoint,
+        config.max_peers,
+    );
     let backoff_ceiling_millis = config.node_ttl_secs.saturating_mul(1000);
     let mut ticker = tokio::time::interval(Duration::from_secs(config.heartbeat_interval_secs));
 
@@ -163,10 +167,17 @@ async fn run(state: AppState) {
                 // (`sign_headers` already attaches `TICKET_HEADER`) and the
                 // joiner admits the seed the same way any node is admitted —
                 // proof of holding the shared token, not trust in an
-                // unsigned response. Cheap: `insert` is a no-op for an
-                // endpoint already in the table, so this is one directory
-                // read of at most `max_peers` records per round.
-                table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint);
+                // unsigned response.
+                //
+                // Cheap, and bounded: this is one directory read per round
+                // (`NodeDirectory` itself is not capped at `max_peers` — it
+                // grows with every inbound join), but `seed_from_directory`
+                // stops *inserting* once the table reaches `max_peers`, the
+                // same bound the gossiped-peer path below already enforces.
+                // `insert` is also a no-op for an endpoint already in the
+                // table, so a stable membership costs one cheap directory
+                // read and no table churn.
+                table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint, config.max_peers);
 
                 let round_started_millis = now_millis();
                 let mut joins = JoinSet::new();

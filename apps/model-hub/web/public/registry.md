@@ -34,6 +34,16 @@ here. Ask it rather than the page count:
 The weights are never held here: a blob request for one is a redirect to a source that is up, and the digest
 you verify is the file's own SHA-256.
 
+## Every indexed artifact has a page, and the page has a document
+
+    GET /registry/<id>/                the profile: README, tags, publisher, pull commands, and its address
+    GET /registry/<id>/artifact.json   the same, as one JSON document (hologram.registry.artifact/v1)
+    GET /registry/data/images.json     every row of the index, with the facets and each row's κ
+
+<id> is the registry path as the index writes it: docker.io/library/nginx, mcr.microsoft.com/devcontainers/dotnet,
+artifacthub/<repository>/<package>. Each document names the upstream API every value came from, the row's
+digest, and — where this host holds the manifest — the address to pull the exact bytes from here.
+
 ## The rule that makes it safe
 
 Hash what arrives. The expected hash comes from the index and never from the source that served the bytes,

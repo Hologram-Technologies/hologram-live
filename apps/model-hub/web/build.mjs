@@ -5,6 +5,7 @@
 
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { checkSealed } from "./qa/registry-sealed.mjs";
+import { checkKappa } from "./qa/registry-kappa.mjs";
 import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -15,6 +16,8 @@ import { overview, metaDescription } from "./src/overview.mjs";
 import { ORIGIN } from "./src/origin.mjs";
 import { landing } from "./src/landing.mjs";
 import * as D from "./src/docs.mjs";
+import { artifactBody, artifactJson, artifactPath, artifactFile, metaLine } from "./src/registry-page.mjs";
+import { checkRegistryPages } from "./qa/registry-pages.mjs";
 
 const SITE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(SITE, "dist");
@@ -566,11 +569,40 @@ for (const section of ["registry", "spaces", "buckets"]) {
   console.log("card mesh: one generator, one stylesheet, three pages");
 }
 
+// ---- one page per indexed registry artifact
+//
+// Every row of registry/data/images.json becomes /registry/<id>/ in the model page's shape (src/registry-page.mjs),
+// with the profile scripts/registry.mjs fetched for it (README, tags, publisher, links) beside it as artifact.json,
+// the same document an agent reads. A row whose profile is missing still gets its page from the row alone, so a
+// refresh that fell short never costs a page; the gate below counts every one.
+const registryIndex = JSON.parse(await readFile(join(DIST, "registry", "data", "images.json"), "utf8"));
+const ranked = registryIndex.images.filter((r) => r.pulls != null || r.stars != null).sort((a, b) => (b.pulls || 0) - (a.pulls || 0) || (b.stars || 0) - (a.stars || 0));
+const rankOf = new Map(ranked.map((r, i) => [r.id, i + 1]));
+let artifactPages = 0;
+for (const r of registryIndex.images) {
+  if (r.here) continue;   // our own registry's rows are read live at load and open the sheet; a page would be stale
+  const profilePath = join(SITE, "public", "registry", "data", "artifacts", artifactFile(r.id));
+  const p = existsSync(profilePath) ? JSON.parse(await readFile(profilePath, "utf8")) : null;
+  const dir = join(DIST, "registry", ...r.id.split("/"));
+  await mkdir(dir, { recursive: true });
+  const rank = rankOf.get(r.id) || null;
+  await writeFile(join(dir, "index.html"), page({
+    section: "registry",
+    title: `${r.name} · ${r.registry} · Hologram Models Hub`,
+    description: metaLine(r, p),
+    body: `${artifactBody(r, p, { base, rank })}\n<script type="module" src="${base}registry/artifact.js"></script>`,
+  }));
+  await writeFile(join(dir, "artifact.json"), artifactJson(r, p, { base, rank }));
+  artifactPages++;
+}
+
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this
 // refuses to build a copy that would fetch either from somebody else.
 await writeFile(join(DIST, "buckets", "links.json"), JSON.stringify(bucketLinks));
+console.log(await checkRegistryPages(DIST, { base }));
 console.log(await checkBucketLinks(DIST, models.length));
 console.log(await checkSealed(DIST));
+console.log(await checkKappa(DIST));
 // Every link in the docs lands on something this build ships, and every page has something to run.
 console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));
 

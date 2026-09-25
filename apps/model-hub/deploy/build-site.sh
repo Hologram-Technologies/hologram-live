@@ -23,11 +23,14 @@ git -C "$SRC" reset --quiet --hard FETCH_HEAD
 echo "source $BRANCH $(git -C "$SRC" rev-parse --short HEAD)"
 
 # Build inside node:22-alpine so the host's Node version never matters.
+# scripts/registry.mjs refreshes every Registry row's profile and logo from Docker Hub, Artifact Hub and Microsoft
+# (metadata only, resumable, keeps yesterday's profile when a source is down); the committed copies under
+# public/registry/data/ are what it starts from, so a build with no network still ships every page.
 docker run --rm \
   -v "$SRC/apps/model-hub/web:/web" -w /web \
   --env-file "$HUB/build.env" \
   -e BASE=/ \
-  node:22-alpine sh -c 'npm ci --no-fund --no-audit >/dev/null && node scripts/data.mjs --limit 500 && node scripts/lint-tokens.mjs && node build.mjs'
+  node:22-alpine sh -c 'npm ci --no-fund --no-audit >/dev/null && node scripts/data.mjs --limit 500 && { [ ! -f scripts/registry.mjs ] || node scripts/registry.mjs; } && node scripts/lint-tokens.mjs && node build.mjs'
 
 NEW="$SRC/apps/model-hub/web/dist"
 test -f "$NEW/index.html"

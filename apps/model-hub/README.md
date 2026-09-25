@@ -150,9 +150,9 @@ different menu, marks the wrong section, or draws the mark below AA.
 
 | Path | What |
 |---|---|
-| `web/build.mjs` | Static generator: landing, browse page, one page per model, and the shared header |
+| `web/build.mjs` | Static generator: landing, browse page, one page per model, one page per Registry artifact, and the shared header |
 | `web/src/` | Rendering, client code, styles, generated brand tokens; `chrome.css` + `chrome.js` are the shared header |
-| `web/scripts/` | `data.mjs` (catalog snapshot), `vendor-kit.mjs`, `lint-tokens.mjs` |
+| `web/scripts/` | `data.mjs` (catalog snapshot), `registry.mjs` (every Registry row's profile and logo from its source API), `vendor-kit.mjs`, `lint-tokens.mjs` |
 | `web/vendor/hologram-brand-kit/` | Vendored kit CSS, tokens, fonts and logos |
 | `web/public/wallpapers/` | Immersive theme wallpapers |
 | `web/qa/` | Layout, contrast and animation audits used during design review; `menu.mjs` gates the top-level menu |

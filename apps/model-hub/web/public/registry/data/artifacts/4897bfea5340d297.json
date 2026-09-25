@@ -1,0 +1,1 @@
+{"format":"hologram.registry.artifact/v1","id":"mcr.microsoft.com/azure-dev-cli-apps","fetched":"2026-09-25T12:12:06.116Z","error":"Microsoft 404","source":{"name":"Microsoft Artifact Registry","api":null,"page":"https://mcr.microsoft.com/en-us/product/azure-dev-cli-apps/azure-dev-cli-apps/about"},"lastError":{"at":"2026-09-25T12:18:43.740Z","error":"Microsoft 404"}}

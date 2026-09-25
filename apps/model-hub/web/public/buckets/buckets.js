@@ -140,7 +140,7 @@ const READING = 'Read straight from /v2/. Every block is checked against its add
 
 // ---------------------------------------------------------------- the bucket list
 async function renderList () {
-  document.title = 'Buckets · Hologram Models Hub'
+  document.title = 'Buckets · Hologram'
   $('title').textContent = 'Buckets'
   $('sub').textContent = 'Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.'
   $('crumbs').hidden = true; $('bar').hidden = true; $('drop').hidden = true

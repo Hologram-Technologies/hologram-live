@@ -10,9 +10,8 @@ pub(super) async fn replicate_peer(
     client: &reqwest::Client,
     endpoint: &str,
     token: &str,
-    peer_node_id: Option<&str>,
 ) -> Result<()> {
-    let recipient = recipient_for(peer_node_id, endpoint);
+    let recipient = recipient_for(endpoint);
     let max_objects = state.config().cluster.replication_max_objects_per_round;
     let max_bytes = state.config().cluster.replication_max_object_bytes;
     let mut cursor = None;

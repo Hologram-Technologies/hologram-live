@@ -15,7 +15,7 @@ use crate::error::{LiveError, Result};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse, NodeRecord};
 use crate::util::now_millis;
 use replication::replicate_peer;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -146,30 +146,15 @@ async fn run(state: AppState) {
                     tracing::warn!(%error, "failed to persist local cluster heartbeat");
                 }
 
-                // Every request names the peer it is for. For a peer we have
-                // already met that is its public key, learned from a previous
-                // round and persisted in the directory; for a configured seed
-                // we have never reached it is the origin we dial, because its
-                // key is exactly what we do not know yet.
-                let known = known_peer_ids(&state);
-
                 let mut joins = JoinSet::new();
                 for endpoint in peers.iter().take(config.max_peers).cloned() {
                     let state = state.clone();
                     let client = client.clone();
                     let token = token.clone();
                     let node = self_node.clone();
-                    let peer_node_id = known.get(&endpoint).cloned();
                     joins.spawn(async move {
-                        let result = contact_peer(
-                            &state,
-                            &client,
-                            &endpoint,
-                            &token,
-                            node,
-                            peer_node_id.as_deref(),
-                        )
-                        .await;
+                        let result =
+                            contact_peer(&state, &client, &endpoint, &token, node).await;
                         (endpoint, result)
                     });
                 }
@@ -189,14 +174,8 @@ async fn run(state: AppState) {
                                     tracing::warn!(%error, peer = %endpoint, "failed to persist peer heartbeat");
                                 }
                             }
-                            if let Err(error) = replicate_peer(
-                                &state,
-                                &client,
-                                &endpoint,
-                                &token,
-                                known.get(&endpoint).map(String::as_str),
-                            )
-                            .await
+                            if let Err(error) =
+                                replicate_peer(&state, &client, &endpoint, &token).await
                             {
                                 tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
                             }
@@ -239,13 +218,12 @@ async fn contact_peer(
     endpoint: &str,
     token: &str,
     node: NodeRecord,
-    peer_node_id: Option<&str>,
 ) -> Result<ClusterJoinResponse> {
     let mut url = reqwest::Url::parse(endpoint)
         .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
     url.set_path(JOIN_PATH);
     let body = serde_json::to_vec(&ClusterJoinRequest { node })?;
-    let recipient = recipient_for(peer_node_id, endpoint);
+    let recipient = recipient_for(endpoint);
     // `url.path()` is `JOIN_PATH` and there is no query: both are values this
     // crate owns, and `Url` percent-encodes anything that could pass for the
     // preimage's newline separator.
@@ -290,31 +268,24 @@ async fn contact_peer(
     Ok(response)
 }
 
-/// The recipient field a request to `endpoint` must be signed against.
+/// The recipient field a request to `endpoint` must be signed against: always
+/// the normalized origin about to be dialled, never a node id.
 ///
-/// A peer whose public key we already hold is named by that key. A configured
-/// seed we have never reached is named by the origin we dial, because its key
-/// is precisely what the first contact is for. Both name exactly one peer, so
-/// neither form lets a captured proof be replayed against a different one.
-fn recipient_for(peer_node_id: Option<&str>, endpoint: &str) -> String {
-    match peer_node_id {
-        Some(node_id) if identity::parse_node_id(node_id).is_ok() => node_id.to_owned(),
-        _ => normalize_endpoint(endpoint),
-    }
-}
-
-/// Endpoint-to-identity map for the peers already in the directory.
-fn known_peer_ids(state: &AppState) -> BTreeMap<String, String> {
-    match state.nodes().list() {
-        Ok(records) => records
-            .into_iter()
-            .map(|record| (normalize_endpoint(&record.endpoint), record.node_id))
-            .collect(),
-        Err(error) => {
-            tracing::warn!(%error, "failed to read known cluster peers");
-            BTreeMap::new()
-        }
-    }
+/// A node id is only ever learned from another peer's unsigned response, so it
+/// is that peer's *claim* about a third party. Binding it would let an
+/// admitted-but-rogue peer report a victim's `node_id` against an endpoint the
+/// rogue controls, collect the proof we then mint for the victim, and replay it
+/// against the real victim. Under `admission = "allowlist"` with asymmetric
+/// `trusted_keys` the victim may trust us and refuse the rogue, so that is
+/// privilege escalation across a security boundary, not a no-op.
+///
+/// The origin defends replay exactly as well — a proof names the one endpoint
+/// it was minted for, and no other node accepts it — while depending on no
+/// peer's honesty about anyone else. The receiving half still accepts a node
+/// id (`control_plane::proof_names_self`), because Phase 2's iroh addresses
+/// *are* node ids and have no origin.
+fn recipient_for(endpoint: &str) -> String {
+    normalize_endpoint(endpoint)
 }
 
 /// Attaches the per-node proof and the admission ticket for *our* identity.
@@ -414,24 +385,17 @@ mod tests {
         assert_eq!(mode & 0o077, 0);
     }
 
-    // A seed we have never contacted is named by its origin; once its key is
-    // in the directory the proof binds the key instead. A malformed id falls
-    // back to the origin rather than signing against a value no peer owns.
+    // Fix round 1: outbound proofs bind the origin being dialled and nothing
+    // else. There is no node-id branch to take, so no peer's claim about a
+    // third party can steer what we sign.
     #[test]
-    fn the_recipient_is_the_peer_key_when_known_and_the_origin_otherwise() {
-        const PEER: &str =
-            "ed25519:d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
-
+    fn the_outbound_recipient_is_always_the_normalized_origin() {
         assert_eq!(
-            recipient_for(Some(PEER), "https://seed.example:11435"),
-            PEER
-        );
-        assert_eq!(
-            recipient_for(None, "https://seed.example:11435/"),
+            recipient_for("https://seed.example:11435"),
             "https://seed.example:11435"
         );
         assert_eq!(
-            recipient_for(Some("blake3:not-a-key"), "https://seed.example:11435"),
+            recipient_for("https://seed.example:11435/"),
             "https://seed.example:11435"
         );
     }

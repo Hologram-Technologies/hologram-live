@@ -72,6 +72,7 @@ services:
       HUB_STATE: /state
     volumes:
       - ./bin/hub-resolve.mjs:/app/hub-resolve.mjs:ro
+      - ./bin/kappa-mirror.mjs:/app/kappa-mirror.mjs:ro
       - ./site/data:/data:ro
       - ./state/resolve:/state
     mem_limit: 96m

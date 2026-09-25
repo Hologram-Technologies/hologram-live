@@ -5,6 +5,7 @@
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { checkSealed } from "./qa/registry-sealed.mjs";
+import { checkKappa } from "./qa/registry-kappa.mjs";
 import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -533,6 +534,7 @@ for (const section of ["registry", "spaces", "buckets"]) {
 await writeFile(join(DIST, "buckets", "links.json"), JSON.stringify(bucketLinks));
 console.log(await checkBucketLinks(DIST, models.length));
 console.log(await checkSealed(DIST));
+console.log(await checkKappa(DIST));
 // Every link in the docs lands on something this build ships, and every page has something to run.
 console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));
 

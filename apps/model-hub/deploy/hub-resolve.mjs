@@ -27,6 +27,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { kappaMirror } from "./kappa-mirror.mjs";
 
 const DATA = process.env.HUB_DATA || "/data";          // the site's published data: files/<org>/<name>.json, models.json
 const STATE = process.env.HUB_STATE || "/state";        // requested.txt (models asked for but not indexed), override.json
@@ -513,6 +514,8 @@ http.createServer(async (req, res) => {
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
+    // The κ mirror: /v2/<upstream host>/<path>/… for every image the Registry page indexes (kappa-mirror.mjs).
+    if (path.startsWith("/v2/") && await kappaMirror(req, res, path)) return;
     const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs|tags)\/(.+)$/);
     if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
     if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);

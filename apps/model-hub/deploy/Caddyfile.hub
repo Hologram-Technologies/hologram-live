@@ -12,6 +12,13 @@ hub.uor.foundation {
 		request_header -Authorization
 		reverse_proxy hub-resolve:8090
 	}
+	# The κ mirror: `crane pull hub.uor.foundation/docker.io/library/nginx@sha256:…`. The first path component is
+	# the upstream registry's host, so these names never collide with a model or with the hub's own namespaces.
+	@kappa path_regexp kappa ^/v2/[a-z0-9-]+(\.[a-z0-9-]+)+/.+/(manifests|blobs|tags|referrers)/
+	handle @kappa {
+		request_header -Authorization
+		reverse_proxy hub-resolve:8090
+	}
 
 	handle @hf {
 		request_header -Authorization

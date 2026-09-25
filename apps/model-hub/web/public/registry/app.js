@@ -82,7 +82,7 @@ function matches(r) {
   if (picked.license.size && !picked.license.has(r.license)) return false;
   if (picked.updated.size && !picked.updated.has(r.updatedBucket)) return false;
   if (picked.marks.size) {
-    const has = { "Addressed here": r.here, Official: r.official, Signed: r.signed, "Verified publisher": r.verified };
+    const has = { "Addressed here": r.here || !!r.kappa, Official: r.official, Signed: r.signed, "Verified publisher": r.verified };
     for (const m of picked.marks) if (!has[m]) return false;
   }
   if (picked.architecture.size && !(r.architectures || []).some((a) => picked.architecture.has(a))) return false;
@@ -363,6 +363,10 @@ function cover(img, r) {
 
 // The command that actually uses this thing, which is not the same command for every kind.
 function useCommand(r) {
+  // A row with a κ is pullable from this host by the exact bytes, whatever tool the kind usually takes.
+  if (r.kappa && r.held === "whole" && r.kind === "Helm chart") return ["Pull the chart from here", "helm pull oci://" + r.kappa.replace(/@.*$/, "") + " --version " + r.tag];
+  if (r.kappa && r.held === "whole") return ["Pull the exact bytes from here", "oras pull " + r.kappa];
+  if (r.kappa) return ["Pull the exact bytes from here", "docker pull " + r.kappa];
   // docker.io is implied, and library/ is how Docker writes "official" in a path, not in a command.
   const ref = r.id.replace(/^docker\.io\//, "").replace(/^library\//, "");
   if (r.kind === "Model") return ["Pull the model", "docker model pull " + ref];
@@ -372,6 +376,12 @@ function useCommand(r) {
   if (r.kind === "Artifact") return ["Pull the artifact", "oras pull " + r.id + (r.tag ? ":" + r.tag : "")];
   return ["Pull it", "docker pull " + ref];
 }
+
+const TRUST = {
+  "upstream-digest": "the upstream registry reports this same digest",
+  "upstream-attested": "the bytes hash to the digest the upstream published",
+  "first-seen": "no upstream hash exists; first recorded here",
+};
 
 function openSheet(r) {
   if (r.live) return openOurs(r);
@@ -383,13 +393,20 @@ function openSheet(r) {
   $("s-cmd").textContent = command;
   const tags = [];
   if (r.here) tags.push('<span class="tag here">here</span>');
+  if (r.kappa) tags.push('<span class="tag here">' + r.trust + "</span>");
   if (r.official) tags.push('<span class="tag official">official</span>');
   if (r.verified) tags.push('<span class="tag">verified</span>');
   if (r.signed) tags.push('<span class="tag">signed</span>');
   tags.push('<span class="tag">' + r.registry + "</span>");
   $("s-tags").innerHTML = tags.join("");
 
+  // The κ: this row's address in our registry, equal to the upstream's own digest (upstream-digest), to a hash the
+  // upstream published (upstream-attested), or first seen here (first-seen). Held whole, or metadata here and
+  // layers by redirect to the upstream.
   const facts = [
+    ["Address", r.kappa || null],
+    ["Trust", r.kappa ? TRUST[r.trust] || r.trust : null],
+    ["Held", r.kappa ? (r.held === "whole" ? "whole artifact, here" : "manifest and config here, layers redirect to the upstream") : null],
     ["Kind", r.kind],
     ["Publisher", r.publisher],
     ["Category", r.category],
@@ -452,13 +469,14 @@ function card(r) {
   el.className = "card" + (r.here ? " ours" : "");
   const tags = [];
   if (r.here) tags.push(`<span class="tag here">here</span>`);
+  if (r.kappa && !r.here) tags.push(`<span class="tag here">κ</span>`);
   if (r.official) tags.push(`<span class="tag official">official</span>`);
   tags.push(`<span class="tag"></span>`);
   if (r.signed) tags.push(`<span class="tag">signed</span>`);
   el.innerHTML = `<img class="logo" alt="" loading="lazy"><div class="tags">${tags.join("")}</div><h3></h3><p></p><div class="foot"></div>${art(r.id, !!r.here)}`;
   cover(el.querySelector("img"), r);
   el.addEventListener("click", () => openSheet(r));
-  el.querySelectorAll(".tag")[r.here || r.official ? (r.here && r.official ? 2 : 1) : 0].textContent = r.registry;
+  el.querySelectorAll(".tag")[(r.here || r.kappa ? 1 : 0) + (r.official ? 1 : 0)].textContent = r.registry;
   el.querySelector("h3").textContent = r.id.replace(/^docker\.io\//, "");
   el.querySelector("p").textContent = r.description || "No description from this source.";
   const foot = [];
@@ -466,7 +484,7 @@ function card(r) {
   if (r.stars != null && r.stars > 0) foot.push(`${num(r.stars)} stars`);
   if (r.size != null) foot.push(bytes(r.size));
   if ((r.architectures || []).length) foot.push(`${r.architectures.length} platforms`);
-  if (r.here) foot.push("checkable");
+  if (r.here || r.kappa) foot.push("checkable");
   el.querySelector(".foot").textContent = foot.join(" · ") || r.provenance;
   el.title = `${r.id}\n${r.provenance}`;
   return el;
@@ -544,7 +562,7 @@ const rail = createRail({
   data.images = [...live, ...data.images.filter((r) => !r.here)];
   data.facets.registry = { ...data.facets.registry, Hologram: live.length };
   data.facets.kind = { ...data.facets.kind, Artifact: (data.facets.kind.Artifact || 0) + live.length };
-  data.facets.marks = { ...data.facets.marks, "Addressed here": live.length };
+  data.facets.marks = { ...data.facets.marks, "Addressed here": live.length + data.images.filter((r) => r.kappa && !r.here).length };
   data.facets.publisher = { ...data.facets.publisher };
   for (const r of live) data.facets.publisher[r.publisher] = (data.facets.publisher[r.publisher] || 0) + 1;
   data.totals.here = live.length;

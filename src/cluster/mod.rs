@@ -187,6 +187,13 @@ async fn run(state: AppState) {
     // in `membership.rs`).
     let replication_interval_millis = config.replication_interval_secs.saturating_mul(1000);
     let mut ticker = tokio::time::interval(Duration::from_secs(config.heartbeat_interval_secs));
+    // Replication now runs inline in this loop, so one slow peer can make a
+    // round overrun `heartbeat_interval_secs`. The default `Burst` behaviour
+    // would then fire every missed tick back to back, turning an overrun into
+    // a flurry of catch-up rounds against the peers that were already slow.
+    // `Delay` simply resumes the cadence from now, matching `tls.rs`,
+    // `oci/metrics.rs` and `oci/debug.rs`.
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {

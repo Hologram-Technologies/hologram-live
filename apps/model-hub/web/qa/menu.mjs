@@ -28,14 +28,20 @@ const DIST = join(SITE, "dist");
 const SECTIONS = ["Models", "Registry", "Spaces", "Buckets", "Docs"];
 
 // One page of every shape the site builds, and the section each belongs to. "" means no section is current:
-// the landing is the front door, it is not inside any of the three. The last field marks a catalogue page:
-// one that opens with the lead row (name · count · address) above its columns.
+// the landing is the front door, it is not inside any section. The last field says what that page opens with:
+// `true` for a catalogue page, which opens with the shared lead row (name · count · address) above its
+// columns, and "own" for a page that opens with a row of its own on purpose (none today: Buckets had one, and
+// now opens with the shared row and keeps its controls on a row below it). A page marked neither
+// must not open with a lead row at all, which is what catches one arriving by accident.
 const PAGES = [
   ["landing", "/", ""],
-  ["browse", "/models/", "Models", true],
+  ["browse", "/models/", "Models", true, true],
   ["model", null, "Models"],           // filled in from dist below: whichever model page is first
-  ["registry", "/registry/", "Registry", true],
-  ["spaces", "/spaces/", "Spaces", true],
+  ["registry", "/registry/", "Registry", true, true],
+  ["spaces", "/spaces/", "Spaces", true, true],
+  ["buckets", "/buckets/", "Buckets", true, true],
+  ["docs", "/docs/", "Docs", false, true],
+  ["docs page", "/docs/quickstart/", "Docs"],
   ["not found", "/404.html", ""],
 ];
 // What every catalogue page's lead row is made of, in order, and nothing else. A page that opens with more or
@@ -138,12 +144,39 @@ const READ = `(() => {
     pageOverflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     // The lead row a catalogue page opens with: its name, a count, an address, a line of provenance — in
     // that order, above the columns, on Models, Registry and Spaces alike.
+    // The section tag: the same control beside the heading of every section, whatever else that section's
+    // opening row carries. What is measured is what a reader compares across pages -- that it is there, that it
+    // sits to the right of the title on the same line, and that it is the same object drawn the same way.
+    tag: (() => {
+      const tag = document.querySelector(".section-tag");
+      if (!tag) return null;
+      const h1 = tag.closest(".lead, .docs-title, .lead-main")?.querySelector("h1") || document.querySelector("h1");
+      const t = tag.getBoundingClientRect(), h = h1?.getBoundingClientRect();
+      const cs = getComputedStyle(tag);
+      return {
+        section: tag.dataset.section,
+        text: tag.textContent.trim(),
+        rightOfTitle: h ? t.left >= h.right - 1 : null,
+        below: h ? t.top >= h.top - 1 : null,
+        sameLine: h ? Math.abs((t.top + t.height / 2) - (h.top + h.height / 2)) <= Math.max(6, h.height / 2) : null,
+        look: [cs.fontFamily, cs.fontSize, cs.borderRadius, cs.borderWidth, Math.round(t.height)].join(" | "),
+        dot: !!tag.querySelector(".dot"),
+      };
+    })(),
     lead: (() => {
       const lead = document.querySelector(".lead");
       if (!lead) return null;
       const kids = [...lead.children].filter((k) => !k.matches("script")).map((k) => k.matches("h1") ? "name" : k.matches(".pill") ? "count" : k.matches(".endpoint, .archive") ? "address" : k.matches(".prov") ? "provenance" : k.tagName.toLowerCase());
       const top = lead.getBoundingClientRect().top;
       return { name: lead.querySelector("h1")?.textContent.trim() || "", order: kids.join(" "), top: Math.round(top), font: getComputedStyle(lead.querySelector("h1")).fontFamily };
+    })(),
+    // The search and the sort beside it: one row of controls, so one height, on every catalogue page.
+    bar: (() => {
+      const bar = document.querySelector(".bar");
+      const search = bar?.querySelector(".search");
+      const sort = bar?.querySelector(".sort > button") || bar?.querySelector(".sort");
+      if (!search || !sort || !search.offsetParent) return null;
+      return { search: Math.round(search.getBoundingClientRect().height), sort: Math.round(sort.getBoundingClientRect().height) };
     })(),
   };
 })()`;
@@ -195,10 +228,12 @@ let checked = 0, lowest = Infinity;
 // of the build, not of the page. What is checked is that every page agrees: the first page read sets the
 // expectation and the rest have to match it.
 let cluster = null, links = null;
+const tags = new Map();    // theme+width → how the first section drew its tag
+const tagged = new Set();  // which sections were seen carrying one
 for (const theme of THEMES) {
   await load(`${origin}${BASE}/`);
   await cdp.evaluate(`localStorage.setItem("hologram-models-hub.theme", ${JSON.stringify(JSON.stringify({ mode: theme, wallpaper: "alps" }))})`);
-  for (const [page, path, section, catalogue] of PAGES) {
+  for (const [page, path, section, catalogue, sectionRoot] of PAGES) {
     for (const width of WIDTHS) {
       await cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: width < 768 });
       await load(origin + BASE + path);
@@ -216,9 +251,34 @@ for (const theme of THEMES) {
       if (r.headerOverflow > 1) problems.push(`${where}: the header row overflows by ${r.headerOverflow}px`);
       if (r.pageOverflowX > 1) problems.push(`${where}: the page scrolls ${r.pageOverflowX}px sideways`);
 
+      // The section tag. Every section carries one, it sits to the right of that section's title on the same
+      // line, and it is drawn the same way everywhere: a reader crossing from Models to Docs sees one control
+      // that has not changed, and an agent finds the address in the same place whichever page it landed on.
+      if (sectionRoot) {
+        if (!r.tag) problems.push(`${where}: the ${section} heading carries no section tag`);
+        else {
+          tagged.add(section);
+          if (r.tag.section !== section.toLowerCase()) problems.push(`${where}: the tag says ${r.tag.section}, the section is ${section}`);
+          if (!r.tag.dot) problems.push(`${where}: the tag has no liveness dot`);
+          // Beside the title where there is room for it. On a phone the row wraps and the tag drops under the
+          // heading, which is the row doing its job rather than the tag losing its place; what still has to
+          // hold there is that it follows the title, which the markup guarantees. So the geometry is checked
+          // where the row does not wrap.
+          if (width >= 768) {
+            if (r.tag.rightOfTitle === false) problems.push(`${where}: the tag sits left of the title`);
+            if (r.tag.sameLine === false) problems.push(`${where}: the tag is off the title's line`);
+          } else if (r.tag.below === false) problems.push(`${where}: the row wrapped and the tag did not follow the title`);
+          const key = `${theme} ${width}`;
+          if (!tags.has(key)) tags.set(key, { page, look: r.tag.look });
+          else if (tags.get(key).look !== r.tag.look) {
+            problems.push(`${where}: the tag is drawn ${r.tag.look}, on ${tags.get(key).page} it is ${tags.get(key).look}`);
+          }
+        }
+      } else if (r.tag) problems.push(`${where}: a section tag on a page that is not a section front page`);
+
       // The lead row: every catalogue page opens with the same one, and it sits at the same height on each, so
       // crossing from Models to Registry to Spaces moves nothing. A page outside the catalogue has none.
-      if (catalogue) {
+      if (catalogue === true) {
         if (!r.lead) problems.push(`${where}: no lead row`);
         else {
           if (r.lead.name !== section) problems.push(`${where}: the lead row says ${r.lead.name || "nothing"}, the section is ${section}`);
@@ -231,7 +291,14 @@ for (const theme of THEMES) {
             if (first.font !== r.lead.font) problems.push(`${where}: the lead row is set in ${r.lead.font}, on ${first.page} in ${first.font}`);
           }
         }
-      } else if (r.lead) problems.push(`${where}: a lead row on a page outside the catalogue`);
+      } else if (r.lead && !catalogue) problems.push(`${where}: a lead row on a page outside the catalogue`);
+      // The search and the sort stand the same height, and the same height on every catalogue page.
+      if (catalogue === true && r.bar) {
+        if (Math.abs(r.bar.search - r.bar.sort) > 1) problems.push(`${where}: the search is ${r.bar.search}px tall and the sort beside it ${r.bar.sort}px`);
+        const key = `bar ${theme} ${width}`;
+        if (!leads.has(key)) leads.set(key, { page, h: r.bar.search });
+        else if (Math.abs(leads.get(key).h - r.bar.search) > 1) problems.push(`${where}: the search bar is ${r.bar.search}px, on ${leads.get(key).page} it is ${leads.get(key).h}px`);
+      }
 
       if (r.current.length > 1) problems.push(`${where}: ${r.current.length} sections marked current`);
       if ((r.current[0] || "") !== section) problems.push(`${where}: current is ${r.current[0] || "nothing"}, expected ${section || "nothing"}`);
@@ -258,4 +325,4 @@ server.close();
 
 console.log(rows.join("\n"));
 if (problems.length) { console.error(`\n${problems.length} problems\n${problems.join("\n")}`); process.exit(1); }
-console.log(`\nthe menu holds: ${SECTIONS.join(" · ")} on ${PAGES.length} page shapes x ${THEMES.length} themes x ${WIDTHS.length} widths (${checked} checks); the section you are in is marked and reads at ${lowest}:1 or better; the ${PAGES.filter((p) => p[3]).length} catalogue pages open with the same lead row (${LEAD}) at the same height`);
+console.log(`\nthe menu holds: ${SECTIONS.join(" · ")} on ${PAGES.length} page shapes x ${THEMES.length} themes x ${WIDTHS.length} widths (${checked} checks); the section you are in is marked and reads at ${lowest}:1 or better; each of the ${tagged.size} sections carries the same tag beside its title; the ${PAGES.filter((p) => p[3] === true).length} catalogue pages open with the same lead row (${LEAD}) at the same height`);

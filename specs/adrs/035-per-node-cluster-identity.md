@@ -41,7 +41,16 @@ with the same function, and the receiver verifies before it parses or persists
 anything. Binding the recipient is what stops a proof captured from one peer
 being replayed at another; binding method, path and query stops it being replayed
 at a different route. Replay against the *same* endpoint inside the clock window
-remains possible and is accepted, because cluster reads are idempotent.
+remains possible and is accepted. The cluster *reads* are idempotent, so a replay
+of one changes nothing. `POST /api/v1/cluster/join` is not: it is
+proof-authenticated like every other cluster request, equally replayable
+in-window, and it mutates — a replayed join refreshes the joiner's `last_seen` in
+the node directory, so a captured join can keep a node that has since gone away
+from being pruned for as long as the replay continues. What bounds the damage is
+that the replayed record is one its own signer published about itself, checked by
+`record_matches_signer`: a replay can extend a stale record's life, and cannot
+introduce a record or change one. Carrying a per-node seen-set is the fix, and is
+deliberately not in this phase.
 
 Who may participate is one trait, `Admission`, with two implementations.
 *Allowlist* admits the `ed25519:…` identities in `cluster.trusted_keys` and
@@ -77,11 +86,22 @@ so no intermediate combination has to be reasoned about.
 
 ## The guarantee, stated exactly
 
-Ownership **converges** under stable membership. A partition may transiently
-produce two owners. Nothing in this ADR prevents that, and nothing currently
-detects it. Exclusive ownership needs leases and fencing tokens, which are out of
-scope and tracked as issue #180. This is stated narrowly on purpose: "converges"
-is not "is exclusive", and the difference is the whole of #180.
+Ownership **converges** under stable membership *and mutual reachability*. A
+partition may transiently produce two owners. Nothing in this ADR prevents that,
+and nothing currently detects it. Exclusive ownership needs leases and fencing
+tokens, which are out of scope and tracked as issue #180. This is stated narrowly
+on purpose: "converges" is not "is exclusive", and the difference is the whole of
+#180.
+
+Mutual reachability is a separate precondition from stable membership, and
+leaving it implicit overstates the guarantee. Under `admission = "token"` an
+admitted set only ever grows from **inbound** authenticated dials, so one-way
+reachability — a firewall, a one-way NAT, an asymmetric host route — means B
+admits D while D never admits B. Those two nodes then disagree about the owner of
+a key **permanently**, under membership that never changes, with nothing
+detecting it. That is not the transient window the paragraph above describes. It
+is the same asymmetry already recorded for `cluster.trusted_keys`, reached
+through reachability rather than through configuration.
 
 ## What this deliberately does not solve
 

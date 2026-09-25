@@ -211,8 +211,9 @@ async fn run(state: AppState) {
                 // authenticated inbound join; re-reading it here is what lets
                 // the seed notice and dial the joiner in a later round, at
                 // which point `contact_peer` presents a real ticket
-                // (`sign_headers` already attaches `TICKET_HEADER`) and the
-                // joiner admits the seed the same way any node is admitted —
+                // (`signed_request` sets `ClusterRequest::ticket`, which the
+                // network puts on the wire) and the joiner admits the seed the
+                // same way any node is admitted —
                 // proof of holding the shared token, not trust in an
                 // unsigned response.
                 //
@@ -251,7 +252,7 @@ async fn run(state: AppState) {
                     };
                     match result {
                         Ok(response) => {
-                            table.record_success(&endpoint, now_millis());
+                            table.record_success(&endpoint);
                             // An origin that answered a join is worth knocking
                             // on again after a restart. Bounded by the same
                             // `max_peers` the table is.
@@ -421,7 +422,7 @@ async fn contact_peer(
 /// The origin defends replay exactly as well — a proof names the one endpoint
 /// it was minted for, and no other node accepts it — while depending on no
 /// peer's honesty about anyone else. The receiving half still accepts a node
-/// id (`control_plane::proof_names_self`), because Phase 2's iroh addresses
+/// id (`control_plane::recipient_names_self`), because Phase 2's iroh addresses
 /// *are* node ids and have no origin.
 fn recipient_for(endpoint: &str) -> String {
     normalize_endpoint(endpoint)

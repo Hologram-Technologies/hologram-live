@@ -178,8 +178,16 @@ impl PeerTable {
         self.peers.len()
     }
 
-    /// The next `fanout` peers whose backoff has elapsed, advancing the cursor
-    /// so the following round starts where this one stopped.
+    /// The next `fanout` peers whose backoff has elapsed, scanning from the
+    /// rotation cursor and wrapping.
+    ///
+    /// The cursor then advances a fixed `fanout` positions (bounded by the table
+    /// size), *not* to wherever the scan stopped: the scan skips peers that are
+    /// backing off, so resuming where it stopped would let a run of
+    /// backing-off peers slide the cursor past peers it never examined. A fixed
+    /// stride gives every peer its turn within ⌈n / fanout⌉ rounds regardless of
+    /// which of them happen to be due, which is the property the comment on
+    /// [`PeerState::last_replicated_millis`] relies on.
     pub fn due(&mut self, now_millis: u64, fanout: usize) -> Vec<String> {
         if self.peers.is_empty() || fanout == 0 {
             return Vec::new();
@@ -196,11 +204,14 @@ impl PeerTable {
                 due.push(endpoint.clone());
             }
         }
-        self.cursor = (start + ordered.len().min(fanout.max(1))) % ordered.len();
+        // `fanout` is non-zero: the empty/zero case returned above.
+        self.cursor = (start + ordered.len().min(fanout)) % ordered.len();
         due
     }
 
-    pub fn record_success(&mut self, endpoint: &str, _now_millis: u64) {
+    /// Clears a peer's failure count and backoff. Takes no clock: a success
+    /// makes the peer due immediately, so there is no deadline to compute.
+    pub fn record_success(&mut self, endpoint: &str) {
         if let Some(state) = self.peers.get_mut(endpoint) {
             state.failures = 0;
             state.next_attempt_millis = 0;
@@ -279,7 +290,7 @@ mod tests {
             );
             for endpoint in batch {
                 seen.insert(endpoint.clone());
-                table.record_success(&endpoint, now);
+                table.record_success(&endpoint);
             }
             now += 15_000;
         }
@@ -509,7 +520,7 @@ mod tests {
         // be stuck at 16 of 64 no matter how many rounds ran.
         for _ in 0..40 {
             for endpoint in table.due(now, fanout) {
-                table.record_success(&endpoint, now);
+                table.record_success(&endpoint);
                 if table.replication_due(&endpoint, now, interval_millis) {
                     replicated.insert(endpoint.clone());
                     table.record_replication(&endpoint, now);

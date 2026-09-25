@@ -218,9 +218,22 @@ open network later without touching transport or membership.
 
 ```rust
 trait Admission {
-    fn authorize(&self, node: &NodeRecord, proof: &JoinProof) -> Decision;
+    fn authorize(&self, node_id: &str, ticket: Option<&str>) -> Decision;
+    /// The identities currently eligible to own resources. Read-only: a
+    /// membership question that must not pin anything.
+    fn admitted(&self) -> BTreeSet<String>;
 }
 ```
+
+*Correction (as built).* This design originally wrote
+`authorize(&NodeRecord, &JoinProof)`. There is no `JoinProof` type and there
+never was: a request's authenticity is established by [request
+authentication](#request-authentication) before `Admission` is consulted at all,
+so the decision needs only the already-verified `node_id` and the optional
+admission ticket. The whole `NodeRecord` was likewise unnecessary — nothing in
+either implementation reads a field other than the identity. The trait also grew
+a second method, `admitted`, which ownership needs and which must *not* pin, so
+it cannot be expressed as an `authorize` call.
 
 Two implementations ship in Phase 1.
 
@@ -250,25 +263,44 @@ preimage
 
 ```
 "dev.hologram.live.cluster.v2" ‖ method ‖ path ‖ canonical_query
-                               ‖ recipient_node_id ‖ timestamp ‖ blake3(body)
+                               ‖ recipient ‖ timestamp ‖ blake3(body)
 ```
 
 `canonical_query` is the request's query parameters sorted by key, then by
 value, each percent-encoded and joined with `&`; an absent query signs as the
 empty string. `blake3(body)` covers the empty body for requests that carry none.
-`JoinProof` is a token signature under the trust-on-first-use implementation and
-is absent under the allowlist implementation.
+
+*Correction (as built).* The field named `recipient_node_id` above is just
+`recipient`, because over HTTP it is not a node id: an outbound proof binds the
+normalized **origin** being dialled. A node id is only ever learned from another
+peer's unsigned response, so binding one would let an admitted-but-rogue peer
+name a victim against an origin the rogue controls and replay the proof we then
+mint. The receiving side still accepts a node id, because Phase 2's iroh
+addresses *are* node ids and have no origin. An earlier draft of this document
+also described a `JoinProof` type carried under the trust-on-first-use
+implementation; no such type exists — the admission ticket is a keyed digest in
+`x-hologram-cluster-ticket`, outside the signed preimage.
 
 Binding the method, path, query, and recipient is what closes defect 4: a
 captured proof no longer replays against a different route or a different peer.
-The receiver verifies the signature against the claimed identity, consults
-`Admission`, checks the timestamp window, and only then parses or persists
-anything.
+The receiver checks the timestamp window, verifies the signature against the
+claimed identity, checks that the signed recipient names this node, consults
+`Admission`, and only then parses or persists anything. (An earlier draft of this
+document put the timestamp check last. The order matters in one direction only:
+`Admission` pins a ticket-bearing identity, so it must come after every check
+that can refuse — see
+`control_plane::tests::a_valid_ticket_with_a_bad_signature_does_not_pin`.)
 
 Accepted residual risk: replay against the *same* endpoint within the clock
-window remains possible. Cluster reads are idempotent, so this design accepts it
-rather than carrying a per-node seen-set. It is recorded here so a future
-reviewer does not mistake it for an oversight.
+window remains possible, and this design accepts it rather than carrying a
+per-node seen-set. The reads are idempotent. `POST /api/v1/cluster/join` is
+**not** — it is proof-authenticated like everything else, equally replayable
+in-window, and it mutates: a replayed join refreshes the joiner's `last_seen` in
+the directory, so a captured join can keep a node that has since gone away from
+being pruned for as long as the replay continues. The bound on the damage is that
+the record replayed is one a signer already published about itself, so a replay
+can extend a stale record's life but cannot introduce or alter one. It is
+recorded here so a future reviewer does not mistake it for an oversight.
 
 ### Membership
 
@@ -334,10 +366,23 @@ refresh-and-retry on a mismatch, which is tracked as issue #184. Until then the
 header is observability only.
 
 The guarantee Phase 1 ships is therefore, stated exactly: **ownership converges
-under stable membership, and a partition may transiently produce two owners.**
-Nothing currently detects or resolves that; the epoch would be the detection
-mechanism once #184 lands. Exclusive mutable ownership needs leases and fencing
-tokens, which are out of scope here and tracked as issue #180.
+under stable membership *and mutual reachability*, and a partition may
+transiently produce two owners.** Nothing currently detects or resolves that; the
+epoch would be the detection mechanism once #184 lands. Exclusive mutable
+ownership needs leases and fencing tokens, which are out of scope here and
+tracked as issue #180.
+
+Mutual reachability is a precondition, not a restatement of stable membership.
+Under `admission = "token"` an admitted set grows only from **inbound**
+authenticated dials, so if B can reach D but D cannot reach B — a firewall, a
+one-way NAT, a host route — then B admits D and D never admits B. The two nodes
+disagree about the owner of a key D holds **permanently**, under membership that
+is perfectly stable, and nothing detects it: this is not the transient window the
+sentence above describes. It is the same asymmetry already documented for
+`cluster.trusted_keys`, arriving through reachability instead of configuration.
+An operator whose ownership answers differ between two nodes indefinitely should
+check that each can dial the other's `advertise_endpoint`, not just that both are
+up.
 
 ### Replication
 
@@ -403,7 +448,10 @@ All additions; `deny_unknown_fields` makes additive change safe, and existing
 
 ```toml
 [cluster]
-seeds = ["https://seed.example:11435", "ed25519:…"]  # origins and EndpointIds
+# Phase 1: origins only. `validate_cluster_endpoint` requires a credential-free
+# origin — HTTPS, or HTTP to loopback — so a bare "ed25519:…" EndpointId is
+# refused today. Phase 2's iroh transport is what makes the second form valid.
+seeds = ["https://seed.example:11435"]
 trusted_keys = ["ed25519:…"]
 admission = "token"          # token (TOFU, default, back-compatible) | allowlist
 fanout = 8
@@ -424,11 +472,21 @@ eviction state machine; that the fanout cursor reaches every peer within
 ⌈n / fanout⌉ rounds; that the epoch digest is stable over the sorted admitted
 set (there is no supersession to test — see the correction above).
 
-Integration coverage in `tests/`: a three-node in-process loopback cluster that
-converges, prunes stale members, **recovers from restart with no configured
-seeds**, refuses an unadmitted node, and refuses a proof replayed from one peer
-to another. Cucumber features cover the public boundary per repository
-convention.
+Integration coverage in `tests/`: as built, `tests/cluster_e2e.rs` runs **two**
+real daemons as subprocesses (not three, and not in-process) and covers
+convergence, placement agreed from both sides, bidirectional admission,
+immutable-object replication, **recovery from restart with no configured seeds**,
+refusal of a node without the admission secret, refusal of an unsigned request to
+either cluster object route, and that an unsigned join reply cannot install a
+record for an identity it does not own. There is no integration prune test: a
+third node would not add one, since pruning is observable with two, and the
+`prune → prune_evictions → evict` wiring is covered as a unit
+(`cluster::tests::pruning_the_directory_drops_the_peer_from_the_table_and_the_dial_list`).
+Replay from one peer to another is covered as a unit too
+(`control_plane::tests::a_proof_minted_for_one_origin_is_refused_by_a_node_at_another`),
+where the refusal can be attributed to the recipient binding rather than to
+whichever check happened to fire first. Cucumber features cover the public
+boundary per repository convention.
 
 Phase 2 adds a two-node iroh test in which neither node has a routable address,
 asserting membership convergence and object digest equality after replication.
@@ -466,7 +524,12 @@ remains the authority for blobs, manifests, and tags.
 - Streaming object transfer is deferred to Phase 2 rather than fixed twice.
 - `p2p` is off by default, so P2P is opt-in at compile time, not in a stock
   binary.
-- Same-endpoint replay within the clock window is accepted for idempotent reads.
+- Same-endpoint replay within the clock window is accepted. The reads are
+  idempotent; `POST /api/v1/cluster/join` is not, and a replayed join refreshes a
+  `last_seen` it cannot otherwise alter.
+- Ownership converges under stable membership **and mutual reachability**. One-way
+  reachability under `admission = "token"` produces a permanent, undetected
+  disagreement, not a transient one.
 - The network is a trait from Phase 1, with HTTP as its only implementation
   there, so Phase 2 adds a transport instead of refactoring one.
 - Veilid is reclassified from rejected to an optional future implementation; the

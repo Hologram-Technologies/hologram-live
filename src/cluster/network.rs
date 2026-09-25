@@ -83,16 +83,18 @@ impl ClusterResponse {
 
 #[async_trait::async_trait]
 pub trait ClusterNetwork: Send + Sync {
-    /// The address prefix this network claims, e.g. `"https"` or `"iroh"`.
+    /// A label for this network, e.g. `"https"` or `"iroh"`.
     ///
-    /// Routing goes through [`ClusterNetwork::accepts`], so this is the
-    /// network's name for diagnostics and for the registry's own tests rather
-    /// than something the send path consults.
+    /// Only the registry's own tests read it — nothing in production, not even
+    /// a log line. Routing goes through [`ClusterNetwork::accepts`], which is
+    /// deliberately broader than this label: [`HttpNetwork`] answers `"https"`
+    /// here while accepting `http://` addresses too, so treating this as *the*
+    /// prefix a network claims would be wrong.
     #[cfg_attr(
         not(test),
         expect(
             dead_code,
-            reason = "names a network for diagnostics; routing asks `accepts` instead"
+            reason = "read only by the registry's routing tests; production routes via `accepts`"
         )
     )]
     fn scheme(&self) -> &'static str;

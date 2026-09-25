@@ -354,9 +354,13 @@ Update `AppState::cluster_owner` to pass `self.admission().admitted()`.
 Run: `cargo test --locked ownership -- --test-threads=1`
 Expected: PASS.
 
-- [ ] **Step 5: Refuse a mismatched epoch**
+- [ ] **Step 5: Report the membership epoch, and do not refuse on it**
 
-In `src/modules/control_plane.rs`, after `authorize_cluster_request` succeeds, if the request carries `x-hologram-cluster-epoch` and it differs from `crate::ownership::epoch(&state.admission().admitted())`, return `LiveError::Conflict` with the local epoch in the message. `LiveError::Conflict` already maps to HTTP 409. Have `contact_peer` send the header.
+~~In `src/modules/control_plane.rs`, after `authorize_cluster_request` succeeds, if the request carries `x-hologram-cluster-epoch` and it differs from `crate::ownership::epoch(&state.admission().admitted())`, return `LiveError::Conflict` with the local epoch in the message.~~
+
+**Reverted — do not implement this.** The epoch digests the *admitted* set, which is local trust rather than a converging view: under `admission = "token"` the two sides differ for at least one round after any membership change, and a hard equality check refuses exactly the requests that would have made them converge, so it 409s permanently instead of transiently. Enforcing it safely needs sender-side refresh-and-retry, tracked as issue #184.
+
+What ships instead: `contact_peer` sets `ClusterRequest::epoch` from `crate::ownership::epoch(&state.admitted_with_self())`, the network puts it on the wire as `x-hologram-cluster-epoch`, and no receiver compares it. Observability only.
 
 - [ ] **Step 6: Run the full suite and commit**
 

@@ -131,7 +131,9 @@ const SPACES = [
     models: ["Xenova/musicgen-small"], modelBytes: 659375436,   // text_encoder + decoder_model_merged q8, encodec_decode fp32, config and tokenizer
     page: "assets/index-B-UVe_CA.js", prelude: "page",
     ort: "onnxruntime-web-1.17.1", ortIn: "page", ortPath: 'wasmPaths="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/"',
-    ortNoProxy: "On.wasm.proxy=!0", requires: ["opfs"],
+    // the proxy stays ON: transformers.js 3.0.0-alpha.0 cannot generate on the page's own thread ("invalid data location:
+    // none" for past_key_values), measured against the source, which runs it in ONNX Runtime's proxy worker too
+    requires: ["opfs"],
     icon: `<path d="M26 44V18l20-4v26"/><circle cx="21" cy="44" r="5"/><circle cx="41" cy="40" r="5"/>`,
   },
   {

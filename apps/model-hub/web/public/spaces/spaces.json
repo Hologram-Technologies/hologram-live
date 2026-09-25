@@ -160,8 +160,8 @@
       "name": "MusicGen",
       "task": "Music",
       "tagline": "Describe a sound and hear it composed. MusicGen small, on your CPU.",
-      "root": "sha256:2500b0f73c20424eaae3b7257287842ec0479a9165ae94c12e8593f8b01fcca3",
-      "ipfs": "bafybeicchlftywbwysjovsnekybmzwzkhhyqofepgahhsjx7hozbr56voq",
+      "root": "sha256:84f2f0d27bae79f6e5eb3ad446d799edf495054f2dc6ca444fa80e0d67d4a686",
+      "ipfs": "bafybeidfzlflzxpl3eenamy3dvbu42v6fjhnbbhsysbnsw4iuxaimh3cui",
       "bytes": 37915334,
       "files": 10,
       "models": [

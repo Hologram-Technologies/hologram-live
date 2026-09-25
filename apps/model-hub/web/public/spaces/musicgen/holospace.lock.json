@@ -1,17 +1,17 @@
 {
   "format": "hologram.space.lock/v1",
   "id": "musicgen",
-  "root": "sha256:2500b0f73c20424eaae3b7257287842ec0479a9165ae94c12e8593f8b01fcca3",
+  "root": "sha256:84f2f0d27bae79f6e5eb3ad446d799edf495054f2dc6ca444fa80e0d67d4a686",
   "manifest": "manifest.json",
   "ipfs": {
     "recipe": "unixfs-v1-2025",
-    "root": "bafybeicchlftywbwysjovsnekybmzwzkhhyqofepgahhsjx7hozbr56voq"
+    "root": "bafybeidfzlflzxpl3eenamy3dvbu42v6fjhnbbhsysbnsw4iuxaimh3cui"
   },
   "files": {
     "assets/index-B-UVe_CA.js": {
-      "sha256": "dd43c54660b72aff2e8c1c01aebfe71f6e46ecced014b1803a70ab2cd9348ea9",
+      "sha256": "4144d088a25ce064b8c8d729bd2c22142e87110a6899a7e297ea66f8e2cea410",
       "bytes": 942406,
-      "cid": "bafkreig5ipcumyfxfl7s5da4agxl7zy7nzdoztwqcsyyaotqvmwnsneove",
+      "cid": "bafkreicbitiiris44bslrsgxfg6syiquf2drcctitgt6ff7km34oftveca",
       "mediaType": "text/javascript"
     },
     "assets/index-BPoaqOky.css": {

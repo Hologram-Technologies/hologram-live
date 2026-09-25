@@ -415,6 +415,7 @@ function modelPage(m, files, ov, readme) {
   <p class="verdict" id="verdict" role="status" hidden></p>
   <p class="verdict" id="dl-status" role="status" hidden></p>
 </section>
+${files ? `<section class="panel oci" id="oci" data-repo="${R.esc(m.id)}" aria-labelledby="oci-title" hidden></section>` : ""}
 <main class="detail">
   <section class="panel"><dl class="facts">${facts}</dl></section>
   <section class="panel">

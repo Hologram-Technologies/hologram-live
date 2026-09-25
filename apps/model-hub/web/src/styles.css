@@ -615,3 +615,11 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 #tags td.path { max-width: 18rem; }
 #tags td .tag { margin-left: var(--space-2); }
 #tags td.dl .dl-yes .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
+
+/* The model as an OCI artifact in this host's registry (app.js registryArtifact). Hidden until the registry answers. */
+.oci { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
+.oci-head { display: flex; align-items: center; gap: var(--space-3); }
+.oci-head h2 { font-size: var(--text-lg); font-weight: var(--weight-medium); }
+.oci .note code { font-family: var(--font-mono); }
+.oci-run { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.oci-run .copy { font-family: var(--font-mono); }

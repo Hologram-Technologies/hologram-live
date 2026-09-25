@@ -10,6 +10,7 @@ B.play();
 let view = null; // set by browse(): lets the archive swap the catalog under the same interface
 if ($("#browse")) browse();
 if ($("[data-verify]")) model();
+if ($("#oci")) registryArtifact();
 copyButtons();
 if ($("#archive")) archive();
 if ($("#gh-stars")) stars();
@@ -768,6 +769,98 @@ function downloads({ onOpen } = {}) {
     if (act) act.textContent = "Download zip";
     for (const o of others) { o.title = o.dataset.title; o.removeAttribute("aria-disabled"); }
   });
+}
+
+// The model as an OCI artifact in this host's registry, when one exists. The registry is the source; this section
+// only reads it: the manifest (its sha256 recomputed here, not taken from the header), its layers (one per file,
+// each carrying the homes its bytes live at), and its referrers (the per-tensor table, provenance, a recipe). Each
+// layer digest is compared with the address this page's own index gives the same file: two indexes, one answer.
+// Namespaces are tried in order; a model with no artifact keeps the section hidden. The constants live inside the
+// function: it is called from the top of this module, before module-level declarations below it are initialised.
+async function registryArtifact() {
+  const OCI_NAMESPACES = ["", "probe/"];
+  const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
+  const REFERRER_LABEL = {
+    "application/vnd.hologram.tensors.v1": "Tensor table",
+    "application/vnd.hologram.provenance.v1": "Provenance",
+    "application/vnd.hologram.recipe.v1": "Recipe",
+  };
+  const section = $("#oci");
+  const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const sha256 = async (bytes) => `sha256:${hex(await crypto.subtle.digest("SHA-256", bytes))}`;
+  // Content from the registry is checked against the digest that names it before anything is read from it.
+  async function verifiedJson(url, digest, accept) {
+    const r = await fetch(url, accept ? { headers: { Accept: accept } } : {});
+    if (!r.ok) return null;
+    const bytes = await r.arrayBuffer();
+    const got = await sha256(bytes);
+    if (digest && got !== digest) throw Object.assign(new Error(`${url} did not match ${digest}`), { code: "ADDRESS_MISMATCH" });
+    return { digest: got, json: JSON.parse(new TextDecoder().decode(bytes)) };
+  }
+
+  const id = section.dataset.repo.toLowerCase();
+  let repo, manifest;
+  try {
+    for (const ns of OCI_NAMESPACES) {
+      manifest = await verifiedJson(`/v2/${ns}${id}/manifests/latest`, null, OCI_MANIFEST).catch(() => null);
+      if (manifest?.json?.artifactType === "application/vnd.hologram.model.v1") { repo = ns + id; break; }
+      manifest = null;
+    }
+    if (!manifest) return;
+    const { digest, json: man } = manifest;
+    const index = await verifiedJson(`/v2/${repo}/referrers/${digest}`).catch(() => null);
+    const referrers = index?.json?.manifests || [];
+
+    // The tensor table: referrer manifest, then its config blob, both checked against their digests.
+    let tensors = null;
+    const t = referrers.find((r) => r.artifactType === "application/vnd.hologram.tensors.v1");
+    if (t) {
+      const tm = await verifiedJson(`/v2/${repo}/manifests/${t.digest}`, t.digest, OCI_MANIFEST);
+      const table = tm && (await verifiedJson(`/v2/${repo}/blobs/${tm.json.config.digest}`, tm.json.config.digest));
+      if (table) {
+        const all = Object.values(table.json).flatMap((f) => f.tensors || []);
+        tensors = { count: all.length, distinct: new Set(all.map((x) => x.blake3)).size, files: Object.keys(table.json).length };
+      }
+    }
+
+    const layers = man.layers || [];
+    const title = (l) => l.annotations?.["org.opencontainers.image.title"] || "";
+    const pageAddress = new Map([...document.querySelectorAll("#files tbody tr")].map((tr) => [tr.dataset.path, tr.dataset.address]));
+    const matched = layers.filter((l) => pageAddress.get(title(l)) === l.digest).length;
+    const foreign = layers.filter((l) => l.urls?.length).length;
+    const homes = [...new Set(layers.flatMap((l) => (l.urls || []).map((u) => {
+      const host = new URL(u).hostname;
+      return host.endsWith("huggingface.co") ? "Hugging Face" : u.includes("/ipfs/") ? "IPFS" : host;
+    })))];
+    const bytes = layers.reduce((sum, l) => sum + (l.size || 0), 0);
+    const ref = `${location.host}/${repo}@${digest}`;
+    const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
+    const fact = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+
+    section.innerHTML = `<div class="oci-head">
+        <h2 id="oci-title">Registry artifact</h2>
+        <span class="pill">OCI</span>
+      </div>
+      <p class="note">This model is an artifact in the registry at <code>/v2/${R.esc(repo)}</code>. Every file is a layer named by the sha256 of its bytes; the registry holds the names, and the bytes stay at their homes.</p>
+      <dl class="facts">
+        ${fact("Reference", copy(ref, `${repo}@${R.shortAddress(digest)}`))}
+        ${fact("Files", `${layers.length}, ${R.bytes(bytes)}`)}
+        ${fact("Matches this page", `<span class="${matched === layers.length ? "ok" : "bad"}">${matched} of ${layers.length} file addresses</span>`)}
+        ${tensors ? fact("Tensors", `${R.count(tensors.count)}${tensors.distinct < tensors.count ? `, ${R.count(tensors.distinct)} distinct` : ""} in ${tensors.files} ${tensors.files === 1 ? "file" : "files"}`) : ""}
+        ${fact("Bytes held here", foreign === layers.length ? "none" : `${layers.length - foreign} of ${layers.length} files`)}
+        ${fact("Homes", R.esc(homes.join(", ") || "this registry"))}
+        ${referrers.length ? fact("Attached", referrers.map((r) => R.esc(REFERRER_LABEL[r.artifactType] || r.artifactType)).join(", ")) : ""}
+      </dl>
+      <div class="oci-run">
+        ${copy(`crane pull ${ref} model.tar`, "crane pull")}
+        ${copy(`oras discover ${location.host}/${repo}:latest`, "oras discover")}
+      </div>`;
+    section.hidden = false;
+  } catch (e) {
+    if (e.code !== "ADDRESS_MISMATCH") return;
+    section.innerHTML = `<h2 id="oci-title">Registry artifact</h2><p class="verdict bad">The registry served bytes that do not match their digest. Do not use this artifact.</p>`;
+    section.hidden = false;
+  }
 }
 
 function formatBytes(n) {

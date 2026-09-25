@@ -146,13 +146,16 @@ async fn run(state: AppState) {
         config.max_peers,
     );
     let backoff_ceiling_millis = config.node_ttl_secs.saturating_mul(1000);
+    // Anti-entropy is decoupled from the heartbeat cadence and tracked per
+    // peer (`PeerTable::replication_due`/`record_replication`), not as one
+    // global timer: a global gate combined with `due()`'s fixed-size
+    // rotation cursor phase-locks replication to whichever batch of peers
+    // happens to be due for contact on a round that is also due for
+    // replication, which can starve most peers forever rather than merely
+    // delaying them (see the comment on `PeerState::last_replicated_millis`
+    // in `membership.rs`).
+    let replication_interval_millis = config.replication_interval_secs.saturating_mul(1000);
     let mut ticker = tokio::time::interval(Duration::from_secs(config.heartbeat_interval_secs));
-    // Anti-entropy is decoupled from the heartbeat cadence: `0` guarantees the
-    // very first heartbeat round is also a replication round, and every round
-    // after that only replicates once `replication_interval_secs` has
-    // actually elapsed, so a node does not re-walk every peer's full object
-    // inventory on every heartbeat tick.
-    let mut last_replication_millis = 0_u64;
 
     loop {
         tokio::select! {
@@ -186,11 +189,6 @@ async fn run(state: AppState) {
                 table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint, config.max_peers);
 
                 let round_started_millis = now_millis();
-                let replication_due = round_started_millis.saturating_sub(last_replication_millis)
-                    >= config.replication_interval_secs.saturating_mul(1000);
-                if replication_due {
-                    last_replication_millis = round_started_millis;
-                }
                 let mut joins = JoinSet::new();
                 for endpoint in table.due(round_started_millis, config.fanout) {
                     let state = state.clone();
@@ -220,12 +218,13 @@ async fn run(state: AppState) {
                                     tracing::warn!(%error, peer = %endpoint, "failed to persist peer heartbeat");
                                 }
                             }
-                            if replication_due {
+                            if table.replication_due(&endpoint, now_millis(), replication_interval_millis) {
                                 if let Err(error) =
                                     replicate_peer(&state, &client, &endpoint, &token).await
                                 {
                                     tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
                                 }
+                                table.record_replication(&endpoint, now_millis());
                             }
                             for peer in response.peers {
                                 if table.len() >= config.max_peers {

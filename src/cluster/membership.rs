@@ -14,6 +14,26 @@ struct PeerState {
     is_seed: bool,
     failures: u32,
     next_attempt_millis: u64,
+    /// When this peer's immutable-object inventory was last reconciled. `0`
+    /// (its initial value) means "never", and is always due.
+    ///
+    /// Tracked per peer rather than as one global timer: `due()` advances a
+    /// fixed-size rotation cursor every round regardless of whether
+    /// replication itself is due, so a single global gate phase-locks to
+    /// whichever batch of peers happens to be due for *contact* on a round
+    /// that is also due for *replication*. When the rotation period
+    /// (`peer_count / fanout`) and the replication period
+    /// (`replication_interval_secs / heartbeat_interval_secs`) share a
+    /// common factor, that phase-lock is permanent: e.g. 64 peers,
+    /// `fanout = 8` (rotation period 8 rounds) against the default
+    /// `replication_interval_secs = 60` over `heartbeat_interval_secs = 15`
+    /// (replication period 4 rounds) means only the 16 peers whose rotation
+    /// phase lands on a replication-due round would ever replicate — the
+    /// other 48 would starve forever, not just be delayed. Tracking the
+    /// timer on each peer's own state removes the coupling: a peer
+    /// replicates whenever *its own* interval has elapsed, independent of
+    /// which round the rotation happens to contact it on.
+    last_replicated_millis: u64,
 }
 
 pub struct PeerTable {
@@ -34,6 +54,7 @@ impl PeerTable {
                     is_seed: true,
                     failures: 0,
                     next_attempt_millis: 0,
+                    last_replicated_millis: 0,
                 },
             );
         }
@@ -90,6 +111,7 @@ impl PeerTable {
             is_seed: false,
             failures: 0,
             next_attempt_millis: 0,
+            last_replicated_millis: 0,
         });
     }
 
@@ -133,6 +155,28 @@ impl PeerTable {
                 .saturating_mul(1_u64 << state.failures.min(12))
                 .min(ceiling_millis.max(BASE_BACKOFF_MILLIS));
             state.next_attempt_millis = now_millis.saturating_add(delay);
+        }
+    }
+
+    /// Whether this peer's own anti-entropy interval has elapsed. A peer
+    /// this table has never heard of (already evicted, or never inserted)
+    /// is reported due, since there is nothing to gate.
+    pub fn replication_due(&self, endpoint: &str, now_millis: u64, interval_millis: u64) -> bool {
+        match self.peers.get(endpoint) {
+            Some(state) => {
+                now_millis.saturating_sub(state.last_replicated_millis) >= interval_millis
+            }
+            None => true,
+        }
+    }
+
+    /// Records that a replication attempt against this peer happened just
+    /// now, whether or not it fully succeeded — a peer that errors out
+    /// still gets to wait a full interval before it is retried, rather than
+    /// being hammered again on the very next heartbeat round.
+    pub fn record_replication(&mut self, endpoint: &str, now_millis: u64) {
+        if let Some(state) = self.peers.get_mut(endpoint) {
+            state.last_replicated_millis = now_millis;
         }
     }
 
@@ -374,5 +418,51 @@ mod tests {
         assert!(table.due(0, 8).is_empty());
         assert!(table.due(0, 0).is_empty());
         assert_eq!(table.len(), 0);
+    }
+
+    // Fix round 1, finding 1: a single global replication timer, combined
+    // with `due()`'s fixed-size rotation cursor, phase-locks replication to
+    // whichever batch of peers happens to be due for contact on a round
+    // that is also due for replication. These exact numbers — 64 peers,
+    // fanout 8 (rotation period 8 rounds), replication_interval_secs 60
+    // against heartbeat_interval_secs 15 (replication period 4 rounds) —
+    // are the reviewer's own example of a global gate starving 48 of 64
+    // peers forever, since only the 16 peers whose rotation phase coincides
+    // with round 0, 4, 8, ... would ever be contacted on a replication-due
+    // round. Per-peer tracking (`replication_due`/`record_replication`)
+    // removes the coupling entirely: every peer's own timer only depends on
+    // when *it* was last replicated, not on which round the rotation
+    // happens to contact it.
+    #[test]
+    fn every_peer_is_eventually_due_for_replication_despite_rotation() {
+        let mut table = PeerTable::new(Vec::new());
+        for endpoint in endpoints(64) {
+            table.insert(endpoint);
+        }
+        let fanout = 8;
+        let heartbeat_millis = 15_000_u64;
+        let interval_millis = 60_000_u64;
+        let mut now = 0_u64;
+        let mut replicated = std::collections::BTreeSet::new();
+        // Run many more rounds than the 8-round rotation period needs, so a
+        // correct per-peer implementation has ample opportunity to visit
+        // and replicate every peer at least once; a global gate would still
+        // be stuck at 16 of 64 no matter how many rounds ran.
+        for _ in 0..40 {
+            for endpoint in table.due(now, fanout) {
+                table.record_success(&endpoint, now);
+                if table.replication_due(&endpoint, now, interval_millis) {
+                    replicated.insert(endpoint.clone());
+                    table.record_replication(&endpoint, now);
+                }
+            }
+            now += heartbeat_millis;
+        }
+        assert_eq!(
+            replicated.len(),
+            64,
+            "every peer must eventually replicate; a global gate would phase-lock to 16 of 64 \
+             under these exact numbers"
+        );
     }
 }

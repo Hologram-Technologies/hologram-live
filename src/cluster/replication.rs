@@ -5,8 +5,11 @@ use crate::app::AppState;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ObjectPage, ObjectQuery};
 
-/// Per-object outcomes for one replication round. Object-level failures are
-/// counted and logged; only an inventory-level transport failure ends a round.
+/// Per-object outcomes for one replication round. Data-error object
+/// failures are counted and logged; the round itself ends early only on an
+/// inventory-level failure or a transport/authorization failure fetching one
+/// object (see [`ends_replication_round`]), since either means the peer
+/// itself, not just one object, is the problem.
 #[derive(Debug, Default)]
 pub(super) struct RoundOutcome {
     pub stored: usize,
@@ -22,15 +25,27 @@ impl RoundOutcome {
         self.failed = self.failed.saturating_add(1);
         tracing::debug!(object = %id, %error, "skipping a cluster object this round");
     }
+}
 
-    // Takes `&self`, though nothing here reads it yet: this is the single
-    // policy point a future per-round abort condition would extend, and the
-    // call site (`replicate_peer`) already asks the outcome rather than
-    // hardcoding `true`, so that extension would need no call-site change.
-    #[allow(clippy::unused_self)]
-    pub const fn should_continue(&self) -> bool {
-        true
-    }
+/// Transport and authentication/authorization failures mean the *peer* is
+/// the problem — unreachable, timing out, or has revoked our access — not
+/// the one object being fetched when the failure surfaced. Continuing to
+/// iterate the rest of the inventory against a peer in that state would
+/// retry the same doomed request object after object (worst case:
+/// `replication_max_objects_per_round` sequential `request_timeout_secs`
+/// timeouts against one dead peer), and it happens synchronously inside the
+/// per-round join loop in `cluster::run`, delaying bookkeeping for every
+/// other peer contacted that round.
+///
+/// A data error — an oversize transfer, a digest mismatch, a local store
+/// failure, or a lookup/import join failure — is specific to the one object
+/// it was raised for and must not stop objects that would otherwise
+/// succeed.
+fn ends_replication_round(error: &LiveError) -> bool {
+    matches!(
+        error,
+        LiveError::Transport(_) | LiveError::Authentication(_) | LiveError::Authorization(_)
+    )
 }
 
 pub(super) async fn replicate_peer(
@@ -78,12 +93,15 @@ pub(super) async fn replicate_peer(
                 continue;
             }
             let object_id = metadata.id.clone();
-            // A per-object failure (transport hiccup, oversize transfer, a
-            // digest mismatch) must not abort the rest of this peer's
-            // inventory: it is recorded and the round continues. Only the
-            // inventory request and its decode above are allowed to end the
-            // round early, since without an inventory there is nothing left
-            // to reconcile.
+            // A data-error object failure (oversize transfer, digest
+            // mismatch, a local store failure) must not abort the rest of
+            // this peer's inventory: it is recorded and the round
+            // continues. A transport or authentication/authorization
+            // failure fetching this object — like the inventory request and
+            // its decode above — ends the round instead, via
+            // `ends_replication_round` below: it means the peer itself is
+            // unreachable or has revoked our access, not that this one
+            // object is bad.
             let result: Result<bool> = async {
                 let id = metadata.id.clone();
                 let registry = state.registry().clone();
@@ -98,11 +116,16 @@ pub(super) async fn replicate_peer(
                 let url = cluster_url(endpoint, &format!("{OBJECTS_PATH}/{}", metadata.id))?;
                 let response = signed_get(state, client, url, token, &recipient).await?;
                 if !response.status().is_success() {
-                    return Err(LiveError::Transport(format!(
-                        "fetch cluster object {} from {endpoint}: HTTP {}",
-                        metadata.id,
-                        response.status()
-                    )));
+                    let status = response.status();
+                    let message = format!(
+                        "fetch cluster object {} from {endpoint}: HTTP {status}",
+                        metadata.id
+                    );
+                    return Err(match status {
+                        reqwest::StatusCode::UNAUTHORIZED => LiveError::Authentication(message),
+                        reqwest::StatusCode::FORBIDDEN => LiveError::Authorization(message),
+                        _ => LiveError::Transport(message),
+                    });
                 }
                 let media_type = response
                     .headers()
@@ -150,14 +173,17 @@ pub(super) async fn replicate_peer(
             match result {
                 Ok(true) => outcome.record_object_stored(),
                 Ok(false) => {}
+                Err(error) if ends_replication_round(&error) => {
+                    tracing::debug!(
+                        peer = %endpoint,
+                        stored = outcome.stored,
+                        failed = outcome.failed,
+                        %error,
+                        "cluster replication round ended early: the peer, not one object, is the problem"
+                    );
+                    return Err(error);
+                }
                 Err(error) => outcome.record_object_failure(&object_id, &error),
-            }
-            // Always true today: a per-object failure never ends a round.
-            // Checked explicitly (rather than inlining `true`) so the round
-            // loop's continuation is driven by `RoundOutcome`'s own policy,
-            // not by an assumption duplicated at the call site.
-            if !outcome.should_continue() {
-                break;
             }
         }
         match next_cursor {
@@ -207,18 +233,48 @@ pub(super) async fn signed_get(
 mod tests {
     use super::*;
 
+    // A data error never ends a round: `RoundOutcome` just counts it. (Note
+    // the fix-round-1 correction below: an actual `LiveError::Transport`
+    // reaching `replicate_peer`'s per-object match arm ends the round via
+    // `ends_replication_round`, rather than being recorded here — this test
+    // exercises `RoundOutcome`'s own counters directly, independent of that
+    // classification, using `Transport` only as a stand-in payload.)
     #[test]
     fn an_object_failure_does_not_end_the_round() {
         let mut outcome = RoundOutcome::default();
-        outcome.record_object_failure("blake3:aa", &LiveError::Transport("gone".to_owned()));
-        outcome.record_object_failure("blake3:bb", &LiveError::Capability("too big".to_owned()));
+        outcome.record_object_failure("blake3:aa", &LiveError::Capability("too big".to_owned()));
+        outcome.record_object_failure(
+            "blake3:bb",
+            &LiveError::Protocol("digest mismatch".to_owned()),
+        );
         outcome.record_object_stored();
         assert_eq!(outcome.failed, 2);
         assert_eq!(outcome.stored, 1);
-        assert!(
-            outcome.should_continue(),
-            "per-object failures never end a round"
-        );
+    }
+
+    // Fix round 1, finding 2: transport and authentication/authorization
+    // failures mean the peer itself is the problem and must end the round;
+    // data errors are specific to one object and must not.
+    #[test]
+    fn transport_and_auth_failures_end_the_round_but_data_errors_do_not() {
+        assert!(ends_replication_round(&LiveError::Transport(
+            "connection refused".to_owned()
+        )));
+        assert!(ends_replication_round(&LiveError::Authentication(
+            "HTTP 401".to_owned()
+        )));
+        assert!(ends_replication_round(&LiveError::Authorization(
+            "HTTP 403".to_owned()
+        )));
+        assert!(!ends_replication_round(&LiveError::Capability(
+            "oversize".to_owned()
+        )));
+        assert!(!ends_replication_round(&LiveError::Protocol(
+            "digest mismatch".to_owned()
+        )));
+        assert!(!ends_replication_round(&LiveError::Conflict(
+            "store failure".to_owned()
+        )));
     }
 
     #[test]
@@ -234,5 +290,136 @@ mod tests {
         )
         .expect("object URL");
         assert_eq!(object.path(), "/api/v1/cluster/objects/blake3:abc");
+    }
+
+    // Fix round 1, finding 4: nothing previously drove `replicate_peer`
+    // itself through a mixed inventory — only `RoundOutcome`'s counters were
+    // exercised in isolation, and `authenticated_peers_replicate_an_
+    // immutable_object` (tests/cluster_e2e.rs) is happy-path only. This
+    // stands up a real `AppState` (`replicate_peer`'s actual dependency —
+    // there is no lighter seam; see `ClusterAuthority` in
+    // `src/modules/control_plane.rs` for why one exists on the receiving
+    // side but not here) against a **stub peer**: a plain axum router bound
+    // to an ephemeral port that serves a fixed two-object inventory and
+    // ignores every header `signed_get` sends (the client never asks the
+    // peer to verify anything). This is the same in-process stub pattern
+    // already used for model backends in `inference::ollama`'s tests, kept
+    // local here rather than reusing `tests/cluster_e2e.rs`'s
+    // subprocess-per-node harness, which cannot isolate one peer's
+    // response.
+    #[tokio::test]
+    async fn a_digest_mismatch_does_not_block_a_later_object_in_the_same_round() {
+        use axum::extract::Path;
+        use axum::http::StatusCode;
+        use axum::response::IntoResponse;
+        use axum::routing::get;
+        use axum::{Json, Router};
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        crate::util::install_crypto_provider();
+        let bytes_a = b"first object, advertised under a digest that does not match".to_vec();
+        let bytes_b = b"second object, correctly advertised and must still replicate".to_vec();
+        // Deliberately wrong: a real peer would never advertise a digest
+        // that does not match its own bytes, but this is exactly the
+        // failure `replicate_peer` must survive without ending the round.
+        let wrong_id_a = format!("blake3:{}", "0".repeat(64));
+        let real_id_b = format!("blake3:{}", blake3::hash(&bytes_b).to_hex());
+
+        let mut objects_by_id = HashMap::new();
+        objects_by_id.insert(wrong_id_a.clone(), bytes_a.clone());
+        objects_by_id.insert(real_id_b.clone(), bytes_b.clone());
+        let objects_by_id = Arc::new(objects_by_id);
+
+        let page = ObjectPage {
+            objects: vec![
+                crate::protocol::ObjectMetadata {
+                    id: wrong_id_a.clone(),
+                    kind: "file".to_owned(),
+                    media_type: "text/plain".to_owned(),
+                    filename: None,
+                    size: bytes_a.len() as u64,
+                    created_at_millis: 0,
+                },
+                crate::protocol::ObjectMetadata {
+                    id: real_id_b.clone(),
+                    kind: "file".to_owned(),
+                    media_type: "text/plain".to_owned(),
+                    filename: None,
+                    size: bytes_b.len() as u64,
+                    created_at_millis: 0,
+                },
+            ],
+            next_cursor: None,
+            truncated: false,
+        };
+
+        let router = Router::new()
+            .route(
+                OBJECTS_PATH,
+                get(move || {
+                    let page = page.clone();
+                    async move { Json(page) }
+                }),
+            )
+            .route(
+                crate::cluster::OBJECT_PATH,
+                get(move |Path(id): Path<String>| {
+                    let objects_by_id = objects_by_id.clone();
+                    async move {
+                        match objects_by_id.get(&id) {
+                            Some(bytes) => (StatusCode::OK, bytes.clone()).into_response(),
+                            None => StatusCode::NOT_FOUND.into_response(),
+                        }
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port for the stub peer");
+        let address = listener.local_addr().expect("read the bound address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        let endpoint = format!("http://{address}");
+
+        let temp = tempfile::tempdir().expect("temp dir for the calling node's state");
+        let mut config = crate::config::AppConfig::default();
+        config.paths.config_dir = temp.path().join("config");
+        config.paths.data_dir = temp.path().join("data");
+        config.paths.state_dir = temp.path().join("state");
+        config.paths.cache_dir = temp.path().join("cache");
+        // `AppState::build` is the only constructor `replicate_peer` can be
+        // driven through, and it calls `tracing_subscriber`'s global
+        // `try_init` once via the handle built below. This must stay the
+        // only test in this binary that calls `AppState::build` (grep
+        // confirms it is, as of this writing) — a second caller's
+        // `try_init` would fail.
+        let tracing = crate::observability::init(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build a real AppState backed by a temp dir");
+        let client = reqwest::Client::new();
+
+        replicate_peer(
+            &state,
+            &client,
+            &endpoint,
+            "a token the stub peer never checks",
+        )
+        .await
+        .expect("a digest mismatch on one object must not end the round");
+
+        assert!(
+            state.registry().get_object(&wrong_id_a).is_err(),
+            "the mismatched object must never be stored under its advertised id"
+        );
+        let stored_b = state
+            .registry()
+            .get_object(&real_id_b)
+            .expect("the later, correctly advertised object must still replicate");
+        assert_eq!(stored_b.bytes, bytes_b);
     }
 }

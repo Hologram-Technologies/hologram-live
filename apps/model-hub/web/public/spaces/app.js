@@ -134,16 +134,69 @@ function listen(id) {
   };
 }
 
+// ---- watch: one Space open, in the shape of a video page
+//
+// The frame takes the left column, its name and record sit beneath it, and every other Space lines the right,
+// one click from swapping in. Nothing is drawn over the frame: the Space is the picture. The catalogue leaves
+// the page while a Space is open and returns when it closes, and the address keeps ?open=<id> so the page can
+// be shared open.
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const iconSvg = (s, cls = "") => `<svg class="${cls}" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.iconSvg || ""}</svg>`;
+const publisherOf = (s) => (s.models || [])[0]?.split("/")[0] || new URL(s.source).host;
+
+function describe(s) {
+  const need = missing(s);
+  const models = (s.models || []).map((m) => `<a href="/models/${esc(m)}/">${esc(m)}</a>`).join(", ");
+  const rows = [
+    ["Task", esc(s.task)],
+    ["Model", models],
+    ["Model size", fmtMB(s.modelBytes)],
+    ["Space", `${s.files} files · ${fmtMB(s.bytes)}`],
+    ["Root", `<span title="${esc(s.root)}">${esc(s.root)}</span>`],
+    s.ipfs ? ["IPFS", esc(s.ipfs)] : null,
+    s.ort ? ["Runtime", esc(s.ort)] : null,
+    ["Needs", (s.requires || []).map((r) => NEED[r] || r).join(" + ") || "nothing beyond a browser"],
+    ["Registry", onRegistry[s.id] ? `on the registry as <span title="${esc(onRegistry[s.id])}">${esc(short(onRegistry[s.id]))}</span>` : registryDiffers[s.id] ? `<span style="color:var(--bad)">the registry holds a different digest under this name</span>` : "not published yet"],
+    ["Source", `<a href="${esc(s.source)}" target="_blank" rel="noopener">${esc(s.source.replace(/^https?:\/\//, ""))}</a>`],
+  ].filter(Boolean);
+  return `<p class="lede">${esc(s.tagline)}${need.length ? ` <span style="color:var(--dim)">Needs ${need.map((n) => NEED[n] || n).join(" and ")}, which this browser does not offer.</span>` : ""}</p>
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
+}
+
+function upnext(id) {
+  const others = catalog.filter((s) => s.id !== id);
+  const box = $("upnext"); box.innerHTML = "";
+  if (!others.length) return;
+  const head = document.createElement("div");
+  head.className = "next-head";
+  head.innerHTML = `<b>Up next</b><span>${esc(others[0].name)}</span>`;
+  box.appendChild(head);
+  for (const s of others) {
+    const need = missing(s);
+    const el = document.createElement("button");
+    el.type = "button"; el.className = "next"; el.dataset.id = s.id;
+    el.innerHTML = `<span class="thumb">${art(s.root)}${iconSvg(s, "icon")}<span class="len">${fmtMB(s.modelBytes)}</span></span>
+      <span class="text"><b>${esc(s.name)}</b><span>${esc(s.task)} · ${esc(publisherOf(s))}</span><span class="${need.length ? "" : "now"}">${need.length ? "needs " + need.map((n) => NEED[n] || n).join(" + ") : "runs in this browser"}${onRegistry[s.id] ? " · on the registry" : ""}</span></span>`;
+    el.addEventListener("click", () => open(s.id));
+    box.appendChild(el);
+  }
+}
+
 function open(id) {
   const s = catalog.find((x) => x.id === id); if (!s) return;
   current = id;
-  const stage = $("stage"), body = $("s-body");
-  $("s-name").textContent = s.name; $("s-root").textContent = short(s.root); $("s-root").title = s.root;
+  const player = $("player");
+  $("s-name").textContent = s.name;
+  $("s-mark").innerHTML = iconSvg(s);
+  $("s-task").textContent = `${s.task} · ${publisherOf(s)}`;
+  $("s-root").textContent = short(s.root); $("s-root").title = s.root;
   $("s-open").href = `./${s.id}/index.html`;
-  body.innerHTML = "";
+  $("s-source").href = s.source;
+  $("s-desc").innerHTML = describe(s);
+  player.innerHTML = "";
   const need = missing(s);
   if (need.length) {
-    body.innerHTML = `<p class="need">This Space needs <b>${need.map((n) => ({ webgpu: "WebGPU", opfs: "private file storage (OPFS)" })[n] || n).join("</b> and <b>")}</b>, which this browser does not offer. It runs on current Chrome, Edge and Safari on a device with a GPU.</p>`;
+    player.innerHTML = `<p class="need">This Space needs <b>${need.map((n) => ({ webgpu: "WebGPU", opfs: "private file storage (OPFS)" })[n] || n).join("</b> and <b>")}</b>, which this browser does not offer. It runs on current Chrome, Edge and Safari on a device with a GPU.</p>`;
     status("bad", "cannot run here");
   } else {
     listen(id);
@@ -153,16 +206,19 @@ function open(id) {
     f.setAttribute("allow", "");
     f.referrerPolicy = "no-referrer";
     f.src = `./${s.id}/index.html`;
-    body.appendChild(f);
+    player.appendChild(f);
     status("", "opening…");
   }
-  stage.classList.add("on");
+  upnext(id);
+  $("main").classList.add("watching");
+  document.title = `${s.name} · Spaces · Hologram Models Hub`;
   const u = new URL(location.href); u.searchParams.set("open", id); history.replaceState(null, "", u);
-  stage.scrollIntoView({ block: "start", behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function close() {
-  current = null; $("stage").classList.remove("on"); $("s-body").innerHTML = "";
+  current = null; $("main").classList.remove("watching"); $("player").innerHTML = ""; $("upnext").innerHTML = "";
   if (chan) { try { chan.close(); } catch {} chan = null; }
+  document.title = "Spaces · Hologram Models Hub";
   const u = new URL(location.href); u.searchParams.delete("open"); history.replaceState(null, "", u);
 }
 
@@ -176,6 +232,12 @@ async function main() {
   $("q").addEventListener("input", () => { rail.render(); render(); });
   $("sort").addEventListener("change", render);
   $("s-close").addEventListener("click", close);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && current) close(); });
+  $("s-copy").addEventListener("click", async () => {
+    const s = catalog.find((x) => x.id === current); if (!s) return;
+    try { await navigator.clipboard.writeText(s.root); } catch {}
+    const b = $("s-copy"), was = b.lastChild.textContent; b.lastChild.textContent = "copied"; setTimeout(() => (b.lastChild.textContent = was), 1200);
+  });
   const want = new URLSearchParams(location.search).get("open");
   if (want && catalog.some((s) => s.id === want)) open(want);
   // registry presence, per Space: a mark on the card, a chip in the rail, a count in the lead row
@@ -184,5 +246,7 @@ async function main() {
   await Promise.all(catalog.map(async (s) => { const d = await published(s.id); if (d) { if (d === s.root) onRegistry[s.id] = d; else registryDiffers[s.id] = d; } }));
   rail.render();
   render();
+  // a Space already open learns what the registry said, too: its record and the rows beside it
+  if (current) { const s = catalog.find((x) => x.id === current); if (s) { $("s-desc").innerHTML = describe(s); upnext(current); } }
 }
 main();

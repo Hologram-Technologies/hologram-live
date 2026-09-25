@@ -55,9 +55,15 @@ pub fn owner_for_operation<'a>(
         })
 }
 
-/// A digest of the admitted set. It carries no ordering: a receiver compares it
-/// for equality with its own and refuses a mismatch, rather than trying to
-/// decide which of two epochs is newer.
+/// A digest of the admitted set. It carries no ordering: there is no way to
+/// tell which of two epochs is newer, only whether two nodes currently agree.
+///
+/// Sent on the wire as `x-hologram-cluster-epoch` (`cluster::contact_peer`,
+/// `proof::EPOCH_HEADER`) as observability only — **no receiver currently
+/// compares it against its own epoch or refuses a mismatch.** Wiring that up
+/// needs sender-side refresh-and-retry to be safe (a mismatch cannot be
+/// resolved by picking a side), which is more than this phase carries;
+/// enforcement is tracked separately as issue #184.
 pub fn epoch(admitted: &BTreeSet<String>) -> String {
     let mut hasher = blake3::Hasher::new();
     for node_id in admitted {

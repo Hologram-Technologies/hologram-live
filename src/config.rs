@@ -148,6 +148,16 @@ pub struct ClusterConfig {
     pub trusted_keys: Vec<String>,
     /// `token` pins a new identity on first contact with a valid ticket;
     /// `allowlist` admits only `trusted_keys`.
+    ///
+    /// **Operator constraint, not something a node can check for itself:**
+    /// under `"allowlist"`, every member's `trusted_keys` must list the same
+    /// identities. Every node trusts itself for ownership purposes (nothing
+    /// authenticates a node to itself), so an *asymmetric* allowlist — one
+    /// node's `trusted_keys` omitting a peer that peer's own list includes —
+    /// fails open rather than closed: the node with the narrower list simply
+    /// names itself the owner of resources the wider-list peer would have
+    /// assigned elsewhere, with no error and no local signal that the two
+    /// views disagree. Keep every member's `trusted_keys` identical.
     pub admission: String,
 }
 

@@ -151,6 +151,23 @@ async fn run(state: AppState) {
                     tracing::warn!(%error, "failed to persist local cluster heartbeat");
                 }
 
+                // Re-seeds every round, not just once at startup. This is
+                // what makes admission symmetric: a joiner authenticates to
+                // the seed with a signed, ticket-bearing request, but a join
+                // *response* carries no signature, so nothing analogous
+                // authenticates the seed back — unless the seed also becomes
+                // a caller. The seed's directory gains the joiner from that
+                // authenticated inbound join; re-reading it here is what lets
+                // the seed notice and dial the joiner in a later round, at
+                // which point `contact_peer` presents a real ticket
+                // (`sign_headers` already attaches `TICKET_HEADER`) and the
+                // joiner admits the seed the same way any node is admitted —
+                // proof of holding the shared token, not trust in an
+                // unsigned response. Cheap: `insert` is a no-op for an
+                // endpoint already in the table, so this is one directory
+                // read of at most `max_peers` records per round.
+                table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint);
+
                 let round_started_millis = now_millis();
                 let mut joins = JoinSet::new();
                 for endpoint in table.due(round_started_millis, config.fanout) {
@@ -250,14 +267,17 @@ async fn contact_peer(
     );
     // Reports this node's membership epoch on the wire (see
     // `proof::EPOCH_HEADER`). The receiver does not currently refuse on a
-    // mismatch. Admission is now made symmetric (see the pinning below), so
-    // both sides' admitted sets do converge, but not atomically: a freshly
-    // admitted identity is visible on one side before the next round trip can
-    // carry it to the other, so an equality check would still see transient
-    // mismatches during that window. Safely refusing on those would need
-    // sender-side refresh-and-retry, which is more than this phase carries;
-    // the header stays observability-only until that lands.
-    let epoch = crate::ownership::epoch(&state.admission().admitted());
+    // mismatch. `run` re-seeds the peer table from the node directory every
+    // round (not just once at startup), so a seed comes to dial the joiner
+    // back and both directions present a real, ticket-proven admission — the
+    // two sides' admitted sets do converge. But convergence is not atomic:
+    // it takes the seed's next round to notice a newly-directoried peer and
+    // one more round trip to be admitted by it, so two nodes queried in that
+    // window can legitimately disagree for a beat. Enforcing equality safely
+    // would need sender-side refresh-and-retry on a mismatch, which is more
+    // than this phase carries; the header stays observability-only until
+    // that lands.
+    let epoch = crate::ownership::epoch(&state.admitted_with_self());
     let response = sign_headers(client.post(url), &recipient, &request_proof, token)
         .header(proof::EPOCH_HEADER, epoch)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -289,52 +309,7 @@ async fn contact_peer(
         LiveError::Protocol(format!("decode cluster peer {endpoint} response: {error}"))
     })?;
     validate_node_record(&response.node)?;
-    pin_join_response_identity(state, token, &response.node.node_id, endpoint);
     Ok(response)
-}
-
-/// Makes admission symmetric: a joiner is authenticated to the seed by the
-/// signed, ticket-bearing proof on its *request* (verified in
-/// `authorize_cluster_request`), but nothing analogous authenticates the
-/// seed's identity on the *response* — a join response carries no signature
-/// at all. Left alone, only the seed side of an exchange ever admits the
-/// other: its `admitted()` grows to include every caller it authorizes, while
-/// a caller that only ever dials out never authorizes anyone and its own
-/// `admitted()` stays empty forever. The two sides' admitted sets then never
-/// converge, which silently starves the caller of any ownership candidate at
-/// all — including itself — since `ownership::owner_for_operation` filters
-/// candidates through the local admitted set.
-///
-/// The fix pins the identity the response claims, using the same shared
-/// token this node would use to prove its own identity to someone else. This
-/// is **trust-on-first-use of the endpoint, not a cryptographic proof of
-/// identity**: the response is unsigned, so nothing here shows the endpoint
-/// is actually operated by the holder of `claimed_node_id`'s private key. It
-/// is the same trust an operator already placed in that endpoint by
-/// configuring it as a seed (or by a peer already admitted this way vouching
-/// for it transitively, since `contact_peer` is only ever called against
-/// endpoints reached that way). Binding the claim cryptographically is
-/// tracked separately as issue #183, not part of this task.
-fn pin_join_response_identity(
-    state: &AppState,
-    token: &str,
-    claimed_node_id: &str,
-    endpoint: &str,
-) {
-    match state.admission().authorize(
-        claimed_node_id,
-        Some(&admission::ticket(token, claimed_node_id)),
-    ) {
-        admission::Decision::Admit => {}
-        admission::Decision::Deny(reason) => {
-            tracing::debug!(
-                %reason,
-                node = %claimed_node_id,
-                peer = %endpoint,
-                "cluster peer identity from a join response was not admitted locally"
-            );
-        }
-    }
 }
 
 /// The recipient field a request to `endpoint` must be signed against: always

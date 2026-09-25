@@ -33,12 +33,10 @@ pub const RECIPIENT_HEADER: &str = "x-hologram-cluster-recipient";
 ///
 /// Attached on outbound cluster-join requests (`cluster::contact_peer`) but
 /// **not currently enforced on receipt** — see the note in that function for
-/// why comparing full admitted-set digests for exact equality does not hold
-/// under this phase's one-directional token admission (a seed that is never
-/// dialed back never learns to admit the peers it has itself admitted),
-/// which would make every join after the first fail with a false conflict.
-/// The header is still sent so the wire carries this information for a
-/// corrected consumer.
+/// why admitted sets converge but not atomically, so an equality check would
+/// still see transient mismatches during that window (issue #184 tracks safe
+/// enforcement, which needs sender-side refresh-and-retry). The header is
+/// still sent so the wire carries this information for a corrected consumer.
 pub const EPOCH_HEADER: &str = "x-hologram-cluster-epoch";
 const SIGNING_CONTEXT: &str = "dev.hologram.live.cluster.v2";
 const MAX_CLOCK_SKEW_MILLIS: u64 = 30_000;

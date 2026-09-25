@@ -19,7 +19,7 @@
 //
 // The boundary rule is unchanged from the dag-cbor version: a key ends a node at level L
 // when sha-256 of the key begins with at least 5 × (L + 1) zero bits.
-import { sha256, sha256hex } from './sha256.mjs?v=4'
+import { sha256, sha256hex } from './sha256.mjs?v=9'
 
 export const BOUNDARY_BITS = 5
 export const NODE_TYPE = 'application/vnd.uor.bucket.node.v1'

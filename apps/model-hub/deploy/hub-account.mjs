@@ -1,4 +1,4 @@
-// hub.uor.foundation — the account service.
+// gethologram.ai — the account service.
 //
 // The hub is anonymous by design: every read surface (the HF dialect, the Ollama and OCI dialects, /mcp, /v2 reads,
 // the archive) works with no account and no token, and nothing here changes that. This service only serves people who

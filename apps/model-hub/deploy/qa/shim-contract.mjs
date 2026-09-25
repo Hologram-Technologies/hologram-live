@@ -18,7 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SHIM = join(HERE, "..", "hub-resolve.mjs");
 const FIX = process.env.FIXTURES || join(HERE, "fixtures");
 const PORT = 8390;
-const LIVE = "https://hub.uor.foundation";
+const LIVE = "https://gethologram.ai";
 
 // A spread of real models: one held by several sources, one held by Hugging Face alone, one with enough files to
 // force the MCP truncation.

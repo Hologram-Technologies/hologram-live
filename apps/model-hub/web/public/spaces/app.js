@@ -1,3 +1,4 @@
+import { art } from "../card-art.mjs";
 // Spaces — the page. It reads its own catalog (spaces.json, sealed roots per Space), asks the registry on this
 // origin whether each Space is published there, and opens a Space in a sandboxed frame on this page. The
 // Space's runtime narrates itself on a BroadcastChannel (index read · bytes verified · served from the
@@ -19,6 +20,7 @@ const RUNS = "Runs in this browser", ON_REGISTRY = "On the registry";
 
 let catalog = [], caps = { webgpu: false, opfs: false }, chan = null, current = null;
 const onRegistry = {}; // id → digest, once the registry has answered
+const registryDiffers = {}; // id → digest the registry holds under this name when it is NOT this Space's κ
 const picked = { task: new Set(), marks: new Set(), model: new Set(), publisher: new Set(), needs: new Set(), size: new Set(), origin: new Set() };
 
 async function detect() {
@@ -87,41 +89,17 @@ const rail = createRail({
   lead: { marks: { value: ON_REGISTRY, className: "ours", title: "Published to this registry as a sealed artifact: its root is a digest you can check here" } },
 });
 
-// The Models page's faceted mesh, seeded by the entry's own address: same bytes, same surface.
-// Lit facets mark what this registry can check itself; everything else shows the bare wireframe.
-const ART_W = 260, ART_H = 120;
-function art(seed, lit) {
-  let h = 2166136261;
-  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  const r = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; };
-  const f = (n) => n.toFixed(1);
-  const cols = 9, rows = 4, gx = ART_W / (cols - 1), gy = ART_H / (rows - 1), p = [];
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    p.push([x * gx + (r() - 0.5) * gx * 0.5, y * gy + (y && y < rows - 1 ? (r() - 0.5) * gy * 0.5 : 0)]);
-  }
-  let edges = "", faces = "";
-  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols - 1; x++) {
-    const a = p[y * cols + x], b = p[y * cols + x + 1], c = p[(y + 1) * cols + x], d = p[(y + 1) * cols + x + 1];
-    for (const t of [[a, b, d], [a, d, c]]) {
-      const path = `M${t.map((q) => `${f(q[0])} ${f(q[1])}`).join("L")}Z`;
-      edges += path;
-      const v = r();
-      if (lit && v < 0.35) faces += `<path d="${path}" opacity="${f(0.02 + v * 0.12)}"/>`;
-    }
-  }
-  return `<svg class="art${lit ? " lit" : ""}" viewBox="0 0 ${ART_W} ${ART_H}" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">${faces}</g><path class="edges" d="${edges}"/></svg>`;
-}
-
 function card(s) {
   const need = missing(s);
   const el = document.createElement("button");
   el.type = "button"; el.className = "card"; el.dataset.id = s.id;
   const foot = [`<span title="${s.root}">${short(s.root)}</span>`, `<span>${s.files} files · ${fmtMB(s.bytes)}</span>`];
   if (onRegistry[s.id]) foot.push(`<span title="${onRegistry[s.id]}">on the registry</span>`);
+  else if (registryDiffers[s.id]) foot.push(`<span title="${registryDiffers[s.id]}" style="color:var(--bad)">registry differs</span>`);
   el.innerHTML = `<span class="logo"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${s.iconSvg || ""}</svg></span>
     <span class="tags"><span class="tag">${s.task}</span><span class="tag ${need.length ? "no" : "here"}">${need.length ? "needs " + need.join(" + ") : "runs here"}</span><span class="tag">${fmtMB(s.modelBytes)} model</span></span>
     <h3>${s.name}</h3><p>${s.tagline}</p>
-    <span class="foot">${foot.join("")}</span>${art(s.root, !need.length)}`;
+    <span class="foot">${foot.join("")}</span>${art(s.root)}`;
   el.addEventListener("click", () => open(s.id));
   return el;
 }
@@ -188,20 +166,11 @@ function close() {
   const u = new URL(location.href); u.searchParams.delete("open"); history.replaceState(null, "", u);
 }
 
-// The lead row: how many of these run in this browser, and how many the registry holds.
-function provenance() {
-  const runs = catalog.filter((s) => !missing(s).length).length, any = Object.keys(onRegistry).length;
-  $("prov").textContent = `${runs} of ${catalog.length} run in this browser · ${any ? `${any} on the registry` : "none on the registry yet"}`;
-  $("dot").className = "dot" + (any ? " ok" : "");
-  $("dot").title = any ? `${any} of ${catalog.length} published` : "not published to the registry yet";
-}
 
 async function main() {
-  $("host").textContent = location.host + "/v2/spaces/";
   const [cat, c] = await Promise.all([fetch("./spaces.json").then((r) => r.json()), detect()]);
   catalog = cat.spaces; caps = c;
   await icons();
-  provenance();
   rail.render();
   render();
   $("q").addEventListener("input", () => { rail.render(); render(); });
@@ -210,8 +179,9 @@ async function main() {
   const want = new URLSearchParams(location.search).get("open");
   if (want && catalog.some((s) => s.id === want)) open(want);
   // registry presence, per Space: a mark on the card, a chip in the rail, a count in the lead row
-  await Promise.all(catalog.map(async (s) => { const d = await published(s.id); if (d) onRegistry[s.id] = d; }));
-  provenance();
+  // the registry's digest must be the card's κ (the manifest digest): the same bytes under the same name,
+  // or it is not this Space — a differing digest is shown as such, never as "on the registry"
+  await Promise.all(catalog.map(async (s) => { const d = await published(s.id); if (d) { if (d === s.root) onRegistry[s.id] = d; else registryDiffers[s.id] = d; } }));
   rail.render();
   render();
 }

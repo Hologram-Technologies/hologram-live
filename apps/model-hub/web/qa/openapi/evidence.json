@@ -1,37 +1,37 @@
 {
- "probed_at": "2026-09-24T10:39:10.715Z",
- "base": "https://hub.uor.foundation",
+ "probed_at": "2026-09-25T07:42:09.236Z",
+ "base": "https://gethologram.ai",
  "sample": {
   "model": "sentence-transformers/all-MiniLM-L6-v2",
   "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
   "file": "sentence_bert_config.json",
-  "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a"
+  "catalog": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b"
  },
  "records": [
   {
    "id": "root.html",
    "method": "GET",
    "path": "/",
-   "ms": 126,
+   "ms": 94,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngxrsjtlft3ed-gzip\"",
+    "etag": "\"dlo7ga0d103j3dl-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
+   "body": "# gethologram.ai\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything…",
    "error": null
   },
   {
    "id": "root.descriptor",
    "method": "GET",
    "path": "/",
-   "ms": 85,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngysimchrouz-gzip\"",
+    "etag": "\"dlo7gvq9qrb6uz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -39,8 +39,8 @@
     "format": "hologram.model-hub.descriptor/v1",
     "name": "Hologram Model Hub",
     "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-    "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
-    "snapshot": "2026-09-24",
+    "catalog": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
+    "snapshot": "2026-09-25",
     "fetch": "/api/v1/objects/{id}",
     "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
     "publish": "POST /api/v1/objects with a publisher token",
@@ -64,97 +64,355 @@
    "id": "root.brief",
    "method": "GET",
    "path": "/",
-   "ms": 103,
+   "ms": 94,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngxrsjtlft3ed-gzip\"",
+    "etag": "\"dlo7ga0d103j3dl-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
+   "body": "# gethologram.ai\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything…",
    "error": null
   },
   {
    "id": "brief",
    "method": "GET",
    "path": "/agent.md",
-   "ms": 92,
+   "ms": 88,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngxrsjtlft3ed-gzip\"",
+    "etag": "\"dlo7ga0d103j3dl-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
+   "body": "# gethologram.ai\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything…",
    "error": null
   },
   {
    "id": "section.models",
    "method": "GET",
    "path": "/models",
-   "ms": 105,
+   "ms": 96,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngxrqxh5jt1uy-gzip\"",
+    "etag": "\"dlo7g9z5ke381ua-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
+   "body": "# gethologram.ai/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n\n## Or f…",
    "error": null
   },
   {
    "id": "section.models.slash",
    "method": "GET",
    "path": "/models/",
-   "ms": 105,
+   "ms": 93,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngxrqxh5jt1uy-gzip\"",
+    "etag": "\"dlo7g9z5ke381ua-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
+   "body": "# gethologram.ai/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n\n## Or f…",
    "error": null
   },
   {
    "id": "section.models.page",
    "method": "GET",
    "path": "/models/",
-   "ms": 186,
+   "ms": 179,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
-    "etag": "\"dlngxeisdhmk528q-gzip\"",
+    "etag": "\"dlo7g3gwuxc44v7j-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Models · Hologram</title>\n<meta name=\"description\" content=\"The 500 trending models on Hugging Face, every file named by its bytes.\">\n<meta property=\"og:title\" content=\"Models · Holog…",
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Models · Hologram Models Hub</title>\n<meta name=\"description\" content=\"The 500 trending models on Hugging Face, every file named by its bytes.\">\n<meta property=\"og:title\" content=\"Models · Holog…",
    "error": null
   },
   {
    "id": "section.registry",
    "method": "GET",
    "path": "/registry",
-   "ms": 95,
+   "ms": 91,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngxp8uj6zg1gy-gzip\"",
+    "etag": "\"dlo7g88bsawd1g2-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull hub.uor.foundation/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull hub.uor.foundation/<org>/<name>:latest\n …",
+   "body": "# gethologram.ai/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull gethologram.ai/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull gethologram.ai/<org>/<name>:latest\n        A CNC…",
+   "error": null
+  },
+  {
+   "id": "section.spaces",
+   "method": "GET",
+   "path": "/spaces",
+   "ms": 86,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/spaces/"
+   },
+   "body": "<a href=\"/spaces/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.buckets",
+   "method": "GET",
+   "path": "/buckets",
+   "ms": 296,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/buckets/"
+   },
+   "body": "<a href=\"/buckets/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.docs",
+   "method": "GET",
+   "path": "/docs/",
+   "ms": 991,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "etag": "\"dlo7g85nc5gfagn-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
+   "error": null
+  },
+  {
+   "id": "section.docs.page",
+   "method": "GET",
+   "path": "/docs/",
+   "ms": 174,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "etag": "\"dlo7g85nc5gfagn-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
+   "error": null
+  },
+  {
+   "id": "section.models.json",
+   "method": "GET",
+   "path": "/models",
+   "ms": 133,
+   "status": 200,
+   "headers": {
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dlo7g9z5ke381ua-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "# gethologram.ai/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n\n## Or f…",
+   "error": null
+  },
+  {
+   "id": "section.registry.json",
+   "method": "GET",
+   "path": "/registry",
+   "ms": 169,
+   "status": 200,
+   "headers": {
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dlo7g88bsawd1g2-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "# gethologram.ai/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull gethologram.ai/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull gethologram.ai/<org>/<name>:latest\n        A CNC…",
+   "error": null
+  },
+  {
+   "id": "section.spaces.json",
+   "method": "GET",
+   "path": "/spaces",
+   "ms": 141,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/spaces/"
+   },
+   "body": "<a href=\"/spaces/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.buckets.json",
+   "method": "GET",
+   "path": "/buckets",
+   "ms": 101,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/buckets/"
+   },
+   "body": "<a href=\"/buckets/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.docs.json",
+   "method": "GET",
+   "path": "/docs/",
+   "ms": 91,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "etag": "\"dlo7g85nc5gfagn-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
+   "error": null
+  },
+  {
+   "id": "section.models.json",
+   "method": "GET",
+   "path": "/models",
+   "ms": 104,
+   "status": 200,
+   "headers": {
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dlo7g9z5ke381ua-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "# gethologram.ai/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n\n## Or f…",
+   "error": null
+  },
+  {
+   "id": "section.registry.json",
+   "method": "GET",
+   "path": "/registry",
+   "ms": 451,
+   "status": 200,
+   "headers": {
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dlo7g88bsawd1g2-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "# gethologram.ai/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull gethologram.ai/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull gethologram.ai/<org>/<name>:latest\n        A CNC…",
+   "error": null
+  },
+  {
+   "id": "section.spaces.json",
+   "method": "GET",
+   "path": "/spaces",
+   "ms": 90,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/spaces/"
+   },
+   "body": "<a href=\"/spaces/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.buckets.json",
+   "method": "GET",
+   "path": "/buckets",
+   "ms": 91,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/buckets/"
+   },
+   "body": "<a href=\"/buckets/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.docs.json",
+   "method": "GET",
+   "path": "/docs/",
+   "ms": 149,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "etag": "\"dlo7g85nc5gfagn-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
+   "error": null
+  },
+  {
+   "id": "section.models.json",
+   "method": "GET",
+   "path": "/models",
+   "ms": 600,
+   "status": 200,
+   "headers": {
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dlo7g9z5ke381ua-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "# gethologram.ai/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n\n## Or f…",
+   "error": null
+  },
+  {
+   "id": "section.registry.json",
+   "method": "GET",
+   "path": "/registry",
+   "ms": 141,
+   "status": 200,
+   "headers": {
+    "content-type": "text/markdown; charset=utf-8",
+    "etag": "\"dlo7g88bsawd1g2-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "# gethologram.ai/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull gethologram.ai/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull gethologram.ai/<org>/<name>:latest\n        A CNC…",
+   "error": null
+  },
+  {
+   "id": "section.spaces.json",
+   "method": "GET",
+   "path": "/spaces",
+   "ms": 137,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/spaces/"
+   },
+   "body": "<a href=\"/spaces/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.buckets.json",
+   "method": "GET",
+   "path": "/buckets",
+   "ms": 137,
+   "status": 308,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "location": "/buckets/"
+   },
+   "body": "<a href=\"/buckets/\">Permanent Redirect</a>.\n\n",
+   "error": null
+  },
+  {
+   "id": "section.docs.json",
+   "method": "GET",
+   "path": "/docs/",
+   "ms": 232,
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8",
+    "etag": "\"dlo7g85nc5gfagn-gzip\"",
+    "content-encoding": "gzip"
+   },
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
    "error": null
   },
   {
    "id": "descriptor",
    "method": "GET",
    "path": "/.well-known/model-hub.json",
-   "ms": 92,
+   "ms": 93,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngysimchrouz-gzip\"",
+    "etag": "\"dlo7gvq9qrb6uz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -162,8 +420,8 @@
     "format": "hologram.model-hub.descriptor/v1",
     "name": "Hologram Model Hub",
     "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-    "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
-    "snapshot": "2026-09-24",
+    "catalog": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
+    "snapshot": "2026-09-25",
     "fetch": "/api/v1/objects/{id}",
     "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
     "publish": "POST /api/v1/objects with a publisher token",
@@ -187,27 +445,27 @@
    "id": "llms",
    "method": "GET",
    "path": "/llms.txt",
-   "ms": 84,
+   "ms": 142,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dlngxp5566o13ou-gzip\"",
+    "etag": "\"dlo7g86iw3oj3m2-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# Hologram Model Hub\n\n> One base URL for open models. Every file is named by the SHA-256 of its bytes and every object by its BLAKE3; fetch from a source that is up, check it yourself, and trust no host, this one included. No account, no key, no SDK.\n\n## The short way\n\n- `export HF_ENDPOINT=https://hub.uor.foundation` and every tool built on `huggingface_hub` reads from here: `hf download <owner>/…",
+   "body": "# Hologram Model Hub\n\n> One base URL for open models. Every file is named by the SHA-256 of its bytes and every object by its BLAKE3; fetch from a source that is up, check it yourself, and trust no host, this one included. No account, no key, no SDK.\n\n## The short way\n\n- `export HF_ENDPOINT=https://gethologram.ai` and every tool built on `huggingface_hub` reads from here: `hf download <owner>/<nam…",
    "error": null
   },
   {
    "id": "openapi",
    "method": "GET",
    "path": "/openapi.json",
-   "ms": 106,
+   "ms": 904,
    "status": 200,
    "headers": {
     "content-type": "application/json",
     "cache-control": "public, max-age=300",
-    "etag": "\"dlngxrshfv2r2vsy-gzip\"",
+    "etag": "\"dlo7ga0b8pbw2zep-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -216,7 +474,7 @@
     "info": {
      "title": "Hologram Model Hub",
      "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-     "description": "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `hugging…",
+     "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `huggingface_hub…",
      "version": "1.0.0",
      "license": {
       "name": "MIT OR Apache-2.0",
@@ -228,27 +486,27 @@
      },
      "x-hologram-dialects": {
       "huggingface": {
-       "setting": "HF_ENDPOINT=https://hub.uor.foundation",
+       "setting": "HF_ENDPOINT=https://gethologram.ai",
        "paths": [
         "/api/models",
         "/{owner}/{name}/resolve/{revision}/{path}"
        ]
       },
       "ollama": {
-       "setting": "ollama pull hub.uor.foundation/{owner}/{name}:{quant}",
+       "setting": "ollama pull gethologram.ai/{owner}/{name}:{quant}",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}",
         "/v2/{owner}/{name}/blobs/{digest}"
        ]
       },
       "oci": {
-       "setting": "oras pull hub.uor.foundation/{owner}/{name}:latest",
+       "setting": "oras pull gethologram.ai/{owner}/{name}:latest",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}"
        ]
       },
       "mcp": {
-       "setting": "https://hub.uor.foundation/mcp",
+       "setting": "https://gethologram.ai/mcp",
        "paths": [
         "/mcp"
        ]
@@ -263,13 +521,13 @@
     },
     "servers": [
      {
-      "url": "https://hub.uor.foundation",
+      "url": "https://gethologram.ai",
       "description": "Production. The hub is one host; there is no staging surface."
      }
     ],
     "externalDocs": {
      "description": "The same endpoint explained for an agent in prose, shortest path first.",
-     "url": "https://hub.uor.foundation/llms.txt"
+     "url": "https://gethologram.ai/llms.txt"
     },
     "tags": [
      {
@@ -1380,7 +1638,7 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
             "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -1465,7 +1723,7 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
             "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -1665,7 +1923,7 @@
        ],
        "operationId": "getModelsSection",
        "summary": "The models section, answered two ways",
-       "description": "The site shows this address beside the models heading. A browser gets the browse page; anything else\ngets a brief covering finding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them…",
+       "description": "The site shows this address beside the models heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nfinding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in…",
        "responses": {
         "200": {
          "description": "The section brief, or the section's page.",
@@ -1718,7 +1976,7 @@
        ],
        "operationId": "getRegistrySection",
        "summary": "The registry section, answered two ways",
-       "description": "The site shows this address beside the registry heading. A browser gets the browse page; anything else\ngets a brief covering pulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them,…",
+       "description": "The site shows this address beside the registry heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\npulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in …",
        "responses": {
         "200": {
          "description": "The section brief, or the section's page.",
@@ -1756,6 +2014,112 @@
        },
        "x-hologram-probe": {
         "path": "/registry",
+        "status": 200,
+        "headers": {
+         "accept": "*/*"
+        },
+        "contentType": "text/markdown"
+       }
+      }
+     },
+     "/spaces": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getSpacesSection",
+       "summary": "The spaces section, answered two ways",
+       "description": "The site shows this address beside the spaces heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nbrowser-only apps, each sealed under one root digest, and how to read one from the registry: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no…",
+       "responses": {
+        "200": {
+         "description": "The section brief, or the section's page.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "text/markdown": {
+           "schema": {
+            "type": "string"
+           }
+          },
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/spaces",
+        "status": 200,
+        "headers": {
+         "accept": "*/*"
+        },
+        "contentType": "text/markdown"
+       }
+      }
+     },
+     "/buckets": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getBucketsSection",
+       "summary": "The buckets section, answered two ways",
+       "description": "The site shows this address beside the buckets heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nwalking a bucket as an OCI index tree and checking every block against its address: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — e…",
+       "responses": {
+        "200": {
+         "description": "The section brief, or the section's page.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "text/markdown": {
+           "schema": {
+            "type": "string"
+           }
+          },
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/buckets",
         "status": 200,
         "headers": {
          "accept": "*/*"
@@ -1862,14 +2226,28 @@
        ],
        "operationId": "getDocsIndex",
        "summary": "The documentation",
-       "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+       "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document.\nEvery page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.\n\nThis is also the address the site shows beside the Docs heading, the same tag every section carries. A\nbrowser gets this index; anything else gets the section brief, which lists every page and the address of\nit…",
        "responses": {
         "200": {
-         "description": "An HTML page.",
+         "description": "The index to a browser; to anything else the section brief.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
          "content": {
           "text/html": {
            "schema": {
             "type": "string"
+           }
+          },
+          "text/markdown": {
+           "schema": {
+            "type": "string",
+            "description": "The section brief."
            }
           }
          }
@@ -1888,6 +2266,9 @@
        "x-hologram-probe": {
         "path": "/docs/",
         "status": 200,
+        "headers": {
+         "accept": "text/html"
+        },
         "contentType": "text/html"
        }
       }
@@ -2200,8 +2581,8 @@
             ],
             "format": "hologram.model-hub.archive/v1",
             "gateway": "https://ipfs.filebase.io/ipfs/",
-            "mirror": "https://hub.uor.foundation/archive/",
-            "registry": "hub.uor.foundation/model-hub/index"
+            "mirror": "https://gethologram.ai/archive/",
+            "registry": "gethologram.ai/model-hub/index"
            }
           }
          }
@@ -2362,17 +2743,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-24T10:15:29.003Z",
+              "checked": "2026-09-24T10:38:53.861Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-24T10:15:30.876Z",
+              "checked": "2026-09-24T10:38:55.152Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-24T10:15:30.964Z",
+              "checked": "2026-09-24T10:38:55.232Z",
               "reason": "verified"
              }
             },
@@ -2482,7 +2863,7 @@
              "disabled": false,
              "likes": 6114,
              "downloads": 250598416,
-             "trendingScore": 404,
+             "trendingScore": 403,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "sentence-similarity",
              "library_name": "sentence-transformers",
@@ -3471,7 +3852,7 @@
        ],
        "operationId": "listModelsVia",
        "summary": "Search with a source pinned for what follows",
-       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://gethologram.ai/via/ipfs`, and never choose again.",
        "parameters": [
         {
          "name": "source",
@@ -4868,7 +5249,7 @@
           "type": "string",
           "pattern": "^blake3:[0-9a-f]{64}$"
          },
-         "example": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5"
+         "example": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a"
         }
        ],
        "responses": {
@@ -4947,7 +5328,7 @@
        "summary": "One object, by the hash of its bytes",
        "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
        "x-hologram-probe": {
-        "path": "/api/v1/objects/blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+        "path": "/api/v1/objects/blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
         "status": 200,
         "method": "HEAD"
        }
@@ -4961,11 +5342,11 @@
    "id": "wellknown.openapi",
    "method": "GET",
    "path": "/.well-known/openapi.json",
-   "ms": 88,
+   "ms": 1263,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngxrshfv2r2vsy-gzip\"",
+    "etag": "\"dlo7ga0b8pbw2zep-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -4974,7 +5355,7 @@
     "info": {
      "title": "Hologram Model Hub",
      "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-     "description": "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `hugging…",
+     "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `huggingface_hub…",
      "version": "1.0.0",
      "license": {
       "name": "MIT OR Apache-2.0",
@@ -4986,27 +5367,27 @@
      },
      "x-hologram-dialects": {
       "huggingface": {
-       "setting": "HF_ENDPOINT=https://hub.uor.foundation",
+       "setting": "HF_ENDPOINT=https://gethologram.ai",
        "paths": [
         "/api/models",
         "/{owner}/{name}/resolve/{revision}/{path}"
        ]
       },
       "ollama": {
-       "setting": "ollama pull hub.uor.foundation/{owner}/{name}:{quant}",
+       "setting": "ollama pull gethologram.ai/{owner}/{name}:{quant}",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}",
         "/v2/{owner}/{name}/blobs/{digest}"
        ]
       },
       "oci": {
-       "setting": "oras pull hub.uor.foundation/{owner}/{name}:latest",
+       "setting": "oras pull gethologram.ai/{owner}/{name}:latest",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}"
        ]
       },
       "mcp": {
-       "setting": "https://hub.uor.foundation/mcp",
+       "setting": "https://gethologram.ai/mcp",
        "paths": [
         "/mcp"
        ]
@@ -5021,13 +5402,13 @@
     },
     "servers": [
      {
-      "url": "https://hub.uor.foundation",
+      "url": "https://gethologram.ai",
       "description": "Production. The hub is one host; there is no staging surface."
      }
     ],
     "externalDocs": {
      "description": "The same endpoint explained for an agent in prose, shortest path first.",
-     "url": "https://hub.uor.foundation/llms.txt"
+     "url": "https://gethologram.ai/llms.txt"
     },
     "tags": [
      {
@@ -6138,7 +6519,7 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
             "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -6223,7 +6604,7 @@
             "format": "hologram.model-hub.descriptor/v1",
             "name": "Hologram Model Hub",
             "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-            "catalog": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+            "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
             "snapshot": "2026-09-24",
             "fetch": "/api/v1/objects/{id}",
             "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
@@ -6423,7 +6804,7 @@
        ],
        "operationId": "getModelsSection",
        "summary": "The models section, answered two ways",
-       "description": "The site shows this address beside the models heading. A browser gets the browse page; anything else\ngets a brief covering finding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them…",
+       "description": "The site shows this address beside the models heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nfinding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in…",
        "responses": {
         "200": {
          "description": "The section brief, or the section's page.",
@@ -6476,7 +6857,7 @@
        ],
        "operationId": "getRegistrySection",
        "summary": "The registry section, answered two ways",
-       "description": "The site shows this address beside the registry heading. A browser gets the browse page; anything else\ngets a brief covering pulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them,…",
+       "description": "The site shows this address beside the registry heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\npulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — every route the brief names is already in …",
        "responses": {
         "200": {
          "description": "The section brief, or the section's page.",
@@ -6514,6 +6895,112 @@
        },
        "x-hologram-probe": {
         "path": "/registry",
+        "status": 200,
+        "headers": {
+         "accept": "*/*"
+        },
+        "contentType": "text/markdown"
+       }
+      }
+     },
+     "/spaces": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getSpacesSection",
+       "summary": "The spaces section, answered two ways",
+       "description": "The site shows this address beside the spaces heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nbrowser-only apps, each sealed under one root digest, and how to read one from the registry: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no…",
+       "responses": {
+        "200": {
+         "description": "The section brief, or the section's page.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "text/markdown": {
+           "schema": {
+            "type": "string"
+           }
+          },
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/spaces",
+        "status": 200,
+        "headers": {
+         "accept": "*/*"
+        },
+        "contentType": "text/markdown"
+       }
+      }
+     },
+     "/buckets": {
+      "get": {
+       "tags": [
+        "Discovery"
+       ],
+       "operationId": "getBucketsSection",
+       "summary": "The buckets section, answered two ways",
+       "description": "The site shows this address beside the buckets heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nwalking a bucket as an OCI index tree and checking every block against its address: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nIt adds no API — e…",
+       "responses": {
+        "200": {
+         "description": "The section brief, or the section's page.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
+         "content": {
+          "text/markdown": {
+           "schema": {
+            "type": "string"
+           }
+          },
+          "text/html": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        },
+        "404": {
+         "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+         "content": {
+          "text/plain": {
+           "schema": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       },
+       "x-hologram-probe": {
+        "path": "/buckets",
         "status": 200,
         "headers": {
          "accept": "*/*"
@@ -6620,14 +7107,28 @@
        ],
        "operationId": "getDocsIndex",
        "summary": "The documentation",
-       "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+       "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document.\nEvery page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.\n\nThis is also the address the site shows beside the Docs heading, the same tag every section carries. A\nbrowser gets this index; anything else gets the section brief, which lists every page and the address of\nit…",
        "responses": {
         "200": {
-         "description": "An HTML page.",
+         "description": "The index to a browser; to anything else the section brief.",
+         "headers": {
+          "vary": {
+           "description": "`Accept`, because this route has two representations.",
+           "schema": {
+            "type": "string"
+           }
+          }
+         },
          "content": {
           "text/html": {
            "schema": {
             "type": "string"
+           }
+          },
+          "text/markdown": {
+           "schema": {
+            "type": "string",
+            "description": "The section brief."
            }
           }
          }
@@ -6646,6 +7147,9 @@
        "x-hologram-probe": {
         "path": "/docs/",
         "status": 200,
+        "headers": {
+         "accept": "text/html"
+        },
         "contentType": "text/html"
        }
       }
@@ -6958,8 +7462,8 @@
             ],
             "format": "hologram.model-hub.archive/v1",
             "gateway": "https://ipfs.filebase.io/ipfs/",
-            "mirror": "https://hub.uor.foundation/archive/",
-            "registry": "hub.uor.foundation/model-hub/index"
+            "mirror": "https://gethologram.ai/archive/",
+            "registry": "gethologram.ai/model-hub/index"
            }
           }
          }
@@ -7120,17 +7624,17 @@
             "sources": {
              "huggingface.co": {
               "ok": true,
-              "checked": "2026-09-24T10:15:29.003Z",
+              "checked": "2026-09-24T10:38:53.861Z",
               "reason": "verified"
              },
              "modelscope.cn": {
               "ok": true,
-              "checked": "2026-09-24T10:15:30.876Z",
+              "checked": "2026-09-24T10:38:55.152Z",
               "reason": "verified"
              },
              "ipfs": {
               "ok": true,
-              "checked": "2026-09-24T10:15:30.964Z",
+              "checked": "2026-09-24T10:38:55.232Z",
               "reason": "verified"
              }
             },
@@ -7240,7 +7744,7 @@
              "disabled": false,
              "likes": 6114,
              "downloads": 250598416,
-             "trendingScore": 404,
+             "trendingScore": 403,
              "createdAt": "2022-03-02T00:00:00.000Z",
              "pipeline_tag": "sentence-similarity",
              "library_name": "sentence-transformers",
@@ -8229,7 +8733,7 @@
        ],
        "operationId": "listModelsVia",
        "summary": "Search with a source pinned for what follows",
-       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://gethologram.ai/via/ipfs`, and never choose again.",
        "parameters": [
         {
          "name": "source",
@@ -9626,7 +10130,7 @@
           "type": "string",
           "pattern": "^blake3:[0-9a-f]{64}$"
          },
-         "example": "blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5"
+         "example": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a"
         }
        ],
        "responses": {
@@ -9705,7 +10209,7 @@
        "summary": "One object, by the hash of its bytes",
        "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
        "x-hologram-probe": {
-        "path": "/api/v1/objects/blake3:a7311be19bbe0cebe6130db4820e77b6030d053d93829d927314d89d897a5ee5",
+        "path": "/api/v1/objects/blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
         "status": 200,
         "method": "HEAD"
        }
@@ -9719,20 +10223,20 @@
    "id": "agentcard",
    "method": "GET",
    "path": "/.well-known/agent-card.json",
-   "ms": 97,
+   "ms": 525,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngxrr9dtd43oa-gzip\"",
+    "etag": "\"dlo7g9z7y4g23nz-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
    "body": {
     "name": "Hologram Model Hub",
     "description": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-    "url": "https://hub.uor.foundation",
+    "url": "https://gethologram.ai",
     "version": "1.0.0",
-    "documentationUrl": "https://hub.uor.foundation/llms.txt",
+    "documentationUrl": "https://gethologram.ai/llms.txt",
     "provider": {
      "organization": "Hologram Technologies",
      "url": "https://github.com/Hologram-Technologies/hologram-live"
@@ -9749,9 +10253,9 @@
     "defaultOutputModes": [
      "application/json"
     ],
-    "x-openapi": "https://hub.uor.foundation/openapi.json",
+    "x-openapi": "https://gethologram.ai/openapi.json",
     "x-mcp": {
-     "url": "https://hub.uor.foundation/mcp",
+     "url": "https://gethologram.ai/mcp",
      "transport": "streamable-http",
      "authentication": "none"
     },
@@ -9766,8 +10270,8 @@
        "getOpenapi"
       ],
       "examples": [
-       "curl -H 'accept: application/json' https://hub.uor.foundation/",
-       "curl https://hub.uor.foundation/openapi.json"
+       "curl -H 'accept: application/json' https://gethologram.ai/",
+       "curl https://gethologram.ai/openapi.json"
       ]
      },
      {
@@ -9779,7 +10283,7 @@
        "getSourceHealth"
       ],
       "examples": [
-       "curl https://hub.uor.foundation/api/hub/health"
+       "curl https://gethologram.ai/api/hub/health"
       ]
      },
      {
@@ -9792,8 +10296,8 @@
        "getModelAtRevision"
       ],
       "examples": [
-       "curl 'https://hub.uor.foundation/api/models?search=qwen&filter=gguf&limit=5'",
-       "export HF_ENDPOINT=https://hub.uor.foundation && hf download Qwen/Qwen3-0.6B"
+       "curl 'https://gethologram.ai/api/models?search=qwen&filter=gguf&limit=5'",
+       "export HF_ENDPOINT=https://gethologram.ai && hf download Qwen/Qwen3-0.6B"
       ]
      }
     ]
@@ -9804,22 +10308,22 @@
    "id": "robots",
    "method": "GET",
    "path": "/robots.txt",
-   "ms": 89,
+   "ms": 102,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
-    "etag": "\"dlngxrr11r3edp\"",
+    "etag": "\"dlo7g9z65togdl\"",
     "accept-ranges": "bytes",
     "access-control-allow-origin": "*"
    },
-   "body": "# hub.uor.foundation\n# The website, the model pages and the discovery documents are open to crawlers.\n# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real\n# traffic, and a crawler that follows them pays nothing and keeps nothing.\n\nUser-agent: *\nAllow: /$\nAllow: /models/\nAllow: /docs/\nAllow: /openapi.json\nAllow: /llms.txt\nAllow: /.well-known/\nDis…",
+   "body": "# gethologram.ai\n# The website, the model pages and the discovery documents are open to crawlers.\n# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real\n# traffic, and a crawler that follows them pays nothing and keeps nothing.\n\nUser-agent: *\nAllow: /$\nAllow: /models/\nAllow: /docs/\nAllow: /openapi.json\nAllow: /llms.txt\nAllow: /.well-known/\nDisallo…",
    "error": null
   },
   {
    "id": "docs",
    "method": "GET",
    "path": "/docs",
-   "ms": 310,
+   "ms": 108,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
@@ -9834,49 +10338,49 @@
    "id": "docs.index",
    "method": "GET",
    "path": "/docs/",
-   "ms": 88,
+   "ms": 294,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
-    "etag": "\"dlngxp3nl7i5af0-gzip\"",
+    "etag": "\"dlo7g85nc5gfagn-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"What Hologram Hub is, what it replaces, and the one command that proves it.\">\n<meta property=\"og:title\" content=\"Docs · Holog…",
    "error": null
   },
   {
    "id": "docs.page",
    "method": "GET",
    "path": "/docs/quickstart/",
-   "ms": 86,
+   "ms": 269,
    "status": 200,
    "headers": {
     "content-type": "text/html; charset=utf-8",
-    "etag": "\"dlngxp3qkdghb8c-gzip\"",
+    "etag": "\"dlo7g85ri6kwb3g-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Quickstart · Docs · Hologram</title>\n<meta name=\"description\" content=\"Find a model, download one file, and prove the bytes, in three requests and no key.\">\n<meta property=\"og:title\" …",
+   "body": "<!doctype html>\n<html lang=\"en\" class=\"dark\" data-theme=\"dark\" data-wallpaper=\"alps\" data-base=\"/\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Quickstart · Docs · Hologram Models Hub</title>\n<meta name=\"description\" content=\"Find a model, download one file, and prove the bytes, in three requests and no key.\">\n<meta property=\"og:title\" …",
    "error": null
   },
   {
    "id": "docs.twin",
    "method": "GET",
    "path": "/docs/quickstart.md",
-   "ms": 98,
+   "ms": 104,
    "status": 200,
    "headers": {
     "content-type": "text/markdown; charset=utf-8",
-    "etag": "\"dlngxp3sy3tj2lm-gzip\"",
+    "etag": "\"dlo7g85sp1rb2ki-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "> Documentation index: https://hub.uor.foundation/llms.txt\n\n# Quickstart\n\n> Find a model, download one file, and prove the bytes, in three requests and no key.\n\nYou want a file from a model and you want to know it is the right file. Three requests do it. Nothing to install, nothing to sign up for.\n\nEvery command on this page runs as written. `hexgrad/Kokoro-82M` is a real model in the index; swap …",
+   "body": "> Documentation index: https://gethologram.ai/llms.txt\n\n# Quickstart\n\n> Find a model, download one file, and prove the bytes, in three requests and no key.\n\nYou want a file from a model and you want to know it is the right file. Three requests do it. Nothing to install, nothing to sign up for.\n\nEvery command on this page runs as written. `hexgrad/Kokoro-82M` is a real model in the index; swap in a…",
    "error": null
   },
   {
    "id": "docs.missing",
    "method": "GET",
    "path": "/docs/not-a-page/",
-   "ms": 105,
+   "ms": 89,
    "status": 404,
    "headers": {},
    "error": null
@@ -9885,11 +10389,11 @@
    "id": "archive",
    "method": "GET",
    "path": "/archive.json",
-   "ms": 107,
+   "ms": 118,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngxw0lladh3fs-gzip\"",
+    "etag": "\"dlo7gbouv17u3fs-gzip\"",
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
@@ -9947,11 +10451,11 @@
    "id": "pins",
    "method": "GET",
    "path": "/pins.json",
-   "ms": 98,
+   "ms": 799,
    "status": 200,
    "headers": {
     "content-type": "application/json",
-    "etag": "\"dlngxw0c2cx9ejs-gzip\"",
+    "etag": "\"dlo7gborafolejs-gzip\"",
     "content-encoding": "gzip"
    },
    "body": {
@@ -10482,7 +10986,7 @@
    "id": "healthz",
    "method": "GET",
    "path": "/healthz",
-   "ms": 93,
+   "ms": 472,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -10501,7 +11005,7 @@
    "id": "hub.health",
    "method": "GET",
    "path": "/api/hub/health",
-   "ms": 86,
+   "ms": 120,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10513,18 +11017,18 @@
     "sources": {
      "huggingface.co": {
       "ok": true,
-      "checked": "2026-09-24T10:38:53.861Z",
+      "checked": "2026-09-25T07:41:56.833Z",
       "reason": "verified"
      },
      "modelscope.cn": {
       "ok": true,
-      "checked": "2026-09-24T10:38:55.152Z",
+      "checked": "2026-09-25T07:41:27.864Z",
       "reason": "verified"
      },
      "ipfs": {
       "ok": true,
-      "checked": "2026-09-24T10:38:55.232Z",
-      "reason": "verified"
+      "checked": null,
+      "reason": "no probe file on this source"
      }
     },
     "order": [
@@ -10539,12 +11043,12 @@
    "id": "models.list",
    "method": "GET",
    "path": "/api/models?limit=2&sort=downloads",
-   "ms": 86,
+   "ms": 89,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "public, max-age=60",
-    "x-total-count": "640",
+    "x-total-count": "641",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
     "content-encoding": "gzip"
@@ -10559,9 +11063,9 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 6114,
+     "likes": 6119,
      "downloads": 250598416,
-     "trendingScore": 403,
+     "trendingScore": 395,
      "createdAt": "2022-03-02T00:00:00.000Z",
      "pipeline_tag": "sentence-similarity",
      "library_name": "sentence-transformers",
@@ -10592,9 +11096,9 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 3618,
+     "likes": 3629,
      "downloads": 37173706,
-     "trendingScore": 284,
+     "trendingScore": 287,
      "createdAt": "2024-01-27T00:00:00.000Z",
      "pipeline_tag": "sentence-similarity",
      "library_name": "sentence-transformers",
@@ -10610,8 +11114,7 @@
       "context": 8194,
       "sources": [
        "Hugging Face",
-       "ModelScope",
-       "IPFS"
+       "ModelScope"
       ]
      }
     }
@@ -10622,17 +11125,48 @@
    "id": "models.search",
    "method": "GET",
    "path": "/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&limit=2",
-   "ms": 98,
+   "ms": 94,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "public, max-age=60",
-    "x-total-count": "13",
+    "x-total-count": "11",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
     "content-encoding": "gzip"
    },
    "body": [
+    {
+     "_id": "3ab39812037fa021592c5b23",
+     "id": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+     "modelId": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+     "author": "JonathanColetti",
+     "sha": "45d0fc0ad6cfcf9eeee6008ddaea925536409b18",
+     "private": false,
+     "gated": false,
+     "disabled": false,
+     "likes": 1257,
+     "downloads": 2331396,
+     "trendingScore": 437,
+     "createdAt": "2026-08-14T00:00:00.000Z",
+     "pipeline_tag": "text-generation",
+     "library_name": "llama.cpp",
+     "tags": [
+      "text-generation",
+      "llama.cpp",
+      "gguf"
+     ],
+     "hologram": {
+      "manifest": "blake3:3ab39812037fa021592c5b23d56a3484634c4f2b4f4193bbdd1ba893938f1fbb",
+      "files": 20,
+      "weight_bytes": 231256590464,
+      "parameters": 27320697856,
+      "context": 262144,
+      "sources": [
+       "Hugging Face"
+      ]
+     }
+    },
     {
      "_id": "9760086f94a7cccd1145e61c",
      "id": "empero-ai/Qwen3.8-35B-A3B-Distill-GGUF",
@@ -10642,9 +11176,9 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 138,
+     "likes": 144,
      "downloads": 133496,
-     "trendingScore": 444,
+     "trendingScore": 416,
      "createdAt": "2026-09-16T00:00:00.000Z",
      "pipeline_tag": "text-generation",
      "library_name": "gguf",
@@ -10664,37 +11198,6 @@
        "ModelScope"
       ]
      }
-    },
-    {
-     "_id": "3ab39812037fa021592c5b23",
-     "id": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
-     "modelId": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
-     "author": "JonathanColetti",
-     "sha": "45d0fc0ad6cfcf9eeee6008ddaea925536409b18",
-     "private": false,
-     "gated": false,
-     "disabled": false,
-     "likes": 1247,
-     "downloads": 2331396,
-     "trendingScore": 432,
-     "createdAt": "2026-08-14T00:00:00.000Z",
-     "pipeline_tag": "text-generation",
-     "library_name": "llama.cpp",
-     "tags": [
-      "text-generation",
-      "llama.cpp",
-      "gguf"
-     ],
-     "hologram": {
-      "manifest": "blake3:3ab39812037fa021592c5b23d56a3484634c4f2b4f4193bbdd1ba893938f1fbb",
-      "files": 20,
-      "weight_bytes": 231256590464,
-      "parameters": 27320697856,
-      "context": 262144,
-      "sources": [
-       "Hugging Face"
-      ]
-     }
     }
    ],
    "error": null
@@ -10703,7 +11206,7 @@
    "id": "models.info",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 92,
+   "ms": 136,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10741,7 +11244,7 @@
    "id": "models.info.revision",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/revision/1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-   "ms": 87,
+   "ms": 140,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10779,7 +11282,7 @@
    "id": "models.refs",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/refs",
-   "ms": 88,
+   "ms": 139,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10804,7 +11307,7 @@
    "id": "models.tree",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
-   "ms": 88,
+   "ms": 132,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10839,7 +11342,7 @@
    "id": "models.missing",
    "method": "GET",
    "path": "/api/models/nobody/not-a-real-model-xyz",
-   "ms": 176,
+   "ms": 119,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10858,7 +11361,7 @@
    "id": "models.revision.wrong",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/0000000",
-   "ms": 108,
+   "ms": 114,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10877,7 +11380,7 @@
    "id": "models.readonly",
    "method": "POST",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 86,
+   "ms": 136,
    "status": 405,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10896,7 +11399,7 @@
    "id": "resolve",
    "method": "HEAD",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 94,
+   "ms": 297,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10916,7 +11419,7 @@
    "id": "resolve.sha256sums",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/SHA256SUMS",
-   "ms": 91,
+   "ms": 131,
    "status": 200,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -10933,7 +11436,7 @@
    "id": "resolve.entry.missing",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/not-a-file.bin",
-   "ms": 234,
+   "ms": 93,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -10949,30 +11452,10 @@
    "error": null
   },
   {
-   "id": "via.ipfs",
-   "method": "HEAD",
-   "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 403,
-   "status": 302,
-   "headers": {
-    "cache-control": "no-store",
-    "etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
-    "location": "https://ipfs.filebase.io/ipfs/bafybeibob7gkhs3har6vmrigcb7efbqxhhna3p2qqadqukguoqdxwfeq4m/sentence_bert_config.json",
-    "x-repo-commit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-    "x-linked-etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
-    "x-linked-size": "53",
-    "x-hub-source": "ipfs",
-    "accept-ranges": "bytes",
-    "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
-   },
-   "error": null
-  },
-  {
    "id": "via.huggingface",
    "method": "HEAD",
    "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 88,
+   "ms": 544,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
@@ -10989,15 +11472,31 @@
    "error": null
   },
   {
+   "id": "via.missing",
+   "method": "HEAD",
+   "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+   "ms": 144,
+   "status": 404,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60",
+    "x-error-code": "SourceHasNotGotIt",
+    "x-error-message": "ipfs does not hold sentence_bert_config.json of sentence-transformers/all-MiniLM-L6-v2. This file is on: huggingface.co, modelscope.cn. Drop the /via/ prefix to let the hub choose.",
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+   },
+   "error": null
+  },
+  {
    "id": "via.list",
    "method": "GET",
    "path": "/via/ipfs/api/models?limit=1",
-   "ms": 264,
+   "ms": 2242,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "public, max-age=60",
-    "x-total-count": "640",
+    "x-total-count": "641",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
     "content-encoding": "gzip"
@@ -11012,7 +11511,7 @@
      "private": false,
      "gated": false,
      "disabled": false,
-     "likes": 3245,
+     "likes": 3465,
      "downloads": 0,
      "trendingScore": 500,
      "createdAt": "2026-09-18T00:00:00.000Z",
@@ -11041,7 +11540,7 @@
    "id": "xet",
    "method": "HEAD",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
-   "ms": 270,
+   "ms": 354,
    "status": 307,
    "headers": {
     "cache-control": "no-store",
@@ -11054,13 +11553,13 @@
   {
    "id": "objects.get",
    "method": "HEAD",
-   "path": "/api/v1/objects/blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
-   "ms": 106,
+   "path": "/api/v1/objects/blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
+   "ms": 258,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.hologram.model-hub.catalog.v1+json",
     "cache-control": "public, max-age=31536000, immutable",
-    "etag": "\"blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a\"",
+    "etag": "\"blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b\"",
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "ETag, Content-Disposition"
    },
@@ -11070,7 +11569,7 @@
    "id": "objects.list.anon",
    "method": "GET",
    "path": "/api/v1/objects",
-   "ms": 256,
+   "ms": 472,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -11083,7 +11582,7 @@
    "id": "objects.search.anon",
    "method": "GET",
    "path": "/api/v1/objects/search?q=qwen",
-   "ms": 251,
+   "ms": 404,
    "status": 401,
    "headers": {
     "content-type": "text/plain; charset=utf-8",
@@ -11096,7 +11595,7 @@
    "id": "objects.missing",
    "method": "GET",
    "path": "/api/v1/objects/blake3:0000000000000000000000000000000000000000000000000000000000000000",
-   "ms": 94,
+   "ms": 114,
    "status": 404,
    "headers": {
     "content-type": "application/json",
@@ -11114,7 +11613,7 @@
    "id": "capabilities",
    "method": "GET",
    "path": "/api/v1/capabilities",
-   "ms": 85,
+   "ms": 96,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -11180,7 +11679,7 @@
    "id": "modules",
    "method": "GET",
    "path": "/api/v1/modules",
-   "ms": 86,
+   "ms": 108,
    "status": 200,
    "headers": {
     "content-type": "application/json",
@@ -11221,7 +11720,7 @@
    "id": "api.v1.bare",
    "method": "GET",
    "path": "/api/v1",
-   "ms": 106,
+   "ms": 134,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -11233,7 +11732,7 @@
    "id": "oci.base",
    "method": "GET",
    "path": "/v2/",
-   "ms": 90,
+   "ms": 144,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -11245,16 +11744,16 @@
    "id": "oci.catalog",
    "method": "GET",
    "path": "/v2/_catalog",
-   "ms": 92,
+   "ms": 156,
    "status": 200,
    "headers": {
     "content-type": "application/json"
    },
    "body": {
     "repositories": [
-     "demo/hello",
-     "live/crane",
-     "model-hub/index"
+     "buckets/uor/docs",
+     "buckets/uor/model-index",
+     "buckets/uor/spaces"
     ]
    },
    "error": null
@@ -11263,7 +11762,7 @@
    "id": "oci.manifest.docker",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 110,
+   "ms": 116,
    "status": 404,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11285,7 +11784,7 @@
    "id": "oci.manifest.modelpack",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/manifests/latest",
-   "ms": 204,
+   "ms": 242,
    "status": 200,
    "headers": {
     "content-type": "application/vnd.oci.image.manifest.v1+json",
@@ -11348,7 +11847,7 @@
    "id": "oci.tags",
    "method": "GET",
    "path": "/v2/sentence-transformers/all-minilm-l6-v2/tags/list",
-   "ms": 95,
+   "ms": 142,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11368,7 +11867,7 @@
    "id": "oci.index.tags",
    "method": "GET",
    "path": "/v2/model-hub/index/tags/list",
-   "ms": 83,
+   "ms": 138,
    "status": 200,
    "headers": {
     "content-type": "application/json"
@@ -11386,7 +11885,7 @@
    "id": "account.health",
    "method": "GET",
    "path": "/api/account/health",
-   "ms": 96,
+   "ms": 150,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11402,7 +11901,7 @@
    "id": "account.me.anon",
    "method": "GET",
    "path": "/api/account/me",
-   "ms": 86,
+   "ms": 138,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11417,7 +11916,7 @@
    "id": "account.me.patch.anon",
    "method": "PATCH",
    "path": "/api/account/me",
-   "ms": 85,
+   "ms": 145,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11432,7 +11931,7 @@
    "id": "account.saved.anon",
    "method": "POST",
    "path": "/api/account/saved",
-   "ms": 91,
+   "ms": 106,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11447,7 +11946,7 @@
    "id": "account.saved.delete.anon",
    "method": "DELETE",
    "path": "/api/account/saved/a%2Fb",
-   "ms": 86,
+   "ms": 96,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11462,7 +11961,7 @@
    "id": "account.request.anon",
    "method": "POST",
    "path": "/api/account/request",
-   "ms": 89,
+   "ms": 122,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11477,7 +11976,7 @@
    "id": "account.publisher.anon",
    "method": "POST",
    "path": "/api/account/publisher-request",
-   "ms": 86,
+   "ms": 138,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11492,7 +11991,7 @@
    "id": "account.unknown.anon",
    "method": "GET",
    "path": "/api/account/nope",
-   "ms": 86,
+   "ms": 140,
    "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11507,7 +12006,7 @@
    "id": "mcp.get",
    "method": "GET",
    "path": "/mcp",
-   "ms": 85,
+   "ms": 140,
    "status": 405,
    "headers": {
     "access-control-allow-origin": "*",
@@ -11519,7 +12018,7 @@
    "id": "mcp.initialize",
    "method": "POST",
    "path": "/mcp",
-   "ms": 98,
+   "ms": 134,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11551,7 +12050,7 @@
    "id": "mcp.tools.list",
    "method": "POST",
    "path": "/mcp",
-   "ms": 96,
+   "ms": 135,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11662,7 +12161,7 @@
    "id": "mcp.tools.call",
    "method": "POST",
    "path": "/mcp",
-   "ms": 126,
+   "ms": 100,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
@@ -11678,11 +12177,11 @@
      "content": [
       {
        "type": "text",
-       "text": "{\"total\":177,\"models\":[{\"id\":\"Qwen/Qwen-Image-2.1\",\"task\":\"text-to-image\",\"library\":\"diffusers\",\"license\":\"other\",\"parameters\":7115124736,\"weights_gb\":33.13,\"downloads\":37618,\"sources\":[\"Hugging Face\"],\"page\":\"https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/\"},{\"id\":\"abenzerps/Qwen-Image-2.1-Uncensored-GGUF\",\"task\":\"text-to-image\",\"library\":\"gguf\",\"license\":\"other\",\"parameters\":7115124736,\"w…"
+       "text": "{\"total\":178,\"models\":[{\"id\":\"Qwen/Qwen-Image-2.1\",\"task\":\"text-to-image\",\"library\":\"diffusers\",\"license\":\"other\",\"parameters\":7115124736,\"weights_gb\":33.13,\"downloads\":37618,\"sources\":[\"Hugging Face\"],\"page\":\"https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/\"},{\"id\":\"abenzerps/Qwen-Image-2.1-Uncensored-GGUF\",\"task\":\"text-to-image\",\"library\":\"gguf\",\"license\":\"other\",\"parameters\":7115124736,\"w…"
       }
      ],
      "structuredContent": {
-      "total": 177,
+      "total": 178,
       "models": [
        {
         "id": "Qwen/Qwen-Image-2.1",
@@ -11720,7 +12219,7 @@
    "id": "preflight.models",
    "method": "OPTIONS",
    "path": "/api/models",
-   "ms": 83,
+   "ms": 91,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*",
@@ -11732,7 +12231,7 @@
    "id": "preflight.objects",
    "method": "OPTIONS",
    "path": "/api/v1/objects",
-   "ms": 82,
+   "ms": 100,
    "status": 204,
    "headers": {
     "access-control-allow-origin": "*"
@@ -11743,7 +12242,7 @@
    "id": "closed.grpc",
    "method": "POST",
    "path": "/hologram.live.v1.HologramLive/Handshake",
-   "ms": 86,
+   "ms": 130,
    "status": 404,
    "headers": {
     "content-type": "text/plain; charset=utf-8"
@@ -11755,7 +12254,7 @@
    "id": "nav.wallpapers",
    "method": "GET",
    "path": "/wallpapers/",
-   "ms": 91,
+   "ms": 137,
    "status": 404,
    "headers": {},
    "error": null

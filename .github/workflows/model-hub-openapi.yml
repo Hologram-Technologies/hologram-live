@@ -1,6 +1,6 @@
 name: model-hub-openapi
 
-# The document at hub.uor.foundation/openapi.json is the endpoint's contract, so it is gated like code.
+# The document at gethologram.ai/openapi.json is the endpoint's contract, so it is gated like code.
 #
 #   document  on every change: the committed document matches what the builder produces, it lints clean, and an
 #             agent framework can bind to it and complete find -> resolve -> verify. Runs against the built file,
@@ -30,6 +30,10 @@ jobs:
   document:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
+    env:
+      # The endpoint these checks bind to. Defaults to the hub's name; the repository variable HUB_LIVE overrides it, for
+      # the window in which the name has not yet moved to the host (the document is built for the new name before DNS does).
+      HUB: ${{ vars.HUB_LIVE || 'https://gethologram.ai' }}
     defaults:
       run:
         working-directory: apps/model-hub/web
@@ -49,11 +53,15 @@ jobs:
         run: npx --yes @redocly/cli@latest lint public/openapi.json --config scripts/redocly.yaml
 
       - name: A framework can bind to it and verify a real download
-        run: node qa/openapi/bind.mjs --spec public/openapi.json
+        run: node qa/openapi/bind.mjs --spec public/openapi.json --base "$HUB"
 
   live:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    env:
+      # The endpoint these checks bind to. Defaults to the hub's name; the repository variable HUB_LIVE overrides it, for
+      # the window in which the name has not yet moved to the host (the document is built for the new name before DNS does).
+      HUB: ${{ vars.HUB_LIVE || 'https://gethologram.ai' }}
     defaults:
       run:
         working-directory: apps/model-hub/web
@@ -67,23 +75,23 @@ jobs:
       - run: npm ci --no-fund --no-audit
 
       - name: Record what the live endpoint answers
-        run: node qa/openapi/probe.mjs
+        run: node qa/openapi/probe.mjs --base "$HUB"
 
       - name: Every documented operation answers, and every answering route is documented
-        run: node qa/openapi/conformance.mjs
+        run: node qa/openapi/conformance.mjs --base "$HUB"
 
       - name: A framework can bind to the live document
-        run: node qa/openapi/bind.mjs
+        run: node qa/openapi/bind.mjs --base "$HUB"
 
       # The planes are published on different schedules, so they can drift: a site build that is not followed by a
       # publish leaves the dialects a day ahead of the object plane. Nothing prevented that; this catches it the
       # next morning instead of a caller catching it with a hash that does not match.
       - name: The dialects and the object plane still agree
-        run: node qa/openapi/agree.mjs --n 20
+        run: node qa/openapi/agree.mjs --n 20 --base "$HUB"
 
       # The one property everything else rests on: an object name is the BLAKE3 of its bytes.
       - name: Objects still hash to their own addresses
-        run: node qa/openapi/objects.mjs --n 8
+        run: node qa/openapi/objects.mjs --n 8 --base "$HUB"
 
       - name: Keep the recording when something fails
         if: failure()

@@ -10,7 +10,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import MarkdownIt from "markdown-it";
 
-const GROUPS = ["Start", "Concepts", "Connect", "Reference"];
+export const GROUPS = ["Start", "Concepts", "Connect", "Reference"];
 // The reader's order, not the document's: what you call first sits first.
 const TAG_ORDER = ["Models", "Files", "Registry", "MCP", "Objects", "Account", "Health", "Discovery"];
 // Paths a page may link to with a leading slash that the site does not ship itself, because another service
@@ -153,11 +153,11 @@ export function sidebar(pages, current, base) {
     .join("")}</ul>`).join("")}</nav>`;
 }
 
-export function article(page, pages, base) {
+export function article(page, pages, base, tag = "") {
   const i = pages.findIndex((p) => p.slug === page.slug);
   const prev = pages[i - 1], next = pages[i + 1];
   return `<article class="docs-page">
-<header class="docs-head"><p class="docs-group">${esc(page.group)}</p><h1>${esc(page.title)}</h1><p class="docs-lead">${esc(page.description)}</p><a class="docs-twin" href="${href(page.slug, base, { md: true })}" title="This page as Markdown">Markdown</a></header>
+<header class="docs-head"><p class="docs-group">${esc(page.group)}</p><div class="docs-title"><h1>${esc(page.title)}</h1>${tag}</div><p class="docs-lead">${esc(page.description)}</p><a class="docs-twin" href="${href(page.slug, base, { md: true })}" title="This page as Markdown">Markdown</a></header>
 ${page.html}
 <footer class="docs-foot">${prev ? `<a class="prev" href="${href(prev.slug, base)}"><span>Previous</span>${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a class="next" href="${href(next.slug, base)}"><span>Next</span>${esc(next.title)}</a>` : ""}</footer>
 </article>`;
@@ -176,6 +176,7 @@ export function twin(page, { endpoint }) {
 export function llms(pages, { endpoint, spec, snapshot, models }) {
   const ops = Object.values(spec.paths).reduce((n, item) => n + METHODS.filter((m) => item[m]).length, 0);
   const line = (p) => `- [${p.title}](${endpoint}/docs/${p.slug}.md): ${p.description}`;
+  const host = endpoint.replace(/^https?:\/\//, "");
   return [
     "# Hologram Model Hub",
     "",
@@ -183,13 +184,13 @@ export function llms(pages, { endpoint, spec, snapshot, models }) {
     "",
     "## The short way",
     "",
-    "- `export HF_ENDPOINT=https://hub.uor.foundation` and every tool built on `huggingface_hub` reads from here: `hf download <owner>/<name>`, `snapshot_download`, `from_pretrained`, vLLM, SGLang. llama.cpp reads `MODEL_ENDPOINT` instead. Same commands, same cache; `main` is the indexed revision.",
-    "- `ollama pull hub.uor.foundation/<owner>/<name>:<quant>` for any GGUF in the index; Ollama verifies the SHA-256 itself.",
-    "- `oras pull hub.uor.foundation/<owner>/<name>:latest` for a whole model as an OCI artifact, every layer a raw file whose digest is its SHA-256.",
+    `- \`export HF_ENDPOINT=${endpoint}\` and every tool built on \`huggingface_hub\` reads from here: \`hf download <owner>/<name>\`, \`snapshot_download\`, \`from_pretrained\`, vLLM, SGLang. llama.cpp reads \`MODEL_ENDPOINT\` instead. Same commands, same cache; \`main\` is the indexed revision.`,
+    `- \`ollama pull ${host}/<owner>/<name>:<quant>\` for any GGUF in the index; Ollama verifies the SHA-256 itself.`,
+    `- \`oras pull ${host}/<owner>/<name>:latest\` for a whole model as an OCI artifact, every layer a raw file whose digest is its SHA-256.`,
     "- `GET /api/models?search=qwen&limit=5` to find a model in a few hundred bytes; `GET /api/models/<owner>/<name>/tree/main` for its files, each with `oid`, the SHA-256 it must have.",
     "- `GET /<owner>/<name>/resolve/main/<path>` answers `302` to a source that is up right now; `X-Hub-Source` says which. Put `/via/ipfs`, `/via/modelscope` or `/via/huggingface` in front to pin one.",
-    "- Check a whole download with no tool of ours: `curl -s https://hub.uor.foundation/<owner>/<name>/resolve/main/SHA256SUMS | sha256sum -c`",
-    "- MCP: `https://hub.uor.foundation/mcp`, Streamable HTTP, no key; tools `search_models`, `get_model`, `resolve_file`.",
+    `- Check a whole download with no tool of ours: \`curl -s ${endpoint}/<owner>/<name>/resolve/main/SHA256SUMS | sha256sum -c\``,
+    `- MCP: \`${endpoint}/mcp\`, Streamable HTTP, no key; tools \`search_models\`, \`get_model\`, \`resolve_file\`.`,
     "",
     "## The one rule",
     "",

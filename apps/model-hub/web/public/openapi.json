@@ -3,7 +3,7 @@
  "info": {
   "title": "Hologram Model Hub",
   "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-  "description": "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `huggingface_hub` (transformers, diffusers,\nsentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,\n`ollama pull hub.uor.foundation/<owner>/<name>:<quant>`, `oras pull hub.uor.foundation/<owner>/<name>:latest`,\nor the MCP server at `/mcp`.\n\n**The rules that make it safe.**\nThe hub carries names, addresses and directions, never weight bytes: a file request is answered with a\nredirect to a source that passed the last probe, plus the SHA-256 the bytes must have.\nExpected hashes come from the index only, never from the source that serves the bytes.\nNothing here verifies on your behalf, so hash what arrives: `…/resolve/main/SHA256SUMS` piped to\n`sha256sum -c` checks a whole download with no tool of ours.\nReads are anonymous and permitted from any origin; only publishing needs a token.\nCredentials sent to whatever endpoint a client is pointed at are stripped at the edge and never logged.\n\n**Scope.** The hub is the file plane. Inference is deliberately out of scope and `/v1/*` is reserved and\nempty: the engines the hub feeds already speak the OpenAI API.",
+  "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `huggingface_hub` (transformers, diffusers,\nsentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,\n`ollama pull gethologram.ai/<owner>/<name>:<quant>`, `oras pull gethologram.ai/<owner>/<name>:latest`,\nor the MCP server at `/mcp`.\n\n**The rules that make it safe.**\nThe hub carries names, addresses and directions, never weight bytes: a file request is answered with a\nredirect to a source that passed the last probe, plus the SHA-256 the bytes must have.\nExpected hashes come from the index only, never from the source that serves the bytes.\nNothing here verifies on your behalf, so hash what arrives: `…/resolve/main/SHA256SUMS` piped to\n`sha256sum -c` checks a whole download with no tool of ours.\nReads are anonymous and permitted from any origin; only publishing needs a token.\nCredentials sent to whatever endpoint a client is pointed at are stripped at the edge and never logged.\n\n**Scope.** The hub is the file plane. Inference is deliberately out of scope and `/v1/*` is reserved and\nempty: the engines the hub feeds already speak the OpenAI API.",
   "version": "1.0.0",
   "license": {
    "name": "MIT OR Apache-2.0",
@@ -15,27 +15,27 @@
   },
   "x-hologram-dialects": {
    "huggingface": {
-    "setting": "HF_ENDPOINT=https://hub.uor.foundation",
+    "setting": "HF_ENDPOINT=https://gethologram.ai",
     "paths": [
      "/api/models",
      "/{owner}/{name}/resolve/{revision}/{path}"
     ]
    },
    "ollama": {
-    "setting": "ollama pull hub.uor.foundation/{owner}/{name}:{quant}",
+    "setting": "ollama pull gethologram.ai/{owner}/{name}:{quant}",
     "paths": [
      "/v2/{owner}/{name}/manifests/{reference}",
      "/v2/{owner}/{name}/blobs/{digest}"
     ]
    },
    "oci": {
-    "setting": "oras pull hub.uor.foundation/{owner}/{name}:latest",
+    "setting": "oras pull gethologram.ai/{owner}/{name}:latest",
     "paths": [
      "/v2/{owner}/{name}/manifests/{reference}"
     ]
    },
    "mcp": {
-    "setting": "https://hub.uor.foundation/mcp",
+    "setting": "https://gethologram.ai/mcp",
     "paths": [
      "/mcp"
     ]
@@ -50,13 +50,13 @@
  },
  "servers": [
   {
-   "url": "https://hub.uor.foundation",
+   "url": "https://gethologram.ai",
    "description": "Production. The hub is one host; there is no staging surface."
   }
  ],
  "externalDocs": {
   "description": "The same endpoint explained for an agent in prose, shortest path first.",
-  "url": "https://hub.uor.foundation/llms.txt"
+  "url": "https://gethologram.ai/llms.txt"
  },
  "tags": [
   {
@@ -107,6 +107,350 @@
    }
   },
   "schemas": {
+   "SectionDescriptor": {
+    "type": "object",
+    "description": "One section of the hub, in the shape an agent executes rather than reads. The same fixed shape answers\nat `/models`, `/registry`, `/spaces`, `/buckets` and `/docs/`, so it is learned once.\n\nTwo guarantees, held by `qa/openapi/sections.mjs`: every URL in it is runnable as written, and where\n`catalog.address` is not null it is a content address — the whole section in one verifiable fetch.",
+    "required": [
+     "format",
+     "section",
+     "self",
+     "about",
+     "inventory",
+     "catalog",
+     "list",
+     "item",
+     "fetch",
+     "verify",
+     "brief",
+     "page",
+     "openapi"
+    ],
+    "properties": {
+     "format": {
+      "type": "string",
+      "const": "hologram.section.descriptor/v1"
+     },
+     "section": {
+      "type": "string",
+      "enum": [
+       "models",
+       "registry",
+       "spaces",
+       "buckets",
+       "docs"
+      ]
+     },
+     "title": {
+      "type": "string"
+     },
+     "about": {
+      "type": "string",
+      "description": "One sentence: what this section holds."
+     },
+     "self": {
+      "type": "string",
+      "description": "The address that answered this."
+     },
+     "inventory": {
+      "type": "object",
+      "description": "How much is here, and how much of it this host actually serves bytes for. They are different numbers, and one section was overstating itself by a factor of 300 before they were separated.",
+      "required": [
+       "described",
+       "served_here",
+       "note"
+      ],
+      "properties": {
+       "described": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "What this section lists. Null when only a live route can answer, which `list` then names."
+       },
+       "served_here": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "How many of those this host serves the bytes of."
+       },
+       "note": {
+        "type": "string",
+        "description": "Where the rest live, in a sentence."
+       }
+      }
+     },
+     "catalog": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "One address holding the whole section. Null when the section has no snapshot; `list` then carries a live route instead.",
+      "required": [
+       "address",
+       "fetch",
+       "format"
+      ],
+      "properties": {
+       "address": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "A content address. Fetch it, hash the bytes, and the hash is this string."
+       },
+       "fetch": {
+        "type": "string"
+       },
+       "format": {
+        "type": "string"
+       },
+       "media_type": {
+        "type": "string"
+       },
+       "note": {
+        "type": "string"
+       }
+      }
+     },
+     "catalog_note": {
+      "type": "string",
+      "description": "Present when `catalog` is null: why, in one sentence."
+     },
+     "list": {
+      "type": "array",
+      "description": "Every way to enumerate this section, most useful first.",
+      "items": {
+       "type": "object",
+       "description": "One request, runnable as written once its `{placeholders}` are filled from this same document.",
+       "required": [
+        "method",
+        "url",
+        "returns"
+       ],
+       "properties": {
+        "dialect": {
+         "type": "string",
+         "enum": [
+          "objects",
+          "huggingface",
+          "oci",
+          "http"
+         ],
+         "description": "Which language this request is in."
+        },
+        "method": {
+         "type": "string",
+         "enum": [
+          "GET"
+         ]
+        },
+        "url": {
+         "type": "string",
+         "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+        },
+        "returns": {
+         "type": "string"
+        },
+        "caps_at": {
+         "type": "integer",
+         "description": "The most this route will ever return in one call, when it cannot enumerate."
+        },
+        "note": {
+         "type": "string"
+        },
+        "artifact_type": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "item": {
+      "type": "object",
+      "description": "How to reach one thing in this section.",
+      "required": [
+       "method",
+       "url",
+       "returns"
+      ],
+      "properties": {
+       "dialect": {
+        "type": "string",
+        "enum": [
+         "objects",
+         "huggingface",
+         "oci",
+         "http"
+        ],
+        "description": "Which language this request is in."
+       },
+       "method": {
+        "type": "string",
+        "enum": [
+         "GET"
+        ]
+       },
+       "url": {
+        "type": "string",
+        "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+       },
+       "returns": {
+        "type": "string"
+       },
+       "caps_at": {
+        "type": "integer",
+        "description": "The most this route will ever return in one call, when it cannot enumerate."
+       },
+       "note": {
+        "type": "string"
+       },
+       "artifact_type": {
+        "type": "string"
+       }
+      }
+     },
+     "files": {
+      "type": "object",
+      "description": "How to list one item's files, where that is a separate request.",
+      "required": [
+       "method",
+       "url",
+       "returns"
+      ],
+      "properties": {
+       "dialect": {
+        "type": "string",
+        "enum": [
+         "objects",
+         "huggingface",
+         "oci",
+         "http"
+        ],
+        "description": "Which language this request is in."
+       },
+       "method": {
+        "type": "string",
+        "enum": [
+         "GET"
+        ]
+       },
+       "url": {
+        "type": "string",
+        "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+       },
+       "returns": {
+        "type": "string"
+       },
+       "caps_at": {
+        "type": "integer",
+        "description": "The most this route will ever return in one call, when it cannot enumerate."
+       },
+       "note": {
+        "type": "string"
+       },
+       "artifact_type": {
+        "type": "string"
+       }
+      }
+     },
+     "fetch": {
+      "type": "object",
+      "description": "How to get the bytes.",
+      "required": [
+       "method",
+       "url",
+       "returns"
+      ],
+      "properties": {
+       "dialect": {
+        "type": "string",
+        "enum": [
+         "objects",
+         "huggingface",
+         "oci",
+         "http"
+        ],
+        "description": "Which language this request is in."
+       },
+       "method": {
+        "type": "string",
+        "enum": [
+         "GET"
+        ]
+       },
+       "url": {
+        "type": "string",
+        "description": "A path on this host. `{catalog.address}` means the value of that field in this document."
+       },
+       "returns": {
+        "type": "string"
+       },
+       "caps_at": {
+        "type": "integer",
+        "description": "The most this route will ever return in one call, when it cannot enumerate."
+       },
+       "note": {
+        "type": "string"
+       },
+       "artifact_type": {
+        "type": "string"
+       }
+      }
+     },
+     "verify": {
+      "type": "object",
+      "description": "How to check what arrived. The expected hash never comes from whoever served the bytes.",
+      "required": [
+       "algorithm",
+       "expected_from",
+       "server_verifies_on_read"
+      ],
+      "properties": {
+       "algorithm": {
+        "type": "string",
+        "enum": [
+         "sha256",
+         "blake3",
+         "none"
+        ]
+       },
+       "expected_from": {
+        "type": "string"
+       },
+       "server_verifies_on_read": {
+        "type": "boolean",
+        "description": "Always false. The client hashes, or nothing is proved."
+       },
+       "root": {
+        "type": "string"
+       },
+       "privacy": {
+        "type": "string"
+       }
+      }
+     },
+     "one_line": {
+      "type": "string",
+      "description": "The single command that makes an existing tool use this section, where one exists."
+     },
+     "pages": {
+      "type": "array",
+      "description": "Docs only: every page and its Markdown twin.",
+      "items": {
+       "type": "object"
+      }
+     },
+     "brief": {
+      "type": "string"
+     },
+     "page": {
+      "type": "string"
+     },
+     "openapi": {
+      "type": "string"
+     }
+    }
+   },
    "Descriptor": {
     "type": "object",
     "description": "What the hub is and where everything under it lives. One fetch, no schema needed to read it.",
@@ -551,8 +895,12 @@
          "description": "Whether the hub reached it on its last probe."
         },
         "checked": {
-         "type": "string",
-         "format": "date-time"
+         "type": [
+          "string",
+          "null"
+         ],
+         "format": "date-time",
+         "description": "When the hub last reached it, or null if it never has -- a source with no probe file on it is never checked, only offered."
         },
         "reason": {
          "type": "string",
@@ -1178,7 +1526,7 @@
     ],
     "operationId": "getDescriptor",
     "summary": "The hub, answered three ways",
-    "description": "One URL, three readers, chosen by `Accept`.\n\nA browser sends `text/html` and gets the website. A caller that asks for `application/json` by name gets the\ndescriptor, which points at today's catalog address and at everything else here. Anything else — `*/*`, which\nis what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually\nasks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.\n\nSo `curl hub.uor.foundation` is the shortest useful thing an agent can be told about this service.",
+    "description": "One URL, three readers, chosen by `Accept`.\n\nA browser sends `text/html` and gets the website. A caller that asks for `application/json` by name gets the\ndescriptor, which points at today's catalog address and at everything else here. Anything else — `*/*`, which\nis what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually\nasks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.\n\nSo `curl gethologram.ai` is the shortest useful thing an agent can be told about this service.",
     "parameters": [
      {
       "name": "Accept",
@@ -1203,8 +1551,8 @@
          "format": "hologram.model-hub.descriptor/v1",
          "name": "Hologram Model Hub",
          "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-         "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
-         "snapshot": "2026-09-24",
+         "catalog": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
+         "snapshot": "2026-09-25",
          "fetch": "/api/v1/objects/{id}",
          "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
          "publish": "POST /api/v1/objects with a publisher token",
@@ -1288,8 +1636,8 @@
          "format": "hologram.model-hub.descriptor/v1",
          "name": "Hologram Model Hub",
          "about": "Open models, every byte named by its hash. Fetch anything by address and check it yourself.",
-         "catalog": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
-         "snapshot": "2026-09-24",
+         "catalog": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
+         "snapshot": "2026-09-25",
          "fetch": "/api/v1/objects/{id}",
          "find": "read objects[<owner>/<name>] in the catalog; server search needs a publisher token",
          "publish": "POST /api/v1/objects with a publisher token",
@@ -1488,19 +1836,30 @@
     ],
     "operationId": "getModelsSection",
     "summary": "The models section, answered two ways",
-    "description": "The site shows this address beside the models heading. A browser gets the browse page; anything else\ngets a brief covering finding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model, is untouched.",
+    "description": "The site shows this address beside the models heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nfinding a model, proving it and fetching it: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
     "responses": {
      "200": {
-      "description": "The section brief, or the section's page.",
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
       "headers": {
        "vary": {
-        "description": "`Accept`, because this route has two representations.",
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
         "schema": {
          "type": "string"
         }
        }
       },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/markdown": {
         "schema": {
          "type": "string"
@@ -1541,19 +1900,30 @@
     ],
     "operationId": "getRegistrySection",
     "summary": "The registry section, answered two ways",
-    "description": "The site shows this address beside the registry heading. A browser gets the browse page; anything else\ngets a brief covering pulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with\nthe rule that makes the bytes safe.\nIt adds no API — every route the brief names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model, is untouched.\n\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns.",
+    "description": "The site shows this address beside the registry heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\npulling the same models as OCI artifacts: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.\n\n`/v2/` itself is deliberately left alone: it is a protocol endpoint and OCI clients depend on exactly what it returns.",
     "responses": {
      "200": {
-      "description": "The section brief, or the section's page.",
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
       "headers": {
        "vary": {
-        "description": "`Accept`, because this route has two representations.",
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
         "schema": {
          "type": "string"
         }
        }
       },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/markdown": {
         "schema": {
          "type": "string"
@@ -1579,6 +1949,134 @@
     },
     "x-hologram-probe": {
      "path": "/registry",
+     "status": 200,
+     "headers": {
+      "accept": "*/*"
+     },
+     "contentType": "text/markdown"
+    }
+   }
+  },
+  "/spaces": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getSpacesSection",
+    "summary": "The spaces section, answered two ways",
+    "description": "The site shows this address beside the spaces heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nbrowser-only apps, each sealed under one root digest, and how to read one from the registry: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
+    "responses": {
+     "200": {
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/spaces",
+     "status": 200,
+     "headers": {
+      "accept": "*/*"
+     },
+     "contentType": "text/markdown"
+    }
+   }
+  },
+  "/buckets": {
+   "get": {
+    "tags": [
+     "Discovery"
+    ],
+    "operationId": "getBucketsSection",
+    "summary": "The buckets section, answered two ways",
+    "description": "The site shows this address beside the buckets heading — the same tag on every section, so one shape\ncovers all five. A browser gets the section's page; anything else gets a brief covering\nwalking a bucket as an OCI index tree and checking every block against its address: the few requests that do the job, in the order you would make them, with the rule that makes\nthe bytes safe.\nAsk for `application/json` and the same address answers a **section descriptor**: one fixed shape, the\nsame on all five sections, naming how to enumerate this section, how to reach one item, how to fetch\nits bytes and how to check them. Where the section has a snapshot, `catalog.address` is a content\naddress holding the whole of it, so the entire section is one verifiable fetch. Where it has none the\nfield is `null` and `list` carries a live route instead; no section borrows a catalogue it does not have.\nIt adds no API — every route the descriptor names is already in this document. What was missing was an\naddress that gathers them, which the site was already advertising. The trailing slash works either way,\nand a page below the section, such as a single model or one docs page, is untouched.",
+    "responses": {
+     "200": {
+      "description": "The section descriptor to a caller that asked for JSON, the section brief to any other non-browser, and the section's page to a browser.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "This document describes a deployment that serves this path; a hub that has not been updated to it answers 404 here. Fall back to `/llms.txt`, which every deployment serves.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "x-hologram-probe": {
+     "path": "/buckets",
      "status": 200,
      "headers": {
       "accept": "*/*"
@@ -1685,14 +2183,39 @@
     ],
     "operationId": "getDocsIndex",
     "summary": "The documentation",
-    "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document. Every page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.",
+    "description": "Overview, quickstart, the concepts, one page per dialect, and a reference generated from this document.\nEvery page has a Markdown twin at `/docs/{page}.md`, and `/llms.txt` lists them all.\n\nThis is also the address the site shows beside the Docs heading, the same tag every section carries. A\nbrowser gets this index; anything else gets the section brief, which lists every page and the address of\nits twin, generated from the pages themselves. The slash is load-bearing: `/docs` without one is the\nserver's own API reference, on a different upstream.",
     "responses": {
      "200": {
-      "description": "An HTML page.",
+      "description": "The descriptor to a caller that asked for JSON, the section brief to any other non-browser, the index to a browser.",
+      "headers": {
+       "vary": {
+        "description": "`Accept`, because this route has three representations.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "link": {
+        "description": "RFC 8288: `alternate` to the descriptor, `describedby` to the brief, `service-desc` to this document.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
       "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SectionDescriptor"
+        }
+       },
        "text/html": {
         "schema": {
          "type": "string"
+        }
+       },
+       "text/markdown": {
+        "schema": {
+         "type": "string",
+         "description": "The section brief."
         }
        }
       }
@@ -1711,6 +2234,9 @@
     "x-hologram-probe": {
      "path": "/docs/",
      "status": 200,
+     "headers": {
+      "accept": "text/html"
+     },
      "contentType": "text/html"
     }
    }
@@ -2185,18 +2711,18 @@
          "sources": {
           "huggingface.co": {
            "ok": true,
-           "checked": "2026-09-24T10:38:53.861Z",
+           "checked": "2026-09-25T07:41:56.833Z",
            "reason": "verified"
           },
           "modelscope.cn": {
            "ok": true,
-           "checked": "2026-09-24T10:38:55.152Z",
+           "checked": "2026-09-25T07:41:27.864Z",
            "reason": "verified"
           },
           "ipfs": {
            "ok": true,
-           "checked": "2026-09-24T10:38:55.232Z",
-           "reason": "verified"
+           "checked": null,
+           "reason": "no probe file on this source"
           }
          },
          "order": [
@@ -2365,9 +2891,9 @@
           "private": false,
           "gated": false,
           "disabled": false,
-          "likes": 6114,
+          "likes": 6119,
           "downloads": 250598416,
-          "trendingScore": 403,
+          "trendingScore": 395,
           "createdAt": "2022-03-02T00:00:00.000Z",
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",
@@ -2398,9 +2924,9 @@
           "private": false,
           "gated": false,
           "disabled": false,
-          "likes": 3618,
+          "likes": 3629,
           "downloads": 37173706,
-          "trendingScore": 284,
+          "trendingScore": 287,
           "createdAt": "2024-01-27T00:00:00.000Z",
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",
@@ -2416,8 +2942,7 @@
            "context": 8194,
            "sources": [
             "Hugging Face",
-            "ModelScope",
-            "IPFS"
+            "ModelScope"
            ]
           }
          }
@@ -3386,7 +3911,7 @@
      }
     },
     "x-hologram-probe": {
-     "path": "/via/ipfs/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
+     "path": "/via/huggingface/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
      "status": 302,
      "method": "HEAD"
     }
@@ -3399,7 +3924,7 @@
     ],
     "operationId": "listModelsVia",
     "summary": "Search with a source pinned for what follows",
-    "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+    "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://gethologram.ai/via/ipfs`, and never choose again.",
     "parameters": [
      {
       "name": "source",
@@ -3517,9 +4042,9 @@
         },
         "example": {
          "repositories": [
-          "demo/hello",
-          "live/crane",
-          "model-hub/index"
+          "buckets/uor/docs",
+          "buckets/uor/model-index",
+          "buckets/uor/spaces"
          ]
         }
        }
@@ -3723,211 +4248,6 @@
      },
      "contentType": "application/vnd.oci.image.manifest.v1+json"
     }
-   },
-   "put": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "putManifest",
-    "summary": "Push a manifest, by tag or by digest (OCI push)",
-    "description": "Every layer and the config it names must already be in this repository, or the push is refused rather than\nleaving a tag pointing at bytes that are not there. A manifest carrying a `subject` becomes a referrer of\nthat digest, and the answer says so in `OCI-Subject`.\n\nWrites need a credential: `docker login hub.uor.foundation`. Reads never do.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user, exactly as on Hugging Face.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "sentence-transformers"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The model name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "all-MiniLM-L6-v2"
-     },
-     {
-      "name": "reference",
-      "in": "path",
-      "required": true,
-      "description": "A tag, or the manifest's own digest.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "v1"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/vnd.oci.image.manifest.v1+json": {
-       "schema": {
-        "$ref": "#/components/schemas/OciManifest"
-       }
-      },
-      "application/vnd.oci.image.index.v1+json": {
-       "schema": {
-        "$ref": "#/components/schemas/OciManifest"
-       }
-      }
-     }
-    },
-    "responses": {
-     "201": {
-      "description": "Stored.",
-      "headers": {
-       "docker-content-digest": {
-        "description": "The digest of the manifest.",
-        "schema": {
-         "type": "string"
-        }
-       },
-       "oci-subject": {
-        "description": "Present when the manifest carries a `subject`.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "The manifest is not valid, or its digest does not match the reference.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "MANIFEST_INVALID",
-           "message": "manifest invalid"
-          }
-         ]
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "A write was attempted without a registry token. Reads never need one.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "write requires a registry token"
-       }
-      }
-     },
-     "404": {
-      "description": "It names a layer this repository does not hold.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "MANIFEST_BLOB_UNKNOWN",
-           "message": "blob unknown to registry"
-          }
-         ]
-        }
-       }
-      }
-     }
-    }
-   },
-   "delete": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "deleteManifest",
-    "summary": "Delete a manifest, or drop a tag (OCI content management)",
-    "description": "By digest, the manifest goes and every tag pointing at it goes with it. By tag, only the tag goes. The bytes\nare swept by the next garbage collection, so a pull already in flight finishes.\n\nWrites need a credential: `docker login hub.uor.foundation`. Reads never do.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user, exactly as on Hugging Face.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "sentence-transformers"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The model name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "all-MiniLM-L6-v2"
-     },
-     {
-      "name": "reference",
-      "in": "path",
-      "required": true,
-      "description": "A tag, or a manifest digest.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "sha256:…"
-     }
-    ],
-    "responses": {
-     "202": {
-      "description": "Gone."
-     },
-     "401": {
-      "description": "A write was attempted without a registry token. Reads never need one.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "write requires a registry token"
-       }
-      }
-     },
-     "404": {
-      "description": "No such manifest.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "MANIFEST_UNKNOWN",
-           "message": "manifest unknown"
-          }
-         ]
-        }
-       }
-      }
-     },
-     "405": {
-      "description": "Deletes are disabled on this deployment (`storage.delete.enabled`).",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        }
-       }
-      }
-     }
-    }
    }
   },
   "/v2/{owner}/{name}/blobs/{digest}": {
@@ -4006,592 +4326,6 @@
           {
            "code": "BLOB_UNKNOWN",
            "message": "No layer with that digest in this model."
-          }
-         ]
-        }
-       }
-      }
-     }
-    }
-   },
-   "delete": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "deleteBlob",
-    "summary": "Unlink a blob from a repository (OCI content management)",
-    "description": "Removes this repository's link to the blob. A pull already in flight finishes, and the bytes go at the next\ngarbage collection; another repository holding the same blob keeps it.\n\nWrites need a credential: `docker login hub.uor.foundation`. Reads never do.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user, exactly as on Hugging Face.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "sentence-transformers"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The model name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "all-MiniLM-L6-v2"
-     },
-     {
-      "name": "digest",
-      "in": "path",
-      "required": true,
-      "description": "The blob's digest.",
-      "schema": {
-       "type": "string",
-       "pattern": "^sha256:[0-9a-f]{64}$"
-      }
-     }
-    ],
-    "responses": {
-     "202": {
-      "description": "Unlinked."
-     },
-     "401": {
-      "description": "A write was attempted without a registry token. Reads never need one.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "write requires a registry token"
-       }
-      }
-     },
-     "404": {
-      "description": "Not linked in this repository.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "BLOB_UNKNOWN",
-           "message": "blob unknown to registry"
-          }
-         ]
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/v2/{owner}/{name}/blobs/uploads/": {
-   "post": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "startBlobUpload",
-    "summary": "Start a blob upload (OCI push)",
-    "description": "Opens an upload session and answers `202` with its `Location`. Two shortcuts the specification allows:\n`?digest=` with the whole blob as the body finishes in one request (`201`), and `?mount=<digest>&from=<repo>`\ntakes a blob that already exists in another repository without sending its bytes again.\n\nWrites need a credential: `docker login hub.uor.foundation`. Reads never do.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "you"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The repository name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "app"
-     }
-    ],
-    "responses": {
-     "201": {
-      "description": "A monolithic upload or a cross-repository mount finished immediately.",
-      "headers": {
-       "docker-content-digest": {
-        "description": "The blob's digest.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "202": {
-      "description": "The session is open; `Location` names it.",
-      "headers": {
-       "location": {
-        "description": "Where to append to, and finish.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Malformed name, digest or mount.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "NAME_INVALID",
-           "message": "invalid repository name"
-          }
-         ]
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "A write was attempted without a registry token. Reads never need one.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "write requires a registry token"
-       }
-      }
-     }
-    }
-   }
-  },
-  "/v2/{owner}/{name}/blobs/uploads/{uuid}": {
-   "get": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "getBlobUploadStatus",
-    "summary": "Where an upload has got to",
-    "description": "`Range` names the bytes the registry holds, so an interrupted push can resume instead of starting again.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "you"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The repository name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "app"
-     },
-     {
-      "name": "uuid",
-      "in": "path",
-      "required": true,
-      "description": "The upload session, from the `Location` of the request that opened it.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "9f1c…"
-     }
-    ],
-    "responses": {
-     "204": {
-      "description": "The session exists.",
-      "headers": {
-       "range": {
-        "description": "`0-<last byte received>`.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "No such session.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "BLOB_UPLOAD_UNKNOWN",
-           "message": "no such upload"
-          }
-         ]
-        }
-       }
-      }
-     }
-    }
-   },
-   "patch": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "appendBlobUpload",
-    "summary": "Append bytes to an upload",
-    "description": "Chunked push. A chunk must start where the last one ended: an offset that has gone stale, which is what two\nclients racing one session produce, is refused with `416 RANGE_INVALID` rather than silently accepted.\n\nWrites need a credential: `docker login hub.uor.foundation`. Reads never do.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "you"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The repository name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "app"
-     },
-     {
-      "name": "uuid",
-      "in": "path",
-      "required": true,
-      "description": "The upload session, from the `Location` of the request that opened it.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "9f1c…"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/octet-stream": {
-       "schema": {
-        "type": "string",
-        "format": "binary"
-       }
-      }
-     }
-    },
-    "responses": {
-     "202": {
-      "description": "Accepted.",
-      "headers": {
-       "range": {
-        "description": "The bytes now held.",
-        "schema": {
-         "type": "string"
-        }
-       },
-       "location": {
-        "description": "Where to send the next chunk.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "A write was attempted without a registry token. Reads never need one.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "write requires a registry token"
-       }
-      }
-     },
-     "416": {
-      "description": "The chunk does not start where the last one ended.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "RANGE_INVALID",
-           "message": "invalid content range"
-          }
-         ]
-        }
-       }
-      }
-     }
-    }
-   },
-   "put": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "finishBlobUpload",
-    "summary": "Finish an upload",
-    "description": "`?digest=` names the whole blob. The bytes are hashed and checked against it before anything becomes\nreachable, so a truncated or corrupted upload can never become a layer.\n\nWrites need a credential: `docker login hub.uor.foundation`. Reads never do.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "you"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The repository name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "app"
-     },
-     {
-      "name": "uuid",
-      "in": "path",
-      "required": true,
-      "description": "The upload session, from the `Location` of the request that opened it.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "9f1c…"
-     },
-     {
-      "name": "digest",
-      "in": "query",
-      "required": true,
-      "description": "The digest of the whole blob.",
-      "schema": {
-       "type": "string",
-       "pattern": "^sha256:[0-9a-f]{64}$"
-      }
-     }
-    ],
-    "responses": {
-     "201": {
-      "description": "The blob exists.",
-      "headers": {
-       "docker-content-digest": {
-        "description": "The digest it was stored under.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "The bytes do not hash to the digest given.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "DIGEST_INVALID",
-           "message": "provided digest did not match uploaded content"
-          }
-         ]
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "A write was attempted without a registry token. Reads never need one.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "write requires a registry token"
-       }
-      }
-     }
-    }
-   },
-   "delete": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "cancelBlobUpload",
-    "summary": "Cancel an upload",
-    "description": "Discards the session and its staged bytes. Writes need a credential: `docker login hub.uor.foundation`. Reads never do.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "you"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The repository name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "app"
-     },
-     {
-      "name": "uuid",
-      "in": "path",
-      "required": true,
-      "description": "The upload session, from the `Location` of the request that opened it.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "9f1c…"
-     }
-    ],
-    "responses": {
-     "204": {
-      "description": "Cancelled."
-     },
-     "401": {
-      "description": "A write was attempted without a registry token. Reads never need one.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "write requires a registry token"
-       }
-      }
-     },
-     "404": {
-      "description": "No such session.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "BLOB_UPLOAD_UNKNOWN",
-           "message": "no such upload"
-          }
-         ]
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/v2/{owner}/{name}/referrers/{digest}": {
-   "get": {
-    "tags": [
-     "Registry"
-    ],
-    "operationId": "listReferrers",
-    "summary": "What is attached to a digest: signatures, SBOMs, attestations (OCI content discovery)",
-    "description": "An OCI index of every manifest whose `subject` is this digest — a `cosign` signature, an SBOM, a provenance\nattestation. Empty when there are none, which is a `200` and not a `404`. `?artifactType=` narrows it, and\nthe answer says so in `OCI-Filters-Applied`.",
-    "parameters": [
-     {
-      "name": "owner",
-      "in": "path",
-      "required": true,
-      "description": "The owning organisation or user.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "you"
-     },
-     {
-      "name": "name",
-      "in": "path",
-      "required": true,
-      "description": "The repository name.",
-      "schema": {
-       "type": "string"
-      },
-      "example": "app"
-     },
-     {
-      "name": "digest",
-      "in": "path",
-      "required": true,
-      "description": "The subject's digest.",
-      "schema": {
-       "type": "string",
-       "pattern": "^sha256:[0-9a-f]{64}$"
-      }
-     },
-     {
-      "name": "artifactType",
-      "in": "query",
-      "required": false,
-      "description": "Return only referrers of this artifact type.",
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "An OCI image index, possibly with no manifests.",
-      "headers": {
-       "oci-filters-applied": {
-        "description": "Names each filter the registry actually applied.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      },
-      "content": {
-       "application/vnd.oci.image.index.v1+json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciManifest"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Malformed digest.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/OciError"
-        },
-        "example": {
-         "errors": [
-          {
-           "code": "DIGEST_INVALID",
-           "message": "invalid digest"
           }
          ]
         }
@@ -5596,7 +5330,7 @@
        "type": "string",
        "pattern": "^blake3:[0-9a-f]{64}$"
       },
-      "example": "blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a"
+      "example": "blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b"
      }
     ],
     "responses": {
@@ -5675,7 +5409,7 @@
     "summary": "One object, by the hash of its bytes",
     "description": "The content-addressed floor. The answer for an address never changes, so it is served `immutable` with a one-year lifetime and may be cached forever. The server does not verify on read: hash what arrives and keep it only if the BLAKE3 equals the address you asked for.",
     "x-hologram-probe": {
-     "path": "/api/v1/objects/blake3:b720593c2206ba8ca4843c7e522e73f0f1af93b865a7b0f59304d4d79c1da70a",
+     "path": "/api/v1/objects/blake3:c7edcce839ec88018b04d065125317a9c474893d9c8cbdff37f85a3df8cbe16b",
      "status": 200,
      "method": "HEAD"
     }

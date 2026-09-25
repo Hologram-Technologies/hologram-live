@@ -134,12 +134,6 @@ async function browse() {
   const change = (fn) => { fn(); state.page = 1; render("push"); };
 
   // Verified only: the same filter as Status → Verified, one tap away.
-  const verifiedOnly = $("#verified-only");
-  const isVerifiedOnly = () => state.f.stateLabel?.length === 1 && state.f.stateLabel[0] === "Verified";
-  verifiedOnly.addEventListener("click", () => change(() => {
-    if (isVerifiedOnly()) delete state.f.stateLabel; else state.f.stateLabel = ["Verified"];
-  }));
-
   filters.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip"), tab = e.target.closest(".tab"), reset = e.target.closest("[data-reset]"), sorter = e.target.closest("[data-order]");
     if (sorter) { const k = sorter.dataset.order; order[k] = order[k] === "az" ? "count" : "az"; render(); }
@@ -173,7 +167,6 @@ async function browse() {
   // sort menu
   const sortButton = $("#sort"), list = $("#sort-list");
   function syncSort() {
-    verifiedOnly.setAttribute("aria-checked", String(isVerifiedOnly()));
     $("#sort-label").textContent = R.SORTS.find(([k]) => k === state.sort)[1];
     for (const o of list.children) o.setAttribute("aria-selected", o.dataset.sort === state.sort);
   }

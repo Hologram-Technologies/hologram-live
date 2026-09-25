@@ -1,0 +1,45 @@
+{
+ "format": "hologram.section.descriptor/v1",
+ "section": "buckets",
+ "title": "Buckets",
+ "self": "/buckets",
+ "brief": "/buckets.md",
+ "page": "/buckets/",
+ "openapi": "/openapi.json",
+ "about": "Storage for models, datasets and checkpoints. Every object carries the address of its own bytes.",
+ "inventory": {
+  "described": null,
+  "served_here": null,
+  "note": "a bucket is an OCI index tree under /v2/, named buckets/{owner}/{name}. There is no separate bucket API."
+ },
+ "catalog": null,
+ "catalog_note": "no catalogue object yet: discovery is the registry catalogue filtered by the buckets/ prefix",
+ "list": [
+  {
+   "dialect": "oci",
+   "method": "GET",
+   "url": "/v2/_catalog?n=1000",
+   "returns": "every repository; the buckets are those named buckets/{owner}/{name}"
+  },
+  {
+   "dialect": "oci",
+   "method": "GET",
+   "url": "/v2/buckets/{owner}/{name}/tags/list",
+   "returns": "every past state; a tag h-{milliseconds} is one publish and names its parent"
+  }
+ ],
+ "item": {
+  "url": "/v2/buckets/{owner}/{name}/manifests/latest",
+  "returns": "the bucket as it stands, an OCI index"
+ },
+ "fetch": {
+  "url": "/v2/buckets/{owner}/{name}/blobs/{digest}",
+  "returns": "one block"
+ },
+ "verify": {
+  "algorithm": "sha256",
+  "expected_from": "the catalog, the tree listing or the manifest -- never the source that served the bytes",
+  "server_verifies_on_read": false,
+  "privacy": "a private bucket is encrypted in the browser before anything is sent, object names included; the hub stores bytes it cannot read"
+ }
+}

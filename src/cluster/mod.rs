@@ -228,7 +228,6 @@ async fn run(state: AppState) {
                 table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint, config.max_peers);
 
                 let round_started_millis = now_millis();
-                let mut dialled_changed = false;
                 let mut joins = JoinSet::new();
                 for endpoint in table.due(round_started_millis, config.fanout) {
                     let state = state.clone();
@@ -254,12 +253,27 @@ async fn run(state: AppState) {
                         Ok(response) => {
                             table.record_success(&endpoint);
                             // An origin that answered a join is worth knocking
-                            // on again after a restart. Bounded by the same
-                            // `max_peers` the table is.
+                            // on again after a restart, and is written the
+                            // moment it is learned rather than once the round
+                            // ends. What still follows in this round is
+                            // anti-entropy against this peer and every other
+                            // due one — bounded only by `request_timeout_secs`
+                            // per object, so an arbitrarily long tail — and
+                            // then pruning. A node that stops anywhere in that
+                            // window (a crash, a SIGKILL, a container
+                            // eviction) would lose the only address it has to
+                            // rejoin from, which is the entire purpose of this
+                            // file: a restart with no configured seeds has
+                            // nothing else, because its directory is written
+                            // only by authenticated inbound joins. Bounded by
+                            // the same `max_peers` the table is, and written
+                            // only on a real change — `BTreeSet::insert`
+                            // reports `false` for an origin already listed, so
+                            // a settled membership writes nothing at all.
                             if dialled.len() < config.max_peers
                                 && dialled.insert(endpoint.clone())
                             {
-                                dialled_changed = true;
+                                store_dialled(&dialled_path, &dialled);
                             }
                             // Deliberately does **not** persist `response.node`.
                             // A join reply is unsigned, so its `node_id` is the
@@ -317,19 +331,12 @@ async fn run(state: AppState) {
                     Ok(removed) if removed > 0 => {
                         tracing::info!(removed, "pruned stale cluster members");
                         let after_prune = state.nodes().list().unwrap_or_default();
-                        dialled_changed |= evict_pruned(
-                            &mut table,
-                            &mut dialled,
-                            &before_prune,
-                            &after_prune,
-                        );
+                        if evict_pruned(&mut table, &mut dialled, &before_prune, &after_prune) {
+                            store_dialled(&dialled_path, &dialled);
+                        }
                     }
                     Ok(_) => {}
                     Err(error) => tracing::warn!(%error, "failed to prune stale cluster members"),
-                }
-
-                if dialled_changed {
-                    store_dialled(&dialled_path, &dialled);
                 }
             }
             () = state.wait_shutdown() => break,

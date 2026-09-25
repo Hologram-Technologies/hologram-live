@@ -32,6 +32,18 @@ struct Server {
     port: u16,
 }
 impl Server {
+    /// The directory this daemon persists its cluster state into: `node.key`,
+    /// `cluster-pinned.json` and `cluster-peers.json`. Read by
+    /// `a_restarted_node_rejoins_without_any_configured_seed`, which has to
+    /// wait for a write to land there before it takes the daemon down.
+    fn state_dir(&self) -> std::path::PathBuf {
+        self.root
+            .as_ref()
+            .expect("a running server still owns its state directory")
+            .path()
+            .join("state")
+    }
+
     /// Stops this daemon and hands back its state directory, so a second
     /// process can be started on the same root.
     ///
@@ -422,6 +434,43 @@ fn authenticated_peers_replicate_an_immutable_object() {
     }
 }
 
+/// Polls the dial list a daemon persists in `state_dir` until it names
+/// `endpoint`.
+///
+/// `a_restarted_node_rejoins_without_any_configured_seed` restarts a daemon
+/// with no configured seeds, so the *only* address it can dial is one it wrote
+/// to `cluster-peers.json` before it went down. Killing it before that write
+/// lands does not exercise the mechanism, it asserts something the design says
+/// is impossible: a node with an empty dial list and no seeds has nothing to
+/// knock on and must wait to be dialled, and the seed has by then evicted it.
+///
+/// The seed's directory reaching two records does not imply the write, and
+/// cannot: `control_plane::join_cluster` records the joiner *before* it
+/// answers, so at the instant the seed's count rises the joiner has not yet
+/// even learned that its join succeeded. Everything it then does with that
+/// answer — including persisting the endpoint — races the test's next poll.
+/// This waits for the write itself, so the ordering the test depends on is one
+/// it enforces rather than one it hopes the machine is fast enough to give it.
+fn await_dial_list_naming(state_dir: &std::path::Path, endpoint: &str) {
+    let path = state_dir.join("cluster-peers.json");
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
+    loop {
+        let listed: Vec<String> = std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        if listed.iter().any(|listed| listed == endpoint) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{} never came to name {endpoint}; last saw {listed:?}",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// Defect 8: a node restarted with **no** configured seeds must rejoin from the
 /// membership it persisted, not sit isolated with a directory full of peers it
 /// never dials.
@@ -451,10 +500,20 @@ fn a_restarted_node_rejoins_without_any_configured_seed() {
 
     let client = reqwest::blocking::Client::new();
     await_peer_count(&client, first.port, 2);
+    // The restart below can only rejoin from the joiner's own disk, so do not
+    // take it down until the address it will need is actually on that disk.
+    // See `await_dial_list_naming` for why the count above is not evidence of
+    // it.
+    await_dial_list_naming(
+        &second.state_dir(),
+        &format!("http://127.0.0.1:{}", first.port),
+    );
 
     // Take the joiner down, keeping its state directory: `node.key` (so it
-    // restarts under the same identity), `cluster-pinned.json` (so admission
-    // survives) and `nodes.json` (the persisted membership under test).
+    // restarts under the same identity) and `cluster-peers.json` (the dial list
+    // under test). Its node directory comes back with it too, holding only
+    // itself: a peer's record is written only by that peer's authenticated
+    // inbound join, and nothing has dialled this node yet.
     let root = second.stop_keeping_state();
     await_peer_count(&client, first.port, 1);
 

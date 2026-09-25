@@ -317,5 +317,5 @@ export function title(state) {
   const parts = FACETS.flatMap((f) => state.f[f.key] || []);
   let t = parts.length ? `${parts.slice(0, 3).join(", ")}${parts.length > 3 ? ` +${parts.length - 3}` : ""} models` : "Models";
   if (state.page > 1) t += `, page ${state.page}`;
-  return `${t} · Hologram Models Hub`;
+  return `${t} · Hologram`;
 }

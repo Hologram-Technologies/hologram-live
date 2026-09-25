@@ -139,7 +139,7 @@ const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.
 // was (display: contents). Narrow, the same group becomes a sheet under the header, and one control stands in
 // for it at the end of the row: the menu button. Same markup, same ids, same controls; only the layout folds.
 const header = ({ section = "", search = false } = {}) => `<header class="top">
-  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
+  <a class="brand" href="${base}" aria-label="Hologram"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
   <div class="top-end">
     <div class="top-menu" id="top-menu">
       ${topNav(section)}
@@ -206,7 +206,7 @@ ${body}
 
 // ---- landing: the front door. One hero, one screen, no scroll.
 const home = page({
-  title: "Hologram Models Hub",
+  title: "Hologram",
   description: "Discover, use and share self-verifying models, skills and artifacts.",
   home: true,
   body: landing({ base, models, endpoint: ENDPOINT, repo: starRepo }),
@@ -376,7 +376,7 @@ function modelPage(m, files, ov, readme) {
   return page({
     section: "models",
     model: m.id,
-    title: `${m.name} · Hologram Models Hub`,
+    title: `${m.name} · Hologram`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
     search: true,
     body: `<div class="head back-row"><a class="back" href="${BROWSE}">${R.icon.left}Models</a>${indexPill()}</div>
@@ -418,7 +418,7 @@ await mkdir(join(DIST, "models"), { recursive: true });
 await writeFile(join(DIST, "index.html"), home);
 await writeFile(join(DIST, "models", "index.html"), browse);
 await writeFile(join(DIST, "404.html"), page({
-  title: "Not found · Hologram Models Hub",
+  title: "Not found · Hologram",
   description: "Page not found.",
   search: true,
   body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${BROWSE}">All models</a></div></section>`,
@@ -455,7 +455,7 @@ const docPages = D.render(await D.load(join(SITE, "docs")), { base, spec });
 for (const p of docPages) {
   await mkdir(dirname(join(DIST, p.path)), { recursive: true });
   await writeFile(join(DIST, p.path), page({
-    title: p.slug === "index" ? "Docs · Hologram Models Hub" : `${p.title} · Docs · Hologram Models Hub`,
+    title: p.slug === "index" ? "Docs · Hologram" : `${p.title} · Docs · Hologram`,
     description: p.description,
     section: "docs",
     styles: ["docs.css"],
@@ -472,7 +472,7 @@ if (privy) {
   // round trip reads as one step rather than as a visit to somewhere else.
   await mkdir(join(DIST, "auth"), { recursive: true });
   await writeFile(join(DIST, "auth", "index.html"), page({
-    title: "Signing you in · Hologram Models Hub",
+    title: "Signing you in · Hologram",
     description: "Finishing sign-in.",
     body: `<section class="panel browse"><div class="empty"><p id="auth-landing">Signing you in…</p><a class="link" href="${base}">All models</a></div></section>`,
   }));

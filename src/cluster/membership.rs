@@ -1,0 +1,538 @@
+//! The set of peers this node contacts, and when.
+//!
+//! A rotating cursor gives every peer a turn, so a large cluster cannot starve
+//! the peers whose origins sort late. Failures back off; configured seeds are
+//! the recovery path and are never dropped.
+
+use super::normalize_endpoint;
+use crate::protocol::NodeRecord;
+use std::collections::BTreeMap;
+
+const BASE_BACKOFF_MILLIS: u64 = 15_000;
+
+/// Where the dial list lives, under `paths.state_dir`. See
+/// `cluster::load_dialled` for what it is and, more importantly, what it is
+/// deliberately not.
+pub const DIALLED_FILE: &str = "cluster-peers.json";
+
+struct PeerState {
+    is_seed: bool,
+    failures: u32,
+    next_attempt_millis: u64,
+    /// When this peer's immutable-object inventory was last reconciled. `0`
+    /// (its initial value) means "never". `replication_due` treats that as
+    /// due once `now_millis >= interval_millis` — under a real wall clock
+    /// (`now_millis` is epoch milliseconds, always far larger than any
+    /// realistic interval) that is true from the very first check, so in
+    /// production this reads as "always due" from a cold start. It is not
+    /// literally always due, though: under a synthetic test clock that
+    /// starts at `now = 0`, a peer first contacted before `now_millis`
+    /// reaches `interval_millis` is not due yet — it becomes due on a later
+    /// visit, once enough simulated time has passed.
+    ///
+    /// Tracked per peer rather than as one global timer: `due()` advances a
+    /// fixed-size rotation cursor every round regardless of whether
+    /// replication itself is due, so a single global gate phase-locks to
+    /// whichever batch of peers happens to be due for *contact* on a round
+    /// that is also due for *replication*. When the rotation period
+    /// (`peer_count / fanout`) and the replication period
+    /// (`replication_interval_secs / heartbeat_interval_secs`) share a
+    /// common factor, that phase-lock is permanent: e.g. 64 peers,
+    /// `fanout = 8` (rotation period 8 rounds) against the default
+    /// `replication_interval_secs = 60` over `heartbeat_interval_secs = 15`
+    /// (replication period 4 rounds) means only the 16 peers whose rotation
+    /// phase lands on a replication-due round would ever replicate — the
+    /// other 48 would starve forever, not just be delayed. Tracking the
+    /// timer on each peer's own state removes the coupling: a peer
+    /// replicates whenever *its own* interval has elapsed, independent of
+    /// which round the rotation happens to contact it on.
+    last_replicated_millis: u64,
+}
+
+pub struct PeerTable {
+    peers: BTreeMap<String, PeerState>,
+    cursor: usize,
+}
+
+impl PeerTable {
+    pub fn new(seeds: Vec<String>) -> Self {
+        let mut table = Self {
+            peers: BTreeMap::new(),
+            cursor: 0,
+        };
+        for seed in seeds {
+            table.peers.insert(
+                seed,
+                PeerState {
+                    is_seed: true,
+                    failures: 0,
+                    next_attempt_millis: 0,
+                    last_replicated_millis: 0,
+                },
+            );
+        }
+        table
+    }
+
+    /// Recovers the working set from the persisted directory. Called once at
+    /// startup, and — since `run` (`src/cluster/mod.rs`) now re-seeds every
+    /// heartbeat round to let a seed notice and dial a joiner back — again on
+    /// every round after that.
+    ///
+    /// `self_endpoint` is excluded: the directory contains this node's own
+    /// heartbeat record (`NodeDirectory::heartbeat` persists self), and
+    /// without this filter a restarted node would add itself as a peer and
+    /// burn one `fanout` slot every round, forever (it is never pruned,
+    /// since `prune_older_than` always preserves the local node id).
+    ///
+    /// Endpoints are normalized before comparison and insertion, matching the
+    /// gossiped-peer path (`run`'s `for peer in response.peers` handling) and
+    /// `prune_evictions`. Without this, a directory entry written with a
+    /// trailing slash (or another spelling `normalize_endpoint` collapses)
+    /// would be stored under a table key that `evict` — always called with a
+    /// normalized endpoint — can never match, making that entry permanently
+    /// un-evictable and burning a fanout slot forever, the same bug class
+    /// Task 6 fixed for the self-seeding case.
+    ///
+    /// `max_peers` bounds growth the same way the gossiped-peer path already
+    /// does: `NodeDirectory` is an unbounded map fed by every inbound join,
+    /// so without a cap here a re-seed on every round could grow the table
+    /// past the configured bound even though `fanout` still caps how many of
+    /// its entries are dialed per round.
+    pub fn seed_from_directory(
+        &mut self,
+        nodes: &[NodeRecord],
+        self_endpoint: &str,
+        max_peers: usize,
+    ) {
+        for node in nodes {
+            if node.endpoint.is_empty() {
+                continue;
+            }
+            if !self.seed_one(&node.endpoint, self_endpoint, max_peers) {
+                break;
+            }
+        }
+    }
+
+    /// Recovers the working set from the persisted dial list
+    /// ([`DIALLED_FILE`]) — the origins this node has dialled and been
+    /// answered by.
+    ///
+    /// This exists because the node directory is no longer written from a join
+    /// *reply* (see the comment in `cluster::run`): a reply is unsigned, so the
+    /// record it carries cannot be trusted to name its own signer. A node
+    /// therefore learns a peer's *record* only from that peer's authenticated
+    /// inbound join — which is correct, but leaves a node restarted with no
+    /// configured seeds nothing on disk to knock on, since its directory holds
+    /// only itself until someone dials it.
+    ///
+    /// An endpoint is not a record: it carries no identity, no advertised
+    /// operations and no liveness, it reaches only this table, and an origin
+    /// recovered here still has to complete an authenticated inbound join
+    /// before it can appear in the directory or own anything. Every entry is
+    /// also an origin *this* node chose to dial, from its own configuration,
+    /// its own authenticated directory, or the gossip path that already
+    /// inserts unvalidated endpoints into this same table in memory — so
+    /// persisting them adds no reachable claim that a restart did not already
+    /// have before it.
+    ///
+    /// Bounded and normalized exactly like [`Self::seed_from_directory`].
+    pub fn seed_from_endpoints(
+        &mut self,
+        endpoints: &[String],
+        self_endpoint: &str,
+        max_peers: usize,
+    ) {
+        for endpoint in endpoints {
+            if !self.seed_one(endpoint, self_endpoint, max_peers) {
+                break;
+            }
+        }
+    }
+
+    /// Inserts one normalized endpoint unless it is this node's own or the
+    /// table is already at `max_peers`. Reports `false` once the table is full,
+    /// so a caller stops walking its source.
+    fn seed_one(&mut self, endpoint: &str, self_endpoint: &str, max_peers: usize) -> bool {
+        if self.len() >= max_peers {
+            return false;
+        }
+        let endpoint = normalize_endpoint(endpoint);
+        if endpoint != self_endpoint {
+            self.insert(endpoint);
+        }
+        true
+    }
+
+    pub fn insert(&mut self, endpoint: String) {
+        self.peers.entry(endpoint).or_insert(PeerState {
+            is_seed: false,
+            failures: 0,
+            next_attempt_millis: 0,
+            last_replicated_millis: 0,
+        });
+    }
+
+    pub fn len(&self) -> usize {
+        self.peers.len()
+    }
+
+    /// The next `fanout` peers whose backoff has elapsed, scanning from the
+    /// rotation cursor and wrapping.
+    ///
+    /// The cursor then advances a fixed `fanout` positions (bounded by the table
+    /// size), *not* to wherever the scan stopped: the scan skips peers that are
+    /// backing off, so resuming where it stopped would let a run of
+    /// backing-off peers slide the cursor past peers it never examined. A fixed
+    /// stride gives every peer its turn within ⌈n / fanout⌉ rounds regardless of
+    /// which of them happen to be due, which is the property the comment on
+    /// [`PeerState::last_replicated_millis`] relies on.
+    pub fn due(&mut self, now_millis: u64, fanout: usize) -> Vec<String> {
+        if self.peers.is_empty() || fanout == 0 {
+            return Vec::new();
+        }
+        let ordered: Vec<String> = self.peers.keys().cloned().collect();
+        let start = self.cursor % ordered.len();
+        let mut due = Vec::new();
+        for offset in 0..ordered.len() {
+            if due.len() >= fanout {
+                break;
+            }
+            let endpoint = &ordered[(start + offset) % ordered.len()];
+            if self.peers[endpoint].next_attempt_millis <= now_millis {
+                due.push(endpoint.clone());
+            }
+        }
+        // `fanout` is non-zero: the empty/zero case returned above.
+        self.cursor = (start + ordered.len().min(fanout)) % ordered.len();
+        due
+    }
+
+    /// Clears a peer's failure count and backoff. Takes no clock: a success
+    /// makes the peer due immediately, so there is no deadline to compute.
+    pub fn record_success(&mut self, endpoint: &str) {
+        if let Some(state) = self.peers.get_mut(endpoint) {
+            state.failures = 0;
+            state.next_attempt_millis = 0;
+        }
+    }
+
+    pub fn record_failure(&mut self, endpoint: &str, now_millis: u64, ceiling_millis: u64) {
+        if let Some(state) = self.peers.get_mut(endpoint) {
+            state.failures = state.failures.saturating_add(1);
+            let delay = BASE_BACKOFF_MILLIS
+                .saturating_mul(1_u64 << state.failures.min(12))
+                .min(ceiling_millis.max(BASE_BACKOFF_MILLIS));
+            state.next_attempt_millis = now_millis.saturating_add(delay);
+        }
+    }
+
+    /// Whether this peer's own anti-entropy interval has elapsed. A peer
+    /// this table has never heard of (already evicted, or never inserted)
+    /// is reported due, since there is nothing to gate.
+    pub fn replication_due(&self, endpoint: &str, now_millis: u64, interval_millis: u64) -> bool {
+        match self.peers.get(endpoint) {
+            Some(state) => {
+                now_millis.saturating_sub(state.last_replicated_millis) >= interval_millis
+            }
+            None => true,
+        }
+    }
+
+    /// Records that a replication attempt against this peer happened just
+    /// now, whether or not it fully succeeded — a peer that errors out
+    /// still gets to wait a full interval before it is retried, rather than
+    /// being hammered again on the very next heartbeat round.
+    pub fn record_replication(&mut self, endpoint: &str, now_millis: u64) {
+        if let Some(state) = self.peers.get_mut(endpoint) {
+            state.last_replicated_millis = now_millis;
+        }
+    }
+
+    /// Drops a peer unless it is a configured seed.
+    pub fn evict(&mut self, endpoint: &str) {
+        if self.peers.get(endpoint).is_some_and(|state| !state.is_seed) {
+            self.peers.remove(endpoint);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn endpoints(count: usize) -> Vec<String> {
+        (0..count)
+            .map(|i| format!("https://node{i:02}.example"))
+            .collect()
+    }
+
+    // Defect 7: the old BTreeSet + take(n) reached only the alphabetically first n.
+    #[test]
+    fn the_cursor_reaches_every_peer() {
+        let mut table = PeerTable::new(Vec::new());
+        for endpoint in endpoints(20) {
+            table.insert(endpoint);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut now = 0;
+        for _ in 0..(20_usize.div_ceil(4)) {
+            let batch = table.due(now, 4);
+            // Fix round 1, finding 3: `record_success` clears backoff, so
+            // every peer is due every round regardless of `fanout` — without
+            // this bound, an implementation that ignored `fanout` entirely
+            // and returned every due peer would still pass on round one.
+            assert!(
+                batch.len() <= 4,
+                "due() must never return more than fanout entries, got {}",
+                batch.len()
+            );
+            for endpoint in batch {
+                seen.insert(endpoint.clone());
+                table.record_success(&endpoint);
+            }
+            now += 15_000;
+        }
+        assert_eq!(
+            seen.len(),
+            20,
+            "every peer must be contacted within n/fanout rounds"
+        );
+    }
+
+    // Fix round 1, finding 3: a direct case with more due peers than fanout,
+    // so the cap is pinned even without relying on the rotation test above.
+    #[test]
+    fn due_never_exceeds_the_requested_fanout() {
+        let mut table = PeerTable::new(Vec::new());
+        for endpoint in endpoints(10) {
+            table.insert(endpoint);
+        }
+        assert_eq!(
+            table.due(0, 3).len(),
+            3,
+            "ten peers are due and fanout is 3, so due() must return exactly 3"
+        );
+    }
+
+    #[test]
+    fn a_failing_peer_backs_off_and_is_capped() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://dead.example".to_owned());
+        assert_eq!(table.due(0, 8).len(), 1);
+        table.record_failure("https://dead.example", 0, 60_000);
+        assert!(table.due(1_000, 8).is_empty(), "a failed peer waits");
+        for attempt in 1..10 {
+            table.record_failure("https://dead.example", attempt * 1_000, 60_000);
+        }
+        assert!(
+            table.due(9_000 + 60_001, 8).len() == 1,
+            "backoff must be capped, not unbounded"
+        );
+    }
+
+    // Defect 8: a restart with no configured seeds must not be isolated.
+    #[test]
+    fn the_table_recovers_from_the_persisted_directory() {
+        let mut table = PeerTable::new(Vec::new());
+        table.seed_from_directory(
+            &[crate::protocol::NodeRecord {
+                node_id: "ed25519:aa".to_owned(),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: "https://known.example".to_owned(),
+                last_seen_millis: 0,
+            }],
+            "https://self.example",
+            8,
+        );
+        assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
+    }
+
+    // Fix round 1, finding 1: `NodeDirectory::heartbeat` persists this node's
+    // own record, so the directory handed to `seed_from_directory` always
+    // contains self on every restart after the first cold start. Without the
+    // filter, self becomes an un-evictable peer (it is always preserved by
+    // `prune_older_than`) and permanently burns a fanout slot.
+    #[test]
+    fn seeding_from_the_directory_never_adds_this_node_as_its_own_peer() {
+        let mut table = PeerTable::new(Vec::new());
+        table.seed_from_directory(
+            &[
+                crate::protocol::NodeRecord {
+                    node_id: "ed25519:self".to_owned(),
+                    version: "test".to_owned(),
+                    operations: Vec::new(),
+                    endpoint: "https://self.example".to_owned(),
+                    last_seen_millis: 0,
+                },
+                crate::protocol::NodeRecord {
+                    node_id: "ed25519:peer".to_owned(),
+                    version: "test".to_owned(),
+                    operations: Vec::new(),
+                    endpoint: "https://known.example".to_owned(),
+                    last_seen_millis: 0,
+                },
+            ],
+            "https://self.example",
+            8,
+        );
+        assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
+    }
+
+    // Fix round 3, finding 3: the gossiped-peer path in `run` normalizes
+    // before inserting or comparing, and `prune_evictions` normalizes before
+    // calling `evict`. Before this fix, `seed_from_directory` inserted the
+    // raw directory endpoint, so a peer advertising a trailing slash got a
+    // table key `evict`'s normalized argument could never match — a
+    // permanently un-evictable entry burning a fanout slot forever, the same
+    // bug class Task 6 fixed for the self-seeding case.
+    #[test]
+    fn seed_from_directory_normalizes_a_trailing_slash_endpoint_so_it_stays_evictable() {
+        let mut table = PeerTable::new(Vec::new());
+        table.seed_from_directory(
+            &[crate::protocol::NodeRecord {
+                node_id: "ed25519:peer".to_owned(),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: "https://known.example/".to_owned(),
+                last_seen_millis: 0,
+            }],
+            "https://self.example",
+            8,
+        );
+        // The unnormalized key would never match this call, and the peer
+        // would remain forever.
+        table.evict("https://known.example");
+        assert!(
+            table.due(0, 8).is_empty(),
+            "a trailing-slash directory endpoint must still be evictable once normalized"
+        );
+    }
+
+    // Fix round 3, finding 2: the gossiped-peer path already stops inserting
+    // once `table.len() >= config.max_peers`; `seed_from_directory` re-runs
+    // every round now (fix round 2), reading from an unbounded
+    // `NodeDirectory`, so without the same cap it could grow the table past
+    // the configured bound even though `fanout` still caps dials per round.
+    #[test]
+    fn seed_from_directory_stops_growing_the_table_past_max_peers() {
+        let mut table = PeerTable::new(Vec::new());
+        let nodes: Vec<crate::protocol::NodeRecord> = (0..10)
+            .map(|index| crate::protocol::NodeRecord {
+                node_id: format!("ed25519:{index:02}"),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: format!("https://node{index:02}.example"),
+                last_seen_millis: 0,
+            })
+            .collect();
+        table.seed_from_directory(&nodes, "https://self.example", 3);
+        assert_eq!(
+            table.len(),
+            3,
+            "seed_from_directory must respect max_peers even though the directory offered more"
+        );
+    }
+
+    // Fix round 3, finding 1: `run` now calls `seed_from_directory` every
+    // heartbeat round, not just once at startup, so a peer that is still
+    // failing (and still present in the directory, since it has not yet
+    // aged out) must not have its backoff reset by the next re-seed —
+    // `insert`'s `entry().or_insert(..)` leaves an existing entry alone, but
+    // nothing previously asserted that directly.
+    #[test]
+    fn reseeding_from_the_directory_does_not_reset_an_in_progress_backoff() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://flaky.example".to_owned());
+        table.record_failure("https://flaky.example", 0, 60_000);
+        assert!(
+            table.due(1_000, 8).is_empty(),
+            "the peer is backing off before any re-seed"
+        );
+
+        // Simulate the periodic re-seed `run` performs every round: the same
+        // peer is still in the directory (it has not aged out).
+        table.seed_from_directory(
+            &[crate::protocol::NodeRecord {
+                node_id: "ed25519:flaky".to_owned(),
+                version: "test".to_owned(),
+                operations: Vec::new(),
+                endpoint: "https://flaky.example".to_owned(),
+                last_seen_millis: 0,
+            }],
+            "https://self.example",
+            8,
+        );
+
+        assert!(
+            table.due(1_000, 8).is_empty(),
+            "re-seeding an already-known, still-backing-off peer must not clear its backoff"
+        );
+    }
+
+    #[test]
+    fn a_configured_seed_is_never_evicted() {
+        let mut table = PeerTable::new(vec!["https://seed.example".to_owned()]);
+        table.insert("https://learned.example".to_owned());
+        table.evict("https://seed.example");
+        table.evict("https://learned.example");
+        assert_eq!(table.due(0, 8), vec!["https://seed.example".to_owned()]);
+    }
+
+    // Review Focus 4: no seeds, empty directory, nothing to do.
+    #[test]
+    fn an_empty_table_is_idle_rather_than_hot() {
+        let mut table = PeerTable::new(Vec::new());
+        assert!(table.due(0, 8).is_empty());
+        assert!(table.due(0, 0).is_empty());
+        assert_eq!(table.len(), 0);
+    }
+
+    // Fix round 1, finding 1: a single global replication timer, combined
+    // with `due()`'s fixed-size rotation cursor, phase-locks replication to
+    // whichever batch of peers happens to be due for contact on a round
+    // that is also due for replication. These exact numbers — 64 peers,
+    // fanout 8 (rotation period 8 rounds), replication_interval_secs 60
+    // against heartbeat_interval_secs 15 (replication period 4 rounds) —
+    // are the reviewer's own example of a global gate starving 48 of 64
+    // peers forever, since only the 16 peers whose rotation phase coincides
+    // with round 0, 4, 8, ... would ever be contacted on a replication-due
+    // round. Per-peer tracking (`replication_due`/`record_replication`)
+    // removes the coupling entirely: every peer's own timer only depends on
+    // when *it* was last replicated, not on which round the rotation
+    // happens to contact it.
+    #[test]
+    fn every_peer_is_eventually_due_for_replication_despite_rotation() {
+        let mut table = PeerTable::new(Vec::new());
+        for endpoint in endpoints(64) {
+            table.insert(endpoint);
+        }
+        let fanout = 8;
+        let heartbeat_millis = 15_000_u64;
+        let interval_millis = 60_000_u64;
+        let mut now = 0_u64;
+        let mut replicated = std::collections::BTreeSet::new();
+        // Run many more rounds than the 8-round rotation period needs, so a
+        // correct per-peer implementation has ample opportunity to visit
+        // and replicate every peer at least once; a global gate would still
+        // be stuck at 16 of 64 no matter how many rounds ran.
+        for _ in 0..40 {
+            for endpoint in table.due(now, fanout) {
+                table.record_success(&endpoint);
+                if table.replication_due(&endpoint, now, interval_millis) {
+                    replicated.insert(endpoint.clone());
+                    table.record_replication(&endpoint, now);
+                }
+            }
+            now += heartbeat_millis;
+        }
+        assert_eq!(
+            replicated.len(),
+            64,
+            "every peer must eventually replicate; a global gate would phase-lock to 16 of 64 \
+             under these exact numbers"
+        );
+    }
+}

@@ -10,6 +10,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `reqwest`                                    | outbound HTTP over Rustls: verified update downloads, Ollama/vLLM inference, and mediated Component fetch |
 | `serde`, `serde_json`, `toml`                | typed configuration and public JSON                               |
 | `clap`                                       | CLI parsing                                                       |
+| `async-trait`                                | `dyn`-dispatched async for the pluggable cluster network trait |
 | `fs4`                                        | cross-platform daemon ownership lock                              |
 | `kameo`                                      | bounded actors, links, and supervision                            |
 | `tracing`, `tracing-subscriber`              | structured local diagnostics and runtime filtering                |
@@ -18,6 +19,7 @@ The project uses one primary dependency per responsibility and keeps desktop and
 | `scalar_api_reference`                       | self-hosted interactive OpenAPI reference                         |
 | `rustls`                                     | explicit ring crypto provider for reqwest, keeping the build pure Rust |
 | `blake3`                                     | content addressing and update integrity                           |
+| `ed25519-dalek`                              | per-node cluster identity: the public key is the node id and signs every cluster request |
 | `uor-hologram` (`archive`, `space`)          | canonical v2–v4 `.holo` archives and application manifests        |
 | `wasmtime`                                   | in-process Wasm execution for resident `.holo` archives           |
 | `sha2`                                       | sha256 pinning of third-party plugin executables                  |

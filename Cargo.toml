@@ -52,6 +52,19 @@ tokio-util = { version = "0.7", features = ["io"], optional = true }
 kappa-core = { path = "third_party/kappa/crates/kappa-core", optional = true, default-features = false }
 kappa-store-redb = { path = "third_party/kappa/crates/kappa-store-redb", optional = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "env"] }
+# dyn-dispatched async for the ClusterNetwork trait. Already in the graph
+# through tonic and opentelemetry, so a direct declaration adds no crate.
+async-trait = "0.1"
+# Per-node cluster identity. The public key is the node_id, and in Phase 2 the
+# same 32 secret bytes construct the iroh SecretKey, so identity is continuous
+# across the transport change. BSD-3-Clause; already in Cargo.lock as a
+# transitive, so this does not move the lock.
+#
+# `zeroize` gives `SigningKey` a `ZeroizeOnDrop`, so the loaded secret does not
+# sit in freed memory for the rest of the process. It costs nothing to take:
+# `zeroize` is already in Cargo.lock (891 packages before and after), so this
+# adds two dependency edges and no crate.
+ed25519-dalek = { version = "3", default-features = false, features = ["zeroize"] }
 fs4 = "1.1"
 hyper-util = { version = "0.1", features = ["tokio"] }
 kameo = "0.22"
@@ -96,6 +109,11 @@ tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "registry"] }
 utoipa = { version = "5", features = ["axum_extras"] }
 wasmtime = "48"
+# Scrubs the intermediate copies of the node secret — the hex text read from
+# or written to node.key and the decoded byte buffer — that `SigningKey`'s own
+# ZeroizeOnDrop cannot reach. Adds no crate to Cargo.lock: ed25519-dalek's
+# `zeroize` feature already pulls it in.
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
 zstd = "0.13"
 
 # The only domain dependency. This revision adds the append-only `.holo` v4

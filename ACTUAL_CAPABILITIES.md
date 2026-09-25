@@ -73,7 +73,7 @@ This document is deliberately strict about what the current stable build does an
 - Optional resident per-conversation weightc sessions (`resident_sessions = true`): a supervised `weightc enter --jsonl` process per conversation with KV continuity, LRU-capped and lazily respawned on failure.
 - Import, listing, and removal of `weightc` `.wcpu` directories and llama.cpp GGUF model files.
 - OpenAI-compatible (`/v1/chat/completions`, `/v1/models`) and Ollama-compatible (`/api/generate`, `/api/chat`, `/api/tags`, `/api/show`) HTTP inference APIs, both streaming (SSE and NDJSON respectively) and non-streaming, with an `x-hologram-stream: native | emulated` response header and token usage reported when the engine measures it.
-- Minimal control-plane node inventory and heartbeat records.
+- Authenticated cluster membership: a per-node ed25519 identity (`node.key`) signs every cluster request over a preimage binding method, path, canonical query, recipient, timestamp and body digest; admission is a shared-token ticket that pins an identity or an explicit `trusted_keys` allowlist; a node directory with heartbeats, TTL pruning and a backoff/fanout peer rotation gossips membership between seeds; rendezvous-hashed ownership and capability-aware placement answer over `/api/v1/nodes`, `/api/v1/nodes/owner` and `/api/v1/nodes/placement`, restricted to admitted members; and immutable objects reconcile between admitted peers by anti-entropy, bounded per round.
 - Dynamic third-party modules as sha256-pinned, supervised subprocess plugins speaking gRPC over a Unix socket (`plugins list` / `plugins call`); plugins receive no host resource access in v1.
 - Digest-verified update/rollback foundation.
 - Built-in browser status page.

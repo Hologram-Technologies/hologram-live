@@ -137,10 +137,35 @@ pub struct ClusterConfig {
     pub request_timeout_secs: u64,
     pub node_ttl_secs: u64,
     pub max_peers: usize,
+    /// Peers contacted per heartbeat round; the cursor rotates so every peer
+    /// eventually gets a turn even when the table exceeds this count.
+    pub fanout: usize,
     /// Maximum immutable objects fetched from one peer per heartbeat round.
     pub replication_max_objects_per_round: usize,
     /// Maximum bytes accepted for one immutable object transfer.
     pub replication_max_object_bytes: u64,
+    /// How often immutable-object anti-entropy runs against a contacted
+    /// peer, decoupled from `heartbeat_interval_secs` so that membership
+    /// heartbeats stay cheap while every node need not re-walk every peer's
+    /// full object inventory on every heartbeat tick.
+    pub replication_interval_secs: u64,
+    /// Identities always eligible to participate, as `ed25519:<64 hex>`.
+    pub trusted_keys: Vec<String>,
+    /// `token` pins a new identity on first contact with a valid ticket;
+    /// `allowlist` admits only `trusted_keys`.
+    ///
+    /// **Operator constraint, not something a node can check for itself:**
+    /// under `"allowlist"`, every member's `trusted_keys` must list the same
+    /// identities. Every node trusts itself for ownership purposes (nothing
+    /// authenticates a node to itself), so an *asymmetric* allowlist — one
+    /// node's `trusted_keys` omitting a peer that peer's own list includes —
+    /// fails open rather than closed: the node with the narrower list simply
+    /// names *some other candidate its own list admits* — itself, if no
+    /// other admitted node wins the rendezvous hash, but not necessarily —
+    /// for resources the wider-list peer would have assigned elsewhere, with
+    /// no error and no local signal that the two views disagree. Keep every
+    /// member's `trusted_keys` identical.
+    pub admission: String,
 }
 
 impl Default for ClusterConfig {
@@ -153,8 +178,12 @@ impl Default for ClusterConfig {
             request_timeout_secs: 5,
             node_ttl_secs: 60,
             max_peers: 64,
+            fanout: 8,
             replication_max_objects_per_round: 1_000,
             replication_max_object_bytes: 512 * 1024 * 1024,
+            replication_interval_secs: 60,
+            trusted_keys: Vec::new(),
+            admission: "token".to_owned(),
         }
     }
 }
@@ -863,12 +892,31 @@ impl AppConfig {
             || self.cluster.request_timeout_secs == 0
             || self.cluster.node_ttl_secs == 0
             || self.cluster.max_peers == 0
+            || self.cluster.fanout == 0
             || self.cluster.replication_max_objects_per_round == 0
             || self.cluster.replication_max_object_bytes == 0
+            || self.cluster.replication_interval_secs == 0
             || self.cluster.node_ttl_secs <= self.cluster.heartbeat_interval_secs
         {
             return Err(LiveError::Config(
                 "cluster intervals, timeout, TTL, peer, and replication bounds must be valid"
+                    .to_owned(),
+            ));
+        }
+        if !matches!(self.cluster.admission.as_str(), "token" | "allowlist") {
+            return Err(LiveError::Config(format!(
+                "unsupported cluster.admission {:?}; expected token or allowlist",
+                self.cluster.admission
+            )));
+        }
+        for key in &self.cluster.trusted_keys {
+            crate::cluster::identity::parse_node_id(key).map_err(|error| {
+                LiveError::Config(format!("cluster.trusted_keys entry {key:?}: {error}"))
+            })?;
+        }
+        if self.cluster.admission == "allowlist" && self.cluster.trusted_keys.is_empty() {
+            return Err(LiveError::Config(
+                "cluster.admission \"allowlist\" requires at least one cluster.trusted_keys entry"
                     .to_owned(),
             ));
         }
@@ -1885,5 +1933,21 @@ path = "/usr/local/bin/plugin"
             sha256: "ab".repeat(32),
         });
         config
+    }
+
+    // Review Focus 2: a bad key must fail at startup, not at the first join.
+    #[test]
+    fn a_malformed_trusted_key_is_rejected_at_startup() {
+        let mut config = AppConfig::default();
+        config.cluster.trusted_keys = vec!["not-a-key".to_owned()];
+        let error = config.validate().expect_err("malformed trusted key");
+        assert!(matches!(error, LiveError::Config(_)), "got {error:?}");
+    }
+
+    #[test]
+    fn an_unsupported_admission_mode_is_rejected() {
+        let mut config = AppConfig::default();
+        config.cluster.admission = "anyone".to_owned();
+        assert!(config.validate().is_err());
     }
 }

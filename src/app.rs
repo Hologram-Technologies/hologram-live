@@ -46,6 +46,8 @@ struct AppInner {
     shutdown_requested: AtomicBool,
     server_id: String,
     cluster_token: Option<String>,
+    identity: crate::cluster::identity::NodeIdentity,
+    admission: Arc<dyn crate::cluster::admission::Admission>,
 }
 
 #[derive(Clone)]
@@ -126,13 +128,29 @@ impl AppState {
         let nodes = Arc::new(NodeDirectory::open(
             config.paths.data_dir.join("control-plane/nodes.json"),
         )?);
-        let server_seed = format!(
-            "{}\0{}\0{}",
-            config.server.listen,
-            config.paths.data_dir.display(),
-            config.role.as_str()
-        );
-        let server_id = format!("blake3:{}", blake3::hash(server_seed.as_bytes()).to_hex());
+        let identity = crate::cluster::identity::NodeIdentity::load_or_create(
+            &config
+                .paths
+                .state_dir
+                .join(crate::cluster::identity::KEY_FILE),
+        )?;
+        let server_id = identity.node_id();
+        // `cluster::admission::build` needs the shared token to mint and check
+        // tickets, and that token only exists when this node advertises a
+        // cluster endpoint. Without one the node is not a cluster member at
+        // all, so the correct degenerate policy is "only the explicitly
+        // configured keys" — empty by default, which denies every caller.
+        let admission: Arc<dyn crate::cluster::admission::Admission> =
+            match cluster_token.as_deref() {
+                Some(token) => crate::cluster::admission::build(
+                    &config.cluster,
+                    Some(token),
+                    &config.paths.state_dir,
+                )?,
+                None => Arc::new(crate::cluster::admission::AllowlistAdmission::new(
+                    config.cluster.trusted_keys.clone(),
+                )),
+            };
         let plugins = PluginRegistry::build(
             &config.plugins,
             &config.paths.state_dir,
@@ -165,6 +183,8 @@ impl AppState {
                 shutdown_requested: AtomicBool::new(false),
                 server_id,
                 cluster_token,
+                identity,
+                admission,
             }),
         };
         state.inner.modules.start(&module_context).await?;
@@ -242,11 +262,47 @@ impl AppState {
             nodes.retain(|node| node.node_id != local.node_id);
             nodes.push(local);
         }
-        Ok(crate::ownership::owner_for_operation(resource, &nodes, required_operation).cloned())
+        let admitted = self.admitted_with_self();
+        Ok(
+            crate::ownership::owner_for_operation(resource, &nodes, required_operation, &admitted)
+                .cloned(),
+        )
+    }
+
+    /// The set `ownership::owner_for_operation` treats as eligible: everyone
+    /// `Admission` trusts, plus this node itself.
+    ///
+    /// `Admission` answers who *else* this node trusts; it was never asked to
+    /// vouch for this node's own identity, since nothing authenticates a node
+    /// to itself. Left alone that silently excludes the local node from ever
+    /// owning anything by its own reckoning, however the rendezvous hash
+    /// falls — confirmed empirically: a two-node cluster's seed never won any
+    /// of 64 sampled resource keys from its own vantage point, only ever
+    /// deferring to the peer it had admitted. Self-trust needs no external
+    /// admission, so it is added here rather than in `Admission` itself,
+    /// which stays about authenticating *others*.
+    ///
+    /// Shared with `cluster::contact_peer`'s outbound `ownership::epoch`
+    /// header so the value it reports actually digests the set ownership
+    /// decisions use, rather than silently omitting self.
+    pub(crate) fn admitted_with_self(&self) -> std::collections::BTreeSet<String> {
+        let mut admitted = self.admission().admitted();
+        admitted.insert(self.identity().node_id());
+        admitted
     }
 
     pub(crate) fn cluster_token(&self) -> Option<&str> {
         self.inner.cluster_token.as_deref()
+    }
+
+    /// This node's ed25519 identity. Its public key is the `node_id` every
+    /// cluster request is signed with and admitted under.
+    pub(crate) fn identity(&self) -> &crate::cluster::identity::NodeIdentity {
+        &self.inner.identity
+    }
+
+    pub(crate) fn admission(&self) -> &Arc<dyn crate::cluster::admission::Admission> {
+        &self.inner.admission
     }
 
     pub fn plugins(&self) -> &PluginRegistry {
@@ -788,5 +844,54 @@ mod tests {
             .await
             .expect("the provider builds without touching the network");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Final review, FIX 5: `server_id` is what the capability manifest
+    /// publishes, what gRPC echoes, and — through `local_node_record` — the
+    /// `node_id` every cluster record, proof and admission decision is keyed
+    /// on. Nothing asserted that it is the cluster identity.
+    ///
+    /// It used to be `blake3(server.listen   paths.data_dir   role)`, which
+    /// gave two default installs the same id. Both halves of this fail against
+    /// that: a digest of configuration is not `identity.node_id()`, and it
+    /// carries a `blake3:` prefix rather than `ed25519:`.
+    #[tokio::test]
+    async fn the_capability_manifest_publishes_the_cluster_identity() {
+        let temp = tempfile::tempdir().expect("temporary root");
+        let mut config = AppConfig::default();
+        config.paths.config_dir = temp.path().join("config");
+        config.paths.data_dir = temp.path().join("data");
+        config.paths.state_dir = temp.path().join("state");
+        config.paths.cache_dir = temp.path().join("cache");
+        // `init_for_test` rather than `init`: another test in this binary also
+        // builds an `AppState`, and `try_init`'s global subscriber slot can
+        // only be claimed once (see its doc comment).
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build an AppState backed by a temp dir");
+
+        let manifest = state.capability_manifest();
+        assert_eq!(
+            manifest.server_id,
+            state.identity().node_id(),
+            "the published server id must be this node's cluster identity"
+        );
+        assert!(
+            manifest.server_id.starts_with("ed25519:"),
+            "a server id is an ed25519 public key, not a digest of configuration: {}",
+            manifest.server_id
+        );
+        assert_eq!(manifest.server_id.len(), "ed25519:".len() + 64);
+        crate::cluster::identity::parse_node_id(&manifest.server_id)
+            .expect("the published server id parses as a public key");
+        // And the record every peer is keyed on carries that same identity.
+        assert_eq!(
+            state
+                .local_node_record("https://node.example".to_owned())
+                .node_id,
+            manifest.server_id
+        );
     }
 }

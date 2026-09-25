@@ -1,5 +1,9 @@
 # Server cluster membership design
 
+> **Superseded** by `2026-09-24-distributed-p2p-clustering-design.md`. The
+> shared-secret proof described below has been replaced by per-node ed25519
+> identity and admission. This document is retained for history.
+
 ## Goal
 
 A running Hologram server can advertise a reachable origin and join one or more

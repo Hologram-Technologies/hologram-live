@@ -2041,6 +2041,7 @@ dependencies = [
  "rand_core 0.10.1",
  "rustc_version",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -2488,6 +2489,7 @@ dependencies = [
  "sha2 0.11.0",
  "signature",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -3905,6 +3907,7 @@ dependencies = [
 name = "hologram-live"
 version = "1.0.0"
 dependencies = [
+ "async-trait",
  "axum",
  "base64 0.23.1",
  "bcrypt",
@@ -3917,6 +3920,7 @@ dependencies = [
  "candle-transformers",
  "clap",
  "cucumber",
+ "ed25519-dalek",
  "encoding_rs",
  "fs4",
  "getrandom 0.4.3",
@@ -3960,6 +3964,7 @@ dependencies = [
  "utoipa",
  "wasmtime",
  "yaml-rust2",
+ "zeroize",
  "zstd",
 ]
 

@@ -5,7 +5,7 @@ group: Concepts
 order: 14
 ---
 
-An App is an app and the model it needs, sealed under one address and run by the visitor's own browser. Nothing runs on a server: the page is a folder of static files, the model comes from the host the App names, and the work happens on the visitor's GPU. The hub lists three at [/spaces/](/spaces/): speech, image and chat.
+An App is an app and the model it needs, sealed under one address and run by the visitor's own browser. Nothing runs on a server: the page is a folder of static files, the model comes from the host the App names, and the work happens on the visitor's GPU. The hub lists five at [/spaces/](/spaces/): speech, image, chat, vision and depth.
 
 ## What is sealed
 

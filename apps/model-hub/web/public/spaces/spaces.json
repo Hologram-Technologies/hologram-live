@@ -72,6 +72,53 @@
         "opfs"
       ],
       "entry": "smollm-chat/index.html"
+    },
+    {
+      "id": "florence-2-vision",
+      "name": "Florence-2",
+      "task": "Vision",
+      "tagline": "Caption a photo, read the text in it, find what is in it. Florence-2, on your GPU.",
+      "root": "sha256:803ff0bcad4bf3d2c14480a1d0ed6ae760824e5a5e7d515a852fb37249c6ff6f",
+      "ipfs": "bafybeigbh6i46jsog5mmqz6wo7g5tz4okmgwsh6mxcple3a77kowtsgnby",
+      "bytes": 23142158,
+      "files": 11,
+      "models": [
+        "onnx-community/Florence-2-base-ft"
+      ],
+      "modelHosts": {
+        "onnx-community/Florence-2-base-ft": "https://huggingface.co"
+      },
+      "modelBytes": 359836131,
+      "ort": "transformers-3.2.1",
+      "source": "https://huggingface.co/spaces/Xenova/florence2-webgpu",
+      "requires": [
+        "webgpu",
+        "opfs"
+      ],
+      "entry": "florence-2-vision/index.html"
+    },
+    {
+      "id": "depth-anything",
+      "name": "Depth Anything",
+      "task": "Depth",
+      "tagline": "Turn a photo into depth, then tilt it in 3D. A 27 MB model on your CPU.",
+      "root": "sha256:025aec216e3fff6f263772b85428b16c666112dc1b9f16c9be1cc8c358b44aa7",
+      "ipfs": "bafybeib6ibkwjv3vt5qyajkdmzvsb4zonhxn4nboq7un5ak77cr7stfavu",
+      "bytes": 39742780,
+      "files": 13,
+      "models": [
+        "Xenova/depth-anything-small-hf"
+      ],
+      "modelHosts": {
+        "Xenova/depth-anything-small-hf": "https://huggingface.co"
+      },
+      "modelBytes": 27526228,
+      "ort": "transformers-2.14.1",
+      "source": "https://huggingface.co/spaces/Xenova/depth-anything-web",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "depth-anything/index.html"
     }
   ]
 }

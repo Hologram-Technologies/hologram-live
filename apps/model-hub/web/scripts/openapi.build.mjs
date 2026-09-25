@@ -397,7 +397,7 @@ function document(server, evidence) {
       tags: ["Discovery"],
       operationId: "getSpacesPage",
       summary: "Apps that run entirely in the browser, each in its own sealed frame",
-      description: "Three demo Apps (speech, image, chat). Every file of an App is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. An App published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
+      description: "Five demo Apps (speech, image, chat, vision, depth). Every file of an App is sealed under one root digest, its model bytes are accepted only when they re-derive to the digest the model index names, and nothing runs on a server. An App published to the registry lives at `/v2/spaces/<id>` as an OCI artifact of type `application/vnd.hologram.space.v1+json`.",
       responses: { 200: { description: "An HTML page.", content: { "text/html": { schema: { type: "string" } } } }, ...NOT_SERVED },
       ...probe("/spaces/", { contentType: "text/html" }),
     },

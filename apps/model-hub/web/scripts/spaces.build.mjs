@@ -2,7 +2,11 @@
 // public/spaces/, each ONE κ: the sha-256 of its OCI manifest, which is also its address on the registry
 // (`Docker-Content-Digest`) and the annotation-carried root of its IPFS tree.
 //
-//   node scripts/spaces.build.mjs <hf-space-sources> <holo-os usr/lib/holo>
+//   node scripts/spaces.build.mjs <hf-space-sources> <holo-os usr/lib/holo> [--only id,id]
+//
+// --only seals just the named Apps and merges them into the catalog, leaving every other App's files — and so its
+// κ — exactly as they are. Without it every App is rebuilt, and any App whose sources or model index moved gets a
+// new κ.
 //
 // The transform is small, recorded here, and deterministic (same sources → same bytes → same κ):
 //   1. root-absolute asset paths become relative; the runtime (verified fetch, store, style, the Space's
@@ -27,9 +31,13 @@ import { join, dirname, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { ORIGIN } from "../src/origin.mjs";
 
-const [SRC, OSLIB] = process.argv.slice(2);
-if (!SRC || !OSLIB) { console.error("usage: node scripts/spaces.build.mjs <hf-space-sources> <holo-os usr/lib/holo>"); process.exit(1); }
+const argv = process.argv.slice(2);
+const onlyAt = argv.indexOf("--only");
+const ONLY = onlyAt > -1 ? new Set(String(argv[onlyAt + 1] || "").split(",").filter(Boolean)) : null;
+const [SRC, OSLIB] = argv.filter((a, i) => a !== "--only" && i !== onlyAt + 1);
+if (!SRC || !OSLIB) { console.error("usage: node scripts/spaces.build.mjs <hf-space-sources> <holo-os usr/lib/holo> [--only id,id]"); process.exit(1); }
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(WEB, "public", "spaces");
 const RUNTIME = join(OUT, "runtime");
@@ -42,7 +50,8 @@ if (existsSync(join(SRC, "ort"))) for (const pin of readdirSync(join(SRC, "ort")
   for (const f of readdirSync(join(SRC, "ort", pin))) copyFileSync(join(SRC, "ort", pin, f), join(RUNTIME, "ort", pin, f));
 }
 
-const HUB = "https://hub.uor.foundation", HF = "https://huggingface.co";
+// The hub by its one name (src/origin.mjs): the kit the App borrows its type from, and the first model host it asks.
+const HUB = ORIGIN, HF = "https://huggingface.co";
 // connect-src: the model hosts and the places their `resolve` redirects to (the LFS/Xet CDNs). Nothing else.
 const CONNECT = `'self' ${HUB} ${HF} https://*.huggingface.co https://*.hf.co`;
 const csp = `default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:; connect-src ${CONNECT}; img-src 'self' blob: data:; media-src 'self' blob: data:; style-src 'self' ${HUB} 'unsafe-inline'; font-src 'self' ${HUB}`;
@@ -76,6 +85,42 @@ const SPACES = [
     page: "assets/index-DJnDi8CK.js", worker: "assets/worker-ClBgkh03.js", workerRef: "/assets/worker-ClBgkh03.js",
     ort: "transformers-3.0.0-alpha.7", ortPath: "wasmPaths=`https://cdn.jsdelivr.net/npm/@huggingface/transformers@${H.env.version}/dist/`",
     icon: `<path d="M18 22h28v18H30l-8 7v-7h-4z"/><path d="M26 31h12"/>`,
+  },
+  {
+    id: "florence-2-vision", name: "Florence-2", task: "Vision", src: "florence2-webgpu",
+    tagline: "Caption a photo, read the text in it, find what is in it. Florence-2, on your GPU.",
+    source: "https://huggingface.co/spaces/Xenova/florence2-webgpu",
+    // what the worker loads: embed_tokens + vision_encoder fp16, encoder_model + decoder_model_merged q4, and the tokenizer
+    models: ["onnx-community/Florence-2-base-ft"], modelBytes: 78780290 + 183930536 + 30058778 + 64393474 + 2673053,
+    page: "assets/index-DAG43rWe.js", worker: "assets/worker-BtBhAyws.js", workerRef: "/assets/worker-BtBhAyws.js",
+    ort: "transformers-3.2.1", ortPath: "wasmPaths=`https://cdn.jsdelivr.net/npm/@huggingface/transformers@${L.env.version}/dist/`",
+    example: "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/beetle.png", exampleFromPage: true,   // replaced by the Pexels photo Remove Background ships (free to use); the worker reads it
+    icon: `<path d="M14 24v-6a4 4 0 0 1 4-4h6M40 14h6a4 4 0 0 1 4 4v6M50 40v6a4 4 0 0 1-4 4h-6M24 50h-6a4 4 0 0 1-4-4v-6"/><path d="M20 32s4.5-8 12-8 12 8 12 8-4.5 8-12 8-12-8-12-8Z"/><circle cx="32" cy="32" r="3"/>`,
+    // the headline and its subtitle repeat the name and tagline shown above the frame; the download note stays
+    style: `html[data-space="florence-2-vision"] h1, html[data-space="florence-2-vision"] h1 + h2 { display: none !important; }`,
+  },
+  {
+    id: "depth-anything", name: "Depth Anything", task: "Depth", src: "depth-anything-web",
+    tagline: "Turn a photo into depth, then tilt it in 3D. A 27 MB model on your CPU.",
+    source: "https://huggingface.co/spaces/Xenova/depth-anything-web",
+    // transformers.js 2 loads the quantized model by default
+    models: ["Xenova/depth-anything-small-hf"], modelBytes: 27524771 + 1020 + 437,
+    page: "assets/index-fXabxwo8.js", prelude: "page",
+    ort: "transformers-2.14.1", ortIn: "page", ortPath: 'wasmPaths=RUNNING_LOCALLY?sharp.join(__dirname,"/dist/"):`https://cdn.jsdelivr.net/npm/@xenova/transformers@${VERSION}/dist/`',
+    ortNoProxy: "env$1.backends.onnx.wasm.proxy=!0",
+    example: "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/bread_small.png",   // replaced by the same Pexels photo
+    requires: ["opfs"],   // WebAssembly on the CPU: no WebGPU needed
+    icon: `<path d="m32 14 20 10-20 10-20-10z"/><path d="m12 32 20 10 20-10"/><path d="m12 40 20 10 20-10"/>`,
+    // the same Xenova drop zone Remove Background has, drawn the same way
+    style: [
+      `html[data-space="depth-anything"] body { padding: 24px !important; }`,
+      `html[data-space="depth-anything"] #container { border: 1px dashed var(--hh-line-strong, #3a3a3d) !important; border-radius: 13px !important; background-color: var(--hh-surface, #16161a); }`,
+      `html[data-space="depth-anything"] #upload-button { color: var(--hh-text, #ece9fb) !important; font-size: 15px !important; }`,
+      `html[data-space="depth-anything"] #upload-button svg path { fill: currentColor !important; }`,
+      `html[data-space="depth-anything"] #example { color: var(--hh-text-dim, #9a9aa3) !important; }`,
+      `html[data-space="depth-anything"] #example:hover { color: var(--brand, #e93b01) !important; }`,
+      `html[data-space="depth-anything"] #status { color: var(--hh-text-dim, #9a9aa3); font-family: var(--font-mono, monospace); font-size: 12.5px; }`,
+    ].join("\n"),
   },
 ];
 
@@ -149,7 +194,9 @@ installVerifiedFetch({
 `;
 
 const catalog = [];
-for (const s of SPACES) {
+const building = ONLY ? SPACES.filter((s) => ONLY.has(s.id)) : SPACES;
+if (ONLY && building.length !== ONLY.size) throw new Error("--only names an App this file does not describe: " + [...ONLY].filter((id) => !SPACES.some((s) => s.id === id)).join(", "));
+for (const s of building) {
   const from = join(SRC, s.src), to = join(OUT, s.id);
   rmSync(to, { recursive: true, force: true }); mkdirSync(join(to, "assets"), { recursive: true });
   const pinned = {}; const modelHosts = {};
@@ -164,7 +211,7 @@ for (const s of SPACES) {
   // MathJax came from a CDN; the chat calls MathJax.typeset() after each reply. A no-op stub keeps the app whole.
   html = html.replace(/<script>\s*window\.MathJax[\s\S]*?<\/script>\s*/g, `<script>window.MathJax={typeset(){},typesetPromise(){return Promise.resolve()},startup:{promise:Promise.resolve()}};</script>\n`);
   html = html.replace(/<h1>[\s\S]*?<\/h1>\s*/g, "").replace(/<h4>[\s\S]*?<\/h4>\s*/g, "");
-  html = html.replace(/<title>[^<]*<\/title>/, `<title>${s.name} · Spaces · Hologram</title>`);
+  html = html.replace(/<title>[^<]*<\/title>/, `<title>${s.name} · Apps · Hologram</title>`);
   html = html.replace(/<html lang="en">/i, `<html lang="en" class="dark" data-theme="dark" data-space="${s.id}">`);
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
@@ -175,8 +222,9 @@ for (const s of SPACES) {
     ...(s.prelude === "page" ? [`<script type="module">${prelude(s, "./", pinned)}</script>`] : []),
   ].join("\n");
   html = html.replace(/(<meta name="viewport"[^>]*>)/i, `$1\n${head}`);
-  html = html.replace(/<\/head>/i, `<link rel="stylesheet" href="./runtime/space.css">\n</head>`);
-  if (/(\ssrc|<link[^>]*\shref)=["']https?:\/\/(?!hub\.uor\.foundation\/)/i.test(html)) throw new Error(s.id + ": index.html still loads a foreign origin");
+  // an App's own rules go in its own page: runtime/space.css is sealed into every App, so it stays fixed
+  html = html.replace(/<\/head>/i, `<link rel="stylesheet" href="./runtime/space.css">\n${s.style ? `<style>${s.style}</style>\n` : ""}</head>`);
+  if (new RegExp(`(\\ssrc|<link[^>]*\\shref)=["']https?://(?!${new URL(HUB).host.replace(/\./g, "\\.")}/)`, "i").test(html)) throw new Error(s.id + ": index.html still loads a foreign origin");
   writeFileSync(join(to, "index.html"), html);
 
   // the bundles
@@ -187,7 +235,10 @@ for (const s of SPACES) {
     if (f === s.page) {
       let js = readFileSync(join(from, f), "utf8");
       if (s.workerRef) { const b = js.length; js = js.split(`new URL("${s.workerRef}",import.meta.url)`).join(`new URL("./${s.worker.split("/").pop()}",import.meta.url)`); if (js.length === b) throw new Error(s.id + ": worker URL rewrite did not apply"); }
-      if (s.example) { const b = js.length; js = js.split(s.example).join("./example.jpg"); if (js.length === b) throw new Error(s.id + ": example URL rewrite did not apply"); }
+      // A page that hands the example to a worker hands it a string the worker resolves against its own URL, so
+      // such an App gets an address resolved against the page instead: the same file, whichever side reads it.
+      if (s.example && s.exampleFromPage) { const lit = JSON.stringify(s.example); if (!js.includes(lit)) throw new Error(s.id + ": example URL rewrite did not apply"); js = js.split(lit).join('new URL("./example.jpg",document.baseURI).href'); }
+      else if (s.example) { const b = js.length; js = js.split(s.example).join("./example.jpg"); if (js.length === b) throw new Error(s.id + ": example URL rewrite did not apply"); }
       if (s.ortIn === "page") { const b = js.length; js = js.split(s.ortPath).join(`wasmPaths=${ortFrom("./")}`); if (js.length === b) throw new Error(s.id + ": ort path rewrite did not apply (page)"); }
       // ONNX Runtime's proxy runs its wasm in a blob: worker, whose fetches no service worker sees — inside the OS the
       // runtime files exist only through the /space/<κ>/ mount, so the wasm must load on the page's own thread.
@@ -206,7 +257,7 @@ for (const s of SPACES) {
   const config = {
     format: "hologram.space/v1", id: s.id, name: s.name, task: s.task, tagline: s.tagline, entry: "index.html",
     space: { source: s.source, sdk: "static", models: s.models, modelHosts, modelBytes: s.modelBytes, modelFiles: pinned, ort: s.ort },
-    requires: ["webgpu", "opfs"], capabilities: { storage: [s.id] },   // the OS terms gate: a storage namespace equal to the config's own id is granted without a card (holo-terms.js: ref.value === def.id → auto)
+    requires: s.requires || ["webgpu", "opfs"], capabilities: { storage: [s.id] },   // the OS terms gate: a storage namespace equal to the config's own id is granted without a card (holo-terms.js: ref.value === def.id → auto)
   };
   const configBytes = Buffer.from(canon(config) + "\n");
   writeFileSync(join(to, "holospace.json"), configBytes);
@@ -246,5 +297,8 @@ for (const s of SPACES) {
     models: s.models, modelHosts, modelBytes: s.modelBytes, ort: s.ort, source: s.source, requires: config.requires, entry: `${s.id}/index.html` });
   console.log(`sealed ${s.id}  κ ${kappa.slice(7, 19)}…  ipfs ${ipfs.root.slice(0, 16)}…  ${Object.keys(files).length} files  ${(bytes / 1e6).toFixed(1)} MB  models via ${Object.values(modelHosts).map((h) => new URL(h).host).join(",")}`);
 }
-writeFileSync(join(OUT, "spaces.json"), JSON.stringify({ format: "hologram.spaces.catalog/v1", spaces: catalog }, null, 2) + "\n");
+// The catalog in SPACES order. With --only, every App not rebuilt keeps the entry it already has, byte for byte.
+const previous = ONLY && existsSync(join(OUT, "spaces.json")) ? JSON.parse(readFileSync(join(OUT, "spaces.json"), "utf8")).spaces : [];
+const merged = SPACES.map((s) => catalog.find((c) => c.id === s.id) || previous.find((c) => c.id === s.id)).filter(Boolean);
+writeFileSync(join(OUT, "spaces.json"), JSON.stringify({ format: "hologram.spaces.catalog/v1", spaces: merged }, null, 2) + "\n");
 console.log("catalog", join(OUT, "spaces.json"));

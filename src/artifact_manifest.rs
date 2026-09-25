@@ -14,6 +14,18 @@ const ANNOTATION_ROLE: &str = "dev.hologram.role";
 const ANNOTATION_KIND: &str = "dev.hologram.kind";
 const ANNOTATION_NAME: &str = "dev.hologram.name";
 const ANNOTATION_TAG: &str = "dev.hologram.tag";
+/// A layer named by sha256 on the wire keeps its kappa here, so a pull can
+/// find it in the local store and a Docker client can fetch it at all.
+const ANNOTATION_KAPPA: &str = "dev.hologram.kappa";
+/// The empty JSON object every OCI artifact uses as its config when it has
+/// none of its own, and its digest and size. Naming the archive here instead
+/// gave the config and layer 0 one digest, and a client resolving the
+/// descriptor by digest then read the config's media type for the layer:
+/// `crane validate` reported a mismatch on every artifact we published.
+pub const EMPTY_CONFIG: &[u8] = b"{}";
+pub const EMPTY_CONFIG_DIGEST: &str =
+    "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
+const EMPTY_CONFIG_TYPE: &str = "application/vnd.oci.empty.v1+json";
 
 /// What a layer contributes to the artifact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +39,12 @@ pub enum LayerRole {
 #[derive(Debug, Clone)]
 pub struct ArtifactLayer {
     pub kappa: String,
+    /// The same bytes named by SHA-256, when known. It is what the
+    /// manifest carries as `digest`: `docker`, `crane`, `containerd` and
+    /// `skopeo` accept sha256 and sha512 and nothing else, and the registry
+    /// serves one blob under both names (ADR 030). `None` for a manifest
+    /// published before this field existed.
+    pub sha256: Option<String>,
     pub media_type: String,
     pub size: u64,
     pub role: LayerRole,
@@ -58,20 +76,40 @@ impl ArtifactManifest {
 
         let mut layers = Vec::with_capacity(entries.len());
         for entry in entries {
-            let kappa = entry
+            let digest = entry
                 .get("digest")
                 .and_then(|value| value.as_str())
                 .ok_or_else(|| {
                     LiveError::Protocol("artifact manifest layer has no digest".to_owned())
                 })?;
-            // Identity is blake3 everywhere in this system. A foreign axis
-            // would not match anything in the local store, so reject it at the
-            // boundary rather than failing later with a confusing cache miss.
-            if !is_blake3(kappa) {
+            let layer_annotation = |key: &str| -> Option<&str> {
+                entry
+                    .get("annotations")
+                    .and_then(|value| value.get(key))
+                    .and_then(|value| value.as_str())
+            };
+            // Identity is blake3 everywhere in this system. A manifest may
+            // name a layer by sha256 on the wire, for clients that speak
+            // nothing else, but then it must say which kappa that is: a
+            // foreign axis alone would match nothing in the local store, so
+            // reject it at the boundary rather than fail later with a
+            // confusing cache miss.
+            let (kappa, sha256) = if is_blake3(digest) {
+                (digest.to_owned(), None)
+            } else if is_sha256(digest) {
+                match layer_annotation(ANNOTATION_KAPPA) {
+                    Some(kappa) if is_blake3(kappa) => (kappa.to_owned(), Some(digest.to_owned())),
+                    _ => {
+                        return Err(LiveError::Protocol(format!(
+                            "artifact manifest layer {digest:?} names no blake3 kappa in {ANNOTATION_KAPPA}"
+                        )))
+                    }
+                }
+            } else {
                 return Err(LiveError::Protocol(format!(
-                    "artifact manifest layer digest {kappa:?} is not a blake3 kappa"
+                    "artifact manifest layer digest {digest:?} is neither a blake3 kappa nor sha256"
                 )));
-            }
+            };
             let role = match entry
                 .get("annotations")
                 .and_then(|value| value.get(ANNOTATION_ROLE))
@@ -83,7 +121,8 @@ impl ArtifactManifest {
                 _ => LayerRole::Layer,
             };
             layers.push(ArtifactLayer {
-                kappa: kappa.to_owned(),
+                kappa,
+                sha256,
                 media_type: entry
                     .get("mediaType")
                     .and_then(|value| value.as_str())
@@ -112,7 +151,9 @@ impl ArtifactManifest {
     /// unannotated layer for compatibility, but anything this code publishes
     /// says what it is.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        let archive = self.archive()?;
+        // Still checked, and still the reason a manifest with no archive cannot
+        // be published, even though the config no longer names it.
+        self.archive()?;
 
         let layers: Vec<serde_json::Value> = self
             .layers
@@ -122,11 +163,18 @@ impl ArtifactManifest {
                     LayerRole::Archive => "archive",
                     LayerRole::Layer => "layer",
                 };
+                // On the wire the layer is named by sha256 when that is
+                // known, so every OCI client can fetch it; the kappa rides in
+                // an annotation so a pull still finds it in the local store.
+                let mut annotations = serde_json::json!({ ANNOTATION_ROLE: role });
+                if layer.sha256.is_some() {
+                    annotations[ANNOTATION_KAPPA] = serde_json::Value::String(layer.kappa.clone());
+                }
                 serde_json::json!({
                     "mediaType": layer.media_type,
-                    "digest": layer.kappa,
+                    "digest": layer.wire_digest(),
                     "size": layer.size,
-                    "annotations": { ANNOTATION_ROLE: role },
+                    "annotations": annotations,
                 })
             })
             .collect();
@@ -147,9 +195,9 @@ impl ArtifactManifest {
             "mediaType": "application/vnd.oci.image.manifest.v1+json",
             "artifactType": ARTIFACT_TYPE,
             "config": {
-                "mediaType": "application/vnd.oci.empty.v1+json",
-                "digest": archive.kappa,
-                "size": archive.size,
+                "mediaType": EMPTY_CONFIG_TYPE,
+                "digest": EMPTY_CONFIG_DIGEST,
+                "size": EMPTY_CONFIG.len(),
             },
             "layers": layers,
             "annotations": serde_json::Value::Object(annotations),
@@ -179,6 +227,22 @@ impl ArtifactManifest {
             .iter()
             .filter(|layer| layer.role == LayerRole::Layer)
     }
+}
+
+impl ArtifactLayer {
+    /// The name the manifest carries: sha256 when known, else the kappa.
+    pub fn wire_digest(&self) -> &str {
+        self.sha256.as_deref().unwrap_or(&self.kappa)
+    }
+}
+
+fn is_sha256(digest: &str) -> bool {
+    digest.strip_prefix("sha256:").is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
 }
 
 fn is_blake3(kappa: &str) -> bool {
@@ -262,6 +326,7 @@ mod tests {
         let manifest = ArtifactManifest {
             layers: vec![ArtifactLayer {
                 kappa: WEIGHTS.to_owned(),
+                sha256: None,
                 media_type: "application/octet-stream".to_owned(),
                 size: 30,
                 role: LayerRole::Layer,
@@ -355,5 +420,120 @@ mod tests {
         );
         let manifest = ArtifactManifest::decode(body.as_bytes()).expect("decode");
         assert_eq!(manifest.payloads().count(), 1);
+    }
+    const ARCHIVE_SHA: &str =
+        "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae";
+    const WEIGHTS_SHA: &str =
+        "sha256:fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9";
+
+    #[test]
+    fn a_layer_with_a_sha256_is_named_by_it_on_the_wire_and_keeps_its_kappa() {
+        let manifest = ArtifactManifest {
+            layers: vec![
+                ArtifactLayer {
+                    kappa: ARCHIVE.to_owned(),
+                    sha256: Some(ARCHIVE_SHA.to_owned()),
+                    media_type: "application/vnd.hologram.holo".to_owned(),
+                    size: 30,
+                    role: LayerRole::Archive,
+                },
+                ArtifactLayer {
+                    kappa: WEIGHTS.to_owned(),
+                    sha256: Some(WEIGHTS_SHA.to_owned()),
+                    media_type: "application/octet-stream".to_owned(),
+                    size: 30,
+                    role: LayerRole::Layer,
+                },
+            ],
+            kind: Some("holo".to_owned()),
+            name: Some("demo".to_owned()),
+            tag: Some("v1".to_owned()),
+        };
+        let encoded = manifest.encode().expect("encode");
+        let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
+
+        // What a Docker client sees: sha256 everywhere, and a config that is the
+        // empty object rather than the archive under another name.
+        assert_eq!(
+            value["config"]["digest"].as_str(),
+            Some(EMPTY_CONFIG_DIGEST)
+        );
+        for layer in value["layers"].as_array().expect("layers") {
+            assert!(
+                layer["digest"].as_str().unwrap().starts_with("sha256:"),
+                "{layer}"
+            );
+            assert!(layer["annotations"][ANNOTATION_KAPPA]
+                .as_str()
+                .unwrap()
+                .starts_with("blake3:"));
+        }
+
+        // What a pull sees: the kappas, unchanged.
+        let decoded = ArtifactManifest::decode(&encoded).expect("decode");
+        assert_eq!(decoded.archive().expect("archive").kappa, ARCHIVE);
+        assert_eq!(
+            decoded.archive().expect("archive").sha256.as_deref(),
+            Some(ARCHIVE_SHA)
+        );
+        let payloads: Vec<&ArtifactLayer> = decoded.payloads().collect();
+        assert_eq!(payloads[0].kappa, WEIGHTS);
+        assert_eq!(payloads[0].sha256.as_deref(), Some(WEIGHTS_SHA));
+    }
+
+    #[test]
+    fn a_sha256_layer_without_its_kappa_is_rejected() {
+        // A foreign name alone would match nothing in the local store.
+        let body = format!(
+            r#"{{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json",
+                 "layers":[{{"mediaType":"application/vnd.hologram.holo","digest":"{ARCHIVE_SHA}","size":30,
+                   "annotations":{{"dev.hologram.role":"archive"}}}}]}}"#
+        );
+        let error = ArtifactManifest::decode(body.as_bytes()).expect_err("no kappa");
+        assert!(error.to_string().contains(ANNOTATION_KAPPA), "{error}");
+    }
+
+    #[test]
+    fn the_config_is_the_empty_object_and_never_the_archive() {
+        // One digest for both the config and layer 0 made a client resolving
+        // the descriptor read the config's media type for the layer, and
+        // `crane validate` refused every artifact we published.
+        let manifest = ArtifactManifest::decode(document().as_bytes()).expect("decode");
+        let value: serde_json::Value =
+            serde_json::from_slice(&manifest.encode().expect("encode")).expect("json");
+
+        assert_eq!(
+            value["config"]["digest"].as_str(),
+            Some(EMPTY_CONFIG_DIGEST)
+        );
+        assert_eq!(value["config"]["size"].as_u64(), Some(2));
+        assert_eq!(
+            value["config"]["mediaType"].as_str(),
+            Some(EMPTY_CONFIG_TYPE)
+        );
+        let archive = value["layers"][0]["digest"].as_str().expect("layer 0");
+        assert_ne!(
+            value["config"]["digest"].as_str(),
+            Some(archive),
+            "the config and a layer must not share a digest"
+        );
+        assert_eq!(
+            EMPTY_CONFIG_DIGEST,
+            format!(
+                "sha256:{:x}",
+                <sha2::Sha256 as sha2::Digest>::digest(EMPTY_CONFIG)
+            ),
+            "the constant must be the digest of the bytes push uploads"
+        );
+    }
+
+    #[test]
+    fn a_manifest_published_before_sha256_still_decodes() {
+        // Every layer named by blake3 alone, as the hub's daily index was.
+        let manifest = ArtifactManifest::decode(document().as_bytes()).expect("decode");
+        for layer in &manifest.layers {
+            assert!(layer.sha256.is_none());
+            assert_eq!(layer.wire_digest(), layer.kappa);
+        }
     }
 }

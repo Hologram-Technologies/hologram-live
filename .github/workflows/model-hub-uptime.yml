@@ -54,6 +54,32 @@ jobs:
           else
             fail="$fail index-tags=no-dated-tag"
           fi
+          # Discovery and management surfaces a client relies on, read-only.
+          check catalog https://hub.uor.foundation/v2/_catalog
+          grep -q '"repositories":\[' /tmp/body || fail="$fail catalog=shape"
+          # The catalogue's own index is blake3-addressed; a standard client
+          # needs the sha256 name of the same bytes (ADR 030). Prove the alias
+          # is served, or `docker pull` is a promise the registry cannot keep.
+          if [ -n "${digest:-}" ]; then
+            curl -s -o /tmp/blob --max-time 60 "https://hub.uor.foundation/v2/model-hub/index/blobs/$digest" || true
+            alias=$(sha256sum /tmp/blob | cut -c1-64)
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 -I "https://hub.uor.foundation/v2/model-hub/index/blobs/sha256:$alias" || echo 000)
+            echo "sha256-alias $code"
+            [ "$code" = 200 ] || fail="$fail sha256-alias=$code"
+          fi
+          # A model served as an OCI artifact must answer with sha256 layers,
+          # which is what crane, oras and docker can pull. Ask as they would.
+          code=$(curl -s -o /tmp/model -w "%{http_code}" --max-time 20 -H 'Accept: application/vnd.oci.image.manifest.v1+json' "https://hub.uor.foundation/v2/convaiinnovations/laya/manifests/latest" || echo 000)
+          echo "model-manifest $code"
+          [ "$code" = 200 ] || fail="$fail model-manifest=$code"
+          grep -q '"digest":"sha256:' /tmp/model || fail="$fail model-manifest=no-sha256-layer"
+          mdigest=$(curl -s -o /dev/null -D - --max-time 20 -H 'Accept: application/vnd.oci.image.manifest.v1+json' "https://hub.uor.foundation/v2/convaiinnovations/laya/manifests/latest" | grep -i '^docker-content-digest:' | cut -d' ' -f2 | tr -d '[:cntrl:]')
+          if [ -n "$mdigest" ]; then
+            code=$(curl -s -o /tmp/refs -w "%{http_code}" --max-time 20 "https://hub.uor.foundation/v2/convaiinnovations/laya/referrers/$mdigest" || echo 000)
+            echo "referrers $code"
+            [ "$code" = 200 ] || fail="$fail referrers=$code"
+            grep -q '"mediaType":"application/vnd.oci.image.index.v1+json"' /tmp/refs || fail="$fail referrers=not-an-index"
+          fi
           echo "failures=${fail# }" >> "$GITHUB_OUTPUT"
 
       - name: Open, update or close the outage issue

@@ -4,6 +4,26 @@ use hologram_live::config::AppConfig;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// Ceiling for every polling loop in this file that waits on eventual
+/// convergence (a node directory settling, bidirectional admission landing,
+/// an object replicating) as well as the one that waits for a daemon's
+/// listen socket to come up.
+///
+/// These loops return the instant their condition holds, so a generous
+/// ceiling costs nothing on the happy path — it only bounds how long a
+/// genuine failure takes to report. Normal convergence in this suite takes
+/// about 4 seconds; a serialized full-workspace run puts other test
+/// binaries' daemons and subprocesses on the same CPU, which can eat far
+/// more than the 15s this used to be, producing a false failure under no
+/// real defect. 60 seconds is >14x the ~4s happy path, comfortably above
+/// anything workspace-level contention has been observed to cost, while
+/// still surfacing a truly broken mechanism well inside a test-run timeout.
+///
+/// Not used for negative assertions (a fixed window in which something
+/// must *not* happen) — see `a_node_without_the_admission_secret_is_refused`,
+/// where widening the window would only make the test slower, not stronger.
+const CONVERGENCE_DEADLINE: Duration = Duration::from_mins(1);
+
 struct Server {
     child: Child,
     /// `None` only after [`Server::stop_keeping_state`] has handed the state
@@ -122,7 +142,7 @@ fn start_in(
         .stderr(Stdio::inherit())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(50));
@@ -148,7 +168,7 @@ fn peer_count(client: &reqwest::blocking::Client, port: u16) -> Option<usize> {
 
 /// Polls `port`'s node directory until it holds exactly `expected` records.
 fn await_peer_count(client: &reqwest::blocking::Client, port: u16, expected: usize) {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     loop {
         let count = peer_count(client, port);
         if count == Some(expected) {
@@ -169,7 +189,7 @@ fn placement_selects_the_peer_that_advertises_the_operation() {
     let first = start_without_module(port(), None, token, Some("dev.hologram.live.chat"));
     let second = start(port(), Some(first.port), token);
     let client = reqwest::blocking::Client::new();
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     let expected_endpoint = format!("http://127.0.0.1:{}", second.port);
     loop {
         let selected = client
@@ -236,7 +256,7 @@ fn placement_agrees_from_both_sides_of_the_cluster() {
 
     // Wait for the seed's view to converge first, exactly as the sibling test
     // does — this only proves the *seed* can name the capable peer.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     loop {
         let selected = placement(first.port);
         if selected.as_ref().and_then(|node| node["endpoint"].as_str())
@@ -257,7 +277,7 @@ fn placement_agrees_from_both_sides_of_the_cluster() {
     // than asserting once immediately after the seed's view converges above —
     // the two servers may not have reached that instant with identical
     // timing, and this keeps the test from being sensitive to that.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     loop {
         let selected = placement(second.port);
         if selected.as_ref().and_then(|node| node["endpoint"].as_str())
@@ -322,7 +342,7 @@ fn the_joiner_comes_to_admit_the_seed() {
     // Find a resource key the seed assigns to *itself* — guaranteed to turn
     // up quickly among a handful of samples, since a node always trusts its
     // own identity for at least some share of the rendezvous-hash space.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     let resource = loop {
         if let Some(found) = (0..64)
             .map(|index| format!("bidirectional-admission-check:{index}"))
@@ -342,7 +362,7 @@ fn the_joiner_comes_to_admit_the_seed() {
     // The joiner must answer the identical question about the identical key
     // with the seed's endpoint too, once bidirectional admission has had time
     // to converge.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     loop {
         if owner_endpoint(second.port, &resource).as_deref() == Some(first_endpoint.as_str()) {
             return;
@@ -382,7 +402,7 @@ fn authenticated_peers_replicate_an_immutable_object() {
         Some(first.port),
         "a sufficiently long shared cluster test token",
     );
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     loop {
         if client
             .get(format!(
@@ -589,7 +609,7 @@ fn a_join_reply_cannot_install_a_record_for_another_identity() {
 
     // `victim` heartbeats its own record, so its directory names its identity.
     let victim_endpoint = format!("http://127.0.0.1:{}", victim.port);
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     let victim_node_id = loop {
         if let Some(found) = directory(&client, victim.port)
             .unwrap_or_default()
@@ -635,7 +655,7 @@ fn a_join_reply_cannot_install_a_record_for_another_identity() {
     // victim, the victim notices `node` in its own directory and dials back, and
     // that inbound join carries a record `record_matches_signer` has checked
     // against its signature.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     loop {
         let records = directory(&client, node.port).unwrap_or_default();
         if records.contains(&(victim_node_id.clone(), victim_endpoint.clone())) {
@@ -651,7 +671,7 @@ fn a_join_reply_cannot_install_a_record_for_another_identity() {
     // With the victim gone, nothing legitimate refreshes its record. Only the
     // responder still claims its identity.
     drop(victim);
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
     loop {
         let records = directory(&client, node.port).unwrap_or_default();
         assert!(

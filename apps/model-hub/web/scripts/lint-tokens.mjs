@@ -21,11 +21,15 @@ for (const src of [await read("vendor/hologram-brand-kit/hologram-warm.css"), aw
 const problems = [];
 for (const [sheet, css] of sheets) {
 const lines = css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " ")).split("\n");
+// A pixel size is allowed on one condition: the line says so, and says why, in a comment. Today that is the card
+// mesh alone, whose box must equal its viewBox so one unit is one pixel on every page (chrome.css).
+const raw = css.split("\n");
 lines.forEach((line, i) => {
   const at = `${sheet}:${i + 1}`;
+  const pxOnPurpose = /\/\*\s*px on purpose\b/.test(raw[i] || "");
   if (/#[0-9a-f]{3,8}\b/i.test(line)) problems.push(`${at} hex color`);
   if (/\b(rgba?|hsla?|oklch)\(/i.test(line)) problems.push(`${at} literal color function`);
-  if (!line.trim().startsWith("@media")) {
+  if (!line.trim().startsWith("@media") && !pxOnPurpose) {
     for (const [px] of line.matchAll(/\b\d+(\.\d+)?px\b/g)) if (px !== "1px" && px !== "2px") problems.push(`${at} literal ${px}`);
   }
   if (/font-family:(?!\s*(var\(|inherit))/.test(line)) problems.push(`${at} font family not from the kit`);

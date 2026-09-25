@@ -2,6 +2,7 @@
 // page walks it the same way the CLI does, and checks every block it reads against the address
 // that named it. No framework, no CDN. The chrome — header, nav, theme, account — is the site's
 // own, so this file is only ever about buckets.
+import { art } from '../card-art.mjs'
 import { registry, readBucket, readHistory, readObject, writeObject, digestToCid, cidToDigest, visibilityOf, DEFAULT_QUOTA, INDEX_MT, MANIFEST_MT } from './lib/buckets-lib.mjs?v=9'
 import { newKey, keyToText, keyFromText, keyCheck, sealName, ENC } from './lib/crypt.mjs?v=9'
 import { build, objectManifest } from './lib/octree.mjs?v=9'
@@ -216,28 +217,8 @@ const rail = createRail({
   order: { size: SIZES, visibility: ['public', 'unlisted', 'private'] }
 })
 
-// The Models page's faceted mesh, seeded by the bucket's current state: same bytes, same surface.
-// (The Registry and Spaces pages carry the same lines; one generator for all three is on its way.)
-const ART_W = 260, ART_H = 120
-function art (seed) {
-  let h = 2166136261
-  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
-  const r = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000 }
-  const f = n => n.toFixed(1)
-  const cols = 9, rows = 4, gx = ART_W / (cols - 1), gy = ART_H / (rows - 1), p = []
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) p.push([x * gx + (r() - 0.5) * gx * 0.5, y * gy + (y && y < rows - 1 ? (r() - 0.5) * gy * 0.5 : 0)])
-  let edges = '', faces = ''
-  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols - 1; x++) {
-    const a = p[y * cols + x], b = p[y * cols + x + 1], c = p[(y + 1) * cols + x], d = p[(y + 1) * cols + x + 1]
-    for (const t of [[a, b, d], [a, d, c]]) {
-      const path = 'M' + t.map(q => f(q[0]) + ' ' + f(q[1])).join('L') + 'Z'
-      edges += path
-      const v = r()
-      if (v < 0.35) faces += '<path d="' + path + '" opacity="' + f(0.02 + v * 0.12) + '"/>'
-    }
-  }
-  return '<svg class="art lit" viewBox="0 0 ' + ART_W + ' ' + ART_H + '" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">' + faces + '</g><path class="edges" d="' + edges + '"/></svg>'
-}
+// The card mesh is the site's one generator (card-art.mjs at the dist root), the same lines every catalogue
+// page draws; build.mjs refuses a second copy.
 
 function card (b) {
   const a = el('a', 'card')

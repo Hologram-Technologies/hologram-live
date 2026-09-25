@@ -505,7 +505,7 @@ Expected: both new tests FAIL before Tasks 5–6 are in place; after them, PASS.
 - [ ] **Step 3: Run the whole gate**
 
 Run: `just verify`
-Expected: every stage passes except `file-size`, which fails on four **pre-existing** violations under `apps/model-hub/web` that this branch does not touch. Confirm with `git stash && ./scripts/check-file-size.sh` that the same four fail on `main`; if any file from this branch appears, split it before continuing.
+Expected: every stage passes except `file-size`, which fails on seven **pre-existing** violations under `apps/model-hub/web` that this branch does not touch. Confirm with `git stash && ./scripts/check-file-size.sh` that the same seven fail on `main`; if any file from this branch appears, split it before continuing.
 
 - [ ] **Step 4: Update the superseded design document**
 
@@ -891,7 +891,7 @@ Run: `cargo clippy --workspace --all-targets --locked -- -D warnings`
 Expected: silent.
 
 Run: `./scripts/check-file-size.sh`
-Expected: only the four pre-existing `apps/model-hub/web` violations.
+Expected: only the seven pre-existing `apps/model-hub/web` violations.
 
 - [ ] **Step 7: Commit**
 
@@ -906,7 +906,7 @@ git commit -m "feat(cluster): the network is a trait, and HTTP is one of them"
 
 - `cargo test --workspace --all-targets --locked -- --test-threads=1` passes.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` is silent.
-- `just verify` passes every stage but the four pre-existing `apps/model-hub/web` file-size violations.
+- `just verify` passes every stage but the seven pre-existing `apps/model-hub/web` file-size violations.
 - Two daemons started from byte-identical configuration on different hosts hold distinct identities and both appear in each other's `/api/v1/nodes`.
 - A daemon restarted with no configured seeds rejoins from its persisted directory.
 - A daemon holding the wrong admission secret never enters the directory.

@@ -1,17 +1,18 @@
 //! Immutable object reconciliation against a cluster peer.
 
+use super::{proof, recipient_for, sign_headers, OBJECTS_PATH};
 use crate::app::AppState;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ObjectPage, ObjectQuery};
-use super::{sign, OBJECTS_PATH, SIGNATURE_HEADER, TIMESTAMP_HEADER};
-use crate::util::now_millis;
 
 pub(super) async fn replicate_peer(
     state: &AppState,
     client: &reqwest::Client,
     endpoint: &str,
     token: &str,
+    peer_node_id: Option<&str>,
 ) -> Result<()> {
+    let recipient = recipient_for(peer_node_id, endpoint);
     let max_objects = state.config().cluster.replication_max_objects_per_round;
     let max_bytes = state.config().cluster.replication_max_object_bytes;
     let mut cursor = None;
@@ -30,7 +31,7 @@ pub(super) async fn replicate_peer(
                 query.append_pair("cursor", cursor);
             }
         }
-        let response = signed_get(client, inventory_url, token).await?;
+        let response = signed_get(state, client, inventory_url, token, &recipient).await?;
         let inventory: ObjectPage = response.json().await.map_err(|error| {
             LiveError::Protocol(format!(
                 "decode cluster object inventory from {endpoint}: {error}"
@@ -59,7 +60,7 @@ pub(super) async fn replicate_peer(
                 continue;
             }
             let url = cluster_url(endpoint, &format!("{OBJECTS_PATH}/{}", metadata.id))?;
-            let response = signed_get(client, url, token).await?;
+            let response = signed_get(state, client, url, token, &recipient).await?;
             if !response.status().is_success() {
                 return Err(LiveError::Transport(format!(
                     "fetch cluster object {} from {endpoint}: HTTP {}",
@@ -123,16 +124,25 @@ pub(super) fn cluster_url(endpoint: &str, path: &str) -> Result<reqwest::Url> {
     Ok(url)
 }
 
+/// `path` and `query` come from the `Url` this crate built, which
+/// percent-encodes anything that could be mistaken for a field separator in
+/// the signed preimage, so neither can carry a newline.
 pub(super) async fn signed_get(
+    state: &AppState,
     client: &reqwest::Client,
     url: reqwest::Url,
     token: &str,
+    recipient: &str,
 ) -> Result<reqwest::Response> {
-    let timestamp = now_millis().to_string();
-    client
-        .get(url)
-        .header(TIMESTAMP_HEADER, &timestamp)
-        .header(SIGNATURE_HEADER, sign(token, &timestamp, &[]))
+    let request_proof = proof::sign_request(
+        state.identity(),
+        recipient,
+        "GET",
+        url.path(),
+        url.query(),
+        &[],
+    );
+    sign_headers(client.get(url), &request_proof, token)
         .send()
         .await
         .map_err(|error| LiveError::Transport(format!("send cluster replication request: {error}")))

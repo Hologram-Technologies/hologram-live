@@ -46,6 +46,8 @@ struct AppInner {
     shutdown_requested: AtomicBool,
     server_id: String,
     cluster_token: Option<String>,
+    identity: crate::cluster::identity::NodeIdentity,
+    admission: Arc<dyn crate::cluster::admission::Admission>,
 }
 
 #[derive(Clone)]
@@ -126,13 +128,29 @@ impl AppState {
         let nodes = Arc::new(NodeDirectory::open(
             config.paths.data_dir.join("control-plane/nodes.json"),
         )?);
-        let server_seed = format!(
-            "{}\0{}\0{}",
-            config.server.listen,
-            config.paths.data_dir.display(),
-            config.role.as_str()
-        );
-        let server_id = format!("blake3:{}", blake3::hash(server_seed.as_bytes()).to_hex());
+        let identity = crate::cluster::identity::NodeIdentity::load_or_create(
+            &config
+                .paths
+                .state_dir
+                .join(crate::cluster::identity::KEY_FILE),
+        )?;
+        let server_id = identity.node_id();
+        // `cluster::admission::build` needs the shared token to mint and check
+        // tickets, and that token only exists when this node advertises a
+        // cluster endpoint. Without one the node is not a cluster member at
+        // all, so the correct degenerate policy is "only the explicitly
+        // configured keys" — empty by default, which denies every caller.
+        let admission: Arc<dyn crate::cluster::admission::Admission> =
+            match cluster_token.as_deref() {
+                Some(token) => crate::cluster::admission::build(
+                    &config.cluster,
+                    Some(token),
+                    &config.paths.state_dir,
+                )?,
+                None => Arc::new(crate::cluster::admission::AllowlistAdmission::new(
+                    config.cluster.trusted_keys.clone(),
+                )),
+            };
         let plugins = PluginRegistry::build(
             &config.plugins,
             &config.paths.state_dir,
@@ -165,6 +183,8 @@ impl AppState {
                 shutdown_requested: AtomicBool::new(false),
                 server_id,
                 cluster_token,
+                identity,
+                admission,
             }),
         };
         state.inner.modules.start(&module_context).await?;
@@ -247,6 +267,16 @@ impl AppState {
 
     pub(crate) fn cluster_token(&self) -> Option<&str> {
         self.inner.cluster_token.as_deref()
+    }
+
+    /// This node's ed25519 identity. Its public key is the `node_id` every
+    /// cluster request is signed with and admitted under.
+    pub(crate) fn identity(&self) -> &crate::cluster::identity::NodeIdentity {
+        &self.inner.identity
+    }
+
+    pub(crate) fn admission(&self) -> &Arc<dyn crate::cluster::admission::Admission> {
+        &self.inner.admission
     }
 
     pub fn plugins(&self) -> &PluginRegistry {

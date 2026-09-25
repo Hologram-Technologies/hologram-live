@@ -4,14 +4,8 @@
 //! capability-grant implementation satisfies the same trait without touching
 //! transport or membership.
 //!
-//! This task (Task 4 of the distributed-p2p-clustering plan) adds the module
-//! without wiring it in: Task 5 (`src/app.rs`) calls `build`. Until that call
-//! site lands, everything here outside `#[cfg(test)]` is unreachable from the
-//! rest of the crate, which `-D warnings` otherwise turns into a build
-//! failure. `expect` (rather than `allow`) means the moment Task 5 wires this
-//! in, the lint stops firing and this annotation itself becomes a compile
-//! error — a reminder to remove it instead of a silently stale allow.
-#![expect(dead_code, reason = "wired in by task 5 of this plan")]
+//! `src/app.rs` builds the policy and `src/modules/control_plane.rs` consults
+//! it on every cluster request.
 
 use crate::cluster::identity::parse_node_id;
 use crate::error::{LiveError, Result};
@@ -32,6 +26,15 @@ pub enum Decision {
 pub trait Admission: Send + Sync {
     fn authorize(&self, node_id: &str, ticket: Option<&str>) -> Decision;
     /// The identities currently eligible to own resources.
+    ///
+    /// `expect` rather than `allow`: the moment task 7 of this plan makes
+    /// ownership and the membership epoch read this set, the lint stops firing
+    /// and the annotation itself becomes a compile error, so it cannot go
+    /// stale unnoticed.
+    #[expect(
+        dead_code,
+        reason = "ownership and the membership epoch read this in task 7 of this plan"
+    )]
     fn admitted(&self) -> BTreeSet<String>;
 }
 
@@ -196,7 +199,10 @@ mod tests {
         let admission =
             TokenAdmission::new(token.to_owned(), path.clone(), Vec::new()).expect("admission");
         // Without a ticket an unknown identity is refused.
-        assert!(matches!(admission.authorize(ALICE, None), Decision::Deny(_)));
+        assert!(matches!(
+            admission.authorize(ALICE, None),
+            Decision::Deny(_)
+        ));
         // With the right ticket it is admitted, and pinned.
         assert!(matches!(
             admission.authorize(ALICE, Some(&ticket(token, ALICE))),
@@ -241,9 +247,8 @@ mod tests {
         let path = directory.path().join("cluster-pinned.json");
         let token = "a sufficiently long shared cluster admission token";
 
-        let admission =
-            TokenAdmission::new(token.to_owned(), path.clone(), vec![ALICE.to_owned()])
-                .expect("admission");
+        let admission = TokenAdmission::new(token.to_owned(), path.clone(), vec![ALICE.to_owned()])
+            .expect("admission");
 
         // Alice is trusted purely by configuration, no ticket needed.
         assert!(matches!(admission.authorize(ALICE, None), Decision::Admit));
@@ -271,9 +276,8 @@ mod tests {
         let path = directory.path().join("cluster-pinned.json");
         let token = "a sufficiently long shared cluster admission token";
 
-        let admission =
-            TokenAdmission::new(token.to_owned(), path.clone(), vec![ALICE.to_owned()])
-                .expect("admission");
+        let admission = TokenAdmission::new(token.to_owned(), path.clone(), vec![ALICE.to_owned()])
+            .expect("admission");
         assert!(matches!(admission.authorize(ALICE, None), Decision::Admit));
         assert!(matches!(
             admission.authorize(BOB, Some(&ticket(token, BOB))),
@@ -281,9 +285,11 @@ mod tests {
         ));
 
         // The operator removes Alice from cluster.trusted_keys and restarts.
-        let restarted =
-            TokenAdmission::new(token.to_owned(), path, Vec::new()).expect("restart");
-        assert!(matches!(restarted.authorize(ALICE, None), Decision::Deny(_)));
+        let restarted = TokenAdmission::new(token.to_owned(), path, Vec::new()).expect("restart");
+        assert!(matches!(
+            restarted.authorize(ALICE, None),
+            Decision::Deny(_)
+        ));
         // Bob was admitted by ticket, so the pin file still carries him.
         assert!(matches!(restarted.authorize(BOB, None), Decision::Admit));
     }

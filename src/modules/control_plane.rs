@@ -4,7 +4,7 @@ use crate::modules::HttpError;
 use crate::protocol::{operation, NodeRecord, ObjectPage, ObjectQuery, OperationKind};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse};
 use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::{OriginalUri, Path, Query, State};
 use axum::http::HeaderMap;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -170,16 +170,22 @@ pub async fn join_cluster(
     let advertised = config.advertise_endpoint.as_ref().ok_or_else(|| {
         crate::error::LiveError::NotFound("cluster membership is not enabled".to_owned())
     })?;
-    let token = state.cluster_token().ok_or_else(|| {
-        crate::error::LiveError::Authentication("cluster token is unavailable".to_owned())
-    })?;
-    let timestamp = header(&headers, crate::cluster::TIMESTAMP_HEADER)?;
-    let signature = header(&headers, crate::cluster::SIGNATURE_HEADER)?;
-    crate::cluster::verify(token, timestamp, signature, &body)?;
+    // The join path is a fixed route, so the signed path is this constant
+    // rather than a value read off the request: nothing a caller sends can
+    // steer it.
+    let signer = authorize_cluster_request(
+        &state,
+        &headers,
+        "POST",
+        crate::cluster::JOIN_PATH,
+        None,
+        &body,
+    )?;
     let request: ClusterJoinRequest = serde_json::from_slice(&body)
         .map_err(crate::error::LiveError::from)
         .map_err(HttpError)?;
     crate::cluster::validate_node_record(&request.node).map_err(HttpError)?;
+    record_matches_signer(&request.node, &signer)?;
 
     let nodes = state.nodes().clone();
     let joining = request.node;
@@ -206,9 +212,10 @@ pub async fn join_cluster(
 pub async fn list_cluster_objects(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
     Query(query): Query<ObjectQuery>,
 ) -> Result<Json<ObjectPage>, HttpError> {
-    verify_cluster_request(&state, &headers, &[])?;
+    authorize_cluster_request(&state, &headers, "GET", uri.path(), uri.query(), &[])?;
     let registry = state.registry().clone();
     let objects = tokio::task::spawn_blocking(move || registry.search(&query))
         .await
@@ -219,9 +226,10 @@ pub async fn list_cluster_objects(
 pub async fn get_cluster_object(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
     Path(id): Path<String>,
 ) -> Result<axum::response::Response, HttpError> {
-    verify_cluster_request(&state, &headers, &[])?;
+    authorize_cluster_request(&state, &headers, "GET", uri.path(), uri.query(), &[])?;
     let registry = state.registry().clone();
     let object = tokio::task::spawn_blocking(move || registry.get_object(&id))
         .await
@@ -249,17 +257,72 @@ pub async fn get_cluster_object(
     Ok(response)
 }
 
-fn verify_cluster_request(state: &AppState, headers: &HeaderMap, body: &[u8]) -> Result<(), HttpError> {
-    let token = state.cluster_token().ok_or_else(|| {
-        HttpError(crate::error::LiveError::Authentication("cluster token is unavailable".to_owned()))
-    })?;
-    crate::cluster::verify(
-        token,
-        header(headers, crate::cluster::TIMESTAMP_HEADER)?,
-        header(headers, crate::cluster::SIGNATURE_HEADER)?,
-        body,
-    )
-    .map_err(HttpError)
+fn record_matches_signer(node: &crate::protocol::NodeRecord, signer: &str) -> Result<(), HttpError> {
+    if node.node_id != signer {
+        return Err(HttpError(crate::error::LiveError::Authentication(
+            "cluster node record does not match the signing identity".to_owned(),
+        )));
+    }
+    Ok(())
+}
+
+/// The proof preimage is newline-separated, so a `\n` inside the signed path
+/// or query would let one request impersonate another field layout. Neither
+/// value can carry one — both come from the framework-parsed request target,
+/// which `http::Uri` refuses to build from a control character, and the client
+/// side gets them from a percent-encoding `Url` — but the separator's safety is
+/// load-bearing enough to assert here rather than infer from two other crates.
+fn separator_free(value: &str) -> Result<(), HttpError> {
+    if value.contains('\n') || value.contains('\r') {
+        return Err(HttpError(crate::error::LiveError::Authentication(
+            "cluster request target contains a line separator".to_owned(),
+        )));
+    }
+    Ok(())
+}
+
+fn authorize_cluster_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    method: &str,
+    path: &str,
+    query: Option<&str>,
+    body: &[u8],
+) -> Result<String, HttpError> {
+    separator_free(path)?;
+    if let Some(query) = query {
+        separator_free(query)?;
+    }
+    let proof = crate::cluster::proof::RequestProof {
+        node_id: header(headers, crate::cluster::proof::NODE_HEADER)?.to_owned(),
+        timestamp: header(headers, crate::cluster::proof::TIMESTAMP_HEADER)?.to_owned(),
+        signature: header(headers, crate::cluster::proof::SIGNATURE_HEADER)?.to_owned(),
+    };
+    // A peer that already knows us signs against our node id. A node joining
+    // for the first time cannot: it has not learned our key yet, so it signs
+    // against the origin it dialled. Both name *this* node, so neither form
+    // replays against a different peer.
+    let mut recipients = vec![state.identity().node_id()];
+    if let Some(endpoint) = state.config().cluster.advertise_endpoint.as_deref() {
+        recipients.push(endpoint.trim_end_matches('/').to_owned());
+    }
+    let verified = recipients.iter().any(|recipient| {
+        crate::cluster::proof::verify_request(&proof, recipient, method, path, query, body).is_ok()
+    });
+    if !verified {
+        return Err(HttpError(crate::error::LiveError::Authentication(
+            "invalid cluster request proof".to_owned(),
+        )));
+    }
+    let ticket = headers
+        .get(crate::cluster::proof::TICKET_HEADER)
+        .and_then(|value| value.to_str().ok());
+    match state.admission().authorize(&proof.node_id, ticket) {
+        crate::cluster::admission::Decision::Admit => Ok(proof.node_id),
+        crate::cluster::admission::Decision::Deny(reason) => Err(HttpError(
+            crate::error::LiveError::Authorization(format!("cluster admission denied: {reason}")),
+        )),
+    }
 }
 
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, HttpError> {
@@ -271,4 +334,44 @@ fn header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, HttpError> 
                 "missing {name} header"
             )))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cluster::identity::{NodeIdentity, KEY_FILE};
+    use crate::cluster::proof::sign_request;
+    use crate::cluster::proof::verify_request;
+
+    // Defect 4: a proof minted for one peer must not open another.
+    #[test]
+    fn a_proof_for_one_peer_is_refused_by_another() {
+        let dir = tempfile::tempdir().expect("state directory");
+        let caller = NodeIdentity::load_or_create(&dir.path().join(KEY_FILE)).expect("identity");
+        let proof = sign_request(&caller, "ed25519:aa", "GET", "/api/v1/cluster/objects", None, b"");
+        assert!(
+            verify_request(&proof, "ed25519:bb", "GET", "/api/v1/cluster/objects", None, b"")
+                .is_err()
+        );
+    }
+
+    // Review Focus 3: signing correctly as A while claiming to be B proves nothing.
+    #[test]
+    fn a_record_that_disagrees_with_the_signer_is_refused() {
+        let dir = tempfile::tempdir().expect("state directory");
+        let signer = NodeIdentity::load_or_create(&dir.path().join(KEY_FILE)).expect("identity");
+        let other = tempfile::tempdir().expect("other state directory");
+        let claimed = NodeIdentity::load_or_create(&other.path().join(KEY_FILE)).expect("other");
+
+        let mut record = crate::protocol::NodeRecord {
+            node_id: claimed.node_id(),
+            version: "test".to_owned(),
+            operations: Vec::new(),
+            endpoint: "https://node.example".to_owned(),
+            last_seen_millis: 0,
+        };
+        assert!(super::record_matches_signer(&record, &signer.node_id()).is_err());
+
+        record.node_id = signer.node_id();
+        assert!(super::record_matches_signer(&record, &signer.node_id()).is_ok());
+    }
 }

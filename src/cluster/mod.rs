@@ -13,9 +13,9 @@ use crate::app::AppState;
 use crate::config::validate_cluster_endpoint;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse, NodeRecord};
-use crate::util::{constant_time_eq, now_millis};
+use crate::util::now_millis;
 use replication::replicate_peer;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -25,10 +25,6 @@ use tokio::task::{JoinHandle, JoinSet};
 pub const JOIN_PATH: &str = "/api/v1/cluster/join";
 pub const OBJECTS_PATH: &str = "/api/v1/cluster/objects";
 pub const OBJECT_PATH: &str = "/api/v1/cluster/objects/{id}";
-pub const TIMESTAMP_HEADER: &str = "x-hologram-cluster-timestamp";
-pub const SIGNATURE_HEADER: &str = "x-hologram-cluster-signature";
-const SIGNING_CONTEXT: &str = "dev.hologram.live.cluster-join.v1";
-const MAX_CLOCK_SKEW_MILLIS: u64 = 30_000;
 pub const MAX_JOIN_BYTES: usize = 1024 * 1024;
 pub const TOKEN_FILE: &str = "cluster.token";
 
@@ -150,13 +146,30 @@ async fn run(state: AppState) {
                     tracing::warn!(%error, "failed to persist local cluster heartbeat");
                 }
 
+                // Every request names the peer it is for. For a peer we have
+                // already met that is its public key, learned from a previous
+                // round and persisted in the directory; for a configured seed
+                // we have never reached it is the origin we dial, because its
+                // key is exactly what we do not know yet.
+                let known = known_peer_ids(&state);
+
                 let mut joins = JoinSet::new();
                 for endpoint in peers.iter().take(config.max_peers).cloned() {
+                    let state = state.clone();
                     let client = client.clone();
                     let token = token.clone();
                     let node = self_node.clone();
+                    let peer_node_id = known.get(&endpoint).cloned();
                     joins.spawn(async move {
-                        let result = contact_peer(&client, &endpoint, &token, node).await;
+                        let result = contact_peer(
+                            &state,
+                            &client,
+                            &endpoint,
+                            &token,
+                            node,
+                            peer_node_id.as_deref(),
+                        )
+                        .await;
                         (endpoint, result)
                     });
                 }
@@ -176,7 +189,15 @@ async fn run(state: AppState) {
                                     tracing::warn!(%error, peer = %endpoint, "failed to persist peer heartbeat");
                                 }
                             }
-                            if let Err(error) = replicate_peer(&state, &client, &endpoint, &token).await {
+                            if let Err(error) = replicate_peer(
+                                &state,
+                                &client,
+                                &endpoint,
+                                &token,
+                                known.get(&endpoint).map(String::as_str),
+                            )
+                            .await
+                            {
                                 tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
                             }
                             for peer in response.peers {
@@ -213,21 +234,30 @@ async fn run(state: AppState) {
 }
 
 async fn contact_peer(
+    state: &AppState,
     client: &reqwest::Client,
     endpoint: &str,
     token: &str,
     node: NodeRecord,
+    peer_node_id: Option<&str>,
 ) -> Result<ClusterJoinResponse> {
     let mut url = reqwest::Url::parse(endpoint)
         .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
     url.set_path(JOIN_PATH);
     let body = serde_json::to_vec(&ClusterJoinRequest { node })?;
-    let timestamp = now_millis().to_string();
-    let signature = sign(token, &timestamp, &body);
-    let response = client
-        .post(url)
-        .header(TIMESTAMP_HEADER, &timestamp)
-        .header(SIGNATURE_HEADER, signature)
+    let recipient = recipient_for(peer_node_id, endpoint);
+    // `url.path()` is `JOIN_PATH` and there is no query: both are values this
+    // crate owns, and `Url` percent-encodes anything that could pass for the
+    // preimage's newline separator.
+    let request_proof = proof::sign_request(
+        state.identity(),
+        &recipient,
+        "POST",
+        url.path(),
+        url.query(),
+        &body,
+    );
+    let response = sign_headers(client.post(url), &request_proof, token)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(body)
         .send()
@@ -260,31 +290,49 @@ async fn contact_peer(
     Ok(response)
 }
 
-pub fn verify(token: &str, timestamp: &str, signature: &str, body: &[u8]) -> Result<()> {
-    let timestamp_millis = timestamp
-        .parse::<u64>()
-        .map_err(|_| LiveError::Authentication("invalid cluster join timestamp".to_owned()))?;
-    if now_millis().abs_diff(timestamp_millis) > MAX_CLOCK_SKEW_MILLIS {
-        return Err(LiveError::Authentication(
-            "cluster join timestamp is outside the allowed clock window".to_owned(),
-        ));
+/// The recipient field a request to `endpoint` must be signed against.
+///
+/// A peer whose public key we already hold is named by that key. A configured
+/// seed we have never reached is named by the origin we dial, because its key
+/// is precisely what the first contact is for. Both name exactly one peer, so
+/// neither form lets a captured proof be replayed against a different one.
+fn recipient_for(peer_node_id: Option<&str>, endpoint: &str) -> String {
+    match peer_node_id {
+        Some(node_id) if identity::parse_node_id(node_id).is_ok() => node_id.to_owned(),
+        _ => normalize_endpoint(endpoint),
     }
-    let expected = sign(token, timestamp, body);
-    if !constant_time_eq(expected.as_bytes(), signature.as_bytes()) {
-        return Err(LiveError::Authentication(
-            "invalid cluster join signature".to_owned(),
-        ));
-    }
-    Ok(())
 }
 
-fn sign(token: &str, timestamp: &str, body: &[u8]) -> String {
-    let key = blake3::derive_key(SIGNING_CONTEXT, token.as_bytes());
-    let mut hasher = blake3::Hasher::new_keyed(&key);
-    hasher.update(timestamp.as_bytes());
-    hasher.update(b"\n");
-    hasher.update(body);
-    hasher.finalize().to_hex().to_string()
+/// Endpoint-to-identity map for the peers already in the directory.
+fn known_peer_ids(state: &AppState) -> BTreeMap<String, String> {
+    match state.nodes().list() {
+        Ok(records) => records
+            .into_iter()
+            .map(|record| (normalize_endpoint(&record.endpoint), record.node_id))
+            .collect(),
+        Err(error) => {
+            tracing::warn!(%error, "failed to read known cluster peers");
+            BTreeMap::new()
+        }
+    }
+}
+
+/// Attaches the per-node proof and the admission ticket for *our* identity.
+/// The ticket is derived from the shared token and our node id, so it admits
+/// this node and no other even if it is captured in flight.
+fn sign_headers(
+    request: reqwest::RequestBuilder,
+    request_proof: &proof::RequestProof,
+    token: &str,
+) -> reqwest::RequestBuilder {
+    request
+        .header(proof::NODE_HEADER, &request_proof.node_id)
+        .header(proof::TIMESTAMP_HEADER, &request_proof.timestamp)
+        .header(proof::SIGNATURE_HEADER, &request_proof.signature)
+        .header(
+            proof::TICKET_HEADER,
+            admission::ticket(token, &request_proof.node_id),
+        )
 }
 
 fn normalize_endpoint(endpoint: &str) -> String {
@@ -366,24 +414,25 @@ mod tests {
         assert_eq!(mode & 0o077, 0);
     }
 
+    // A seed we have never contacted is named by its origin; once its key is
+    // in the directory the proof binds the key instead. A malformed id falls
+    // back to the origin rather than signing against a value no peer owns.
     #[test]
-    fn signed_join_proof_covers_timestamp_and_body() {
-        let timestamp = now_millis().to_string();
-        let body = br#"{"node":{"node_id":"one"}}"#;
-        let signature = sign("cluster secret", &timestamp, body);
+    fn the_recipient_is_the_peer_key_when_known_and_the_origin_otherwise() {
+        const PEER: &str =
+            "ed25519:d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
 
-        verify("cluster secret", &timestamp, &signature, body).expect("valid proof");
-        assert!(verify("cluster secret", &timestamp, &signature, b"changed").is_err());
-        assert!(verify("other secret", &timestamp, &signature, body).is_err());
-    }
-
-    #[test]
-    fn stale_join_proof_is_rejected() {
-        let timestamp = now_millis()
-            .saturating_sub(MAX_CLOCK_SKEW_MILLIS + 1)
-            .to_string();
-        let body = b"{}";
-        let signature = sign("cluster secret", &timestamp, body);
-        assert!(verify("cluster secret", &timestamp, &signature, body).is_err());
+        assert_eq!(
+            recipient_for(Some(PEER), "https://seed.example:11435"),
+            PEER
+        );
+        assert_eq!(
+            recipient_for(None, "https://seed.example:11435/"),
+            "https://seed.example:11435"
+        );
+        assert_eq!(
+            recipient_for(Some("blake3:not-a-key"), "https://seed.example:11435"),
+            "https://seed.example:11435"
+        );
     }
 }

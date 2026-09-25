@@ -4,15 +4,13 @@
 //! digest, so a captured proof cannot be replayed against a different route or
 //! a different peer.
 //!
-//! This task (Task 3 of the distributed-p2p-clustering plan) adds the module
-//! without wiring it in: Task 5 (`src/modules/control_plane.rs`) calls
-//! `verify_request` and the header constants. Until that call site lands,
-//! everything here outside `#[cfg(test)]` is unreachable from the rest of the
-//! crate, which `-D warnings` otherwise turns into a build failure. `expect`
-//! (rather than `allow`) means the moment Task 5 wires this in, the lint
-//! stops firing and this annotation itself becomes a compile error — a
-//! reminder to remove it instead of a silently stale allow.
-#![expect(dead_code, reason = "wired in by task 5 of this plan")]
+//! The preimage is newline-separated, so every field it binds must be free of
+//! a literal newline. `path` and `query` are the only ones that are not
+//! constants: on the sending side they come from the `reqwest::Url` this crate
+//! builds, which percent-encodes control characters, and on the receiving side
+//! from `axum::extract::OriginalUri` — the framework-parsed request target,
+//! never a caller-supplied header or body field — which
+//! `src/modules/control_plane.rs` additionally screens before signing over it.
 
 use crate::cluster::identity::{verify_signature, NodeIdentity};
 use crate::error::{LiveError, Result};
@@ -174,15 +172,77 @@ mod tests {
             b"",
         );
 
-        verify_request(&proof, recipient, "GET", "/api/v1/cluster/objects", Some("limit=10"), b"")
-            .expect("the proof it signed");
+        verify_request(
+            &proof,
+            recipient,
+            "GET",
+            "/api/v1/cluster/objects",
+            Some("limit=10"),
+            b"",
+        )
+        .expect("the proof it signed");
 
         // Every bound field, altered one at a time.
-        assert!(verify_request(&proof, recipient, "POST", "/api/v1/cluster/objects", Some("limit=10"), b"").is_err(), "method");
-        assert!(verify_request(&proof, recipient, "GET", "/api/v1/cluster/join", Some("limit=10"), b"").is_err(), "path");
-        assert!(verify_request(&proof, recipient, "GET", "/api/v1/cluster/objects", Some("limit=99"), b"").is_err(), "query");
-        assert!(verify_request(&proof, "ed25519:bb", "GET", "/api/v1/cluster/objects", Some("limit=10"), b"").is_err(), "recipient");
-        assert!(verify_request(&proof, recipient, "GET", "/api/v1/cluster/objects", Some("limit=10"), b"body").is_err(), "body");
+        assert!(
+            verify_request(
+                &proof,
+                recipient,
+                "POST",
+                "/api/v1/cluster/objects",
+                Some("limit=10"),
+                b""
+            )
+            .is_err(),
+            "method"
+        );
+        assert!(
+            verify_request(
+                &proof,
+                recipient,
+                "GET",
+                "/api/v1/cluster/join",
+                Some("limit=10"),
+                b""
+            )
+            .is_err(),
+            "path"
+        );
+        assert!(
+            verify_request(
+                &proof,
+                recipient,
+                "GET",
+                "/api/v1/cluster/objects",
+                Some("limit=99"),
+                b""
+            )
+            .is_err(),
+            "query"
+        );
+        assert!(
+            verify_request(
+                &proof,
+                "ed25519:bb",
+                "GET",
+                "/api/v1/cluster/objects",
+                Some("limit=10"),
+                b""
+            )
+            .is_err(),
+            "recipient"
+        );
+        assert!(
+            verify_request(
+                &proof,
+                recipient,
+                "GET",
+                "/api/v1/cluster/objects",
+                Some("limit=10"),
+                b"body"
+            )
+            .is_err(),
+            "body"
+        );
     }
 
     // Review Focus 5: the window must reject a future proof as firmly as a stale one.

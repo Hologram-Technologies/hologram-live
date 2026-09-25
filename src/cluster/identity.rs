@@ -4,16 +4,6 @@
 //! claiming someone else's identifier and two identically configured hosts are
 //! still distinct members. Phase 2 builds the iroh `SecretKey` from the same
 //! secret bytes, keeping one identity across the transport change.
-//!
-//! This task (Task 2 of the distributed-p2p-clustering plan) adds the module
-//! without wiring it in: Task 4 (`src/config.rs`) calls `parse_node_id` and
-//! Task 5 (`src/app.rs`) calls `NodeIdentity`. Until a later task adds those
-//! call sites, every item here is unreachable from the rest of the crate,
-//! which `-D warnings` otherwise turns into a build failure. `expect` (rather
-//! than `allow`) means the moment everything in this module is wired up and
-//! genuinely used, the lint stops firing and this annotation itself becomes a
-//! compile error — a reminder to remove it instead of a silently stale allow.
-#![expect(dead_code, reason = "wired in by tasks 4 and 5 of this plan")]
 
 use crate::error::{LiveError, Result};
 use crate::util::hex;
@@ -64,6 +54,14 @@ impl NodeIdentity {
 
     /// The raw secret. Phase 2 constructs the iroh `SecretKey` from these bytes
     /// so a peer dials exactly the identity it already admitted.
+    ///
+    /// `expect` rather than `allow`: when that transport lands, the lint stops
+    /// firing and this annotation becomes a compile error rather than a
+    /// silently stale allow.
+    #[expect(
+        dead_code,
+        reason = "phase 2 builds the iroh SecretKey from these bytes"
+    )]
     pub fn secret_bytes(&self) -> [u8; 32] {
         self.signing.to_bytes()
     }
@@ -257,8 +255,8 @@ mod tests {
     fn two_nodes_with_identical_configuration_have_distinct_identities() {
         let first_dir = tempfile::tempdir().expect("first state directory");
         let second_dir = tempfile::tempdir().expect("second state directory");
-        let first = NodeIdentity::load_or_create(&first_dir.path().join(KEY_FILE))
-            .expect("first identity");
+        let first =
+            NodeIdentity::load_or_create(&first_dir.path().join(KEY_FILE)).expect("first identity");
         let second = NodeIdentity::load_or_create(&second_dir.path().join(KEY_FILE))
             .expect("second identity");
         assert_ne!(first.node_id(), second.node_id());

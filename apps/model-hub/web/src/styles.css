@@ -144,7 +144,7 @@
 @keyframes hl-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { :root[data-highlight="resolve"] .hl::after { animation: none; } }
 
-.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-6); }
+.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-8); }
 .land-prompt { color: var(--hh-text-dim); margin-right: .5ch; }
 .land-second { font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }

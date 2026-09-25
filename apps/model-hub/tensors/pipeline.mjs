@@ -7,6 +7,7 @@
 //   node pipeline.mjs seal                     publish the day's index root over every gated model
 //   node pipeline.mjs car                      the day's root and objects as one verified CAR (for IPFS)
 //   node pipeline.mjs pin <repo...>            each tensor payload as its own IPFS object (IPFS_API = your Kubo)
+//   node audit.mjs                             prove every hash is a κ: held objects, the sealed root down, the CAR
 //   node pipeline.mjs status                   one screen: models, tensors, bytes, queue, failures, latest root
 //   node pipeline.mjs nightly [--budget-gb N]  discover -> run -> gate -> seal -> car
 //

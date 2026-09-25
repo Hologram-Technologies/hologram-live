@@ -25,6 +25,19 @@ hub.uor.foundation {
 
 	encode zstd gzip
 
+	# Baseline hardening on every answer from this site. HSTS closes the downgrade window
+	# the plaintext 308 opens; nosniff stops MIME sniffing; frame-ancestors 'self' keeps
+	# foreign sites from framing the hub while the Spaces stage embeds its own sealed frames.
+	# Applied to the live front Caddy 2026-09-25 (backup: Caddyfile.bak-security-20260925T140334Z).
+	# The front Caddy mounts this file read-only: a changed file is applied by restarting the
+	# container, never by caddy reload -- a renamed file is a new inode the mount never sees.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Content-Security-Policy "frame-ancestors 'self'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
 	# ⚠ The live host has moved past this block and it has not been reconciled: there, /v2 goes to hub-registry
 	# (Hologram Registry 1.0.0) with `basic_auth` as user `publisher` rather than a bearer token, and /_* is a
 	# separate handler still pointing at kappa for the days published before the switch. Diff the running

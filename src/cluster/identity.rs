@@ -12,6 +12,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
+use zeroize::Zeroize;
 
 pub const KEY_FILE: &str = "node.key";
 const NODE_ID_PREFIX: &str = "ed25519:";
@@ -26,15 +27,22 @@ pub struct NodeIdentity {
 impl NodeIdentity {
     pub fn load_or_create(path: &Path) -> Result<Self> {
         match std::fs::read_to_string(path) {
-            Ok(text) => {
-                secure_key_file(path)?;
-                match decode_key_text(&text, path) {
-                    Some(result) => result,
-                    // The file exists but is empty: this is the window
-                    // between a concurrent writer's `create_new` and its
-                    // `write_all` + `sync_all`, not corruption.
-                    None => wait_for_concurrent_writer(path),
-                }
+            // `text` is the secret in hex. It is scrubbed on every path out of
+            // this arm, including the failure ones — `SigningKey`'s
+            // `ZeroizeOnDrop` covers the key it ends up in, not the buffer it
+            // was read through.
+            Ok(mut text) => {
+                let result = secure_key_file(path).and_then(|()| {
+                    match decode_key_text(&text, path) {
+                        Some(result) => result,
+                        // The file exists but is empty: this is the window
+                        // between a concurrent writer's `create_new` and its
+                        // `write_all` + `sync_all`, not corruption.
+                        None => wait_for_concurrent_writer(path),
+                    }
+                });
+                text.zeroize();
+                result
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => create_key_file(path),
             Err(error) => Err(LiveError::io(path, error)),
@@ -71,7 +79,16 @@ fn create_key_file(path: &Path) -> Result<NodeIdentity> {
     let mut secret = [0_u8; 32];
     getrandom::fill(&mut secret)
         .map_err(|error| LiveError::Io(format!("generate node key: {error}")))?;
+    let result = write_new_key_file(path, &secret);
+    // The only copy that outlives this call is the one inside `SigningKey`,
+    // which scrubs itself on drop (`ed25519-dalek`'s `zeroize` feature). The
+    // array it was generated into is scrubbed here on every path, including
+    // the ones that failed before the key was built.
+    secret.zeroize();
+    result
+}
 
+fn write_new_key_file(path: &Path, secret: &[u8; 32]) -> Result<NodeIdentity> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -81,13 +98,17 @@ fn create_key_file(path: &Path) -> Result<NodeIdentity> {
     }
     match options.open(path) {
         Ok(mut file) => {
-            let encoded = hex(&secret);
-            file.write_all(encoded.as_bytes())
+            let mut encoded = hex(secret);
+            let written = file
+                .write_all(encoded.as_bytes())
                 .and_then(|()| file.write_all(b"\n"))
-                .and_then(|()| file.sync_all())
-                .map_err(|error| LiveError::io(path, error))?;
+                .and_then(|()| file.sync_all());
+            // Before the `?`, so a failed write does not leave the hex form of
+            // the secret behind.
+            encoded.zeroize();
+            written.map_err(|error| LiveError::io(path, error))?;
             Ok(NodeIdentity {
-                signing: SigningKey::from_bytes(&secret),
+                signing: SigningKey::from_bytes(secret),
             })
         }
         // Another process won the race; read what it wrote.
@@ -108,14 +129,22 @@ fn decode_key_text(text: &str, path: &Path) -> Option<Result<NodeIdentity>> {
     if trimmed.is_empty() {
         return None;
     }
-    Some(
-        unhex(trimmed)
-            .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok())
-            .map(|bytes| NodeIdentity {
-                signing: SigningKey::from_bytes(&bytes),
-            })
-            .ok_or_else(|| corrupt_key_error(path)),
-    )
+    // Written out rather than chained so both decoded copies of the secret —
+    // the `Vec` `unhex` allocates and the fixed-size array it is narrowed to —
+    // can be scrubbed once they have been handed to `SigningKey`.
+    let Some(mut decoded) = unhex(trimmed) else {
+        return Some(Err(corrupt_key_error(path)));
+    };
+    let secret = <[u8; 32]>::try_from(decoded.as_slice()).ok();
+    decoded.zeroize();
+    let Some(mut secret) = secret else {
+        return Some(Err(corrupt_key_error(path)));
+    };
+    let identity = NodeIdentity {
+        signing: SigningKey::from_bytes(&secret),
+    };
+    secret.zeroize();
+    Some(Ok(identity))
 }
 
 fn corrupt_key_error(path: &Path) -> LiveError {
@@ -136,8 +165,10 @@ fn wait_for_concurrent_writer(path: &Path) -> Result<NodeIdentity> {
     for _ in 0..ATTEMPTS {
         std::thread::sleep(DELAY);
         match std::fs::read_to_string(path) {
-            Ok(text) => {
-                if let Some(result) = decode_key_text(&text, path) {
+            Ok(mut text) => {
+                let decoded = decode_key_text(&text, path);
+                text.zeroize();
+                if let Some(result) = decoded {
                     return result;
                 }
             }
@@ -251,6 +282,15 @@ mod tests {
 
     // Defect 1: two nodes with byte-identical configuration must still be
     // distinct members. The old derived server_id made them the same node.
+    //
+    // Final review, FIX 5: two *different* tempdirs is not the case that
+    // mattered. The reverted derivation was
+    // `blake3(server.listen \0 paths.data_dir \0 role)` — it never read
+    // `paths.state_dir`, so two installs differing only in state directory
+    // collided under it while passing a test written this way. The real
+    // condition is below: identical `listen`, `data_dir` and `role`, and the
+    // identities still differ, because the id is not derived from
+    // configuration at all.
     #[test]
     fn two_nodes_with_identical_configuration_have_distinct_identities() {
         let first_dir = tempfile::tempdir().expect("first state directory");
@@ -260,6 +300,57 @@ mod tests {
         let second = NodeIdentity::load_or_create(&second_dir.path().join(KEY_FILE))
             .expect("second identity");
         assert_ne!(first.node_id(), second.node_id());
+    }
+
+    // Final review, FIX 5: the defect this whole change exists to fix was that
+    // `server_id = blake3(server.listen \0 paths.data_dir \0 role)` gave two
+    // default installs a byte-identical `node_id`. Nothing pinned that: every
+    // existing test built its identities in two different tempdirs, where the
+    // old derivation produced distinct ids too — `paths.state_dir` (which is
+    // where `node.key` lives) was the one input it did not read.
+    //
+    // So this holds every input the old seed *did* read identical, and varies
+    // only the one it ignored. `old_server_id` reproduces the reverted
+    // derivation exactly; the first assertion shows it collides on these
+    // inputs, which is what makes the second assertion a regression test and
+    // not just a restatement of `load_or_create` generating random keys.
+    #[test]
+    fn an_identity_does_not_derive_from_configuration() {
+        fn old_server_id(listen: &str, data_dir: &Path, role: &str) -> String {
+            let seed = format!("{listen}\0{}\0{role}", data_dir.display());
+            format!("blake3:{}", blake3::hash(seed.as_bytes()).to_hex())
+        }
+
+        // The two installs differ only in state directory: same listen
+        // address, same data directory, same role — the shape of two hosts
+        // brought up from the same configuration file.
+        let listen = "0.0.0.0:11435";
+        let data_dir = Path::new("/var/lib/hologram/data");
+        let role = "server";
+        let first_state = tempfile::tempdir().expect("first state directory");
+        let second_state = tempfile::tempdir().expect("second state directory");
+
+        assert_eq!(
+            old_server_id(listen, data_dir, role),
+            old_server_id(listen, data_dir, role),
+            "the reverted derivation gave these two installs the same id, which is the defect"
+        );
+
+        let first = NodeIdentity::load_or_create(&first_state.path().join(KEY_FILE))
+            .expect("first identity");
+        let second = NodeIdentity::load_or_create(&second_state.path().join(KEY_FILE))
+            .expect("second identity");
+        assert_ne!(
+            first.node_id(),
+            second.node_id(),
+            "two installs with identical listen, data_dir and role must still be distinct members"
+        );
+        // And the id is an ed25519 public key, not a digest of configuration.
+        for node_id in [first.node_id(), second.node_id()] {
+            assert!(node_id.starts_with("ed25519:"), "{node_id}");
+            assert_ne!(node_id, old_server_id(listen, data_dir, role));
+            parse_node_id(&node_id).expect("a node id is a public key");
+        }
     }
 
     #[test]

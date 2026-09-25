@@ -508,4 +508,152 @@ mod tests {
             .expect("the later, correctly advertised object must still replicate");
         assert_eq!(stored_b.bytes, bytes_b);
     }
+
+    /// Final review, FIX 6: `replication_max_objects_per_round` had no test at
+    /// all — the only replication tests either asserted `RoundOutcome`'s own
+    /// counters or drove a two-object inventory that never reached the bound.
+    /// A broken cap means one round against a peer with a large store pulls the
+    /// whole store, synchronously, inside `cluster::run`'s join loop.
+    ///
+    /// The stub peer honours `limit` and `cursor`, like the real inventory
+    /// route, and records the limits it was asked for. With the bound at two
+    /// against a peer offering five objects, the expected behaviour is exact:
+    /// one inventory request for two, two objects stored, and no second
+    /// request even though the peer offered a cursor to continue from.
+    #[tokio::test]
+    async fn the_round_stops_at_replication_max_objects_per_round() {
+        use axum::extract::{Path, Query};
+        use axum::http::StatusCode;
+        use axum::response::IntoResponse;
+        use axum::routing::get;
+        use axum::{Json, Router};
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        const OFFERED: usize = 5;
+        const CAP: usize = 2;
+
+        crate::util::install_crypto_provider();
+
+        let bodies: Vec<Vec<u8>> = (0..OFFERED)
+            .map(|index| format!("cluster object number {index}").into_bytes())
+            .collect();
+        let ids: Vec<String> = bodies
+            .iter()
+            .map(|bytes| format!("blake3:{}", blake3::hash(bytes).to_hex()))
+            .collect();
+        let by_id: HashMap<String, Vec<u8>> =
+            ids.iter().cloned().zip(bodies.iter().cloned()).collect();
+        let by_id = Arc::new(by_id);
+
+        let all: Vec<crate::protocol::ObjectMetadata> = ids
+            .iter()
+            .zip(bodies.iter())
+            .map(|(id, bytes)| crate::protocol::ObjectMetadata {
+                id: id.clone(),
+                kind: "file".to_owned(),
+                media_type: "text/plain".to_owned(),
+                filename: None,
+                size: bytes.len() as u64,
+                created_at_millis: 0,
+            })
+            .collect();
+        let all = Arc::new(all);
+        // Every `limit` the peer was asked for, so the bound can be observed on
+        // the request and not only in its effect.
+        let asked: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let inventory_asked = asked.clone();
+        let router = Router::new()
+            .route(
+                OBJECTS_PATH,
+                get(move |Query(query): Query<HashMap<String, String>>| {
+                    let all = all.clone();
+                    let asked = inventory_asked.clone();
+                    async move {
+                        let limit: usize = query
+                            .get("limit")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(OFFERED);
+                        let start: usize = query
+                            .get("cursor")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0);
+                        if let Ok(mut asked) = asked.lock() {
+                            asked.push(limit);
+                        }
+                        let end = start.saturating_add(limit).min(all.len());
+                        Json(ObjectPage {
+                            objects: all[start.min(all.len())..end].to_vec(),
+                            next_cursor: (end < all.len()).then(|| end.to_string()),
+                            truncated: false,
+                        })
+                    }
+                }),
+            )
+            .route(
+                crate::cluster::OBJECT_PATH,
+                get(move |Path(id): Path<String>| {
+                    let by_id = by_id.clone();
+                    async move {
+                        match by_id.get(&id) {
+                            Some(bytes) => (StatusCode::OK, bytes.clone()).into_response(),
+                            None => StatusCode::NOT_FOUND.into_response(),
+                        }
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port for the stub peer");
+        let address = listener.local_addr().expect("read the bound address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        let endpoint = format!("http://{address}");
+
+        let temp = tempfile::tempdir().expect("temp dir for the calling node's state");
+        let mut config = crate::config::AppConfig::default();
+        config.paths.config_dir = temp.path().join("config");
+        config.paths.data_dir = temp.path().join("data");
+        config.paths.state_dir = temp.path().join("state");
+        config.paths.cache_dir = temp.path().join("cache");
+        config.cluster.replication_max_objects_per_round = CAP;
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build a real AppState backed by a temp dir");
+        let networks = NetworkRegistry::new(vec![Arc::new(
+            crate::cluster::network::HttpNetwork::new(reqwest::Client::new()),
+        )]);
+
+        replicate_peer(
+            &state,
+            &networks,
+            &endpoint,
+            "a token the stub never checks",
+        )
+        .await
+        .expect("a capped round is a successful round");
+
+        assert_eq!(
+            asked.lock().expect("the recorded limits").as_slice(),
+            &[CAP],
+            "the round must ask for the bound once and then stop, cursor or not"
+        );
+        for id in ids.iter().take(CAP) {
+            state
+                .registry()
+                .get_object(id)
+                .unwrap_or_else(|error| panic!("object {id} within the bound: {error}"));
+        }
+        for id in ids.iter().skip(CAP) {
+            assert!(
+                state.registry().get_object(id).is_err(),
+                "object {id} is past replication_max_objects_per_round and must not be fetched"
+            );
+        }
+    }
 }

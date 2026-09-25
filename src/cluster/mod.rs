@@ -316,16 +316,12 @@ async fn run(state: AppState) {
                     Ok(removed) if removed > 0 => {
                         tracing::info!(removed, "pruned stale cluster members");
                         let after_prune = state.nodes().list().unwrap_or_default();
-                        for endpoint in prune_evictions(&before_prune, &after_prune) {
-                            table.evict(&endpoint);
-                            // A peer that aged out of the directory stops being
-                            // worth a restart's first knock too, which is what
-                            // keeps the dial list from accumulating every origin
-                            // this node ever met.
-                            if dialled.remove(&endpoint) {
-                                dialled_changed = true;
-                            }
-                        }
+                        dialled_changed |= evict_pruned(
+                            &mut table,
+                            &mut dialled,
+                            &before_prune,
+                            &after_prune,
+                        );
                     }
                     Ok(_) => {}
                     Err(error) => tracing::warn!(%error, "failed to prune stale cluster members"),
@@ -589,6 +585,31 @@ fn prune_evictions(before: &[NodeRecord], after: &[NodeRecord]) -> Vec<String> {
         .collect()
 }
 
+/// Drops the peers that pruning actually orphaned from the working set: out of
+/// the peer table, so a dead endpoint stops burning a `fanout` slot, and out of
+/// the dial list, so it stops being worth a restart's first knock. Reports
+/// whether the dial list changed, which is when it needs rewriting.
+///
+/// Extracted from `run` so the wiring between `prune_evictions` and
+/// `PeerTable::evict` is testable. `prune_evictions` was covered on its own,
+/// and `PeerTable::evict` was too, but nothing joined them: eviction could be
+/// wired to the wrong list, or not wired at all, and every test still passed.
+fn evict_pruned(
+    table: &mut PeerTable,
+    dialled: &mut BTreeSet<String>,
+    before: &[NodeRecord],
+    after: &[NodeRecord],
+) -> bool {
+    let mut dialled_changed = false;
+    for endpoint in prune_evictions(before, after) {
+        table.evict(&endpoint);
+        if dialled.remove(&endpoint) {
+            dialled_changed = true;
+        }
+    }
+    dialled_changed
+}
+
 pub fn validate_node_record(node: &NodeRecord) -> Result<()> {
     if node.node_id.is_empty() || node.node_id.len() > 256 {
         return Err(LiveError::Protocol(
@@ -767,5 +788,124 @@ mod tests {
         let before = vec![node("ed25519:old", "https://rotated.example")];
         let after = vec![node("ed25519:new", "https://rotated.example")];
         assert!(prune_evictions(&before, &after).is_empty());
+    }
+
+    // Final review, FIX 6: `prune_evictions` was tested, `PeerTable::evict` was
+    // tested, and the wiring between them was not. A pruned peer that stayed in
+    // the table burns a `fanout` slot forever, and
+    // `a_restarted_node_rejoins_without_any_configured_seed` passes with
+    // eviction broken — it only waits for the *directory* to shrink, which
+    // `prune_older_than` does on its own.
+    #[test]
+    fn pruning_the_directory_drops_the_peer_from_the_table_and_the_dial_list() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://gone.example".to_owned());
+        table.insert("https://live.example".to_owned());
+        let mut dialled: BTreeSet<String> = ["https://gone.example", "https://live.example"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+
+        let before = vec![
+            node("ed25519:self", "https://self.example"),
+            node("ed25519:gone", "https://gone.example"),
+            node("ed25519:live", "https://live.example"),
+        ];
+        let after = vec![
+            node("ed25519:self", "https://self.example"),
+            node("ed25519:live", "https://live.example"),
+        ];
+
+        assert!(
+            evict_pruned(&mut table, &mut dialled, &before, &after),
+            "dropping an endpoint from the dial list must ask for a rewrite"
+        );
+        assert_eq!(
+            table.due(0, 8),
+            vec!["https://live.example".to_owned()],
+            "the pruned peer must leave the table and the surviving one must stay"
+        );
+        assert_eq!(
+            dialled,
+            ["https://live.example".to_owned()].into_iter().collect(),
+            "the pruned peer must leave the dial list too"
+        );
+    }
+
+    // The other half: a peer that only rotated its node id is still live, so
+    // the wiring must not evict it. Without this, "evict everything in
+    // `before`" would pass the test above.
+    #[test]
+    fn pruning_an_identity_rotation_evicts_nothing() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://rotated.example".to_owned());
+        let mut dialled: BTreeSet<String> =
+            ["https://rotated.example".to_owned()].into_iter().collect();
+
+        let before = vec![node("ed25519:old", "https://rotated.example")];
+        let after = vec![node("ed25519:new", "https://rotated.example")];
+
+        assert!(!evict_pruned(&mut table, &mut dialled, &before, &after));
+        assert_eq!(table.due(0, 8), vec!["https://rotated.example".to_owned()]);
+        assert_eq!(dialled.len(), 1);
+    }
+
+    // Final review, FIX 1: the dial list is endpoints and nothing else, and a
+    // value the configured-seed path would have refused must not slip in
+    // through the file. Self is filtered because a node must never seed itself
+    // as a peer (`seed_from_directory` filters it for the same reason).
+    #[test]
+    fn the_dial_list_only_recovers_endpoints_a_seed_could_have_been() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join(membership::DIALLED_FILE);
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&[
+                "https://peer.example",
+                "https://self.example",
+                // Refused by `validate_cluster_endpoint`: plaintext to a
+                // non-loopback host, a credential, a path, and a value that is
+                // not a URL at all.
+                "http://public.example",
+                "https://user:pass@peer.example",
+                "https://peer.example/admin",
+                "ed25519:aa",
+            ])
+            .expect("encode a dial list"),
+        )
+        .expect("write a dial list");
+
+        assert_eq!(
+            load_dialled(&path, "https://self.example"),
+            vec!["https://peer.example".to_owned()]
+        );
+
+        // A missing or unreadable file is simply no dial list, never a failure.
+        assert!(load_dialled(
+            &directory.path().join("absent.json"),
+            "https://self.example"
+        )
+        .is_empty());
+        std::fs::write(&path, b"not json").expect("corrupt the dial list");
+        assert!(load_dialled(&path, "https://self.example").is_empty());
+    }
+
+    // And a round trip, since `store_dialled` is what the next start reads.
+    #[test]
+    fn a_stored_dial_list_is_recovered_verbatim() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join(membership::DIALLED_FILE);
+        let dialled: BTreeSet<String> = ["https://a.example", "https://b.example"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        store_dialled(&path, &dialled);
+        assert_eq!(
+            load_dialled(&path, "https://self.example"),
+            vec![
+                "https://a.example".to_owned(),
+                "https://b.example".to_owned()
+            ]
+        );
     }
 }

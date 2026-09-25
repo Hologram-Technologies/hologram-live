@@ -845,4 +845,53 @@ mod tests {
             .expect("the provider builds without touching the network");
         let _ = std::fs::remove_dir_all(root);
     }
+
+    /// Final review, FIX 5: `server_id` is what the capability manifest
+    /// publishes, what gRPC echoes, and — through `local_node_record` — the
+    /// `node_id` every cluster record, proof and admission decision is keyed
+    /// on. Nothing asserted that it is the cluster identity.
+    ///
+    /// It used to be `blake3(server.listen   paths.data_dir   role)`, which
+    /// gave two default installs the same id. Both halves of this fail against
+    /// that: a digest of configuration is not `identity.node_id()`, and it
+    /// carries a `blake3:` prefix rather than `ed25519:`.
+    #[tokio::test]
+    async fn the_capability_manifest_publishes_the_cluster_identity() {
+        let temp = tempfile::tempdir().expect("temporary root");
+        let mut config = AppConfig::default();
+        config.paths.config_dir = temp.path().join("config");
+        config.paths.data_dir = temp.path().join("data");
+        config.paths.state_dir = temp.path().join("state");
+        config.paths.cache_dir = temp.path().join("cache");
+        // `init_for_test` rather than `init`: another test in this binary also
+        // builds an `AppState`, and `try_init`'s global subscriber slot can
+        // only be claimed once (see its doc comment).
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build an AppState backed by a temp dir");
+
+        let manifest = state.capability_manifest();
+        assert_eq!(
+            manifest.server_id,
+            state.identity().node_id(),
+            "the published server id must be this node's cluster identity"
+        );
+        assert!(
+            manifest.server_id.starts_with("ed25519:"),
+            "a server id is an ed25519 public key, not a digest of configuration: {}",
+            manifest.server_id
+        );
+        assert_eq!(manifest.server_id.len(), "ed25519:".len() + 64);
+        crate::cluster::identity::parse_node_id(&manifest.server_id)
+            .expect("the published server id parses as a public key");
+        // And the record every peer is keyed on carries that same identity.
+        assert_eq!(
+            state
+                .local_node_record("https://node.example".to_owned())
+                .node_id,
+            manifest.server_id
+        );
+    }
 }

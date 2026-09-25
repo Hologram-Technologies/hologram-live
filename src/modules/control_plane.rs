@@ -421,12 +421,13 @@ fn header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, HttpError> 
 
 #[cfg(test)]
 mod tests {
-    use crate::cluster::admission::AllowlistAdmission;
+    use crate::cluster::admission::{ticket, Admission, AllowlistAdmission, TokenAdmission};
     use crate::cluster::identity::{NodeIdentity, KEY_FILE};
     use crate::cluster::proof::sign_request;
     use crate::cluster::proof::verify_request;
     use crate::cluster::proof::{
-        RequestProof, NODE_HEADER, RECIPIENT_HEADER, SIGNATURE_HEADER, TIMESTAMP_HEADER,
+        RequestProof, NODE_HEADER, RECIPIENT_HEADER, SIGNATURE_HEADER, TICKET_HEADER,
+        TIMESTAMP_HEADER,
     };
     use axum::http::HeaderMap;
 
@@ -692,5 +693,79 @@ mod tests {
                 .unwrap_or_else(|error| panic!("an admitted identity: {}", error.0)),
             caller.node_id()
         );
+    }
+
+    // Final review, FIX 6: `TokenAdmission::authorize` *pins* the identity it
+    // admits, permanently and to disk, so it must never be reached by a caller
+    // whose signature did not verify. Today that holds only because
+    // `authorize_proof` happens to check the signature before it consults
+    // admission — an invariant nothing asserted, and one a future reordering
+    // (or an early admission lookup added to pick a log level, as
+    // `log_misaddressed_request` nearly was) would break silently.
+    //
+    // The ticket here is genuinely valid for the caller's own node id: it is
+    // the same value `cluster::signed_request` would attach. Only the signature
+    // is wrong. So a pin would mean an unauthenticated caller had bought
+    // permanent membership with a captured ticket.
+    #[test]
+    fn a_valid_ticket_with_a_bad_signature_does_not_pin() {
+        let (_caller_dir, caller) = identity("caller");
+        let (_node_dir, node) = identity("node");
+        let own_node_id = node.node_id();
+        let state_dir = tempfile::tempdir().expect("admission state directory");
+        let pinned_path = state_dir
+            .path()
+            .join(crate::cluster::admission::PINNED_FILE);
+        let token = "a sufficiently long shared cluster admission token";
+        let admission = TokenAdmission::new(token.to_owned(), pinned_path.clone(), Vec::new())
+            .expect("token admission");
+
+        // A well-formed proof whose signature is not one, carrying a ticket
+        // that is correct for this caller.
+        let good = sign_request(&caller, ORIGIN, "GET", OBJECTS, None, b"");
+        let forged = RequestProof {
+            signature: "00".repeat(64),
+            ..good.clone()
+        };
+        let mut headers = headers_for(&forged, ORIGIN);
+        headers.insert(
+            TICKET_HEADER,
+            ticket(token, &caller.node_id())
+                .parse()
+                .expect("ticket header value"),
+        );
+
+        let error = authorize(&own_node_id, &admission, &headers)
+            .expect_err("an invalid signature must be refused");
+        assert!(
+            error.0.to_string().contains("invalid cluster request proof"),
+            "must fail on the signature, got {}",
+            error.0
+        );
+        assert!(
+            !admission.admitted().contains(&caller.node_id()),
+            "a caller whose signature did not verify must not have been pinned"
+        );
+        assert!(
+            !pinned_path.exists(),
+            "nothing may be written to the pin file before authentication completes"
+        );
+
+        // The same ticket over a *valid* signature does pin, which is what
+        // makes the refusal above attributable to the signature and not to a
+        // ticket that was never going to work.
+        let mut headers = headers_for(&good, ORIGIN);
+        headers.insert(
+            TICKET_HEADER,
+            ticket(token, &caller.node_id())
+                .parse()
+                .expect("ticket header value"),
+        );
+        assert_eq!(
+            authorize(&own_node_id, &admission, &headers)
+                .unwrap_or_else(|error| panic!("a correctly signed ticket bearer: {}", error.0)),
+            caller.node_id()
+        );
+        assert!(admission.admitted().contains(&caller.node_id()));
     }
 }

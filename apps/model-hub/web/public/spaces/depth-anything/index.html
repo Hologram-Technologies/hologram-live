@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" class="dark" data-theme="dark" data-space="depth-anything">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self' https://gethologram.ai https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' blob: data:; media-src 'self' blob: data:; style-src 'self' https://gethologram.ai 'unsafe-inline'; font-src 'self' https://gethologram.ai">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://gethologram.ai/kit/hologram-warm.css">
+<link rel="stylesheet" href="https://gethologram.ai/kit/hologram-gap-tokens.css">
+<link rel="stylesheet" href="https://gethologram.ai/tokens.css">
+<script type="module">// ── Hologram Spaces prelude: every model byte is verified against a digest sealed with this Space before
+// the runtime sees it, then kept in this Space's own store by digest. Hosts are locations, never identity.
+import { installVerifiedFetch } from "./runtime/holo-spaces-hf-fetch.mjs";
+import { OpfsKappaStore } from "./runtime/holo-opfs-kappastore.mjs";
+const __holoStoreP = OpfsKappaStore.open("holo-space:depth-anything").catch(() => null);
+const __holoChan = (() => { try { return new BroadcastChannel("holo-spaces:depth-anything"); } catch { return null; } })();
+const __holoSay = (e) => { try { __holoChan && __holoChan.postMessage(e); } catch {} };
+// a failure inside this context is a fact the page should show, not a silent spinner
+self.addEventListener("error", (ev) => __holoSay({ kind: "error", error: String((ev && ev.message) || ev) }));
+self.addEventListener("unhandledrejection", (ev) => __holoSay({ kind: "error", error: String((ev && ev.reason && (ev.reason.message || ev.reason)) || ev) }));
+installVerifiedFetch({
+  hosts: ["https://gethologram.ai","https://huggingface.co"], altHosts: ["https://gethologram.ai","https://huggingface.co"], models: ["Xenova/depth-anything-small-hf"],
+  pinned: {"Xenova/depth-anything-small-hf":{".gitattributes":{"axis":"gitsha1","hex":"a6344aac8c09253b3b630fb776ae94478aa0275b","size":1519},"README.md":{"axis":"gitsha1","hex":"e38a8948e243dc37e0c0db22e0d8542fc9360cb2","size":1809},"config.json":{"axis":"gitsha1","hex":"bf2dc2d186bd9860b3f81fabb971dcbf0692a8ac","size":1020},"onnx/model.onnx":{"axis":"sha256","hex":"c222151fa1a941b7a075efdee44a85bb22e1bc07dce3659a03cb3f4eb53dd213","size":99170955},"onnx/model_bnb4.onnx":{"axis":"sha256","hex":"2392aba77bd34e7183ae58d3395b9d5dbfaf9eba8da7fc1f71afdcb59b211f65","size":26236495},"onnx/model_fp16.onnx":{"axis":"sha256","hex":"59f445f985c1a46155904f902c253da6c84108a2aa72e0d9a2d2d63e04204570","size":49861035},"onnx/model_q4.onnx":{"axis":"sha256","hex":"dfa44107860895b9aa7ac074f55b74427772302a86812f513e8820ffab192bec","size":27563143},"onnx/model_q4f16.onnx":{"axis":"sha256","hex":"dd2f330c2cf62fd056a0cbf9032f860d62f31f3074826f0d23de3ffa7d3516e4","size":20336189},"onnx/model_quantized.onnx":{"axis":"sha256","hex":"e4e2ffe9b0396ebd4a0c09b855762b186aab338e79f76531b09777aafc91db84","size":27524771},"onnx/model_uint8.onnx":{"axis":"sha256","hex":"4c307cbb44117199ec1672d860d845bce111301a0dcbcf05f334f88599480cfd","size":27256285},"preprocessor_config.json":{"axis":"gitsha1","hex":"4b48811870a9d567ee23549c08249fe943e57916","size":437},"quantize_config.json":{"axis":"gitsha1","hex":"f3d2ce7b5af3b10bea7c693651ead310809db3df","size":948}}},
+  store: { getByKey: async (a, h) => { const st = await __holoStoreP; return st ? st.getByKey(a, h) : null; },
+           putVerified: async (a, h, b) => { const st = await __holoStoreP; if (st) await st.putVerified(a, h, b); } },
+  onEvent: __holoSay,
+}).then(() => __holoSay({ kind: "armed" }), (e) => __holoSay({ kind: "index-failed", error: String(e && e.message || e) }));
+</script>
+  <title>Depth Anything · Apps · Hologram</title>
+  <script type="module" src="./assets/index-fXabxwo8.js"></script>
+  <link rel="stylesheet" href="./assets/index-YfP4b9qq.css">
+<link rel="stylesheet" href="./runtime/space.css">
+<style>html[data-space="depth-anything"] body { padding: 24px !important; }
+html[data-space="depth-anything"] #container { border: 1px dashed var(--hh-line-strong, #3a3a3d) !important; border-radius: 13px !important; background-color: var(--hh-surface, #16161a); }
+html[data-space="depth-anything"] #upload-button { color: var(--hh-text, #ece9fb) !important; font-size: 15px !important; }
+html[data-space="depth-anything"] #upload-button svg path { fill: currentColor !important; }
+html[data-space="depth-anything"] #example { color: var(--hh-text-dim, #9a9aa3) !important; }
+html[data-space="depth-anything"] #example:hover { color: var(--brand, #e93b01) !important; }
+html[data-space="depth-anything"] #status { color: var(--hh-text-dim, #9a9aa3); font-family: var(--font-mono, monospace); font-size: 12.5px; }</style>
+</head>
+
+<body>
+  <div id="container">
+    <label id="upload-button" for="upload">
+      <svg width="25" height="25" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#000"
+          d="M3.5 24.3a3 3 0 0 1-1.9-.8c-.5-.5-.8-1.2-.8-1.9V2.9c0-.7.3-1.3.8-1.9.6-.5 1.2-.7 2-.7h18.6c.7 0 1.3.2 1.9.7.5.6.7 1.2.7 2v18.6c0 .7-.2 1.4-.7 1.9a3 3 0 0 1-2 .8H3.6Zm0-2.7h18.7V2.9H3.5v18.7Zm2.7-2.7h13.3c.3 0 .5 0 .6-.3v-.7l-3.7-5a.6.6 0 0 0-.6-.2c-.2 0-.4 0-.5.3l-3.5 4.6-2.4-3.3a.6.6 0 0 0-.6-.3c-.2 0-.4.1-.5.3l-2.7 3.6c-.1.2-.2.4 0 .7.1.2.3.3.6.3Z">
+        </path>
+      </svg>
+      Click to upload image
+      <label id="example">(or try example)</label>
+    </label>
+  </div>
+  <label id="status"></label>
+  <input id="upload" type="file" accept="image/*" />
+
+</body>
+
+</html>

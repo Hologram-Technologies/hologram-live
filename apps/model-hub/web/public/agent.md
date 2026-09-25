@@ -55,7 +55,7 @@ not hold the file answers 404 and names the ones that do.
                       not from you: a source can read `ok` here and still be unreachable from your network,
                       so treat it as the hub's routing preference rather than a promise about your failover.
     /spaces/          apps that run entirely in the browser, each in its own sealed frame; the catalog with every
-                      Space's root digest and models is /spaces/spaces.json, and a published Space is the OCI
+                      App's root digest and models is /spaces/spaces.json, and a published App is the OCI
                       artifact at /v2/spaces/<id>.
     /docs/            the documentation: quickstart, the concepts, one page per dialect, the reference. Each page also at /docs/<page>.md.
     /llms.txt         the same thing at more length, and the index of every docs page.

@@ -5,7 +5,7 @@
 //   reverse  every route the live hub answers is matched against a path in the document. A route that answers and is
 //            not described fails the gate: an endpoint with undescribed surface is an endpoint an agent must guess at.
 //
-//   node conformance.mjs [--base https://hub.uor.foundation] [--spec ../../public/openapi.json]
+//   node conformance.mjs [--base https://gethologram.ai] [--spec ../../public/openapi.json]
 //
 // Exit code 0 only when both directions pass. Read-only: no token is sent and no weight byte is fetched.
 import { readFile } from "node:fs/promises";
@@ -13,7 +13,7 @@ import Ajv from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i > -1 ? process.argv[i + 1] : fallback; };
-const BASE = arg("base", "https://hub.uor.foundation").replace(/\/$/, "");
+const BASE = arg("base", "https://gethologram.ai").replace(/\/$/, "");
 const SPEC = arg("spec", new URL("../../public/openapi.json", import.meta.url));
 const EVIDENCE = new URL("./evidence.json", import.meta.url);
 

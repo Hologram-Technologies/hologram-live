@@ -1,11 +1,11 @@
-# hub.uor.foundation/models
+# gethologram.ai/models
 
 Open models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and
 every request below is anonymous.
 
 ## One line, if you can set an environment variable
 
-    HF_ENDPOINT=https://hub.uor.foundation
+    HF_ENDPOINT=https://gethologram.ai
 
 Everything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses
 MODEL_ENDPOINT instead.
@@ -44,9 +44,9 @@ and this server does not verify on read.
 
 ## More
 
-    https://hub.uor.foundation/agent.md        the whole hub in one screen
-    https://hub.uor.foundation/openapi.json    every operation, OpenAPI 3.1, bindable directly
-    https://hub.uor.foundation/mcp             the same hub as MCP tools, no key
+    https://gethologram.ai/agent.md        the whole hub in one screen
+    https://gethologram.ai/openapi.json    every operation, OpenAPI 3.1, bindable directly
+    https://gethologram.ai/mcp             the same hub as MCP tools, no key
 
 <!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch
-     https://hub.uor.foundation/models again and read it verbatim. -->
+     https://gethologram.ai/models again and read it verbatim. -->

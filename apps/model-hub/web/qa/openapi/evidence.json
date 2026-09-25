@@ -1,6 +1,6 @@
 {
  "probed_at": "2026-09-24T10:39:10.715Z",
- "base": "https://hub.uor.foundation",
+ "base": "https://gethologram.ai",
  "sample": {
   "model": "sentence-transformers/all-MiniLM-L6-v2",
   "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
@@ -20,7 +20,7 @@
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
+   "body": "# gethologram.ai\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEv…",
    "error": null
   },
   {
@@ -72,7 +72,7 @@
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
+   "body": "# gethologram.ai\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEv…",
    "error": null
   },
   {
@@ -87,7 +87,7 @@
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEv…",
+   "body": "# gethologram.ai\n\nYou are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file\nnamed by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.\nNo account, no key, no SDK, and every read below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEv…",
    "error": null
   },
   {
@@ -101,7 +101,7 @@
     "etag": "\"dlngxrqxh5jt1uy-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
+   "body": "# gethologram.ai/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
    "error": null
   },
   {
@@ -115,7 +115,7 @@
     "etag": "\"dlngxrqxh5jt1uy-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://hub.uor.foundation\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
+   "body": "# gethologram.ai/models\n\nOpen models: find one, prove it, and fetch it from whichever source is up. No account, no key, no SDK, and\nevery request below is anonymous.\n\n## One line, if you can set an environment variable\n\n    HF_ENDPOINT=https://gethologram.ai\n\nEverything built on huggingface_hub then reads from here with the commands you already have. llama.cpp uses\nMODEL_ENDPOINT instead.\n…",
    "error": null
   },
   {
@@ -143,7 +143,7 @@
     "etag": "\"dlngxp8uj6zg1gy-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "# hub.uor.foundation/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull hub.uor.foundation/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull hub.uor.foundation/<org>/<name>:latest\n …",
+   "body": "# gethologram.ai/registry\n\nThe same models as OCI artifacts, so the tools you already use for containers work unchanged. Reads are\nanonymous; only publishing needs a credential.\n\n## Pull with what you have\n\n    ollama pull gethologram.ai/<org>/<name>:<quant>\n        Ollama verifies the SHA-256 itself. Any GGUF repository in the index.\n\n    oras pull gethologram.ai/<org>/<name>:latest\n …",
    "error": null
   },
   {
@@ -195,7 +195,7 @@
     "access-control-allow-origin": "*",
     "content-encoding": "gzip"
    },
-   "body": "# Hologram Model Hub\n\n> One base URL for open models. Every file is named by the SHA-256 of its bytes and every object by its BLAKE3; fetch from a source that is up, check it yourself, and trust no host, this one included. No account, no key, no SDK.\n\n## The short way\n\n- `export HF_ENDPOINT=https://hub.uor.foundation` and every tool built on `huggingface_hub` reads from here: `hf download <owner>/…",
+   "body": "# Hologram Model Hub\n\n> One base URL for open models. Every file is named by the SHA-256 of its bytes and every object by its BLAKE3; fetch from a source that is up, check it yourself, and trust no host, this one included. No account, no key, no SDK.\n\n## The short way\n\n- `export HF_ENDPOINT=https://gethologram.ai` and every tool built on `huggingface_hub` reads from here: `hf download <owner>/…",
    "error": null
   },
   {
@@ -216,7 +216,7 @@
     "info": {
      "title": "Hologram Model Hub",
      "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-     "description": "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `hugging…",
+     "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `hugging…",
      "version": "1.0.0",
      "license": {
       "name": "MIT OR Apache-2.0",
@@ -228,27 +228,27 @@
      },
      "x-hologram-dialects": {
       "huggingface": {
-       "setting": "HF_ENDPOINT=https://hub.uor.foundation",
+       "setting": "HF_ENDPOINT=https://gethologram.ai",
        "paths": [
         "/api/models",
         "/{owner}/{name}/resolve/{revision}/{path}"
        ]
       },
       "ollama": {
-       "setting": "ollama pull hub.uor.foundation/{owner}/{name}:{quant}",
+       "setting": "ollama pull gethologram.ai/{owner}/{name}:{quant}",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}",
         "/v2/{owner}/{name}/blobs/{digest}"
        ]
       },
       "oci": {
-       "setting": "oras pull hub.uor.foundation/{owner}/{name}:latest",
+       "setting": "oras pull gethologram.ai/{owner}/{name}:latest",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}"
        ]
       },
       "mcp": {
-       "setting": "https://hub.uor.foundation/mcp",
+       "setting": "https://gethologram.ai/mcp",
        "paths": [
         "/mcp"
        ]
@@ -263,13 +263,13 @@
     },
     "servers": [
      {
-      "url": "https://hub.uor.foundation",
+      "url": "https://gethologram.ai",
       "description": "Production. The hub is one host; there is no staging surface."
      }
     ],
     "externalDocs": {
      "description": "The same endpoint explained for an agent in prose, shortest path first.",
-     "url": "https://hub.uor.foundation/llms.txt"
+     "url": "https://gethologram.ai/llms.txt"
     },
     "tags": [
      {
@@ -2200,8 +2200,8 @@
             ],
             "format": "hologram.model-hub.archive/v1",
             "gateway": "https://ipfs.filebase.io/ipfs/",
-            "mirror": "https://hub.uor.foundation/archive/",
-            "registry": "hub.uor.foundation/model-hub/index"
+            "mirror": "https://gethologram.ai/archive/",
+            "registry": "gethologram.ai/model-hub/index"
            }
           }
          }
@@ -3471,7 +3471,7 @@
        ],
        "operationId": "listModelsVia",
        "summary": "Search with a source pinned for what follows",
-       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://gethologram.ai/via/ipfs`, and never choose again.",
        "parameters": [
         {
          "name": "source",
@@ -4974,7 +4974,7 @@
     "info": {
      "title": "Hologram Model Hub",
      "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-     "description": "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `hugging…",
+     "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `hugging…",
      "version": "1.0.0",
      "license": {
       "name": "MIT OR Apache-2.0",
@@ -4986,27 +4986,27 @@
      },
      "x-hologram-dialects": {
       "huggingface": {
-       "setting": "HF_ENDPOINT=https://hub.uor.foundation",
+       "setting": "HF_ENDPOINT=https://gethologram.ai",
        "paths": [
         "/api/models",
         "/{owner}/{name}/resolve/{revision}/{path}"
        ]
       },
       "ollama": {
-       "setting": "ollama pull hub.uor.foundation/{owner}/{name}:{quant}",
+       "setting": "ollama pull gethologram.ai/{owner}/{name}:{quant}",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}",
         "/v2/{owner}/{name}/blobs/{digest}"
        ]
       },
       "oci": {
-       "setting": "oras pull hub.uor.foundation/{owner}/{name}:latest",
+       "setting": "oras pull gethologram.ai/{owner}/{name}:latest",
        "paths": [
         "/v2/{owner}/{name}/manifests/{reference}"
        ]
       },
       "mcp": {
-       "setting": "https://hub.uor.foundation/mcp",
+       "setting": "https://gethologram.ai/mcp",
        "paths": [
         "/mcp"
        ]
@@ -5021,13 +5021,13 @@
     },
     "servers": [
      {
-      "url": "https://hub.uor.foundation",
+      "url": "https://gethologram.ai",
       "description": "Production. The hub is one host; there is no staging surface."
      }
     ],
     "externalDocs": {
      "description": "The same endpoint explained for an agent in prose, shortest path first.",
-     "url": "https://hub.uor.foundation/llms.txt"
+     "url": "https://gethologram.ai/llms.txt"
     },
     "tags": [
      {
@@ -6958,8 +6958,8 @@
             ],
             "format": "hologram.model-hub.archive/v1",
             "gateway": "https://ipfs.filebase.io/ipfs/",
-            "mirror": "https://hub.uor.foundation/archive/",
-            "registry": "hub.uor.foundation/model-hub/index"
+            "mirror": "https://gethologram.ai/archive/",
+            "registry": "gethologram.ai/model-hub/index"
            }
           }
          }
@@ -8229,7 +8229,7 @@
        ],
        "operationId": "listModelsVia",
        "summary": "Search with a source pinned for what follows",
-       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+       "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://gethologram.ai/via/ipfs`, and never choose again.",
        "parameters": [
         {
          "name": "source",
@@ -9730,9 +9730,9 @@
    "body": {
     "name": "Hologram Model Hub",
     "description": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-    "url": "https://hub.uor.foundation",
+    "url": "https://gethologram.ai",
     "version": "1.0.0",
-    "documentationUrl": "https://hub.uor.foundation/llms.txt",
+    "documentationUrl": "https://gethologram.ai/llms.txt",
     "provider": {
      "organization": "Hologram Technologies",
      "url": "https://github.com/Hologram-Technologies/hologram-live"
@@ -9749,9 +9749,9 @@
     "defaultOutputModes": [
      "application/json"
     ],
-    "x-openapi": "https://hub.uor.foundation/openapi.json",
+    "x-openapi": "https://gethologram.ai/openapi.json",
     "x-mcp": {
-     "url": "https://hub.uor.foundation/mcp",
+     "url": "https://gethologram.ai/mcp",
      "transport": "streamable-http",
      "authentication": "none"
     },
@@ -9766,8 +9766,8 @@
        "getOpenapi"
       ],
       "examples": [
-       "curl -H 'accept: application/json' https://hub.uor.foundation/",
-       "curl https://hub.uor.foundation/openapi.json"
+       "curl -H 'accept: application/json' https://gethologram.ai/",
+       "curl https://gethologram.ai/openapi.json"
       ]
      },
      {
@@ -9779,7 +9779,7 @@
        "getSourceHealth"
       ],
       "examples": [
-       "curl https://hub.uor.foundation/api/hub/health"
+       "curl https://gethologram.ai/api/hub/health"
       ]
      },
      {
@@ -9792,8 +9792,8 @@
        "getModelAtRevision"
       ],
       "examples": [
-       "curl 'https://hub.uor.foundation/api/models?search=qwen&filter=gguf&limit=5'",
-       "export HF_ENDPOINT=https://hub.uor.foundation && hf download Qwen/Qwen3-0.6B"
+       "curl 'https://gethologram.ai/api/models?search=qwen&filter=gguf&limit=5'",
+       "export HF_ENDPOINT=https://gethologram.ai && hf download Qwen/Qwen3-0.6B"
       ]
      }
     ]
@@ -9812,7 +9812,7 @@
     "accept-ranges": "bytes",
     "access-control-allow-origin": "*"
    },
-   "body": "# hub.uor.foundation\n# The website, the model pages and the discovery documents are open to crawlers.\n# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real\n# traffic, and a crawler that follows them pays nothing and keeps nothing.\n\nUser-agent: *\nAllow: /$\nAllow: /models/\nAllow: /docs/\nAllow: /openapi.json\nAllow: /llms.txt\nAllow: /.well-known/\nDis…",
+   "body": "# gethologram.ai\n# The website, the model pages and the discovery documents are open to crawlers.\n# The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real\n# traffic, and a crawler that follows them pays nothing and keeps nothing.\n\nUser-agent: *\nAllow: /$\nAllow: /models/\nAllow: /docs/\nAllow: /openapi.json\nAllow: /llms.txt\nAllow: /.well-known/\nDis…",
    "error": null
   },
   {
@@ -9869,7 +9869,7 @@
     "etag": "\"dlngxp3sy3tj2lm-gzip\"",
     "content-encoding": "gzip"
    },
-   "body": "> Documentation index: https://hub.uor.foundation/llms.txt\n\n# Quickstart\n\n> Find a model, download one file, and prove the bytes, in three requests and no key.\n\nYou want a file from a model and you want to know it is the right file. Three requests do it. Nothing to install, nothing to sign up for.\n\nEvery command on this page runs as written. `hexgrad/Kokoro-82M` is a real model in the index; swap …",
+   "body": "> Documentation index: https://gethologram.ai/llms.txt\n\n# Quickstart\n\n> Find a model, download one file, and prove the bytes, in three requests and no key.\n\nYou want a file from a model and you want to know it is the right file. Three requests do it. Nothing to install, nothing to sign up for.\n\nEvery command on this page runs as written. `hexgrad/Kokoro-82M` is a real model in the index; swap …",
    "error": null
   },
   {
@@ -9938,8 +9938,8 @@
     ],
     "format": "hologram.model-hub.archive/v1",
     "gateway": "https://ipfs.filebase.io/ipfs/",
-    "mirror": "https://hub.uor.foundation/archive/",
-    "registry": "hub.uor.foundation/model-hub/index"
+    "mirror": "https://gethologram.ai/archive/",
+    "registry": "gethologram.ai/model-hub/index"
    },
    "error": null
   },
@@ -11339,7 +11339,7 @@
     "annotations": {
      "org.opencontainers.image.source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
      "org.opencontainers.image.revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-     "org.opencontainers.image.url": "https://hub.uor.foundation/models/sentence-transformers/all-MiniLM-L6-v2/"
+     "org.opencontainers.image.url": "https://gethologram.ai/models/sentence-transformers/all-MiniLM-L6-v2/"
     }
    },
    "error": null
@@ -11678,7 +11678,7 @@
      "content": [
       {
        "type": "text",
-       "text": "{\"total\":177,\"models\":[{\"id\":\"Qwen/Qwen-Image-2.1\",\"task\":\"text-to-image\",\"library\":\"diffusers\",\"license\":\"other\",\"parameters\":7115124736,\"weights_gb\":33.13,\"downloads\":37618,\"sources\":[\"Hugging Face\"],\"page\":\"https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/\"},{\"id\":\"abenzerps/Qwen-Image-2.1-Uncensored-GGUF\",\"task\":\"text-to-image\",\"library\":\"gguf\",\"license\":\"other\",\"parameters\":7115124736,\"w…"
+       "text": "{\"total\":177,\"models\":[{\"id\":\"Qwen/Qwen-Image-2.1\",\"task\":\"text-to-image\",\"library\":\"diffusers\",\"license\":\"other\",\"parameters\":7115124736,\"weights_gb\":33.13,\"downloads\":37618,\"sources\":[\"Hugging Face\"],\"page\":\"https://gethologram.ai/models/Qwen/Qwen-Image-2.1/\"},{\"id\":\"abenzerps/Qwen-Image-2.1-Uncensored-GGUF\",\"task\":\"text-to-image\",\"library\":\"gguf\",\"license\":\"other\",\"parameters\":7115124736,\"w…"
       }
      ],
      "structuredContent": {
@@ -11695,7 +11695,7 @@
         "sources": [
          "Hugging Face"
         ],
-        "page": "https://hub.uor.foundation/models/Qwen/Qwen-Image-2.1/"
+        "page": "https://gethologram.ai/models/Qwen/Qwen-Image-2.1/"
        },
        {
         "id": "abenzerps/Qwen-Image-2.1-Uncensored-GGUF",
@@ -11708,7 +11708,7 @@
         "sources": [
          "Hugging Face"
         ],
-        "page": "https://hub.uor.foundation/models/abenzerps/Qwen-Image-2.1-Uncensored-GGUF/"
+        "page": "https://gethologram.ai/models/abenzerps/Qwen-Image-2.1-Uncensored-GGUF/"
        }
       ]
      }

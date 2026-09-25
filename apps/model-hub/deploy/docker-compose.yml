@@ -1,4 +1,4 @@
-# hub.uor.foundation: Model Hub site + Kappa Registry, fronted by the existing twenty Caddy.
+# gethologram.ai: Model Hub site + Kappa Registry, fronted by the existing twenty Caddy.
 # Lives at /root/hub on the VPS. Joins twenty_default so Caddy reaches both services by name.
 name: hub
 
@@ -33,6 +33,8 @@ services:
     volumes:
       - ./site:/srv:ro
       - ./archive:/srv/archive:ro
+      # /benches/*: benchmark JSON from the hologram-website repository, pulled every 10 minutes (cutover-gethologram.sh).
+      - ./benches/public/benches:/srv/benches:ro
     mem_limit: 128m
     networks:
       default:
@@ -61,7 +63,7 @@ services:
       default:
         aliases: [hub-server]
 
-  # The Hugging Face dialect (HF_ENDPOINT=https://hub.uor.foundation): metadata from the published file lists, every
+  # The Hugging Face dialect (HF_ENDPOINT=https://gethologram.ai): metadata from the published file lists, every
   # file request answered with a redirect to a live source. No weight byte passes through it.
   resolve:
     image: node:22-alpine

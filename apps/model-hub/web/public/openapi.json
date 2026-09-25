@@ -3,7 +3,7 @@
  "info": {
   "title": "Hologram Model Hub",
   "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-  "description": "`https://hub.uor.foundation` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://hub.uor.foundation` for anything built on `huggingface_hub` (transformers, diffusers,\nsentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,\n`ollama pull hub.uor.foundation/<owner>/<name>:<quant>`, `oras pull hub.uor.foundation/<owner>/<name>:latest`,\nor the MCP server at `/mcp`.\n\n**The rules that make it safe.**\nThe hub carries names, addresses and directions, never weight bytes: a file request is answered with a\nredirect to a source that passed the last probe, plus the SHA-256 the bytes must have.\nExpected hashes come from the index only, never from the source that serves the bytes.\nNothing here verifies on your behalf, so hash what arrives: `…/resolve/main/SHA256SUMS` piped to\n`sha256sum -c` checks a whole download with no tool of ours.\nReads are anonymous and permitted from any origin; only publishing needs a token.\nCredentials sent to whatever endpoint a client is pointed at are stripped at the edge and never logged.\n\n**Scope.** The hub is the file plane. Inference is deliberately out of scope and `/v1/*` is reserved and\nempty: the engines the hub feeds already speak the OpenAI API.",
+  "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `huggingface_hub` (transformers, diffusers,\nsentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,\n`ollama pull gethologram.ai/<owner>/<name>:<quant>`, `oras pull gethologram.ai/<owner>/<name>:latest`,\nor the MCP server at `/mcp`.\n\n**The rules that make it safe.**\nThe hub carries names, addresses and directions, never weight bytes: a file request is answered with a\nredirect to a source that passed the last probe, plus the SHA-256 the bytes must have.\nExpected hashes come from the index only, never from the source that serves the bytes.\nNothing here verifies on your behalf, so hash what arrives: `…/resolve/main/SHA256SUMS` piped to\n`sha256sum -c` checks a whole download with no tool of ours.\nReads are anonymous and permitted from any origin; only publishing needs a token.\nCredentials sent to whatever endpoint a client is pointed at are stripped at the edge and never logged.\n\n**Scope.** The hub is the file plane. Inference is deliberately out of scope and `/v1/*` is reserved and\nempty: the engines the hub feeds already speak the OpenAI API.",
   "version": "1.0.0",
   "license": {
    "name": "MIT OR Apache-2.0",
@@ -15,27 +15,27 @@
   },
   "x-hologram-dialects": {
    "huggingface": {
-    "setting": "HF_ENDPOINT=https://hub.uor.foundation",
+    "setting": "HF_ENDPOINT=https://gethologram.ai",
     "paths": [
      "/api/models",
      "/{owner}/{name}/resolve/{revision}/{path}"
     ]
    },
    "ollama": {
-    "setting": "ollama pull hub.uor.foundation/{owner}/{name}:{quant}",
+    "setting": "ollama pull gethologram.ai/{owner}/{name}:{quant}",
     "paths": [
      "/v2/{owner}/{name}/manifests/{reference}",
      "/v2/{owner}/{name}/blobs/{digest}"
     ]
    },
    "oci": {
-    "setting": "oras pull hub.uor.foundation/{owner}/{name}:latest",
+    "setting": "oras pull gethologram.ai/{owner}/{name}:latest",
     "paths": [
      "/v2/{owner}/{name}/manifests/{reference}"
     ]
    },
    "mcp": {
-    "setting": "https://hub.uor.foundation/mcp",
+    "setting": "https://gethologram.ai/mcp",
     "paths": [
      "/mcp"
     ]
@@ -50,13 +50,13 @@
  },
  "servers": [
   {
-   "url": "https://hub.uor.foundation",
+   "url": "https://gethologram.ai",
    "description": "Production. The hub is one host; there is no staging surface."
   }
  ],
  "externalDocs": {
   "description": "The same endpoint explained for an agent in prose, shortest path first.",
-  "url": "https://hub.uor.foundation/llms.txt"
+  "url": "https://gethologram.ai/llms.txt"
  },
  "tags": [
   {
@@ -1178,7 +1178,7 @@
     ],
     "operationId": "getDescriptor",
     "summary": "The hub, answered three ways",
-    "description": "One URL, three readers, chosen by `Accept`.\n\nA browser sends `text/html` and gets the website. A caller that asks for `application/json` by name gets the\ndescriptor, which points at today's catalog address and at everything else here. Anything else — `*/*`, which\nis what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually\nasks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.\n\nSo `curl hub.uor.foundation` is the shortest useful thing an agent can be told about this service.",
+    "description": "One URL, three readers, chosen by `Accept`.\n\nA browser sends `text/html` and gets the website. A caller that asks for `application/json` by name gets the\ndescriptor, which points at today's catalog address and at everything else here. Anything else — `*/*`, which\nis what curl, node's `fetch` and python's `requests` all send, and therefore what an arriving agent actually\nasks — gets `agent.md`: the whole hub on one screen, in the imperative, ending in a check it can run itself.\n\nSo `curl gethologram.ai` is the shortest useful thing an agent can be told about this service.",
     "parameters": [
      {
       "name": "Accept",
@@ -2146,8 +2146,8 @@
          ],
          "format": "hologram.model-hub.archive/v1",
          "gateway": "https://ipfs.filebase.io/ipfs/",
-         "mirror": "https://hub.uor.foundation/archive/",
-         "registry": "hub.uor.foundation/model-hub/index"
+         "mirror": "https://gethologram.ai/archive/",
+         "registry": "gethologram.ai/model-hub/index"
         }
        }
       }
@@ -3522,7 +3522,7 @@
     ],
     "operationId": "listModelsVia",
     "summary": "Search with a source pinned for what follows",
-    "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://hub.uor.foundation/via/ipfs`, and never choose again.",
+    "description": "The same rows as `listModels`. The prefix is accepted on every read route so a client can be configured once, with `HF_ENDPOINT=https://gethologram.ai/via/ipfs`, and never choose again.",
     "parameters": [
      {
       "name": "source",

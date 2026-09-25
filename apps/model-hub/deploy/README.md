@@ -1,13 +1,13 @@
-# Model Hub deployment: hub.uor.foundation
+# Model Hub deployment: gethologram.ai
 
-Everything needed to rebuild `https://hub.uor.foundation` on one Linux host with Docker and an existing Caddy.
+Everything needed to rebuild `https://gethologram.ai` on one Linux host with Docker and an existing Caddy.
 
 | Path | Serves |
 |---|---|
 | `/` | Model Hub static site (`apps/model-hub/web`, built with `BASE=/`) |
 | `/v2/*`, `/_*` | Kappa Registry (OCI distribution). Reads are public; writes need the registry bearer token |
 | `/openapi.json`, `/.well-known/openapi.json` | One OpenAPI 3.1 document describing every dialect of the endpoint. Built into the site by `web/scripts/openapi.build.mjs`; `/docs` renders it |
-| `/agent.md` | The whole hub on one screen for an arriving agent. `GET /` answers it to anything that is not a browser and is not asking for JSON, so `curl hub.uor.foundation` is a usable answer rather than 77 KB of markup |
+| `/agent.md` | The whole hub on one screen for an arriving agent. `GET /` answers it to anything that is not a browser and is not asking for JSON, so `curl gethologram.ai` is a usable answer rather than 77 KB of markup |
 
 ## Layout on the host (`/root/hub`)
 
@@ -27,7 +27,7 @@ Everything needed to rebuild `https://hub.uor.foundation` on one Linux host with
 | `archive.sh [date]` | Daily after `snapshot.sh`: rebuilds the day's directory from the snapshot, packs a CAR (`ipfs-car`), uploads it to the Filebase IPFS bucket, accepts it only if the read-back CID equals the local root, appends the day to the hash-chained ledger `archive.json` (pinned with `pins.json`; the ledger CID kept in `archive.cid`), keeps the current day's directory under `archive/<date>` as the fast mirror the site container serves at `/archive/<date>/` (older days removed), and warms the gateway. IPFS is the only backup of the index. Schema in `../README.md` |
 | `filebase.env` | `FILEBASE_KEY` and `FILEBASE_SECRET`, mode 600. Never committed |
 | `health.sh` | Every 5 minutes: probes both services from inside the Caddy container and restarts one that stops answering |
-| `install-openapi.sh` | One-time: moves `/openapi.json` off the Hologram Server so the site serves the endpoint's own document, and adds `/.well-known/openapi.json`. Two surgical in-place edits to the `hub.uor.foundation` block, backed up, validated, reloaded, verified, and rolled back by itself if verification fails. `check` first, then `install`; `rollback` undoes it. Refuses unless the running site already carries the document, so the flip can never take `/openapi.json` off the air |
+| `install-openapi.sh` | One-time: moves `/openapi.json` off the Hologram Server so the site serves the endpoint's own document, and adds `/.well-known/openapi.json`. Two surgical in-place edits to the `gethologram.ai` block, backed up, validated, reloaded, verified, and rolled back by itself if verification fails. `check` first, then `install`; `rollback` undoes it. Refuses unless the running site already carries the document, so the flip can never take `/openapi.json` off the air |
 | `rehearse-openapi-route.sh` | Proves that same route change off the host: runs the real `Caddyfile.hub` in a throwaway Caddy against a stub for every upstream and asserts 20 routes, including everything the change must not disturb |
 | `registry-token` | Generated with `openssl rand -hex 32`, mode 600. Never committed |
 
@@ -61,10 +61,47 @@ Append `Caddyfile.hub` (with the token) to the front Caddyfile, then `caddy relo
 - **Uptime:** `.github/workflows/model-hub-uptime.yml` probes the public URLs every 15 minutes and opens an issue when they fail.
 - **The OpenAPI document:** `.github/workflows/model-hub-openapi.yml`. On every change it checks that the committed document is what the builder produces, lints it, and proves an agent framework can bind to it; daily it calls every documented operation against the live hub and matches every answering route back to the document. Rebuild it with `npm run openapi` in `apps/model-hub/web` after re-recording with `node qa/openapi/probe.mjs`.
 - **Logs:** `/root/hub/logs/{build-site,snapshot,health}.log`.
-- **MCP registry listing** (`mcp-server.json`, name `foundation.uor.hub/model-hub`): ownership is proven by a file the hub serves, so no DNS change. **Done as of 2026-09-24:** the keypair was generated on the host, the private half is `/root/hub/mcp-registry-key.pem` (mode 600, alongside the other secrets and never off the box) and the public line is served at `/.well-known/mcp-registry-auth`, which `build-site.sh` preserves across rebuilds. Losing the host loses the key; rotating is regenerating the pair and replacing the public file, after which the registry entry must be re-claimed. What remains is the publish itself, below. Originally, and still valid if you would rather hold the key yourself: on your own machine `openssl genpkey -algorithm Ed25519 -out key.pem` (keep it), then `echo "v=MCPv1; k=ed25519; p=$(openssl pkey -in key.pem -pubout -outform DER | tail -c 32 | base64)" > mcp-registry-auth`; copy that one-line public file to `/root/hub/mcp-registry-auth` and `/root/hub/site/.well-known/` (the daily build keeps it); then `mcp-publisher login http --domain hub.uor.foundation --private-key "$(openssl pkey -in key.pem -noout -text | grep -A3 priv: | tail -n +2 | tr -d ' :
+- **MCP registry listing** (`mcp-server.json`, name `foundation.uor.hub/model-hub`): ownership is proven by a file the hub serves, so no DNS change. **Done as of 2026-09-24:** the keypair was generated on the host, the private half is `/root/hub/mcp-registry-key.pem` (mode 600, alongside the other secrets and never off the box) and the public line is served at `/.well-known/mcp-registry-auth`, which `build-site.sh` preserves across rebuilds. Losing the host loses the key; rotating is regenerating the pair and replacing the public file, after which the registry entry must be re-claimed. What remains is the publish itself, below. Originally, and still valid if you would rather hold the key yourself: on your own machine `openssl genpkey -algorithm Ed25519 -out key.pem` (keep it), then `echo "v=MCPv1; k=ed25519; p=$(openssl pkey -in key.pem -pubout -outform DER | tail -c 32 | base64)" > mcp-registry-auth`; copy that one-line public file to `/root/hub/mcp-registry-auth` and `/root/hub/site/.well-known/` (the daily build keeps it); then `mcp-publisher login http --domain gethologram.ai --private-key "$(openssl pkey -in key.pem -noout -text | grep -A3 priv: | tail -n +2 | tr -d ' :
 ')"` and `mcp-publisher publish` next to `mcp-server.json` renamed `server.json`. Check: `curl "https://registry.modelcontextprotocol.io/v0/servers?search=hologram"`.
 - **Backup:** none on this host and no S3 copy: every day's index is a pinned CAR on IPFS and the ledger is pinned. Losing the host loses the registry's day tags, the published objects and the current-day mirror; the next daily run republishes today, and every past day's index remains on IPFS.
 - **Archive:** `archive.json` on the site is the ledger; `logs/archive.log` records each day's CID and the read-back check. The Filebase gateway answers a cold CID in tens of seconds and rate-limits parallel reads (429 above a few at once), which is why the mirror exists; the mount point `site/archive` must exist inside the read-only site (build-site.sh creates it) or the site container will not start.
-- **Verify a published day from anywhere:** `hologram pull hub.uor.foundation/model-hub/index:<YYYY-MM-DD>`.
+- **Verify a published day from anywhere:** `hologram pull gethologram.ai/model-hub/index:<YYYY-MM-DD>`.
 - **IPFS:** measured 2026-09-18 with Kokoro-82M: Filebase read-back CID equals the local CID; the 327 MB weights fetched from `ipfs.filebase.io` in 33 s at 10 MB/s match Hugging Face SHA-256; the gateway sends `Access-Control-Allow-Origin: *`, so browser Verify reports "Identical bytes from Hugging Face, ModelScope and IPFS". Public gateways `ipfs.io` and `dweb.link` rate-limited the same CID (429), so the site uses the Filebase gateway.
 - **Get a pinned model:** `pins.json` gives the IPFS root per model; `https://ipfs.filebase.io/ipfs/<root>/<path>` serves each file, and the browser checks it against the index SHA-256.
+
+## The name: gethologram.ai (moved from gethologram.ai on 2026-09-24)
+
+The hub's own address lives in one file, `web/src/origin.mjs`; everything that prints it (the hero line, `agent.md`,
+the section briefs, `llms.txt`, the OpenAPI `servers` entry, the run snippets, the star badge's data build) reads it
+from there, and `HUB_ORIGIN` at build time builds the site for another name. The services take theirs from the
+environment with the same default: `HUB` in `hub-resolve.mjs`, `HUB_ORIGIN`/`HUB_HOST` in `archive.sh` and
+`pub/hub.mjs`, `HOST` in the installers, `DOMAIN` in `publish-mcp-listing.sh`, `--base` in every `qa/openapi` script.
+
+GitHub Pages cannot host the hub: about four fifths of it is this Caddy block and its backends (`/v2/`, the HF and
+Ollama dialects, `/mcp`, the object plane, sign-in, the `curl gethologram.ai` negotiation). So the name moved to this
+host, not the host to the name. `cutover-gethologram.sh` does the host side, each step only when missing:
+
+```
+/root/hub/cutover-gethologram.sh check      # says what it would do; no changes
+/root/hub/cutover-gethologram.sh install    # label + www block + /benches + manifest; validate, reload, verify; prints the DNS step
+#   at the registrar's DNS (ns1-3.rrpproxy.net): A gethologram.ai -> this host (drop the GitHub Pages A records), CNAME www -> apex
+#   then remove the custom domain from the hologram-website Pages settings
+/root/hub/cutover-gethologram.sh verify     # both names over TLS: brief, page, descriptor, dialects, registry, account, benches, www 301
+/root/hub/cutover-gethologram.sh listing    # the MCP registry entry for the new domain (ai.gethologram/model-hub)
+/root/hub/cutover-gethologram.sh rollback   # restore the Caddyfile and compose backups it made
+```
+
+Order matters: the site must already be built from a revision that carries the rename (`agent.md` opens with
+`# gethologram.ai`), and `install` refuses otherwise, because the hero would advertise a name the front door does not
+answer. Run `build-site.sh && publish.sh` first, never `build-site.sh` alone. The front door keeps answering
+`gethologram.ai` until that name is deleted; nothing on the hub depends on it any more.
+
+`/benches/*` is the benchmark JSON that `Hologram-Technologies/hologram`'s benchmarks workflow pushes into the
+`hologram-website` repository; it used to be served by Pages. Now `/root/hub/benches` is a sparse clone of that
+repository refreshed by cron every 10 minutes and mounted on the site container at `/srv/benches`, so a push is live
+within 10 minutes instead of at the next daily build. The mount point `site/benches` must exist inside the read-only
+site (build-site.sh creates it), the same trap as `site/archive`.
+
+Outside this host, the rename touches: the Privy app (redirect `https://gethologram.ai/auth/`), the MCP registry (a
+new listing, the old one left to expire), the uptime workflow (`HUB` at the top of `model-hub-uptime.yml`), and every
+document under `web/docs`. The ADR `docs/one-endpoint.md` keeps the old name where it records measurements.

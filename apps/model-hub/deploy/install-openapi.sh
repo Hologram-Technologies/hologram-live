@@ -6,14 +6,14 @@
 #   ./install-openapi.sh verify     probe the live endpoint only
 #   ./install-openapi.sh rollback   restore the newest backup this script made and reload
 #
-# What it changes, and nothing else: three surgical edits inside the existing hub.uor.foundation block of the front
+# What it changes, and nothing else: three surgical edits inside the existing gethologram.ai block of the front
 # Caddyfile. The block is edited IN PLACE, never rewritten and never renamed: Caddy bind-mounts that single file and
 # the tokens live inline in it.
 #   1. /openapi.json leaves the Hologram Server's route list, so it falls through to the site, which now ships the
 #      document that describes the whole endpoint rather than the server's own six paths.
 #   2. /.well-known/openapi.json is rewritten onto /openapi.json, and /openapi.json and /robots.txt are made readable
 #      from another origin.
-#   3. GET / answers agent.md to anything that is neither a browser nor asking for JSON, so `curl hub.uor.foundation`
+#   3. GET / answers agent.md to anything that is neither a browser nor asking for JSON, so `curl gethologram.ai`
 #      returns the hub in one screen instead of 77 KB of markup; and the front door becomes readable cross-origin.
 #   4. GET / declares Vary: Accept, so a shared cache cannot serve one caller's representation to another.
 #   5. A malformed object address refuses in the documented JSON shape instead of the catch-all's text/plain.
@@ -31,7 +31,7 @@ set -euo pipefail
 
 CADDYFILE=${CADDYFILE:-/root/twenty/Caddyfile}
 SITE=${SITE:-/root/hub/site}
-HOST=${HOST:-hub.uor.foundation}
+HOST=${HOST:-gethologram.ai}
 STAMP=$(date -u +%Y-%m-%d)
 BACKUP="$CADDYFILE.bak-$STAMP-openapi"
 MARK='rewrite /.well-known/openapi.json /openapi.json'
@@ -54,7 +54,7 @@ CADDY=${CADDY:-}
 preconditions() {
 	[ "$(id -u)" = 0 ] || die "run as root"
 	[ -f "$CADDYFILE" ] || die "no Caddyfile at $CADDYFILE"
-	grep -q "^$HOST {" "$CADDYFILE" || die "$CADDYFILE has no '$HOST {' block: this script only edits that block"
+	grep -qE "^([^{]*, )?$HOST(, [^{]*)? \{" "$CADDYFILE" || die "$CADDYFILE has no site block naming $HOST: this script only edits that block"
 	[ -f "$SITE/openapi.json" ] || die "$SITE/openapi.json is missing. Build the site from a revision that contains apps/model-hub/web/public/openapi.json first (build-site.sh), or the flip would take /openapi.json off the air."
 	grep -q '"openapi": "3.1.0"' "$SITE/openapi.json" || die "$SITE/openapi.json is not an OpenAPI 3.1 document"
 	grep -q '"title": "Hologram Model Hub"' "$SITE/openapi.json" || die "$SITE/openapi.json is not the hub's document: the site build is older than this change"
@@ -79,7 +79,11 @@ import io, re, sys
 path, host = sys.argv[1], sys.argv[2]
 text = io.open(path, encoding="utf-8").read()
 
-start = text.index(f"{host} {{")
+# The label may carry several names (`gethologram.ai, hub.uor.foundation {`); find the block whose label names this host.
+label = re.search(r"^(?:[^{\n]*, )?" + re.escape(host) + r"(?:, [^{\n]*)? \{", text, re.M)
+if not label:
+    raise SystemExit(f"no site block names {host}")
+start = label.start()
 depth, i = 0, start
 while True:
     if text[i] == "{":
@@ -231,13 +235,13 @@ verify() {
 	probe "the brief"           /agent.md                     200 'Hash what arrives'
 	probe "vary on the root"    /                             200 'vary: Accept'
 	probe "malformed address"   /api/v1/objects/notanaddress  400 'LIVE_BAD_REQUEST'
-	probe "the models brief"    /models                       200 'hub.uor.foundation/models'
-	probe "the registry brief"  /registry                     200 'hub.uor.foundation/registry'
-	probe "the spaces brief"    /spaces                       200 'hub.uor.foundation/spaces'
-	probe "the buckets brief"   /buckets                      200 'hub.uor.foundation/buckets'
-	probe "the docs brief"      /docs/                        200 'hub.uor.foundation/docs'
+	probe "the models brief"    /models                       200 "$HOST/models"
+	probe "the registry brief"  /registry                     200 "$HOST/registry"
+	probe "the spaces brief"    /spaces                       200 "$HOST/spaces"
+	probe "the buckets brief"   /buckets                      200 "$HOST/buckets"
+	probe "the docs brief"      /docs/                        200 "$HOST/docs"
 	# The headline claim: what curl actually gets from the bare name.
-	if curl -s --max-time 20 -H 'accept: */*' "https://$HOST/" | head -1 | grep -q '^# hub.uor.foundation'; then
+	if curl -s --max-time 20 -H 'accept: */*' "https://$HOST/" | head -1 | grep -q "^# $HOST"; then
 		echo "  ok   the bare name answers the brief"
 	else
 		echo "  FAIL the bare name still answers markup: curl https://$HOST returns HTML, not agent.md"

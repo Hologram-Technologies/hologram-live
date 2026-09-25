@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Client proofs that need no account: OCI tools and llama.cpp against the live hub. Each runs in a capped container,
 # one after another. Output is a transcript: the command, what the client printed, and a check of the bytes.
-#   oci-and-llama.sh [hub]      (default https://hub.uor.foundation)
+#   oci-and-llama.sh [hub]      (default https://gethologram.ai)
 set -uo pipefail
-HUB=${1:-https://hub.uor.foundation}; HOST=${HUB#https://}
+HUB=${1:-https://gethologram.ai}; HOST=${HUB#https://}
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT; chmod 777 "$OUT"
 CAP="--rm --memory 3g --cpus 2"
 MODEL=hexgrad/kokoro-82m; SUMS="$HUB/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS"

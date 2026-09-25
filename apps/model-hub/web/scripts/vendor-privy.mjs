@@ -4,7 +4,7 @@
 //   node apps/model-hub/web/scripts/vendor-privy.mjs --check    verify what is committed still matches, byte for byte
 //
 // Why vendor at all: the hub never loads a script from someone else's origin at runtime. A visitor's browser talks
-// to hub.uor.foundation for code and to Privy only for the sign-in itself. Pinning it here also means a build is
+// to gethologram.ai for code and to Privy only for the sign-in itself. Pinning it here also means a build is
 // reproducible and a version bump is a reviewable commit with a hash in it, not a silent change under everyone.
 
 import { execFileSync } from "node:child_process";

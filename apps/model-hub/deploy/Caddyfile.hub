@@ -1,8 +1,8 @@
-hub.uor.foundation {
-	# The Hugging Face dialect (HF_ENDPOINT=https://hub.uor.foundation). Clients send the user's Hugging Face token to
+gethologram.ai, gethologram.ai {
+	# The Hugging Face dialect (HF_ENDPOINT=https://gethologram.ai). Clients send the user's Hugging Face token to
 	# whatever HF_ENDPOINT names: it is removed here, before anything of ours can see or log it.
 	@hf path_regexp hf ^(/via/[a-z.]+)?(/api/models(/|$)|/api/hub/health$|/mcp$|/[^/]+/[^/]+/resolve/)
-	# Ollama's registry dialect: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`. The hub's own OCI registry keeps
+	# Ollama's registry dialect: `ollama pull gethologram.ai/<org>/<name>:<quant>`. The hub's own OCI registry keeps
 	# its namespace, model-hub; every other /v2/<org>/<name>/ is a model answered by hub-resolve.
 	@ollama {
 		path_regexp ollama ^/v2/[^/]+/[^/]+/(manifests|blobs|tags)/
@@ -189,6 +189,8 @@ hub.uor.foundation {
 		# Archived days are read by the browser from any origin and verified there.
 		header /archive/* Access-Control-Allow-Origin "*"
 		header /archive.json Access-Control-Allow-Origin "*"
+		# Benchmark results, pushed into the website repository by the hologram benchmarks workflow; a data endpoint.
+		header /benches/* Access-Control-Allow-Origin "*"
 		reverse_proxy hub-site:8080
 	}
 }

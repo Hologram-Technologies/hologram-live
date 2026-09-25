@@ -1,6 +1,7 @@
 // Build time only: the Overview tab, rendered from hologram-api v1/overview (hologram.overview/v1) and the model card.
 // Same sections, same order for every model; a section with no trustworthy data is omitted.
 
+import { ORIGIN } from "./origin.mjs";
 import MarkdownIt from "markdown-it";
 import * as R from "./render.mjs";
 
@@ -115,7 +116,7 @@ function family(o, repo) {
   return chips ? `<p class="ov-lede">Models built on ${R.esc(repo.split("/")[1])}.</p><div class="ov-chips">${chips}</div>` : "";
 }
 
-const ENDPOINT = "https://hub.uor.foundation";
+const ENDPOINT = ORIGIN;
 function run(o, m) {
   const r = o.run || {};
   const lib = v(o.glance?.library), format = v(o.glance?.format);

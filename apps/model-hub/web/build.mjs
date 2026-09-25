@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import * as R from "./src/render.mjs";
 import * as B from "./src/braille.mjs";
 import { overview, metaDescription } from "./src/overview.mjs";
+import { ORIGIN } from "./src/origin.mjs";
 import { landing } from "./src/landing.mjs";
 import * as D from "./src/docs.mjs";
 
@@ -29,7 +30,7 @@ const BROWSE = `${base}models/`;
 const STAR_REPO = process.env.MODEL_HUB_REPO || "Hologram-Technologies/hologram-live";
 const INDEX = "https://github.com/humuhumu33/hologram-api";
 // The one base URL every dialect answers on, whatever prefix this build is served under.
-const ENDPOINT = "https://hub.uor.foundation";
+const ENDPOINT = ORIGIN;
 
 const data = JSON.parse(await readFile(join(SITE, "data", "models.json"), "utf8"));
 const models = R.prepare(data.models, data.snapshot);

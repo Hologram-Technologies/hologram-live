@@ -1,10 +1,10 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "foundation.uor.hub/model-hub",
+  "name": "ai.gethologram/model-hub",
   "title": "Hologram Model Hub",
   "description": "Find open models and get download links with the SHA-256 each file must have.",
   "version": "1.0.0",
-  "websiteUrl": "https://hub.uor.foundation",
+  "websiteUrl": "https://gethologram.ai",
   "repository": { "url": "https://github.com/Hologram-Technologies/hologram-live", "source": "github", "subfolder": "apps/model-hub" },
-  "remotes": [{ "type": "streamable-http", "url": "https://hub.uor.foundation/mcp" }]
+  "remotes": [{ "type": "streamable-http", "url": "https://gethologram.ai/mcp" }]
 }

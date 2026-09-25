@@ -16,7 +16,7 @@ set -euo pipefail
 
 HUB=${HUB:-/root/hub}
 TARGET="$HUB/bin/hub-resolve.mjs"
-HOST=${HOST:-hub.uor.foundation}
+HOST=${HOST:-gethologram.ai}
 STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
 
 die() { echo "FAIL $*" >&2; exit 1; }

@@ -183,6 +183,17 @@ function describe(s) {
     <div class="desc-full"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl><button type="button" class="desc-more less">Show less</button></div>`;
 }
 
+// Likes as the App's source counts them (spaces.meta.mjs reads the Hugging Face Space nightly and writes them into
+// the catalog; this page fetches nothing from Hugging Face). A browser that cannot run the App is still told so.
+const HEART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12.6 12 20l-7.5-7.4A4.6 4.6 0 0 1 12 6.6a4.6 4.6 0 0 1 7.5 6Z"/></svg>';
+const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}K` : String(n));
+function likesLine(s, need) {
+  const m = s.sourceMeta;
+  const likes = m && Number.isFinite(m.likes) ? `<span class="likes" title="${esc(`${m.likes.toLocaleString("en-US")} likes on Hugging Face, read ${m.read}`)}">${HEART}${compact(m.likes)}</span>` : "";
+  const warn = need.length ? `<span class="warn">needs ${need.map((n) => NEED[n] || n).join(" + ")}</span>` : "";
+  return likes || warn ? `<span class="meta-line">${likes}${warn}</span>` : "";
+}
+
 // ---- the list on the right, and its search and filter
 function nextRows() {
   return catalog.filter((s) => s.id !== current && matches(s)).sort(SORT[$("sort").value] || SORT.featured);
@@ -201,7 +212,7 @@ function upnext() {
     const el = document.createElement("button");
     el.type = "button"; el.className = "next"; el.dataset.id = s.id;
     el.innerHTML = `<span class="thumb">${art(s.root)}${iconSvg(s, "icon")}<span class="len">${fmtMB(s.modelBytes)}</span></span>
-      <span class="text"><b>${esc(s.name)}</b><span>${esc(s.task)} · ${esc(publisherOf(s))}</span><span class="${need.length ? "" : "now"}">${need.length ? "needs " + need.map((n) => NEED[n] || n).join(" + ") : "runs in this browser"}${onRegistry[s.id] ? " · on the registry" : ""}</span></span>`;
+      <span class="text"><b>${esc(s.name)}</b><span>${esc(s.task)} · ${esc(publisherOf(s))}</span>${likesLine(s, need)}</span>`;
     el.addEventListener("click", () => open(s.id));
     box.appendChild(el);
   }

@@ -1,0 +1,78 @@
+{
+  "format": "hologram.space.lock/v1",
+  "id": "attention-map",
+  "root": "sha256:a41381a8a6e2dd444bd640e15e63bb5c197a67b26ab7aafc928c10556c61778f",
+  "manifest": "manifest.json",
+  "ipfs": {
+    "recipe": "unixfs-v1-2025",
+    "root": "bafybeiaxyj3d42jddeaflmlksymi45jijvfu2h3l7dvfrgntrw4uywuyqm"
+  },
+  "files": {
+    "assets/index-C3KZEDEP.css": {
+      "sha256": "086a32f74adae9e06db7d108b177e543a66cfb48e96bb1c5f7001052b183160c",
+      "bytes": 27376,
+      "cid": "bafkreiainizposw25hqg3n6rbcyxpzkduzwpwshjnoy4l5yacbjldaywbq",
+      "mediaType": "text/css"
+    },
+    "assets/index-CSMG0TKN.js": {
+      "sha256": "e518645fd7909cf1378ecf2a1cdf27420517514c2322d243fe79e60ace0bd658",
+      "bytes": 1200275,
+      "cid": "bafybeig6gw5gg3snn4zxlbq4fzqeyhk52fwcdptrr3uy6uwdk6wtnba4ye",
+      "mediaType": "text/javascript"
+    },
+    "assets/worker-DQfxrBqi.js": {
+      "sha256": "bed0b047aaecc8dafce159e10e38ef094a3b6dc06ce91eefdc16134da69841a7",
+      "bytes": 808402,
+      "cid": "bafkreif62cyepkxmzdnpzykz4ehdr3yjji5w3qdm5epo7xawcng2ngcbu4",
+      "mediaType": "text/javascript"
+    },
+    "example.jpg": {
+      "sha256": "2b5d6423b8948eb53319661633039912afa6455a9055f0c984ff88eeae1b5bfe",
+      "bytes": 78124,
+      "cid": "bafkreibllvschoeur22tgglgcyzqhgisv6tekwuqkxymtbh7rdxk4g237y",
+      "mediaType": "image/jpeg"
+    },
+    "holospace.json": {
+      "sha256": "0174b1b2278a7b0c60af6d54bf8944b5f9aa16fdda17fbaaddedf8395c84776b",
+      "bytes": 2103,
+      "cid": "bafkreiabosy3ej4kpmggbl3nks7ysrfv7gvbn7o2c752vxpn7a4vzbdxnm",
+      "mediaType": "application/json"
+    },
+    "icon.svg": {
+      "sha256": "6a950e9354778df6ba33d355c22328c9ae8b32237dcb8f674b25f97cdde2cecc",
+      "bytes": 264,
+      "cid": "bafkreidksuhjgvdxrx3lum6tkxbcgkgjv2ftei35zohwoszf7f6n3ywozq",
+      "mediaType": "image/svg+xml"
+    },
+    "index.html": {
+      "sha256": "9c374a8e6b39c1b338b2b5509457c2b69005f66f169e01409ff2821a4ba29756",
+      "bytes": 1205,
+      "cid": "bafkreie4g5fi42zzygztrmvvkckfpqvwsac7m3ywtyaubh7sqinexiuxky",
+      "mediaType": "text/html"
+    },
+    "runtime/holo-opfs-kappastore.mjs": {
+      "sha256": "438e2528a6f04dad1cbc9f1d09828a33aafcf25e95e6b8d16d4c553c42d8ce98",
+      "bytes": 5448,
+      "cid": "bafkreicdryssrjxqjwwrzpe7dueyfcrtvl6pexuv424nc3kmku6efwgota",
+      "mediaType": "text/javascript"
+    },
+    "runtime/holo-spaces-hf-fetch.mjs": {
+      "sha256": "41c210d503c17357559a3885488a7d36d6be5db40582b26fd2e7f218f06bd9a3",
+      "bytes": 12888,
+      "cid": "bafkreicbyiinka6bonlvlgryqveiu7jw227f3nafqkzg7uxh6impa26zum",
+      "mediaType": "text/javascript"
+    },
+    "runtime/ort/transformers-3.2.1/ort-wasm-simd-threaded.jsep.wasm": {
+      "sha256": "a22f8354b697c58d85fe11d831e727182a90875029cc294f96dddf14c50ff764",
+      "bytes": 22040209,
+      "cid": "bafybeibterf4vjxsjhln4zwplny2oirkvpybwp43dxu33jizbx4rkwzrme",
+      "mediaType": "application/wasm"
+    },
+    "runtime/space.css": {
+      "sha256": "9c5d3eb99921178b624089bd9a430063e9f4d608323e9b5832a66adf13c02803",
+      "bytes": 2122,
+      "cid": "bafkreie4lu7ltgjbc6fweqejxwnegadd5h2nmcbsh2nvqmvgnlprhqbiam",
+      "mediaType": "text/css"
+    }
+  }
+}

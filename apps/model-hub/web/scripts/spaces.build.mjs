@@ -122,6 +122,82 @@ const SPACES = [
       `html[data-space="depth-anything"] #status { color: var(--hh-text-dim, #9a9aa3); font-family: var(--font-mono, monospace); font-size: 12.5px; }`,
     ].join("\n"),
   },
+  // ── The ONNX Runtime pins are named after the first bundle that needed them; later bundles reuse a pin only when
+  //    its bytes are identical (checked: transformers.js 2.x all ship the same four wasm files; 3.2.4 = 3.2.1). ──
+  {
+    id: "musicgen", name: "MusicGen", task: "Music", src: "musicgen-web",
+    tagline: "Describe a sound and hear it composed. MusicGen small, on your CPU.",
+    source: "https://huggingface.co/spaces/Xenova/musicgen-web",
+    models: ["Xenova/musicgen-small"], modelBytes: 659375436,   // text_encoder + decoder_model_merged q8, encodec_decode fp32, config and tokenizer
+    page: "assets/index-B-UVe_CA.js", prelude: "page",
+    ort: "onnxruntime-web-1.17.1", ortIn: "page", ortPath: 'wasmPaths="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/"',
+    ortNoProxy: "On.wasm.proxy=!0", requires: ["opfs"],
+    icon: `<path d="M26 44V18l20-4v26"/><circle cx="21" cy="44" r="5"/><circle cx="41" cy="40" r="5"/>`,
+  },
+  {
+    id: "translator", name: "Translator", task: "Translate", src: "react-translator",
+    tagline: "Translate between 200 languages. NLLB-200, on your CPU.",
+    source: "https://huggingface.co/spaces/Xenova/react-translator",
+    models: ["Xenova/nllb-200-distilled-600M"], modelBytes: 916814686,   // encoder + decoder_model_merged q8 (the wasm default) and the tokenizer
+    page: "assets/index-Cs6ME9NB.js", worker: "assets/worker-CMOjGuql.js", workerRef: "/assets/worker-CMOjGuql.js",
+    ort: "transformers-3.3.1", ortPath: "wasmPaths=`https://cdn.jsdelivr.net/npm/@huggingface/transformers@${D.env.version}/dist/`", requires: ["opfs"],
+    oneThread: ['(typeof crossOriginIsolated>"u"||!crossOriginIsolated)&&(U.wasm.numThreads=1)'],
+    icon: `<circle cx="32" cy="32" r="16"/><path d="M16 32h32M32 16c5 5 5 27 0 32M32 16c-5 5-5 27 0 32"/>`,
+  },
+  {
+    id: "qwen3-reasoning", name: "Qwen3 Reasoning", task: "Reasoning", src: "qwen3-webgpu",
+    tagline: "A 0.6B model that thinks before it answers. Reasoning on or off, all on your device.",
+    source: "https://huggingface.co/spaces/webml-community/qwen3-webgpu",
+    models: ["onnx-community/Qwen3-0.6B-ONNX"], modelBytes: 583367632,   // model q4f16 and the tokenizer
+    page: "assets/index-Btti6dN2.js", worker: "assets/worker-CGHCbKK3.js", workerRef: "/assets/worker-CGHCbKK3.js",
+    ort: "transformers-3.5.0", ortPath: "wasmPaths=`https://cdn.jsdelivr.net/npm/@huggingface/transformers@${o.env.version}/dist/`",
+    oneThread: ['Xt.wasm.numThreads=Math.min(4,Math.ceil((r||1)/2))'],
+    icon: `<path d="M32 14v6M32 44v6M14 32h6M44 32h6M19 19l4 4M41 41l4 4M45 19l-4 4M23 41l-4 4"/><circle cx="32" cy="32" r="7"/>`,
+  },
+  {
+    id: "tokenizer-playground", name: "Tokenizer Playground", task: "Tokenize", src: "the-tokenizer-playground",
+    tagline: "See how GPT-4, Llama, Gemma, Mistral and Claude split the same text into tokens.",
+    source: "https://huggingface.co/spaces/Xenova/the-tokenizer-playground",
+    models: ["Xenova/gpt-4", "Xenova/text-davinci-003", "Xenova/gpt-3", "Xenova/grok-1-tokenizer", "Xenova/claude-tokenizer", "Xenova/mistral-tokenizer-v3",
+      "Xenova/mistral-tokenizer-v1", "Xenova/gemma-tokenizer", "Xenova/llama-3-tokenizer", "Xenova/llama-tokenizer", "Xenova/c4ai-command-r-v01-tokenizer", "Xenova/t5-small", "Xenova/bert-base-cased"],
+    modelBytes: 66937521,   // every tokenizer.json and tokenizer_config.json it offers; one is fetched at a time
+    page: "assets/index-DEbmRw68.js", worker: "assets/worker-BY3sBfmC.js", workerRef: "/assets/worker-BY3sBfmC.js",
+    ort: null, ortPath: "wasmPaths=`https://cdn.jsdelivr.net/npm/@huggingface/transformers@${ce.env.version}/dist/`", requires: ["opfs"],   // tokenizers only: no model runs, so no runtime ships
+    icon: `<rect x="12" y="22" width="12" height="20" rx="3"/><rect x="26" y="22" width="12" height="20" rx="3"/><rect x="40" y="22" width="12" height="20" rx="3"/>`,
+  },
+  {
+    id: "doodle-dash", name: "Doodle Dash", task: "Game", src: "doodle-dash",
+    tagline: "Draw the word before the clock runs out while a model guesses what you are sketching.",
+    source: "https://huggingface.co/spaces/Xenova/doodle-dash",
+    models: ["Xenova/quickdraw-mobilevit-small"], modelBytes: 20944897,   // the full-precision model (the game turns quantization off) and its config
+    page: "assets/index-c1585f3e.js", worker: "assets/worker-2da0101e.js", workerRef: "/assets/worker-2da0101e.js", workerFromPage: true,
+    ort: "transformers-2.14.1", ortPath: 'wasmPaths=RUNNING_LOCALLY?fs.join(__dirname,"/dist/"):`https://cdn.jsdelivr.net/npm/@xenova/transformers@${VERSION}/dist/`', requires: ["opfs"], oneThread: ['u.env.wasm.numThreads=Math.min(4,Math.ceil((h||1)/2))'],
+    icon: `<path d="M16 48l4-12 22-22 8 8-22 22z"/><path d="M38 18l8 8"/>`,
+  },
+  {
+    id: "whisper", name: "Whisper", task: "Transcribe", src: "whisper-web",
+    tagline: "Drop in an audio file and read it back. Whisper tiny to medium, on your CPU.",
+    source: "https://huggingface.co/spaces/Xenova/whisper-web",
+    // every model its menu offers is pinned, so whichever is chosen is verified; the size is the desktop default,
+    // tiny at full precision (phones get the quantized one, 45 MB)
+    models: ["Xenova/whisper-tiny", "Xenova/whisper-tiny.en", "Xenova/whisper-base", "Xenova/whisper-base.en", "Xenova/whisper-small", "Xenova/whisper-small.en",
+      "Xenova/whisper-medium", "Xenova/whisper-medium.en", "distil-whisper/distil-medium.en", "distil-whisper/distil-large-v2"],
+    modelBytes: 155845985,
+    page: "assets/index-47e1f68a.js", worker: "assets/worker-8c8208dc.js", workerRef: "/assets/worker-8c8208dc.js", workerFromPage: true,
+    ort: "transformers-2.14.1", ortPath: 'wasmPaths=RUNNING_LOCALLY?sharp.join(__dirname,"/dist/"):`https://cdn.jsdelivr.net/npm/@xenova/transformers@${VERSION}/dist/`', requires: ["opfs"], oneThread: ['u.env.wasm.numThreads=Math.min(4,Math.ceil((p||1)/2))'],
+    icon: `<path d="M14 30v4M20 24v16M26 28v8"/><path d="M34 26h16M34 32h16M34 38h10"/>`,
+  },
+  {
+    id: "attention-map", name: "Attention Map", task: "Explain", src: "attention-visualization",
+    tagline: "See where a vision model looks. DINOv2 attention heads drawn over your photo.",
+    source: "https://huggingface.co/spaces/webml-community/attention-visualization",
+    models: ["onnx-community/dinov2-with-registers-small-with-attentions"], modelBytes: 20105741,   // q4 on WebGPU (q8 on the CPU) and its config
+    page: "assets/index-CSMG0TKN.js", worker: "assets/worker-DQfxrBqi.js", workerRef: "/assets/worker-DQfxrBqi.js",
+    ort: "transformers-3.2.1", ortPath: "wasmPaths=`https://cdn.jsdelivr.net/npm/@huggingface/transformers@${D.env.version}/dist/`", requires: ["opfs"],
+    example: "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/tiger.jpg", exampleFromPage: true,   // the same Pexels photo
+    oneThread: ['(typeof crossOriginIsolated>"u"||!crossOriginIsolated)&&(G.wasm.numThreads=1)'],
+    icon: `<rect x="14" y="14" width="36" height="36" rx="4"/><path d="M26 14v36M38 14v36M14 26h36M14 38h36"/>`,
+  },
 ];
 
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
@@ -193,6 +269,20 @@ installVerifiedFetch({
 }).then(() => __holoSay({ kind: "armed" }), (e) => __holoSay({ kind: "index-failed", error: String(e && e.message || e) }));
 `;
 
+// ONNX Runtime starts pthreads when the page is cross-origin isolated, and a runtime bundled into an App's own
+// module worker cannot start them: each thread boots the App's worker file instead of the runtime, and the App
+// dies ("u is not defined", "Om is not a function"). Hugging Face never isolates a Space, so the sources never met
+// it; the OS may. Each expression named in `oneThread` is the bundle's thread choice, pinned to one thread, which is
+// what the App ran with at its source.
+const pinOneThread = (s, js, where) => {
+  for (const expr of s.oneThread || []) {
+    if (!js.includes(expr)) continue;
+    const one = /^\(typeof crossOriginIsolated>"u"\|\|!crossOriginIsolated\)&&/.test(expr) ? expr.replace(/^\(typeof crossOriginIsolated>"u"\|\|!crossOriginIsolated\)&&/, "") : expr.replace(/=Math\.min\(4,.*$/, "=1");
+    js = js.split(expr).join(one);
+    s.__pinned = (s.__pinned || 0) + 1;
+  }
+  return js;
+};
 const catalog = [];
 const building = ONLY ? SPACES.filter((s) => ONLY.has(s.id)) : SPACES;
 if (ONLY && building.length !== ONLY.size) throw new Error("--only names an App this file does not describe: " + [...ONLY].filter((id) => !SPACES.some((s) => s.id === id)).join(", "));
@@ -228,13 +318,14 @@ for (const s of building) {
   writeFileSync(join(to, "index.html"), html);
 
   // the bundles
-  const ortFrom = (rel) => `new URL(${JSON.stringify(`${rel}runtime/ort/${s.ort}/`)},self.location.href).href`;   // origin-qualified from the file's own URL
+  const ortFrom = (rel) => (s.ort ? `new URL(${JSON.stringify(`${rel}runtime/ort/${s.ort}/`)},self.location.href).href` : '""');   // origin-qualified from the file's own URL; "" when the App runs no model
   for (const f of walk(from)) {
     if (f === "index.html" || f === "README.md" || f.startsWith(".")) continue;
     const dest = join(to, f); mkdirSync(dirname(dest), { recursive: true });
     if (f === s.page) {
       let js = readFileSync(join(from, f), "utf8");
-      if (s.workerRef) { const b = js.length; js = js.split(`new URL("${s.workerRef}",import.meta.url)`).join(`new URL("./${s.worker.split("/").pop()}",import.meta.url)`); if (js.length === b) throw new Error(s.id + ": worker URL rewrite did not apply"); }
+      if (s.workerRef && s.workerFromPage) { const b = js.length; js = js.split(`new URL("${s.workerRef}",self.location)`).join(`new URL("./${s.worker}",self.location)`); if (js.length === b) throw new Error(s.id + ": worker URL rewrite did not apply"); }
+      else if (s.workerRef) { const b = js.length; js = js.split(`new URL("${s.workerRef}",import.meta.url)`).join(`new URL("./${s.worker.split("/").pop()}",import.meta.url)`); if (js.length === b) throw new Error(s.id + ": worker URL rewrite did not apply"); }
       // A page that hands the example to a worker hands it a string the worker resolves against its own URL, so
       // such an App gets an address resolved against the page instead: the same file, whichever side reads it.
       if (s.example && s.exampleFromPage) { const lit = JSON.stringify(s.example); if (!js.includes(lit)) throw new Error(s.id + ": example URL rewrite did not apply"); js = js.split(lit).join('new URL("./example.jpg",document.baseURI).href'); }
@@ -243,17 +334,20 @@ for (const s of building) {
       // ONNX Runtime's proxy runs its wasm in a blob: worker, whose fetches no service worker sees — inside the OS the
       // runtime files exist only through the /space/<κ>/ mount, so the wasm must load on the page's own thread.
       if (s.ortNoProxy) { if (!js.includes(s.ortNoProxy)) throw new Error(s.id + ": ort proxy rewrite did not apply"); js = js.split(s.ortNoProxy).join(s.ortNoProxy.replace(/=!0$/, "=!1")); }
+      js = pinOneThread(s, js, "page");
       writeFileSync(dest, js);
     } else if (f === s.worker) {
       let js = readFileSync(join(from, f), "utf8");
       const b = js.length; js = js.split(s.ortPath).join(`wasmPaths=${ortFrom("../")}`); if (js.length === b) throw new Error(s.id + ": ort path rewrite did not apply (worker)");
+      js = pinOneThread(s, js, "worker");
       writeFileSync(dest, prelude(s, "../", pinned) + js);
     } else copyFileSync(join(from, f), dest);
   }
+  if ((s.oneThread || []).length && s.__pinned !== s.oneThread.length) throw new Error(`${s.id}: pinned ${s.__pinned || 0} of ${s.oneThread.length} thread choices`);
   writeFileSync(join(to, "icon.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${s.icon}</svg>\n`);
 
   // the manifest config: what this Space is, what it needs, what it runs on
-  const runtimeFiles = ["runtime/holo-spaces-hf-fetch.mjs", "runtime/holo-opfs-kappastore.mjs", "runtime/space.css", ...readdirSync(join(RUNTIME, "ort", s.ort)).map((f) => `runtime/ort/${s.ort}/${f}`)].sort();
+  const runtimeFiles = ["runtime/holo-spaces-hf-fetch.mjs", "runtime/holo-opfs-kappastore.mjs", "runtime/space.css", ...(s.ort ? readdirSync(join(RUNTIME, "ort", s.ort)).map((f) => `runtime/ort/${s.ort}/${f}`) : [])].sort();
   const config = {
     format: "hologram.space/v1", id: s.id, name: s.name, task: s.task, tagline: s.tagline, entry: "index.html",
     space: { source: s.source, sdk: "static", models: s.models, modelHosts, modelBytes: s.modelBytes, modelFiles: pinned, ort: s.ort },
@@ -302,3 +396,6 @@ const previous = ONLY && existsSync(join(OUT, "spaces.json")) ? JSON.parse(readF
 const merged = SPACES.map((s) => catalog.find((c) => c.id === s.id) || previous.find((c) => c.id === s.id)).filter(Boolean);
 writeFileSync(join(OUT, "spaces.json"), JSON.stringify({ format: "hologram.spaces.catalog/v1", spaces: merged }, null, 2) + "\n");
 console.log("catalog", join(OUT, "spaces.json"));
+// and what each source says about its App (likes, author, last change): catalog metadata, outside every seal
+const { refreshSourceMeta } = await import("./spaces.meta.mjs");
+console.log("source meta", JSON.stringify(await refreshSourceMeta(join(OUT, "spaces.json"))));

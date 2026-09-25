@@ -8,7 +8,7 @@
  "openapi": "/openapi.json",
  "about": "Apps that run entirely in the visitor's browser, each sealed under one root digest.",
  "inventory": {
-  "described": 5,
+  "described": 12,
   "served_here": 0,
   "note": "an App is listed by the catalog below; `served_here` counts the ones also published to /v2/ as OCI artifacts. A listed App that is not published answers 404 there, and that is not an error."
  },

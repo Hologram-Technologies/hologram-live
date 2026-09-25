@@ -530,7 +530,7 @@ await writeFile(join(DIST, ".nojekyll"), "");
     const rt = join(spacesDir, s.id, "runtime");
     await mkdir(join(rt, "ort"), { recursive: true });
     for (const f of ["holo-spaces-hf-fetch.mjs", "holo-opfs-kappastore.mjs", "space.css"]) await cp(join(spacesDir, "runtime", f), join(rt, f));
-    await cp(join(spacesDir, "runtime", "ort", s.ort), join(rt, "ort", s.ort), { recursive: true });
+    if (s.ort) await cp(join(spacesDir, "runtime", "ort", s.ort), join(rt, "ort", s.ort), { recursive: true });   // an App that runs no model names no pin
   }
   await rm(join(spacesDir, "runtime"), { recursive: true, force: true });   // nothing references the shared copy
 }

@@ -15,26 +15,78 @@
 <style>
 /* The catalogue components — the lead row, the rail, the bar, the cards — are the site's own (chrome.css and
    lib/catalog.css, loaded above), so this page and the Registry page are the same page with different rows.
-   What is this page's alone: a Space's icon where a cover would be, and the stage a Space opens on. */
+   What is this page's alone: a Space's icon where a cover would be, and the watch layout a Space opens into. */
 .card .logo{display:grid;place-items:center;color:var(--text)}
 .card .logo svg{width:26px;height:26px}
 .card .foot{font-family:var(--mono)}
 
-/* the stage: one Space, in its own sealed frame, at the head of the results */
-.stage{display:none;margin-bottom:14px;background:var(--surface);border:1px solid var(--line);border-radius:13px;overflow:hidden}
-.stage.on{display:block}
-.stage-bar{display:flex;align-items:center;gap:12px;height:48px;padding:0 8px 0 16px;border-bottom:1px solid var(--line)}
-.stage-bar h2{font-family:var(--mono);font-size:14px;font-weight:400}
-.stage-bar .k{font-family:var(--mono);font-size:12px;color:var(--faint)}
-.stage-bar .status{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim);display:inline-flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stage-bar a,.stage-bar button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;color:var(--dim);font-size:13px;background:none}
-.stage-bar a:hover,.stage-bar button:hover{color:var(--text);border-color:var(--line2)}
-.stage iframe{display:block;width:100%;height:min(78vh,860px);border:0;background:var(--ground)}
-.stage .need{padding:40px 24px;color:var(--dim);font-size:14px;max-width:60ch}
-.stage .need b{color:var(--text);font-weight:500}
-@media (max-width:640px){.stage-bar .k{display:none}.stage iframe{height:72vh}}
+/* ---- watch: one Space open. The shape every reader already knows from a video page: the frame on the left,
+   as wide as the column allows; its name, who made it and what it does beneath; the other Spaces down the
+   right, each a thumbnail and a line, one click from swapping in. The catalogue (lead row, rail, grid) leaves
+   the page while a Space is open and comes back when it closes. */
+main.watching .lead,main.watching .cols{display:none}
+.watch{display:none}
+main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start}
+@media (min-width:1100px){main.watching .watch{grid-template-columns:minmax(0,1fr) 402px}}
+.watch-back{display:inline-flex;align-items:center;gap:4px;height:40px;margin:0 0 4px;font-size:14px;color:var(--dim)}
+.watch-back:hover{color:var(--text)}
+.watch-back svg{width:16px;height:16px}
 
-:root[data-theme="immersive"] .stage{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
+/* the frame: the Space in its sealed iframe, edge to edge, with nothing drawn over it */
+.player{position:relative;aspect-ratio:16/9;min-height:520px;max-height:80vh;border-radius:12px;overflow:hidden;
+  background:var(--ground);box-shadow:0 0 0 1px var(--line),0 24px 60px -30px var(--hh-shadow)}
+.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--ground)}
+.player .need{position:absolute;inset:0;display:grid;place-content:center;padding:40px 24px;color:var(--dim);font-size:15px;line-height:1.6;max-width:60ch;margin:auto;text-align:center}
+.player .need b{color:var(--text);font-weight:500}
+@media (max-width:640px){.player{min-height:0;aspect-ratio:4/3;border-radius:10px}}
+
+/* beneath the frame: name, then the row a channel would have — mark, name, what it does, and the actions */
+.watch-title{margin:16px 0 10px;font-family:var(--font-display);font-size:var(--text-xl);font-weight:var(--weight-medium);letter-spacing:var(--tracking-display);line-height:1.3}
+.watch-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.watch-row .mark{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:0 0 0 1px var(--line);color:var(--text);flex:none}
+.watch-row .mark svg{width:22px;height:22px}
+.watch-row .who{display:grid;gap:2px;min-width:0;flex:1}
+.watch-row .who b{font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.watch-row .who span{font-size:12.5px;color:var(--dim);font-family:var(--mono)}
+.watch-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.pill{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:36px;background:var(--fill);color:var(--text);font-size:14px;white-space:nowrap;transition:background 150ms,color 150ms}
+.pill:hover{background:color-mix(in srgb, var(--text) 12%, var(--fill))}
+.pill.primary{background:var(--text);color:var(--ground);font-weight:500}
+.pill.primary:hover{opacity:.88}
+.pill.status{font-family:var(--mono);font-size:12.5px;color:var(--dim);max-width:34ch;overflow:hidden;text-overflow:ellipsis}
+.pill.status .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.pill.status .dot.ok{background:var(--ok)}
+.pill.status .dot.bad{background:var(--bad)}
+.pill svg{width:16px;height:16px;flex:none}
+
+/* the description box: what a Space is made of, in the words its own record carries */
+.watch-desc{margin-top:14px;padding:14px 16px;border-radius:12px;background:var(--fill);font-size:14px;line-height:1.6;color:var(--text)}
+.watch-desc .lede{color:var(--text);margin-bottom:8px}
+.watch-desc dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 18px;margin:0;font-size:13px}
+.watch-desc dt{color:var(--dim)}
+.watch-desc dd{margin:0;font-family:var(--mono);overflow-wrap:anywhere}
+.watch-desc a{color:var(--text);text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:3px}
+.watch-desc a:hover{text-decoration-color:var(--text)}
+
+/* the right column: up next, then every other Space as a row */
+.upnext{display:grid;gap:8px}
+.upnext .next-head{display:flex;align-items:baseline;gap:8px;padding:12px 16px;border-radius:12px;background:var(--surface);box-shadow:0 0 0 1px var(--line)}
+.upnext .next-head b{font-size:14px;font-weight:500}
+.upnext .next-head span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.next{display:grid;grid-template-columns:168px minmax(0,1fr);gap:10px;padding:0;border-radius:10px;text-align:left;color:inherit;cursor:pointer;background:none}
+.next:hover .thumb{box-shadow:0 0 0 1px var(--line2)}
+.next:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.thumb{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--surface);box-shadow:0 0 0 1px var(--line);display:grid;place-items:center;isolation:isolate;color:var(--text)}
+.thumb .art{width:100%;height:100%;mask:none;-webkit-mask:none;opacity:.9}
+.thumb svg.icon{position:relative;z-index:1;width:30px;height:30px}
+.thumb .len{position:absolute;right:6px;bottom:6px;z-index:1;padding:2px 5px;border-radius:4px;background:color-mix(in srgb, var(--ground) 80%, transparent);font-family:var(--mono);font-size:11px;color:var(--text)}
+.next .text{display:grid;gap:3px;align-content:start;padding-top:2px;min-width:0}
+.next .text b{font-size:14px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.next .text span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.next .text .now{color:var(--ok)}
+@media (max-width:480px){.next{grid-template-columns:136px minmax(0,1fr)}}
+
+:root[data-theme="immersive"] .player,:root[data-theme="immersive"] .watch-desc,:root[data-theme="immersive"] .upnext .next-head,:root[data-theme="immersive"] .thumb,:root[data-theme="immersive"] .pill{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
 </style>
 </head>
 <body>
@@ -43,7 +95,7 @@
 <div class="shell">
 <!--chrome:header-->
 
-<main>
+<main id="main">
   <div class="lead"><h1>Spaces</h1><span class="pill" id="count">…</span><!--chrome:tag--></div>
 
   <div class="cols">
@@ -61,21 +113,30 @@
           <option value="large">Largest model</option>
         </select>
       </div>
-
-      <section class="stage" id="stage" aria-live="polite">
-        <div class="stage-bar">
-          <h2 id="s-name"></h2><span class="k" id="s-root"></span>
-          <span class="status" id="s-status"><span class="dot" id="s-dot"></span><span id="s-text">opening…</span></span>
-          <a id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open ↗</a>
-          <button type="button" id="s-close" aria-label="Close">×</button>
-        </div>
-        <div id="s-body"></div>
-      </section>
-
       <div class="grid" id="grid"></div>
       <p class="empty" id="empty" hidden>Nothing matches those filters.</p>
     </section>
   </div>
+
+  <section class="watch" id="watch" aria-live="polite">
+    <div>
+      <button type="button" class="watch-back" id="s-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Spaces</button>
+      <div class="player" id="player"></div>
+      <h1 class="watch-title" id="s-name"></h1>
+      <div class="watch-row">
+        <span class="mark" id="s-mark"></span>
+        <div class="who"><b id="s-task"></b><span id="s-root" title=""></span></div>
+        <div class="watch-actions">
+          <span class="pill status" id="s-status"><span class="dot" id="s-dot"></span><span id="s-text">opening…</span></span>
+          <button type="button" class="pill" id="s-copy" title="Copy this Space's root digest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>κ</button>
+          <a class="pill" id="s-source" href="#" target="_blank" rel="noopener" title="Where this Space came from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Source</a>
+          <a class="pill primary" id="s-open" href="#" target="_blank" rel="noopener" title="Open in its own tab">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9"/></svg></a>
+        </div>
+      </div>
+      <div class="watch-desc" id="s-desc"></div>
+    </div>
+    <aside class="upnext" id="upnext" aria-label="Other Spaces"></aside>
+  </section>
 </main>
 </div>
 <script type="module" src="./app.js"></script>

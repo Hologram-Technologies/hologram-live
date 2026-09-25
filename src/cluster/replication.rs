@@ -75,8 +75,21 @@ pub(super) async fn replicate_peer(
                 query.append_pair("cursor", cursor);
             }
         }
-        let response =
-            signed_get(state, networks, endpoint, &inventory_url, token, &recipient).await?;
+        // No ceiling: the inventory has never carried one (it used to be read
+        // by `Response::json`, which is unbounded too), and inventing a byte
+        // figure here would be a new refusal rather than a preserved bound.
+        // `ObjectQuery::MAX_LIMIT` bounds the entries, not the bytes; see the
+        // note in the fix report.
+        let response = signed_get(
+            state,
+            networks,
+            endpoint,
+            &inventory_url,
+            token,
+            &recipient,
+            None,
+        )
+        .await?;
         let inventory: ObjectPage = serde_json::from_slice(&response.body).map_err(|error| {
             LiveError::Protocol(format!(
                 "decode cluster object inventory from {endpoint}: {error}"
@@ -116,8 +129,17 @@ pub(super) async fn replicate_peer(
                     return Ok(false);
                 }
                 let url = cluster_url(endpoint, &format!("{OBJECTS_PATH}/{}", metadata.id))?;
-                let response =
-                    signed_get(state, networks, endpoint, &url, token, &recipient).await?;
+                // The transfer bound, enforced while the object is read.
+                let response = signed_get(
+                    state,
+                    networks,
+                    endpoint,
+                    &url,
+                    token,
+                    &recipient,
+                    Some(max_bytes),
+                )
+                .await?;
                 if !response.is_success() {
                     return Err(fetch_failure(
                         response.status,
@@ -134,12 +156,12 @@ pub(super) async fn replicate_peer(
                 let filename = response
                     .header("x-hologram-object-filename")
                     .map(str::to_owned);
-                // Still bounded here, and still before the bytes are hashed or
-                // stored. A `ClusterResponse` carries the body it read, so what
-                // was a per-chunk bound is now one bound on the whole body;
-                // `metadata.size > max_bytes` above already skipped whatever
-                // the peer admitted was oversize, and this catches a peer whose
-                // bytes do not match its own inventory.
+                // Unreachable over HTTP, which refuses an oversize body
+                // mid-read and raises the same `Capability` variant this does,
+                // so the round continues either way. Kept as the backstop for a
+                // network implementation that ignores `max_response_bytes`.
+                // (`metadata.size > max_bytes` above still skips whatever the
+                // peer *admits* is oversize before any request is made.)
                 if response.body.len() as u64 > max_bytes {
                     return Err(LiveError::Capability(format!(
                         "cluster object {} exceeds {max_bytes} byte transfer bound",
@@ -222,6 +244,9 @@ pub(super) fn cluster_url(endpoint: &str, path: &str) -> Result<reqwest::Url> {
 /// `url` is built from `endpoint` by [`cluster_url`], so the path and query the
 /// proof binds are exactly the ones the request carries; `endpoint` is what the
 /// registry routes on, and `recipient` is the origin the proof was minted for.
+///
+/// `max_response_bytes` is the caller's ceiling on the answer, enforced by the
+/// network while it reads (see [`super::network::ClusterNetwork::send`]).
 pub(super) async fn signed_get(
     state: &AppState,
     networks: &NetworkRegistry,
@@ -229,6 +254,7 @@ pub(super) async fn signed_get(
     url: &reqwest::Url,
     token: &str,
     recipient: &str,
+    max_response_bytes: Option<u64>,
 ) -> Result<ClusterResponse> {
     proof::reject_separators("GET", url.path(), url.query(), recipient)?;
     let request_proof = proof::sign_request(
@@ -249,7 +275,7 @@ pub(super) async fn signed_get(
                 recipient,
                 &request_proof,
                 token,
-                None,
+                max_response_bytes,
             ),
         )
         .await

@@ -314,30 +314,30 @@ async fn contact_peer(
     // than this phase carries; the header stays observability-only until
     // that lands.
     let epoch = crate::ownership::epoch(&state.admitted_with_self());
-    let response = networks
-        .send(
-            endpoint,
-            signed_request(
-                "POST",
-                &url,
-                body,
-                &recipient,
-                &request_proof,
-                token,
-                Some(epoch),
-            ),
-        )
-        .await?;
+    // The join bound, now enforced while the answer is read (see
+    // `ClusterNetwork::send`) rather than after it is all in memory. The check
+    // below still stands as the backstop for a network that does not honour it.
+    let mut request = signed_request(
+        "POST",
+        &url,
+        body,
+        &recipient,
+        &request_proof,
+        token,
+        Some(MAX_JOIN_BYTES as u64),
+    );
+    request.epoch = Some(epoch);
+    let response = networks.send(endpoint, request).await?;
     if !response.is_success() {
         return Err(LiveError::Transport(format!(
             "join cluster peer {endpoint}: HTTP {}",
             response.status
         )));
     }
-    // Still bounded here, and still before anything parses it: a
-    // `ClusterResponse` carries the body it read, so the bound a streaming
-    // read used to apply chunk by chunk now applies to the whole body. See
-    // the note on `ClusterResponse` in `network.rs`.
+    // Unreachable over HTTP, which refuses an oversize body mid-read: this is
+    // the backstop for a network implementation that ignores
+    // `max_response_bytes`, and it keeps this bound stated where a reader of
+    // the join path can see it.
     if response.body.len() > MAX_JOIN_BYTES {
         return Err(LiveError::Protocol(format!(
             "cluster peer {endpoint} response exceeds {MAX_JOIN_BYTES} bytes"
@@ -411,7 +411,9 @@ fn origin_parts(endpoint: &str) -> Option<(String, String, u16)> {
 /// This is the whole of what used to be a set of HTTP headers, now data on a
 /// [`ClusterRequest`]: a network decides how to put it on the wire and never
 /// what it says. `recipient` in particular arrives already bound into
-/// `request_proof`'s signature, so no network can re-address the request.
+/// `request_proof`'s signature, so no network can re-address the request, and
+/// `max_response_bytes` travels the same way so no network can decide to accept
+/// a larger answer than the caller asked for.
 fn signed_request(
     method: &'static str,
     url: &reqwest::Url,
@@ -419,7 +421,7 @@ fn signed_request(
     recipient: &str,
     request_proof: &proof::RequestProof,
     token: &str,
-    epoch: Option<String>,
+    max_response_bytes: Option<u64>,
 ) -> ClusterRequest {
     ClusterRequest {
         method,
@@ -429,7 +431,11 @@ fn signed_request(
         recipient: recipient.to_owned(),
         proof: request_proof.clone(),
         ticket: Some(admission::ticket(token, &request_proof.node_id)),
-        epoch,
+        // Informational, and set by the one caller that reports it; the
+        // ceiling is an argument rather than a field left at a default,
+        // because a forgotten bound is not a safe bound.
+        epoch: None,
+        max_response_bytes,
     }
 }
 

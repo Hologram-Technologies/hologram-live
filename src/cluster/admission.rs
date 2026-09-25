@@ -27,14 +27,12 @@ pub trait Admission: Send + Sync {
     fn authorize(&self, node_id: &str, ticket: Option<&str>) -> Decision;
     /// The identities currently eligible to own resources.
     ///
-    /// `expect` rather than `allow`: the moment task 7 of this plan makes
-    /// ownership and the membership epoch read this set, the lint stops firing
-    /// and the annotation itself becomes a compile error, so it cannot go
-    /// stale unnoticed.
-    #[expect(
-        dead_code,
-        reason = "ownership and the membership epoch read this in task 7 of this plan"
-    )]
+    /// Read-only, and deliberately distinct from [`Admission::authorize`]: a
+    /// membership question that must not mutate admission state. `authorize`
+    /// pins a ticket-bearing identity, so a caller only *asking* whether an
+    /// identity is already known — as the refusal path in
+    /// `src/modules/control_plane.rs` does to pick a log level — has to come
+    /// through here instead.
     fn admitted(&self) -> BTreeSet<String>;
 }
 

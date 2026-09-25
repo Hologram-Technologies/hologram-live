@@ -83,7 +83,7 @@ function matches(r) {
   if (picked.license.size && !picked.license.has(r.license)) return false;
   if (picked.updated.size && !picked.updated.has(r.updatedBucket)) return false;
   if (picked.marks.size) {
-    const has = { "Addressed here": r.here || !!r.kappa, Official: r.official, Signed: r.signed, "Verified publisher": r.verified };
+    const has = { "Addressed here": r.here || !!r.kappa || !!r.tensorModel, Official: r.official, Signed: r.signed, "Verified publisher": r.verified };
     for (const m of picked.marks) if (!has[m]) return false;
   }
   if (picked.architecture.size && !(r.architectures || []).some((a) => picked.architecture.has(a))) return false;
@@ -178,6 +178,35 @@ let canDelete = false;
 async function probe(sample) {
   if (!sample) return;
   canDelete = (await reg.allows(`/v2/${sample}/manifests/latest`)).includes("DELETE");
+}
+
+// Open models with a tensor index: each is a tiny OCI artifact on this host (/v2/models/<org>/<name>) whose files
+// are rebuilt from κ-addressed tensors, in the format asked for. Read live from the hub's catalogue.
+const SIZE = (b) => (b == null ? null : b < 1e8 ? "Under 100 MB" : b < 1e9 ? "100 MB to 1 GB" : b < 1e10 ? "1 to 10 GB" : "Over 10 GB");
+async function modelRows() {
+  const r = await fetch(new URL("/v2/models/_catalog", location.href));
+  if (!r.ok) return [];
+  const { models } = await r.json();
+  return models.map((s) => {
+    const [org, ...rest] = s.repo.split("/");
+    const formats = Object.keys(s.formats);
+    return {
+      id: `${location.host}/${s.reference}`,
+      repo: s.reference,
+      registry: "Hologram models",
+      org, name: rest.join("/"), publisher: org,
+      kind: "Model",
+      tag: formats.includes("safetensors") ? "safetensors" : "original",
+      description: `${num(s.tensors)} tensors, each addressed by its hash. Pull it as ${formats.join(", ")}; every file is rebuilt from its tensors and checked.`,
+      pulls: null, stars: null, license: s.license, category: null,
+      updated: null, updatedBucket: null, repoBucket: SIZE(s.weightBytes), sizeBucket: null,
+      official: false, verified: false, signed: false,
+      architectures: [], size: s.weightBytes, digest: s.index,
+      here: false, tensorModel: s, logo: null, slugs: [],
+      home: `/models/${s.repo}/`,
+      provenance: "the hub's tensor index",
+    };
+  });
 }
 
 // Our repositories become rows like any other, read at load rather than baked into yesterday's file.
@@ -364,6 +393,8 @@ function cover(img, r) {
 
 // The command that actually uses this thing, which is not the same command for every kind.
 function useCommand(r) {
+  // An open model from the tensor index: the same model in any format, rebuilt from its tensors.
+  if (r.tensorModel) return ["Pull it, in the format you want", "oras pull " + r.id + (r.tag === "safetensors" ? "" : ":" + r.tag)];
   // A row with a κ is pullable from this host by the exact bytes, whatever tool the kind usually takes.
   if (r.kappa && r.held === "whole" && r.kind === "Helm chart") return ["Pull the chart from here", "helm pull oci://" + r.kappa.replace(/@.*$/, "") + " --version " + r.tag];
   if (r.kappa && r.held === "whole") return ["Pull the exact bytes from here", "oras pull " + r.kappa];
@@ -404,8 +435,16 @@ function openSheet(r) {
   // The κ: this row's address in our registry, equal to the upstream's own digest (upstream-digest), to a hash the
   // upstream published (upstream-attested), or first seen here (first-seen). Held whole, or metadata here and
   // layers by redirect to the upstream.
+  const t = r.tensorModel;
+  const gb = (b) => (b / 1e9).toFixed(2) + " GB";
   const facts = [
-    ["Address", r.kappa || null],
+    ["Address", r.kappa || (t ? t.index : null)],
+    ["Same weights, any name", t ? t.canonical : null],
+    ["Tensors", t ? num(t.tensors) + ", each addressed by its hash" : null],
+    ["Formats", t ? Object.values(t.formats).map((f) => f.tag).join(", ") : null],
+    ["Same weights as", t && t.sameWeights.length ? t.sameWeights.join(", ") : null],
+    ["Shares tensors with", t && t.shares.length ? t.shares.slice(0, 3).map((e) => e.repo + " (" + gb(e.bytes) + (e.licenceDiffers ? ", different licence" : "") + ")").join("; ") : null],
+    ["Model page", t ? location.origin + r.home : null],
     ["Trust", r.kappa ? TRUST[r.trust] || r.trust : null],
     ["Held", r.kappa ? (r.held === "whole" ? "whole artifact, here" : "manifest and config here, layers redirect to the upstream") : null],
     ["Kind", r.kind],
@@ -538,13 +577,30 @@ const rail = createRail({
   $("sort").addEventListener("change", () => { shown = PAGE; render(); });
   $("more").addEventListener("click", () => { shown += PAGE; render(); });
 
+  // ---- open models from the tensor index, read live; they sit with our own rows
+  const models = await modelRows().catch(() => []);
+  if (models.length) {
+    data.images = [...models, ...data.images.filter((r) => !r.tensorModel)];
+    data.facets.registry = { ...data.facets.registry, "Hologram models": models.length };
+    data.facets.kind = { ...data.facets.kind, Model: (data.facets.kind.Model || 0) + models.length };
+    data.facets.marks = { ...data.facets.marks, "Addressed here": (data.facets.marks["Addressed here"] || 0) + models.length };
+    data.facets.publisher = { ...data.facets.publisher };
+    data.facets.repoSize = { ...data.facets.repoSize };
+    for (const r of models) {
+      data.facets.publisher[r.publisher] = (data.facets.publisher[r.publisher] || 0) + 1;
+      if (r.repoBucket) data.facets.repoSize[r.repoBucket] = (data.facets.repoSize[r.repoBucket] || 0) + 1;
+    }
+    rail.render();
+    render();
+  }
+
   // ---- our own rows, read live, and they lead the list once they are here
   const live = (await reg.base()) ? await liveRows() : [];
   if (!live.length) return;
   data.images = [...live, ...data.images.filter((r) => !r.here)];
   data.facets.registry = { ...data.facets.registry, Hologram: live.length };
   data.facets.kind = { ...data.facets.kind, Artifact: (data.facets.kind.Artifact || 0) + live.length };
-  data.facets.marks = { ...data.facets.marks, "Addressed here": live.length + data.images.filter((r) => r.kappa && !r.here).length };
+  data.facets.marks = { ...data.facets.marks, "Addressed here": live.length + data.images.filter((r) => (r.kappa || r.tensorModel) && !r.here).length };
   data.facets.publisher = { ...data.facets.publisher };
   for (const r of live) data.facets.publisher[r.publisher] = (data.facets.publisher[r.publisher] || 0) + 1;
   data.totals.here = live.length;

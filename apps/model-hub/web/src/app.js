@@ -14,6 +14,70 @@ copyButtons();
 if ($("#archive")) archive();
 if ($("#gh-stars")) stars();
 if ($(".land-track")) strip();
+if ($("#get")) getIt();
+
+// Get it: one control, every way to take this model. Pick a tool, pick a format, copy one command. When the tensor
+// index holds the model, OCI joins the tools and the page's one address becomes the model's OCI index digest.
+async function getIt() {
+  const data = JSON.parse($("#get-data").textContent), repo = data.repo, host = location.host, esc = R.esc;
+  // The address, as it is used: this host, the model's name, the short digest. Upgraded below when indexed.
+  const addrText = $("#addr-text"), addrAt = addrText?.querySelector(".at");
+  if (addrText) addrText.firstChild.textContent = `${host}/${repo.toLowerCase()}`;
+  const tools = new Map([
+    ...(data.ollama.length ? [["ollama", { name: "Ollama", formats: data.ollama, cmd: (f) => `ollama run ${host}/${repo}:${f}`,
+      note: "The GGUF file, checked against its address as it arrives." }]] : []),
+    ["hf", { name: "Hugging Face", formats: [], cmd: () => `HF_ENDPOINT=${location.origin} hf download ${repo}`,
+      note: "Your transformers, vLLM and llama.cpp code, unchanged: point it here once." }],
+    ["browser", { name: "Browser", formats: [], note: "Assembled in this tab from the holder you pick." }],
+  ]);
+  let tool = [...tools.keys()][0], fmt = null;
+  const toolsEl = $("#get-tools"), fmtEl = $("#get-formats");
+  const draw = () => {
+    const t = tools.get(tool);
+    if (!t.formats.includes(fmt)) fmt = t.formats[0] || null;
+    toolsEl.innerHTML = [...tools].map(([k, v]) => `<button type="button" role="tab" data-tool="${k}" aria-selected="${k === tool}">${esc(v.name)}</button>`).join("");
+    fmtEl.innerHTML = t.formats.map((f) => `<button type="button" data-fmt="${esc(f)}" aria-pressed="${f === fmt}">${esc(f)}</button>`).join("");
+    fmtEl.hidden = !t.formats.length;
+    const browser = tool === "browser";
+    $("#get-line").hidden = browser; $("#get-browser").hidden = !browser;
+    if (!browser) { const c = t.cmd(fmt); $("#get-cmd").textContent = c; $("#get-copy").dataset.copy = c; }
+    $("#get-note").textContent = t.note;
+  };
+  toolsEl.addEventListener("click", (e) => { const b = e.target.closest("[data-tool]"); if (b) { tool = b.dataset.tool; draw(); } });
+  fmtEl.addEventListener("click", (e) => { const b = e.target.closest("[data-fmt]"); if (b) { fmt = b.dataset.fmt; draw(); } });
+  draw();
+
+  let s = null;
+  try { const r = await fetch(`/v2/models/${repo.toLowerCase()}/summary`); if (r.ok) s = await r.json(); } catch {}
+  if (!s) return;
+  // OCI: the same model in every format, each file rebuilt from its tensors. Bare format tags; the name alone is the default.
+  const label = (f) => (f === "safetensors-sharded" ? "sharded" : f);
+  const formats = ["safetensors", "safetensors-sharded", "original"].filter((f) => s.formats[f]).map(label);
+  const entries = [...tools];
+  entries.splice(entries.findIndex(([k]) => k === "hf"), 0, ["oci", { name: "OCI", formats, cmd: (f) => `oras pull ${host}/${s.reference}${f === formats[0] ? "" : `:${f}`}`,
+    note: "Any OCI client, VM or Kubernetes image volume. Every file is rebuilt from its tensors and checked." }]);
+  tools.clear(); for (const [k, v] of entries) tools.set(k, v);
+  tool = [...tools.keys()][0];
+  draw();
+  // The one address: the model's OCI index, the digest every client pulls by.
+  if (addrText) {
+    addrText.firstChild.textContent = `${host}/${s.reference.replace(/^models\//, "")}`;
+    addrAt.textContent = `@${R.shortAddress(s.index)}`;
+    $("#addr").dataset.copy = `${host}/${s.reference}@${s.index}`;
+    $(".signature").title = `${host}/${s.reference}@${s.index}`;
+    if (s.ipfs && $("#ipfs-row")) {                                 // the same hash, as the manifest's IPFS address
+      $("#ipfs-cid").innerHTML = `${esc(s.ipfs.slice(0, 7))}…${esc(s.ipfs.slice(-4))}<span class="at"> ${s.pinned ? "manifest, on IPFS" : "manifest"}</span>`;
+      $("#ipfs-copy").dataset.copy = `ipfs://${s.ipfs}`;
+      $("#ipfs-row").title = s.pinned ? `ipfs://${s.ipfs}` : `ipfs://${s.ipfs} — the same hash as the address; resolvable on IPFS once the day's index is published`;
+      $("#ipfs-row").hidden = false;
+    }
+  }
+  $("#hero-sub").insertAdjacentHTML("beforeend", ` · ${R.count(s.tensors)} tensors`);
+  // Relations: one quiet row, only when there is one.
+  const link = (r) => `<a href="${base}models/${esc(r)}/">${esc(r)}</a>`, same = $("#same"), row = $("#same-row");
+  if (same && s.sameWeights.length) { same.innerHTML = `${R.icon.nodes}Same weights as ${s.sameWeights.map(link).join(", ")}`; row.hidden = false; }
+  else if (same && s.shares.length) { const e = s.shares[0]; same.innerHTML = `${R.icon.nodes}Shares ${formatBytes(e.bytes)} of tensors with ${link(e.repo)}`; row.hidden = false; }
+}
 
 // The strip's slide is a CSS animation, and on some phones it never advances: a compositor that will not run a
 // transform loop on a fixed, masked element, or a device that turns animations off below the page. A reader on

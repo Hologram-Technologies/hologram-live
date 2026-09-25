@@ -612,3 +612,39 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 #tags td.path { max-width: 18rem; }
 #tags td .tag { margin-left: var(--space-2); }
 #tags td.dl .dl-yes .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
+
+/* Get it: one control for every way to take a model (tool, format, one command). */
+
+.get .seg { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.get .seg[hidden] { display: none; }
+.get .seg button { height: var(--hh-control); padding: 0 var(--space-4); border: 1px solid var(--hh-line-strong); border-radius: var(--hh-control); font-size: var(--text-sm); color: var(--hh-text-dim); transition: border-color var(--hh-ease), color var(--hh-ease), background var(--hh-ease); }
+.get .seg button:hover { color: var(--hh-text); border-color: var(--hh-line-focus); }
+.get .seg button[aria-selected="true"], .get .seg button[aria-pressed="true"] { color: var(--hh-text); border-color: var(--hh-line-focus); background: var(--hh-surface); }
+.get .seg.small button { height: calc(var(--hh-control) - var(--space-2)); padding: 0 var(--space-3); font-family: var(--font-mono); }
+.get-cmd { display: flex; align-items: center; gap: var(--space-3); min-height: var(--hh-field); padding: 0 var(--space-2) 0 var(--space-4); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md); background: var(--hh-surface); }
+.get-cmd[hidden], .get-browser[hidden] { display: none; }
+.get-cmd code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; padding: var(--space-2) 0; }
+.get-note { font-size: var(--text-sm); color: var(--hh-text-dim); }
+/* The model frame, a ledger: labels in one fixed column, every value on the same left edge, a hairline between
+   rows. On a phone each label moves above its value. */
+.hero .sub { font-size: var(--text-sm); color: var(--hh-text-dim); }
+.ledger { display: grid; margin-top: var(--space-4); border-top: 1px solid var(--hh-line); }
+.lrow { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: var(--space-5); align-items: center; padding: var(--space-4) 0; border-top: 1px solid var(--hh-line); }
+.lrow:first-child { border-top: 0; }
+.lrow[hidden] { display: none; }
+.lrow.tall { align-items: start; }
+.lrow .rl { font-size: var(--text-sm); color: var(--hh-text-dim); }
+.lrow.tall .rl { padding-top: var(--space-2); }
+.lrow .verdict { margin-top: var(--space-3); }
+.lrow .sources ul { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.lrow .same { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-sm); color: var(--hh-text-dim); }
+.lrow .same a { color: var(--hh-accent-legible, var(--hh-text)); }
+.lrow .same .i { width: var(--text-sm); height: var(--text-sm); }
+.addr-row { display: flex; align-items: center; gap: var(--space-3); }
+.addr-row code.addr { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--hh-ui); overflow-wrap: anywhere; }
+.addr-row code.addr .at { color: var(--hh-text-dim); }
+.addr-row .copy.icon { flex: none; display: inline-grid; place-items: center; width: var(--hh-control); height: var(--hh-control); border: 1px solid var(--hh-line-strong); border-radius: var(--radius-md); }
+.get { display: grid; gap: var(--space-3); }
+@media (max-width: 760px) { .lrow { grid-template-columns: 1fr; gap: var(--space-2); } .lrow.tall .rl { padding-top: 0; } }
+.get-browser { padding-right: var(--space-2); }
+.get-browser .download-all { flex: none; }

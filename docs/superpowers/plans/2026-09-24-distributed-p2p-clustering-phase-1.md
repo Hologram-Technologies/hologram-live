@@ -812,20 +812,26 @@ impl Admission for AllowlistAdmission {
 pub struct TokenAdmission {
     token: String,
     path: PathBuf,
+    /// From `cluster.trusted_keys`. NEVER persisted, rebuilt from config on
+    /// every start, so deleting an entry from config actually revokes it.
+    configured: BTreeSet<String>,
+    /// Ticket-derived admissions only. These are persisted.
     pinned: Mutex<BTreeSet<String>>,
 }
 
 impl TokenAdmission {
     pub fn new(token: String, path: PathBuf, trusted: Vec<String>) -> Result<Self> {
-        let mut pinned: BTreeSet<String> = match std::fs::read(&path) {
+        let pinned: BTreeSet<String> = match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
             Err(error) => return Err(LiveError::io(&path, error)),
         };
-        pinned.extend(trusted);
+        // Do NOT merge `trusted` into `pinned`: persisting config-derived keys
+        // would make deleting one from cluster.trusted_keys fail to revoke it.
         Ok(Self {
             token,
             path,
+            configured: trusted.into_iter().collect(),
             pinned: Mutex::new(pinned),
         })
     }
@@ -863,10 +869,13 @@ impl Admission for TokenAdmission {
     }
 
     fn admitted(&self) -> BTreeSet<String> {
-        self.pinned
-            .lock()
-            .map(|pinned| pinned.clone())
-            .unwrap_or_default()
+        // The UNION. Task 7 uses this as the ownership candidate set, so
+        // narrowing it here would silently change placement.
+        let mut all = self.configured.clone();
+        if let Ok(pinned) = self.pinned.lock() {
+            all.extend(pinned.iter().cloned());
+        }
+        all
     }
 }
 

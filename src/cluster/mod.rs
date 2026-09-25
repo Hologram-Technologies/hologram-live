@@ -158,6 +158,24 @@ async fn run(state: AppState) {
         &self_endpoint,
         config.max_peers,
     );
+    // The dial list, recovered once. Without it a node restarted with no
+    // configured seeds has nowhere to knock: its directory is written only by
+    // authenticated inbound joins, so until someone dials it, it holds only
+    // itself. See `load_dialled` for why an endpoint may be recovered this way
+    // when a join reply's record may not.
+    let dialled_path = state
+        .config()
+        .paths
+        .state_dir
+        .join(membership::DIALLED_FILE);
+    let mut dialled: BTreeSet<String> = load_dialled(&dialled_path, &self_endpoint)
+        .into_iter()
+        .collect();
+    table.seed_from_endpoints(
+        &dialled.iter().cloned().collect::<Vec<String>>(),
+        &self_endpoint,
+        config.max_peers,
+    );
     let backoff_ceiling_millis = config.node_ttl_secs.saturating_mul(1000);
     // Anti-entropy is decoupled from the heartbeat cadence and tracked per
     // peer (`PeerTable::replication_due`/`record_replication`), not as one
@@ -202,6 +220,7 @@ async fn run(state: AppState) {
                 table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint, config.max_peers);
 
                 let round_started_millis = now_millis();
+                let mut dialled_changed = false;
                 let mut joins = JoinSet::new();
                 for endpoint in table.due(round_started_millis, config.fanout) {
                     let state = state.clone();
@@ -226,11 +245,34 @@ async fn run(state: AppState) {
                     match result {
                         Ok(response) => {
                             table.record_success(&endpoint, now_millis());
-                            if response.node.node_id != self_node.node_id {
-                                if let Err(error) = state.nodes().heartbeat(response.node.clone()) {
-                                    tracing::warn!(%error, peer = %endpoint, "failed to persist peer heartbeat");
-                                }
+                            // An origin that answered a join is worth knocking
+                            // on again after a restart. Bounded by the same
+                            // `max_peers` the table is.
+                            if dialled.len() < config.max_peers
+                                && dialled.insert(endpoint.clone())
+                            {
+                                dialled_changed = true;
                             }
+                            // Deliberately does **not** persist `response.node`.
+                            // A join reply is unsigned, so its `node_id` is the
+                            // responder's unproven claim while `endpoint` and
+                            // `operations` are whatever it chose to send. The
+                            // directory is keyed by `node_id` and a write
+                            // replaces the whole record, so persisting a reply
+                            // would let any origin this node dials install an
+                            // *already-admitted* member's `node_id` against its
+                            // own endpoint — and `cluster_owner` intersects the
+                            // directory with the admitted set, so
+                            // `/api/v1/nodes/owner` and `/api/v1/nodes/placement`
+                            // would then hand out the attacker's origin,
+                            // including for inference and Holo placement. Only
+                            // `control_plane::join_cluster` writes peer records,
+                            // where `record_matches_signer` has proved the
+                            // record's `node_id` is the signer's. Mutual dialling
+                            // makes that sufficient: `seed_from_directory` runs
+                            // every round, so each side comes to dial the other
+                            // and each learns the other from an authenticated
+                            // inbound join.
                             if table.replication_due(&endpoint, now_millis(), replication_interval_millis) {
                                 if let Err(error) =
                                     replicate_peer(&state, &networks, &endpoint, &token).await
@@ -269,10 +311,21 @@ async fn run(state: AppState) {
                         let after_prune = state.nodes().list().unwrap_or_default();
                         for endpoint in prune_evictions(&before_prune, &after_prune) {
                             table.evict(&endpoint);
+                            // A peer that aged out of the directory stops being
+                            // worth a restart's first knock too, which is what
+                            // keeps the dial list from accumulating every origin
+                            // this node ever met.
+                            if dialled.remove(&endpoint) {
+                                dialled_changed = true;
+                            }
                         }
                     }
                     Ok(_) => {}
                     Err(error) => tracing::warn!(%error, "failed to prune stale cluster members"),
+                }
+
+                if dialled_changed {
+                    store_dialled(&dialled_path, &dialled);
                 }
             }
             () = state.wait_shutdown() => break,
@@ -441,6 +494,68 @@ fn signed_request(
 
 fn normalize_endpoint(endpoint: &str) -> String {
     endpoint.trim_end_matches('/').to_owned()
+}
+
+/// The origins this node has dialled and been answered by, recovered from
+/// `paths.state_dir/cluster-peers.json`.
+///
+/// A *dial list*, and deliberately nothing more. `run` no longer persists a
+/// join reply's `NodeRecord` — a reply is unsigned, so its `node_id` is the
+/// responder's unproven claim about itself and the rest of the record is
+/// whatever it chose to send — which means a node learns a peer's record only
+/// from that peer's authenticated inbound join. That is the correct rule, and
+/// it leaves one gap: a node restarted with **no** configured seeds has a
+/// directory holding only itself, so it has no address to knock on and has to
+/// wait to be dialled. This file closes exactly that gap and nothing else.
+///
+/// What it is not: it is not a record, so it cannot make an origin an
+/// ownership candidate (`cluster_owner` intersects the *directory* with the
+/// admitted set), it cannot admit anyone (admission still needs a valid
+/// ticket on an authenticated inbound request), and it asserts nothing about
+/// who answers at that origin. Every entry is also an origin this node
+/// already chose to dial, so a restart gains no reachable claim it did not
+/// have before it.
+///
+/// A file that is missing, unreadable or malformed is simply no dial list:
+/// this is a recovery hint, and failing the cluster task over it would be
+/// worse than starting with the configured seeds alone. Entries are screened
+/// with `validate_cluster_endpoint` so a tampered file cannot smuggle a value
+/// the configured-seed path would have refused.
+fn load_dialled(path: &Path, self_endpoint: &str) -> Vec<String> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(error) => {
+            tracing::debug!(%error, path = %path.display(), "no cluster dial list to recover");
+            return Vec::new();
+        }
+    };
+    let endpoints: Vec<String> = match serde_json::from_slice(&bytes) {
+        Ok(endpoints) => endpoints,
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "ignoring an unreadable cluster dial list");
+            return Vec::new();
+        }
+    };
+    endpoints
+        .into_iter()
+        .filter(|endpoint| validate_cluster_endpoint(endpoint).is_ok())
+        .map(|endpoint| normalize_endpoint(&endpoint))
+        .filter(|endpoint| endpoint != self_endpoint)
+        .collect()
+}
+
+/// Rewrites the dial list. A failure is logged and otherwise ignored: the
+/// running cluster does not depend on it, only the next restart's head start
+/// does.
+fn store_dialled(path: &Path, endpoints: &BTreeSet<String>) {
+    match serde_json::to_vec_pretty(endpoints)
+        .map_err(LiveError::from)
+        .and_then(|bytes| crate::util::atomic_write(path, &bytes))
+    {
+        Ok(()) => {}
+        Err(error) => tracing::warn!(%error, "failed to persist the cluster dial list"),
+    }
 }
 
 /// Endpoints that pruning actually orphaned: named by a `before` record whose

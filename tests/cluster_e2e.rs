@@ -55,16 +55,28 @@ fn start_without_module(
     start_in(
         tempfile::tempdir().unwrap(),
         port,
-        seed,
+        loopback_endpoints(seed),
         token,
         disabled_module,
     )
 }
 
+/// A daemon with more than one configured seed, which
+/// `a_join_reply_cannot_install_a_record_for_another_identity` needs: it points
+/// one node at both a real peer and a hostile responder.
+fn start_with_seeds(port: u16, seeds: Vec<String>, token: &str) -> Server {
+    start_in(tempfile::tempdir().unwrap(), port, seeds, token, None)
+}
+
+fn loopback_endpoints(seed: Option<u16>) -> Vec<String> {
+    seed.map(|p| vec![format!("http://127.0.0.1:{p}")])
+        .unwrap_or_default()
+}
+
 /// Restarts a daemon on an existing state directory with **no** configured
 /// seeds, so the only thing it can rejoin from is what it persisted.
 fn restart_without_seeds(root: tempfile::TempDir, port: u16, token: &str) -> Server {
-    start_in(root, port, None, token, None)
+    start_in(root, port, Vec::new(), token, None)
 }
 
 /// The one place a daemon is actually spawned. `root` is a parameter rather
@@ -73,7 +85,7 @@ fn restart_without_seeds(root: tempfile::TempDir, port: u16, token: &str) -> Ser
 fn start_in(
     root: tempfile::TempDir,
     port: u16,
-    seed: Option<u16>,
+    seeds: Vec<String>,
     token: &str,
     disabled_module: Option<&str>,
 ) -> Server {
@@ -84,9 +96,7 @@ fn start_in(
     config.paths.cache_dir = root.path().join("cache");
     config.server.listen = format!("127.0.0.1:{port}");
     config.cluster.advertise_endpoint = Some(format!("http://127.0.0.1:{port}"));
-    config.cluster.seeds = seed
-        .map(|p| vec![format!("http://127.0.0.1:{p}")])
-        .unwrap_or_default();
+    config.cluster.seeds = seeds;
     config.cluster.heartbeat_interval_secs = 1;
     config.cluster.node_ttl_secs = 3;
     // Anti-entropy is now decoupled from the heartbeat (default 60s); keep it
@@ -475,5 +485,261 @@ fn a_node_without_the_admission_secret_is_refused() {
             "a refused joiner learns nothing about the node that refused it"
         );
         std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// The records `port`'s node directory currently lists, as `(node_id,
+/// endpoint)` pairs, or `None` if it could not be asked.
+fn directory(client: &reqwest::blocking::Client, port: u16) -> Option<Vec<(String, String)>> {
+    client
+        .get(format!("http://127.0.0.1:{port}/api/v1/nodes"))
+        .send()
+        .ok()
+        .and_then(|response| response.error_for_status().ok())
+        .and_then(|response| response.json::<Vec<serde_json::Value>>().ok())
+        .map(|records| {
+            records
+                .into_iter()
+                .filter_map(|record| {
+                    Some((
+                        record["node_id"].as_str()?.to_owned(),
+                        record["endpoint"].as_str()?.to_owned(),
+                    ))
+                })
+                .collect()
+        })
+}
+
+/// Answers every connection with one fixed HTTP response, forever, and reports
+/// the port it bound.
+///
+/// `body` is built *from* that port, because the reply this test needs has to
+/// name the responder's own origin, which is only known once the socket is
+/// bound.
+///
+/// Deliberately hand-rolled rather than an axum stub: the whole point is a
+/// responder that ignores the signed request entirely and answers with
+/// something a well-behaved peer never would.
+fn spawn_fixed_responder(body: impl FnOnce(u16) -> String) -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let body = body(port);
+    let response = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n\
+         content-length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let response = response.clone();
+            std::thread::spawn(move || {
+                use std::io::{Read, Write};
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+                // Drain the request head so the caller's write completes before
+                // the reply closes the connection. One read is normally the
+                // whole of it; the loop covers a segmented one.
+                let mut scratch = [0_u8; 4096];
+                let mut seen: Vec<u8> = Vec::new();
+                while let Ok(read) = stream.read(&mut scratch) {
+                    if read == 0 {
+                        break;
+                    }
+                    seen.extend_from_slice(&scratch[..read]);
+                    if seen.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            });
+        }
+    });
+    port
+}
+
+/// Final review, FIX 1: a join *reply* is unsigned, so nothing in it proves who
+/// sent it. The node directory is keyed by `node_id` and a write replaces the
+/// whole record, so persisting a reply would let any origin this node dials
+/// install an already-admitted member's `node_id` against the *attacker's*
+/// endpoint — and `/api/v1/nodes/owner` and `/api/v1/nodes/placement` hand out
+/// whatever endpoint the directory holds for an admitted identity, including
+/// for inference and Holo placement.
+///
+/// The shape of this test matters. A hostile responder alone proves little
+/// while the impersonated node is also being dialled: its own reply carries its
+/// real endpoint and lands in the same round, so the overwrite is corrected
+/// within microseconds and a sampling test sees almost nothing. So the victim
+/// is taken down once its authenticated record has arrived. From that moment
+/// the only thing still claiming its identity is the responder, and the two
+/// behaviours diverge completely: with the reply write deleted the victim's
+/// record simply ages out, while with it reinstated the responder *keeps the
+/// record alive at its own endpoint*, refreshing `last_seen` every round so it
+/// never prunes at all.
+///
+/// So the assertion is in two parts — the victim's id must never be seen at the
+/// responder's endpoint, and once the victim is gone its record must disappear
+/// rather than be kept alive by a stranger.
+#[test]
+fn a_join_reply_cannot_install_a_record_for_another_identity() {
+    hologram_live::util::install_crypto_provider();
+    let token = "a sufficiently long shared cluster test token";
+    let victim = start(port(), None, token);
+    let client = reqwest::blocking::Client::new();
+
+    // `victim` heartbeats its own record, so its directory names its identity.
+    let victim_endpoint = format!("http://127.0.0.1:{}", victim.port);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let victim_node_id = loop {
+        if let Some(found) = directory(&client, victim.port)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|(_, endpoint)| endpoint == &victim_endpoint)
+            .map(|(node_id, _)| node_id)
+        {
+            break found;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the victim never published its own record"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(victim_node_id.starts_with("ed25519:"), "{victim_node_id}");
+
+    // The hostile responder answers every join with the victim's identity
+    // against its own origin.
+    let claimed = victim_node_id.clone();
+    let rogue_port = spawn_fixed_responder(move |port| {
+        serde_json::json!({
+            "node": {
+                "node_id": claimed,
+                "version": "1.0.0",
+                "operations": ["nodes.list"],
+                "endpoint": format!("http://127.0.0.1:{port}"),
+                "last_seen_millis": 0
+            },
+            "peers": []
+        })
+        .to_string()
+    });
+    let rogue_endpoint = format!("http://127.0.0.1:{rogue_port}");
+
+    let node = start_with_seeds(
+        port(),
+        vec![victim_endpoint.clone(), rogue_endpoint.clone()],
+        token,
+    );
+
+    // The authenticated path still populates the directory: `node` dials the
+    // victim, the victim notices `node` in its own directory and dials back, and
+    // that inbound join carries a record `record_matches_signer` has checked
+    // against its signature.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let records = directory(&client, node.port).unwrap_or_default();
+        if records.contains(&(victim_node_id.clone(), victim_endpoint.clone())) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the victim's authenticated record never reached the directory: {records:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // With the victim gone, nothing legitimate refreshes its record. Only the
+    // responder still claims its identity.
+    drop(victim);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let records = directory(&client, node.port).unwrap_or_default();
+        assert!(
+            !records.contains(&(victim_node_id.clone(), rogue_endpoint.clone())),
+            "an unsigned join reply installed an admitted identity at the responder's endpoint: \
+             {records:?}"
+        );
+        if !records
+            .iter()
+            .any(|(node_id, _)| node_id == &victim_node_id)
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a dead node's record was kept alive by a stranger's unsigned reply: {records:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Final review, FIX 3: both cluster object routes are mounted on the *public*
+/// router (`src/server.rs`), so their own `authorize_cluster_request` call is
+/// the only thing standing between the object inventory — and every object
+/// body — and the open internet. Deleting either call left the whole test suite
+/// green before this.
+#[test]
+fn the_cluster_object_routes_refuse_an_unsigned_request() {
+    hologram_live::util::install_crypto_provider();
+    let node = start(
+        port(),
+        None,
+        "a sufficiently long shared cluster test token",
+    );
+    let client = reqwest::blocking::Client::new();
+    let metadata: serde_json::Value = client
+        .post(format!("http://127.0.0.1:{}/api/v1/objects", node.port))
+        .header("content-type", "text/plain")
+        .header("x-hologram-kind", "file")
+        .body("a body no unsigned caller may read")
+        .send()
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .unwrap();
+    let id = metadata["id"].as_str().unwrap();
+
+    for path in [
+        "/api/v1/cluster/objects".to_owned(),
+        format!("/api/v1/cluster/objects/{id}"),
+    ] {
+        // No proof headers at all.
+        let response = client
+            .get(format!("http://127.0.0.1:{}{path}", node.port))
+            .send()
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::UNAUTHORIZED,
+            "{path} answered an unsigned request"
+        );
+        let body = response.text().unwrap_or_default();
+        assert!(
+            !body.contains("a body no unsigned caller may read"),
+            "{path} leaked an object body: {body}"
+        );
+
+        // Present but invalid: a well-formed set of headers whose signature is
+        // not one, so the route cannot pass by merely finding the headers.
+        let response = client
+            .get(format!("http://127.0.0.1:{}{path}", node.port))
+            .header(
+                "x-hologram-cluster-node",
+                "ed25519:d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+            )
+            .header("x-hologram-cluster-timestamp", "1700000000000")
+            .header("x-hologram-cluster-signature", "00".repeat(64))
+            .header(
+                "x-hologram-cluster-recipient",
+                format!("http://127.0.0.1:{}", node.port),
+            )
+            .send()
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::UNAUTHORIZED,
+            "{path} answered an invalidly signed request"
+        );
     }
 }

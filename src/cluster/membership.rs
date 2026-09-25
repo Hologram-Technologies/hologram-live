@@ -10,6 +10,11 @@ use std::collections::BTreeMap;
 
 const BASE_BACKOFF_MILLIS: u64 = 15_000;
 
+/// Where the dial list lives, under `paths.state_dir`. See
+/// `cluster::load_dialled` for what it is and, more importantly, what it is
+/// deliberately not.
+pub const DIALLED_FILE: &str = "cluster-peers.json";
+
 struct PeerState {
     is_seed: bool,
     failures: u32,
@@ -101,17 +106,63 @@ impl PeerTable {
         max_peers: usize,
     ) {
         for node in nodes {
-            if self.len() >= max_peers {
-                break;
-            }
             if node.endpoint.is_empty() {
                 continue;
             }
-            let endpoint = normalize_endpoint(&node.endpoint);
-            if endpoint != self_endpoint {
-                self.insert(endpoint);
+            if !self.seed_one(&node.endpoint, self_endpoint, max_peers) {
+                break;
             }
         }
+    }
+
+    /// Recovers the working set from the persisted dial list
+    /// ([`DIALLED_FILE`]) — the origins this node has dialled and been
+    /// answered by.
+    ///
+    /// This exists because the node directory is no longer written from a join
+    /// *reply* (see the comment in `cluster::run`): a reply is unsigned, so the
+    /// record it carries cannot be trusted to name its own signer. A node
+    /// therefore learns a peer's *record* only from that peer's authenticated
+    /// inbound join — which is correct, but leaves a node restarted with no
+    /// configured seeds nothing on disk to knock on, since its directory holds
+    /// only itself until someone dials it.
+    ///
+    /// An endpoint is not a record: it carries no identity, no advertised
+    /// operations and no liveness, it reaches only this table, and an origin
+    /// recovered here still has to complete an authenticated inbound join
+    /// before it can appear in the directory or own anything. Every entry is
+    /// also an origin *this* node chose to dial, from its own configuration,
+    /// its own authenticated directory, or the gossip path that already
+    /// inserts unvalidated endpoints into this same table in memory — so
+    /// persisting them adds no reachable claim that a restart did not already
+    /// have before it.
+    ///
+    /// Bounded and normalized exactly like [`Self::seed_from_directory`].
+    pub fn seed_from_endpoints(
+        &mut self,
+        endpoints: &[String],
+        self_endpoint: &str,
+        max_peers: usize,
+    ) {
+        for endpoint in endpoints {
+            if !self.seed_one(endpoint, self_endpoint, max_peers) {
+                break;
+            }
+        }
+    }
+
+    /// Inserts one normalized endpoint unless it is this node's own or the
+    /// table is already at `max_peers`. Reports `false` once the table is full,
+    /// so a caller stops walking its source.
+    fn seed_one(&mut self, endpoint: &str, self_endpoint: &str, max_peers: usize) -> bool {
+        if self.len() >= max_peers {
+            return false;
+        }
+        let endpoint = normalize_endpoint(endpoint);
+        if endpoint != self_endpoint {
+            self.insert(endpoint);
+        }
+        true
     }
 
     pub fn insert(&mut self, endpoint: String) {

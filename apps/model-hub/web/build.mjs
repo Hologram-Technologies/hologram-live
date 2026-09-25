@@ -303,8 +303,14 @@ function modelPage(m, files, ov, readme) {
   const fact = (label, value) => (value ? `<div><dt>${label}</dt><dd>${value}</dd></div>` : "");
   const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
   // Identity and trust only; everything descriptive lives in the Overview tab.
+  // Provenance rows: filled in the browser from the registry's canonical tensor tables (app.js provenanceRows),
+  // recomputed there before they are shown. Every model page carries them; the page says when there is no data yet.
+  const prov = (key, label, title) => `<div class="prov" title="${R.esc(title)}"><dt>${label}</dt><dd><span class="dim" data-prov="${key}">…</span></dd></div>`;
   const facts = [
     fact("Status", `<span class="${m.state === "addressed" ? "ok" : m.state === "skipped" ? "bad" : "dim"}">${R.STATE_LABEL[m.state]}</span>`),
+    `<div class="prov" data-prov-id="${R.esc(m.id)}" title="The model these weights come from: the base the model card declares, or one found in the index by shared tensors."><dt>Base model</dt><dd><span class="dim" data-prov="base">…</span></dd></div>`,
+    prov("lineage", "Lineage", "How closely the weights descend from the base, from 0 (trained independently) to 100 (the same weights), measured on sign bits of every weight matrix at fixed positions. Recomputed in your browser from both canonical tensor tables."),
+    prov("unchanged", "Unchanged from base", "Share of this model's weight bytes identical to the base's, by canonical tensor address: values, shape and exact number type, whatever the tensor names, files or format. Exact. Recomputed in your browser."),
     fact("Trending", `#${m.rank}`),
     fact("Downloads, 30 days", R.count(m.downloads)),
     m.weightBytes ? fact("Weights", R.bytes(m.weightBytes)) : "",

@@ -627,3 +627,5 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 .oci .lineage h3 { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-base); font-weight: var(--weight-medium); }
 .oci .lineage h3 a { text-decoration: underline; text-underline-offset: var(--space-1); text-decoration-color: var(--hh-line-focus); }
 .oci .lineage .bad { color: var(--hh-bad); }
+.facts .prov dd a { text-decoration: underline; text-underline-offset: var(--space-1); text-decoration-color: var(--hh-line-focus); }
+.facts .prov dd .dim, .facts .prov dd.dim { color: var(--hh-text-dim); }

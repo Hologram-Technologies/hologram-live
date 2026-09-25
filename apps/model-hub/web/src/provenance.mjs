@@ -60,13 +60,18 @@ export function score(child, base) {
   };
 }
 
+// Lineage on a 0-100 scale: 0 = independent training (half the signs agree), 100 = the same weights.
+export function kinship(s) {
+  return s.lineage === null ? null : Math.max(0, Math.round((s.lineage - 50) * 2 * 10) / 10);
+}
+
 // What the two numbers say together, with the thresholds they were read against (ten measured pairs, 2026-09-25:
 // independent same-shape training 49.9 %, every fine-tune, merge or abliteration 95.6 % and above).
 export function verdict(s) {
   if (s.bytesShared >= 99.99) return "Same weights";
   if (s.bytesShared >= 50) return "Edited copy";
   if (s.lineage === null) return "No comparable tensors";
-  if (s.lineage >= 90) return "Derived: fine-tuned or merged";
-  if (s.lineage <= 60) return "No lineage detected";
+  if (s.lineage >= 90) return "Fine-tuned or merged";
+  if (s.lineage <= 60) return "Unrelated";
   return "Inconclusive";
 }

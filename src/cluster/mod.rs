@@ -6,6 +6,7 @@
 
 pub(crate) mod admission;
 pub(crate) mod identity;
+mod membership;
 pub(crate) mod proof;
 mod replication;
 
@@ -14,6 +15,7 @@ use crate::config::validate_cluster_endpoint;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse, NodeRecord};
 use crate::util::now_millis;
+use membership::PeerTable;
 use replication::replicate_peer;
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
@@ -131,12 +133,15 @@ async fn run(state: AppState) {
             return;
         }
     };
-    let mut peers: BTreeSet<String> = config
+    let seeds: Vec<String> = config
         .seeds
         .iter()
         .map(|endpoint| normalize_endpoint(endpoint))
         .filter(|endpoint| endpoint != &self_endpoint)
         .collect();
+    let mut table = PeerTable::new(seeds);
+    table.seed_from_directory(&state.nodes().list().unwrap_or_default());
+    let backoff_ceiling_millis = config.node_ttl_secs.saturating_mul(1000);
     let mut ticker = tokio::time::interval(Duration::from_secs(config.heartbeat_interval_secs));
 
     loop {
@@ -146,8 +151,9 @@ async fn run(state: AppState) {
                     tracing::warn!(%error, "failed to persist local cluster heartbeat");
                 }
 
+                let round_started_millis = now_millis();
                 let mut joins = JoinSet::new();
-                for endpoint in peers.iter().take(config.max_peers).cloned() {
+                for endpoint in table.due(round_started_millis, config.fanout) {
                     let state = state.clone();
                     let client = client.clone();
                     let token = token.clone();
@@ -169,6 +175,7 @@ async fn run(state: AppState) {
                     };
                     match result {
                         Ok(response) => {
+                            table.record_success(&endpoint, now_millis());
                             if response.node.node_id != self_node.node_id {
                                 if let Err(error) = state.nodes().heartbeat(response.node.clone()) {
                                     tracing::warn!(%error, peer = %endpoint, "failed to persist peer heartbeat");
@@ -180,7 +187,7 @@ async fn run(state: AppState) {
                                 tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
                             }
                             for peer in response.peers {
-                                if peers.len() >= config.max_peers {
+                                if table.len() >= config.max_peers {
                                     break;
                                 }
                                 if peer.node_id == self_node.node_id || peer.endpoint.is_empty() {
@@ -189,20 +196,36 @@ async fn run(state: AppState) {
                                 if validate_cluster_endpoint(&peer.endpoint).is_ok() {
                                     let endpoint = normalize_endpoint(&peer.endpoint);
                                     if endpoint != self_endpoint {
-                                        peers.insert(endpoint);
+                                        table.insert(endpoint);
                                     }
                                 }
                             }
                         }
                         Err(error) => {
                             tracing::debug!(%error, peer = %endpoint, "cluster peer is unavailable");
+                            table.record_failure(&endpoint, now_millis(), backoff_ceiling_millis);
                         }
                     }
                 }
 
                 let cutoff = now_millis().saturating_sub(config.node_ttl_secs.saturating_mul(1000));
+                let before_prune = state.nodes().list().unwrap_or_default();
                 match state.nodes().prune_older_than(cutoff, &self_node.node_id) {
-                    Ok(removed) if removed > 0 => tracing::info!(removed, "pruned stale cluster members"),
+                    Ok(removed) if removed > 0 => {
+                        tracing::info!(removed, "pruned stale cluster members");
+                        let remaining: BTreeSet<String> = state
+                            .nodes()
+                            .list()
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|node| node.node_id.clone())
+                            .collect();
+                        for node in &before_prune {
+                            if !remaining.contains(&node.node_id) {
+                                table.evict(&normalize_endpoint(&node.endpoint));
+                            }
+                        }
+                    }
                     Ok(_) => {}
                     Err(error) => tracing::warn!(%error, "failed to prune stale cluster members"),
                 }

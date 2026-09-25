@@ -137,6 +137,9 @@ pub struct ClusterConfig {
     pub request_timeout_secs: u64,
     pub node_ttl_secs: u64,
     pub max_peers: usize,
+    /// Peers contacted per heartbeat round; the cursor rotates so every peer
+    /// eventually gets a turn even when the table exceeds this count.
+    pub fanout: usize,
     /// Maximum immutable objects fetched from one peer per heartbeat round.
     pub replication_max_objects_per_round: usize,
     /// Maximum bytes accepted for one immutable object transfer.
@@ -158,6 +161,7 @@ impl Default for ClusterConfig {
             request_timeout_secs: 5,
             node_ttl_secs: 60,
             max_peers: 64,
+            fanout: 8,
             replication_max_objects_per_round: 1_000,
             replication_max_object_bytes: 512 * 1024 * 1024,
             trusted_keys: Vec::new(),
@@ -870,6 +874,7 @@ impl AppConfig {
             || self.cluster.request_timeout_secs == 0
             || self.cluster.node_ttl_secs == 0
             || self.cluster.max_peers == 0
+            || self.cluster.fanout == 0
             || self.cluster.replication_max_objects_per_round == 0
             || self.cluster.replication_max_object_bytes == 0
             || self.cluster.node_ttl_secs <= self.cluster.heartbeat_interval_secs

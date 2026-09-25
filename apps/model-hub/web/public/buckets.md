@@ -1,4 +1,4 @@
-# hub.uor.foundation/buckets
+# gethologram.ai/buckets
 
 Storage for models, datasets and checkpoints, where every object carries the address of its own bytes. A
 bucket is an OCI index tree under `/v2/`, so anything that speaks the distribution protocol can walk one,
@@ -35,9 +35,9 @@ and this server does not verify on read.
 
 ## More
 
-    https://hub.uor.foundation/agent.md        the whole hub in one screen
-    https://hub.uor.foundation/openapi.json    every operation, OpenAPI 3.1, bindable directly
-    https://hub.uor.foundation/mcp             the same hub as MCP tools, no key
+    https://gethologram.ai/agent.md        the whole hub in one screen
+    https://gethologram.ai/openapi.json    every operation, OpenAPI 3.1, bindable directly
+    https://gethologram.ai/mcp             the same hub as MCP tools, no key
 
 <!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch
-     https://hub.uor.foundation/buckets again and read it verbatim. -->
+     https://gethologram.ai/buckets again and read it verbatim. -->

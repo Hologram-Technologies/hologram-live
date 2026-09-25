@@ -7,7 +7,7 @@ order: 1
 
 You need a model file. Today you get it from whichever host is up, and you trust that host about which bytes you received. Hologram Hub removes the second half of that sentence.
 
-The hub is one base URL, `https://hub.uor.foundation`, that answers in the dialects your tools already speak: the Hugging Face Hub API, the Ollama registry, OCI distribution, MCP, and a raw content-addressed object store. Every dialect is a view over one index in which every file is named by the SHA-256 of its bytes and every object by the BLAKE3 of its bytes. The hub carries names, addresses and directions. It never carries weights: a request for bytes is a redirect to a source that was up a moment ago, and the hash you check against comes from the index, never from that source.
+The hub is one base URL, `https://gethologram.ai`, that answers in the dialects your tools already speak: the Hugging Face Hub API, the Ollama registry, OCI distribution, MCP, and a raw content-addressed object store. Every dialect is a view over one index in which every file is named by the SHA-256 of its bytes and every object by the BLAKE3 of its bytes. The hub carries names, addresses and directions. It never carries weights: a request for bytes is a redirect to a source that was up a moment ago, and the hash you check against comes from the index, never from that source.
 
 No account, no key, no SDK. Every read is anonymous.
 
@@ -35,8 +35,8 @@ Run this on any machine with `curl`. It fetches one file of one model and checks
 
 ```bash
 cd "$(mktemp -d)"
-curl -sL https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS -o SHA256SUMS
-curl -sL https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/EVAL.md -o EVAL.md
+curl -sL https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS -o SHA256SUMS
+curl -sL https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/EVAL.md -o EVAL.md
 grep EVAL.md SHA256SUMS | sha256sum -c
 ```
 

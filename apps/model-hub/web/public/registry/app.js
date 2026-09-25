@@ -1,3 +1,4 @@
+import { art } from "../card-art.mjs";
 // The Images page. Same shape as the models page: facets on the left, search and sort on top, a card grid.
 // It reads one static file. There is no query service, because the index is a file and filtering is a filter.
 
@@ -438,34 +439,10 @@ function closeSheet() {
   $("scrim").hidden = true;
 }
 
-// The Models page's faceted mesh, seeded by the entry's own address: same bytes, same surface.
-// Lit facets mark what this registry can check itself; everything else shows the bare wireframe.
-const ART_W = 260, ART_H = 120;
-function art(seed, lit) {
-  let h = 2166136261;
-  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  const r = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; };
-  const f = (n) => n.toFixed(1);
-  const cols = 9, rows = 4, gx = ART_W / (cols - 1), gy = ART_H / (rows - 1), p = [];
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    p.push([x * gx + (r() - 0.5) * gx * 0.5, y * gy + (y && y < rows - 1 ? (r() - 0.5) * gy * 0.5 : 0)]);
-  }
-  let edges = "", faces = "";
-  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols - 1; x++) {
-    const a = p[y * cols + x], b = p[y * cols + x + 1], c = p[(y + 1) * cols + x], d = p[(y + 1) * cols + x + 1];
-    for (const t of [[a, b, d], [a, d, c]]) {
-      const path = `M${t.map((q) => `${f(q[0])} ${f(q[1])}`).join("L")}Z`;
-      edges += path;
-      const v = r();
-      if (lit && v < 0.35) faces += `<path d="${path}" opacity="${f(0.02 + v * 0.12)}"/>`;
-    }
-  }
-  return `<svg class="art${lit ? " lit" : ""}" viewBox="0 0 ${ART_W} ${ART_H}" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">${faces}</g><path class="edges" d="${edges}"/></svg>`;
-}
-
 // An indexed row is a page (/registry/<id>/, built for every row, with the profile its source published); a row
 // read live from this registry opens the sheet, because what it shows is fetched and checked right here.
 const pagePath = (id) => id.split("/").map((s) => encodeURIComponent(s)).join("/");
+
 
 function card(r) {
   const sheet = r.live || r.here;
@@ -478,7 +455,7 @@ function card(r) {
   if (r.official) tags.push(`<span class="tag official">official</span>`);
   tags.push(`<span class="tag"></span>`);
   if (r.signed) tags.push(`<span class="tag">signed</span>`);
-  el.innerHTML = `<img class="logo" alt="" loading="lazy"><div class="tags">${tags.join("")}</div><h3></h3><p></p><div class="foot"></div>${art(r.id, !!r.here)}`;
+  el.innerHTML = `<img class="logo" alt="" loading="lazy"><div class="tags">${tags.join("")}</div><h3></h3><p></p><div class="foot"></div>${art(r.id)}`;
   cover(el.querySelector("img"), r);
   if (sheet) el.addEventListener("click", () => openSheet(r));
   el.querySelectorAll(".tag")[(r.here || r.kappa ? 1 : 0) + (r.official ? 1 : 0)].textContent = r.registry;

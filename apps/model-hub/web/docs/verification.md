@@ -28,7 +28,7 @@ The `Etag` on a `/resolve/` redirect is the same SHA-256, quoted. It is a conven
 ## Check one file
 
 ```bash
-curl -sL https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/EVAL.md -o EVAL.md
+curl -sL https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/EVAL.md -o EVAL.md
 echo "9b4d7a54809bf22127d19d936d9e749249e1a655e2e0a1df8a6546f77a819658  EVAL.md" | sha256sum -c
 ```
 
@@ -41,7 +41,7 @@ EVAL.md: OK
 Inside the model directory, with no tool of the hub's:
 
 ```bash
-curl -s https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | sha256sum -c
+curl -s https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | sha256sum -c
 ```
 
 ```
@@ -54,7 +54,7 @@ EVAL.md: OK
 `sha256sum -c` exits non-zero if any file fails or is missing, so this works as a gate in a script. For a partial download, add `--ignore-missing` so only the files you have are checked:
 
 ```bash
-curl -s https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | sha256sum -c --ignore-missing
+curl -s https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | sha256sum -c --ignore-missing
 ```
 
 ## Clients that check for you
@@ -75,7 +75,7 @@ Drop the file and fetch it again from another source: put `/via/ipfs` or `/via/m
 Objects are addressed by BLAKE3, not SHA-256. The address you asked for must equal the BLAKE3 of the bytes you received. With the `blake3` Python package:
 
 ```bash
-curl -s https://hub.uor.foundation/api/v1/objects/blake3:3cc11e52049117dfc397240fddc7a4d3aa392ded7f623986e4e5757371363d9e -o model.json
+curl -s https://gethologram.ai/api/v1/objects/blake3:3cc11e52049117dfc397240fddc7a4d3aa392ded7f623986e4e5757371363d9e -o model.json
 python3 -c "from blake3 import blake3; print(blake3(open('model.json','rb').read()).hexdigest())"
 ```
 

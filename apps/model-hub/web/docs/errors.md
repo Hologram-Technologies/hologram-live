@@ -37,7 +37,7 @@ An error you can act on names the fix in its body. The hub answers in the native
 Not in the index:
 
 ```bash
-curl -s https://hub.uor.foundation/api/models/nope/nothing
+curl -s https://gethologram.ai/api/models/nope/nothing
 ```
 
 ```json

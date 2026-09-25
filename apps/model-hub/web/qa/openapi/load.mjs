@@ -11,7 +11,7 @@
 import { writeFile, mkdir } from "node:fs/promises";
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
-const BASE = arg("base", "https://hub.uor.foundation").replace(/\/$/, "");
+const BASE = arg("base", "https://gethologram.ai").replace(/\/$/, "");
 const SECS = Number(arg("secs", 15));
 const LEVELS = String(arg("levels", "1,4,16,64")).split(",").map(Number);
 const OUT = arg("out", null);

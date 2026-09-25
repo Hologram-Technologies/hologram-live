@@ -72,6 +72,7 @@
   border: 1px solid var(--hh-line); border-radius: var(--hh-control);
   font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text-dim);
   transition: color var(--hh-ease), border-color var(--hh-ease);
+  transform: translateY(calc(-1 * var(--space-3)));
 }
 .land-badge .lockup, .land-badge .tally { display: inline-flex; align-items: center; gap: var(--space-2); }
 .land-badge .i { width: var(--hh-icon); height: var(--hh-icon); }
@@ -144,7 +145,7 @@
 @keyframes hl-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { :root[data-highlight="resolve"] .hl::after { animation: none; } }
 
-.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: var(--space-8); }
+.land-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4) var(--space-6); margin-top: calc(var(--space-8) + var(--space-2)); }
 .prompt { color: var(--hh-text-dim); margin-right: .5ch; }
 .land-second { font-family: var(--font-mono); font-size: var(--hh-ui); color: var(--hh-text); transition: opacity var(--hh-ease); }
 .land-second:hover { opacity: .65; }
@@ -176,12 +177,14 @@
 @media (max-height: 820px) {
   :root { --hh-strip-mark: var(--space-8); --hh-strip-top: var(--space-4); --hh-strip-bottom: var(--space-6); --hh-strip-gap: var(--space-12); --hh-strip-label: var(--text-lg); }
   .land { padding: var(--space-4) 0; }
-  .land-sub, .land-actions, .land-badge + .land-title { margin-top: var(--space-4); }
+  .land-sub, .land-badge + .land-title { margin-top: var(--space-4); }
+.land-actions { margin-top: calc(var(--space-6) + var(--space-2)); }
 }
 @media (max-height: 620px) {
   :root { --hh-strip-mark: var(--space-6); --hh-strip-top: var(--space-3); --hh-strip-bottom: var(--space-4); --hh-strip-gap: var(--space-10); --hh-strip-label: var(--text-sm); }
   .land { padding: var(--space-3) 0; }
-  .land-sub, .land-actions, .land-badge + .land-title { margin-top: var(--space-3); }
+  .land-sub, .land-badge + .land-title { margin-top: var(--space-3); }
+  .land-actions { margin-top: var(--space-4); }
 }
 /* Below this there is no room for a hero and a strip both; the hero is the page, so the strip goes. */
 @media (max-height: 460px) {

@@ -12,7 +12,39 @@ const $ = (s, el = document) => el.querySelector(s);
 export function mountChrome() {
   foldingMenu();
   themeSwitch();
+  sectionTag();
   if ($("#account")) account();
+}
+
+// ---- the section tag
+//
+// Every section heading carries the same thing to its right: the address that describes that section. It is not
+// a label and not decoration -- it is a URL, and fetching it returns that section's features and the requests
+// that use them, in the order you would make them. A browser asking for the same URL gets the page instead, so
+// the tag names one address that serves the reader and the agent alike.
+//
+// Five sections, one implementation, so they cannot come to describe themselves in five different ways. The
+// address is the section's own name; /docs keeps its slash because /docs without one is the server's API
+// reference, a different thing on a different upstream.
+const SECTION_TAG = { models: "/models", registry: "/registry", spaces: "/spaces", buckets: "/buckets", docs: "/docs/" };
+
+function sectionTag() {
+  const el = $(".section-tag");
+  if (!el) return;
+  const path = SECTION_TAG[el.dataset.section];
+  if (!path) return;
+  // The same shape as the landing's one line, and the same thing in the clipboard: the command, not the URL.
+  const line = `curl ${location.host}${path}`;
+  const host = $(".host", el);
+  host.textContent = line;
+  el.title = `Copy ${line} — what this section is and how to use it`;
+
+  el.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(line); } catch { return; }
+    el.classList.add("copied");
+    host.textContent = "copied";
+    setTimeout(() => { el.classList.remove("copied"); host.textContent = line; }, 1200);
+  });
 }
 
 // The row folded into a sheet, on a narrow screen. The button at the end of the header opens and closes it;
@@ -33,7 +65,7 @@ function foldingMenu() {
   // A section chosen on the page you are already on: the panel closes rather than sitting over an unchanged page.
   sheet.addEventListener("click", (e) => { if (e.target.closest(".top-nav a")) open(false); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen()) { open(false); button.focus(); } });
-  const wide = matchMedia("(min-width: 961px)");
+  const wide = matchMedia("(min-width: 1101px)");
   wide.addEventListener("change", () => { if (wide.matches) open(false); });
 }
 

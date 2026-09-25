@@ -5,7 +5,7 @@ import { chromium, firefox, webkit } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
 
-const [engineName = "chromium", model = "Qwen/Qwen3.5-2B", source = "huggingface.co", site = "https://hub.uor.foundation/"] = process.argv.slice(2);
+const [engineName = "chromium", model = "Qwen/Qwen3.5-2B", source = "huggingface.co", site = "https://gethologram.ai/"] = process.argv.slice(2);
 const OUT = path.resolve("out");
 fs.mkdirSync(OUT, { recursive: true });
 const result = { engine: engineName, model, site };

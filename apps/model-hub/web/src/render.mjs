@@ -124,30 +124,8 @@ export const icon = {
   sortCount: I('<path d="M4 8h3M4 12h6M4 16h9M17 5v14m-3-3 3 3 3-3"/>'),
 };
 
-// Faceted mesh seeded by the model's own address: same bytes, same surface.
-// Facets are lit only for addressed models; queued and gated models show the bare wireframe.
-const ART_W = 260, ART_H = 120;
-export function art(seed, lit) {
-  let h = 2166136261;
-  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  const r = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; };
-  const f = (n) => n.toFixed(1);
-  const cols = 9, rows = 4, gx = ART_W / (cols - 1), gy = ART_H / (rows - 1), p = [];
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    p.push([x * gx + (r() - 0.5) * gx * 0.5, y * gy + (y && y < rows - 1 ? (r() - 0.5) * gy * 0.5 : 0)]);
-  }
-  let edges = "", faces = "";
-  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols - 1; x++) {
-    const a = p[y * cols + x], b = p[y * cols + x + 1], c = p[(y + 1) * cols + x], d = p[(y + 1) * cols + x + 1];
-    for (const t of [[a, b, d], [a, d, c]]) {
-      const path = `M${t.map((q) => `${f(q[0])} ${f(q[1])}`).join("L")}Z`;
-      edges += path;
-      const v = r();
-      if (lit && v < 0.35) faces += `<path d="${path}" opacity="${f(0.02 + v * 0.12)}"/>`;
-    }
-  }
-  return `<svg class="art${lit ? " lit" : ""}" viewBox="0 0 ${ART_W} ${ART_H}" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">${faces}</g><path class="edges" d="${edges}"/></svg>`;
-}
+export { art } from "./card-art.mjs";
+import { art } from "./card-art.mjs";
 
 export function avatar(m, base, cls = "avatar") {
   return m.avatar
@@ -179,7 +157,7 @@ export function meta(m) {
 
 export function card(m, { base }) {
   return `<a class="card" href="${base}models/${esc(m.id)}/" title="${esc(m.id)}">
-  ${art(m.manifest || m.id, m.state === "addressed")}
+  ${art(m.manifest || m.id)}
   <span class="tags">${tags(m)}</span>
   <span class="title">${esc(m.name)}</span>
   <span class="meta">${meta(m)}</span>
@@ -317,5 +295,5 @@ export function title(state) {
   const parts = FACETS.flatMap((f) => state.f[f.key] || []);
   let t = parts.length ? `${parts.slice(0, 3).join(", ")}${parts.length > 3 ? ` +${parts.length - 3}` : ""} models` : "Models";
   if (state.page > 1) t += `, page ${state.page}`;
-  return `${t} · Hologram Models Hub`;
+  return `${t} · Hologram`;
 }

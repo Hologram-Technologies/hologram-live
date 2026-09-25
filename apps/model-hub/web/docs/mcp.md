@@ -8,7 +8,7 @@ order: 9
 A coding agent that can search the hub, list a model's files and get a download URL with the hash it must have can fetch and verify a model without a human in the loop. The hub is an MCP server; add its URL to any client that speaks Streamable HTTP.
 
 ```
-https://hub.uor.foundation/mcp
+https://gethologram.ai/mcp
 ```
 
 Stateless, anonymous, `POST` only. No OAuth, no key, nothing to install.
@@ -17,10 +17,10 @@ Stateless, anonymous, `POST` only. No OAuth, no key, nothing to install.
 
 | Client | How |
 | --- | --- |
-| Claude Code | `claude mcp add --transport http hologram-hub https://hub.uor.foundation/mcp` |
-| Codex CLI | `codex mcp add hologram-hub --url https://hub.uor.foundation/mcp` |
-| Cursor | in `~/.cursor/mcp.json`: `{ "mcpServers": { "hologram-hub": { "url": "https://hub.uor.foundation/mcp" } } }` |
-| Any client | server URL `https://hub.uor.foundation/mcp`, transport Streamable HTTP |
+| Claude Code | `claude mcp add --transport http hologram-hub https://gethologram.ai/mcp` |
+| Codex CLI | `codex mcp add hologram-hub --url https://gethologram.ai/mcp` |
+| Cursor | in `~/.cursor/mcp.json`: `{ "mcpServers": { "hologram-hub": { "url": "https://gethologram.ai/mcp" } } }` |
+| Any client | server URL `https://gethologram.ai/mcp`, transport Streamable HTTP |
 
 Protocol versions `2026-07-28`, `2025-11-25`, `2025-06-18` and `2025-03-26` are accepted.
 
@@ -39,7 +39,7 @@ Weight bytes never travel in a tool result. The tool returns the instruction; th
 The same server, called with `curl`:
 
 ```bash
-curl -s -X POST https://hub.uor.foundation/mcp \
+curl -s -X POST https://gethologram.ai/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"resolve_file","arguments":{"id":"hexgrad/Kokoro-82M","path":"EVAL.md"}}}'
@@ -54,16 +54,16 @@ The `text` of the result, formatted:
   "path": "EVAL.md",
   "size": 534,
   "sha256": "9b4d7a54809bf22127d19d936d9e749249e1a655e2e0a1df8a6546f77a819658",
-  "url": "https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/EVAL.md",
+  "url": "https://gethologram.ai/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/EVAL.md",
   "served_by_now": "huggingface.co",
   "sources": [
     { "kind": "huggingface.co", "healthy": true, "url": "https://huggingface.co/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/EVAL.md" },
     { "kind": "modelscope.cn",  "healthy": true, "url": "https://modelscope.cn/models/hexgrad/Kokoro-82M/resolve/master/EVAL.md" },
     { "kind": "ipfs",           "healthy": true, "url": "https://ipfs.filebase.io/ipfs/bafybeiauiszvph34uhfnyzxi3uojfcm546hfcyi7cd5ozd272latt5pnnu/EVAL.md" }
   ],
-  "download": "curl -L -o \"EVAL.md\" \"https://hub.uor.foundation/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/EVAL.md\"",
+  "download": "curl -L -o \"EVAL.md\" \"https://gethologram.ai/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/EVAL.md\"",
   "verify": "echo \"9b4d7a54809bf22127d19d936d9e749249e1a655e2e0a1df8a6546f77a819658  EVAL.md\" | sha256sum -c",
-  "handoff": { "hf": ["export HF_ENDPOINT=https://hub.uor.foundation", "hf download hexgrad/Kokoro-82M EVAL.md"] }
+  "handoff": { "hf": ["export HF_ENDPOINT=https://gethologram.ai", "hf download hexgrad/Kokoro-82M EVAL.md"] }
 }
 ```
 

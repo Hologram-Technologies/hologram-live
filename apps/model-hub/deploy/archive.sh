@@ -10,7 +10,7 @@
 # CID, so history cannot be rewritten silently. The ledger itself is pinned; its CID is recorded by the next entry.
 #
 # The current day's directory is also kept under /root/hub/archive/<date>, served as
-# https://hub.uor.foundation/archive/<date>/. That mirror is only a fast path for the current day: the browser verifies
+# https://gethologram.ai/archive/<date>/. That mirror is only a fast path for the current day: the browser verifies
 # every file against the ledger whichever source answered, and falls back to the IPFS gateway when the mirror is
 # silent. The hub serves the current index only (decision 2026-09-18); every past day lives on IPFS alone.
 set -euo pipefail
@@ -23,8 +23,8 @@ STAGE=$TM/archive/$DATE
 LEDGER=$HUB/archive.json
 BUCKET=hologram-model-hub
 GATEWAY=https://ipfs.filebase.io/ipfs/
-MIRROR=https://hub.uor.foundation/archive/
-REGISTRY=hub.uor.foundation/model-hub/index
+MIRROR="${HUB_ORIGIN:-https://gethologram.ai}/archive/"
+REGISTRY="${HUB_HOST:-gethologram.ai}/model-hub/index"
 LOG=$HUB/logs/archive.log
 mkdir -p "$HUB/logs" "$TM/archive"
 exec > >(tee -a "$LOG") 2>&1

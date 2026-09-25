@@ -26,7 +26,7 @@ Each Space runs in a sandboxed frame on this origin with its own storage namespa
 A published Space is an OCI artifact at `/v2/spaces/<id>`: config `holospace.json`, one layer per file, artifact type `application/vnd.hologram.space.v1+json`, the sealed root in an annotation, tag `latest`. Reads need no token. The page asks the registry for each Space's manifest and marks the ones it finds.
 
 ```bash
-curl -sI https://hub.uor.foundation/v2/spaces/kokoro-tts/manifests/latest \
+curl -sI https://gethologram.ai/v2/spaces/kokoro-tts/manifests/latest \
   -H "Accept: application/vnd.oci.image.manifest.v1+json" | grep -i docker-content-digest
 ```
 

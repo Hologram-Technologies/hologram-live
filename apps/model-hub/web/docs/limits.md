@@ -32,7 +32,7 @@ Inference stays out because the hub has no GPUs, and the engines it feeds alread
 The server states its own ceiling; ask it rather than this page when they disagree:
 
 ```bash
-curl -s https://hub.uor.foundation/api/v1/capabilities
+curl -s https://gethologram.ai/api/v1/capabilities
 ```
 
 ```json
@@ -49,7 +49,7 @@ curl -s https://hub.uor.foundation/api/v1/capabilities
 Whether sign-in is available on this deployment:
 
 ```bash
-curl -s https://hub.uor.foundation/api/account/health
+curl -s https://gethologram.ai/api/account/health
 ```
 
 ```json

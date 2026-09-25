@@ -28,6 +28,7 @@
 /* ---- the page */
 .docs-page { min-width: 0; max-width: 46rem; font-size: var(--text-base); line-height: 1.65; color: var(--hh-text); }
 .docs-head { margin-bottom: var(--space-8); position: relative; }
+.docs-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .docs-group { margin: 0 0 var(--space-2); font-size: var(--text-xs); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--hh-text-faint); }
 .docs-page h1 { margin: 0; font-size: var(--text-4xl); font-weight: var(--weight-medium); letter-spacing: var(--tracking-display); line-height: 1.1; }
 .docs-lead { margin: var(--space-3) 0 0; font-size: var(--text-lg); color: var(--hh-text-dim); }

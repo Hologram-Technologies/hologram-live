@@ -1,4 +1,4 @@
-# hub.uor.foundation
+# gethologram.ai
 # The website, the model pages and the discovery documents are open to crawlers.
 # The routes that hand out bytes are not: each one costs Hugging Face, ModelScope or an IPFS gateway real
 # traffic, and a crawler that follows them pays nothing and keeps nothing.

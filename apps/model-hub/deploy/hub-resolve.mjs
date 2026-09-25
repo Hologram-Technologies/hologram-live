@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// hub-resolve: the Hugging Face dialect of the Model Hub, so HF_ENDPOINT=https://hub.uor.foundation works with every
+// hub-resolve: the Hugging Face dialect of the Model Hub, so HF_ENDPOINT=https://gethologram.ai works with every
 // tool that downloads models. It answers metadata from the hub's published file lists and sends every file request to
 // a source that is alive, as a redirect: no weight byte passes through this process. One file, no dependencies.
 //
@@ -27,6 +27,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { kappaMirror } from "./kappa-mirror.mjs";
 
 const DATA = process.env.HUB_DATA || "/data";          // the site's published data: files/<org>/<name>.json, models.json
 const STATE = process.env.HUB_STATE || "/state";        // requested.txt (models asked for but not indexed), override.json
@@ -119,7 +120,9 @@ async function fromHub(id) {
 // The site publishes file lists for the models it shows (the trending ones). Every other model of the address index,
 // the pinned ones included, is read from the index itself and kept for ten minutes.
 const API = process.env.HOLOGRAM_API || "https://humuhumu33.github.io/hologram-api";
-const PINS = process.env.HUB_PINS || "https://hub.uor.foundation/pins.json";
+const HUB = (process.env.HUB || "https://gethologram.ai").replace(/\/$/, "");  // the hub asking itself: its own object plane is the backstop under every dialect
+const HUB_HOST = new URL(HUB).host;
+const PINS = process.env.HUB_PINS || `${HUB}/pins.json`;
 const remote = new Map();
 let pins = { at: 0, doc: { models: {} } };
 async function indexed(id) {
@@ -251,7 +254,7 @@ async function list(res, q) {
   return json(res, 200, out.slice(0, limit), { "access-control-allow-origin": "*", "x-total-count": String(out.length) });
 }
 
-// ---- Ollama's registry dialect: `ollama pull hub.uor.foundation/<org>/<name>:<quant>`
+// ---- Ollama's registry dialect: `ollama pull gethologram.ai/<org>/<name>:<quant>`
 // From Ollama's source (server/images.go, download.go): it GETs a Docker v2 manifest, HEADs each blob for its size
 // (we answer 200 directly: a cross-host redirect on HEAD is refused by newer Ollama), GETs each blob expecting 307 to
 // another host or 200 with a Location header, downloads the target in parallel Range parts, and verifies every
@@ -321,7 +324,7 @@ async function manifestFor(doc, tag, file) {
 }
 
 // ---- OCI model artifacts (CNCF ModelPack) on the same /v2 routes, for clients that accept OCI manifests:
-// `oras pull hub.uor.foundation/<org>/<name>:latest`, modctl, KitOps, Docker Model Runner, containerd.
+// `oras pull gethologram.ai/<org>/<name>:latest`, modctl, KitOps, Docker Model Runner, containerd.
 // Every file is one raw layer, so a layer's digest is the file's SHA-256 from the index and its blob is a redirect to
 // a live source; the client verifies the digest. Only the manifest and the config (a few KB of JSON) are ours.
 // Tags: latest or main (or a prefix of the indexed revision) = every file; a GGUF quantisation = that file and the docs.
@@ -425,7 +428,6 @@ async function ollama(req, res, id, kind, ref) {
 // Weights never travel through a tool result: resolve_file returns URLs, the expected SHA-256 (from the index, never
 // from a source) and the exact commands that hand the file to an engine.
 const MCP_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"];
-const HUB = process.env.HUB || "https://hub.uor.foundation";  // the hub asking itself: its own object plane is the backstop under every dialect
 const TOOLS = [
   { name: "search_models", title: "Search models",
     description: "Find open models in the hub's index. Every result has all of its files addressed by SHA-256. Returns id, task, library, licence, parameters, weight size, downloads and where the bytes live.",
@@ -485,7 +487,7 @@ async function callTool(name, a = {}) {
       url, url_note: "Redirects to a source that is up right now; supports Range. No credentials needed.", served_by_now: source.kind,
       sources: have.map((s) => ({ kind: s.kind, healthy: health[s.kind].ok, url: urlFor(doc, s, entry) })),
       download: `curl -L -o ${JSON.stringify(name0)} ${JSON.stringify(url)}`, verify: `echo "${hex(entry[2])}  ${name0}" | sha256sum -c`,
-      handoff: { hf: [`export HF_ENDPOINT=${HUB}`, `hf download ${doc.id} ${entry[0]}`], ...(isGguf && quantOf(entry[0]) ? { ollama: `ollama pull hub.uor.foundation/${doc.id}:${quantOf(entry[0])}`, llama_cpp: `MODEL_ENDPOINT=${HUB}/ llama-server -hf ${doc.id}:${quantOf(entry[0])}` } : {}) } });
+      handoff: { hf: [`export HF_ENDPOINT=${HUB}`, `hf download ${doc.id} ${entry[0]}`], ...(isGguf && quantOf(entry[0]) ? { ollama: `ollama pull ${HUB_HOST}/${doc.id}:${quantOf(entry[0])}`, llama_cpp: `MODEL_ENDPOINT=${HUB}/ llama-server -hf ${doc.id}:${quantOf(entry[0])}` } : {}) } });
   }
   return toolError(`Unknown tool ${name}.`);
 }
@@ -534,6 +536,8 @@ http.createServer(async (req, res) => {
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
+    // The κ mirror: /v2/<upstream host>/<path>/… for every image the Registry page indexes (kappa-mirror.mjs).
+    if (path.startsWith("/v2/") && await kappaMirror(req, res, path)) return;
     const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs|tags)\/(.+)$/);
     if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
     if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);

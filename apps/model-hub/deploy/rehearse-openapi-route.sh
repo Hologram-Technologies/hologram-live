@@ -25,13 +25,17 @@ mkdir -p "$WORK/site/.well-known"
 cp "$WEB/public/openapi.json" "$WORK/site/openapi.json"
 cp "$WEB/public/robots.txt" "$WORK/site/robots.txt"
 cp "$WEB/public/agent.md" "$WORK/site/agent.md"
-cp "$WEB/public/models.md" "$WORK/site/models.md"
-cp "$WEB/public/registry.md" "$WORK/site/registry.md"
+for s in models registry spaces buckets docs; do cp "$WEB/public/$s.md" "$WORK/site/$s.md"; cp "$WEB/public/$s.json" "$WORK/site/$s.json"; done
 # The section pages, and one page below them, so the matcher can be shown not to swallow the deeper routes.
-mkdir -p "$WORK/site/models/Qwen/Qwen3-0.6B" "$WORK/site/registry"
+mkdir -p "$WORK/site/models/Qwen/Qwen3-0.6B" "$WORK/site/registry" "$WORK/site/spaces" "$WORK/site/buckets" "$WORK/site/docs/quickstart"
 printf '<!doctype html><title>models page</title>\n' > "$WORK/site/models/index.html"
 printf '<!doctype html><title>one model page</title>\n' > "$WORK/site/models/Qwen/Qwen3-0.6B/index.html"
 printf '<!doctype html><title>registry page</title>\n' > "$WORK/site/registry/index.html"
+printf '<!doctype html><title>spaces page</title>\n' > "$WORK/site/spaces/index.html"
+printf '<!doctype html><title>buckets page</title>\n' > "$WORK/site/buckets/index.html"
+printf '<!doctype html><title>docs index</title>\n' > "$WORK/site/docs/index.html"
+printf '<!doctype html><title>one docs page</title>\n' > "$WORK/site/docs/quickstart/index.html"
+printf '{"format":"hologram.spaces.catalog/v1","spaces":[]}\n' > "$WORK/site/spaces/spaces.json"
 cp "$WEB/public/.well-known/agent-card.json" "$WORK/site/.well-known/agent-card.json"
 printf '{"format":"hologram.model-hub.descriptor/v1","catalog":"blake3:%064d"}\n' 0 > "$WORK/site/.well-known/model-hub.json"
 printf '# guide\n' > "$WORK/site/llms.txt"
@@ -70,9 +74,9 @@ STUB
 mkdir -p "$WORK/front"
 {
 	printf '{\n\tauto_https off\n\tadmin off\n}\n'
-	sed -e "1s|^hub.uor.foundation {|:80 {|" "$HERE/Caddyfile.hub"
+	sed -e "1s|^[^{]* {|:80 {|" "$HERE/Caddyfile.hub"
 } > "$WORK/front/Caddyfile"
-grep -q '^:80 {' "$WORK/front/Caddyfile" || { echo "Caddyfile.hub no longer starts with the hub.uor.foundation site block"; exit 1; }
+grep -q '^:80 {' "$WORK/front/Caddyfile" || { echo "Caddyfile.hub no longer starts with the hub site block"; exit 1; }
 
 docker network create "$NET" >/dev/null 2>&1 || true
 docker rm -f rehearse-front rehearse-site rehearse-stub >/dev/null 2>&1 || true
@@ -111,11 +115,11 @@ check() { # name method path expected-status [grep-pattern] [extra curl args...]
 echo "== one URL, three readers"
 check "a browser gets the page"    GET / 200 "<title>site</title>"       -H "accept: text/html,application/xhtml+xml"
 check "json by name: descriptor"   GET / 200 "descriptor/v1"             -H "accept: application/json"
-check "curl gets the brief"        GET / 200 "# hub.uor.foundation"      -H "accept: */*"
+check "curl gets the brief"        GET / 200 "# gethologram.ai"      -H "accept: */*"
 check "no Accept at all: brief"    GET / 200 "Hash what arrives"         -H "accept:"
 check "an unfurler still gets html" GET / 200 "<title>site</title>"      -H "accept: */*" -A "Slackbot-LinkExpanding 1.0"
 check "the front door is cors-open" GET / 200 "access-control-allow-origin: \*" -H "accept: */*"
-check "the brief by its own path"  GET /agent.md 200 "# hub.uor.foundation" -H "accept: */*"
+check "the brief by its own path"  GET /agent.md 200 "# gethologram.ai" -H "accept: */*"
 # The document promises text/markdown here; a file server that guessed octet-stream would make agents download it.
 check "the brief is markdown"      GET /agent.md 200 "content-type: text/markdown" -H "accept: */*"
 # A content-negotiated route that does not declare it lets a shared cache serve the wrong representation.
@@ -126,15 +130,36 @@ check "object search still routes" GET /api/v1/objects/search 401 "publish requi
 
 # A section's URL answers the way the root does, and only at the section root.
 echo "== a brief per section"
-check "curl /models gets the brief"    GET /models       200 "# hub.uor.foundation/models"   -H "accept: */*"
-check "and with the trailing slash"    GET /models/      200 "# hub.uor.foundation/models"   -H "accept: */*"
-check "curl /registry gets the brief"  GET /registry     200 "# hub.uor.foundation/registry" -H "accept: */*"
-check "and with the trailing slash"    GET /registry/    200 "# hub.uor.foundation/registry" -H "accept: */*"
+check "curl /models gets the brief"    GET /models       200 "# gethologram.ai/models"   -H "accept: */*"
+check "and with the trailing slash"    GET /models/      200 "# gethologram.ai/models"   -H "accept: */*"
+check "curl /registry gets the brief"  GET /registry     200 "# gethologram.ai/registry" -H "accept: */*"
+check "and with the trailing slash"    GET /registry/    200 "# gethologram.ai/registry" -H "accept: */*"
+check "curl /spaces gets the brief"    GET /spaces       200 "# gethologram.ai/spaces"   -H "accept: */*"
+check "and with the trailing slash"    GET /spaces/      200 "# gethologram.ai/spaces"   -H "accept: */*"
+check "curl /buckets gets the brief"   GET /buckets      200 "# gethologram.ai/buckets"  -H "accept: */*"
+check "and with the trailing slash"    GET /buckets/     200 "# gethologram.ai/buckets"  -H "accept: */*"
+check "curl /docs/ gets the brief"     GET /docs/        200 "# gethologram.ai/docs"     -H "accept: */*"
+
+# The third representation: asked for by name it is the descriptor, and the brief matcher must not take it.
+check "json gets the descriptor"       GET /models       200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "and with the trailing slash"    GET /models/      200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "registry too"                   GET /registry     200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "spaces too"                     GET /spaces       200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "buckets too"                    GET /buckets      200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "docs too"                       GET /docs/        200 "hologram.section.descriptor/v1" -H "accept: application/json"
+check "a browser is unaffected"        GET /models/      200 "models page"                    -H "accept: text/html"
+check "the tag link is advertised"     GET /models       200 "rel=alternate"                  -H "accept: */*"
 check "a browser still gets the page"  GET /models/      200 "models page"                   -H "accept: text/html,application/xhtml+xml"
 check "so does the registry page"      GET /registry/    200 "registry page"                 -H "accept: text/html"
 check "an unfurler still gets html"    GET /models/      200 "models page"                   -H "accept: */*" -A "Slackbot-LinkExpanding 1.0"
 check "the section varies on Accept"   GET /models       200 "vary: Accept"                  -H "accept: */*"
+check "the spaces page to a browser"   GET /spaces/      200 "spaces page"                   -H "accept: text/html"
+check "the buckets page to a browser"  GET /buckets/     200 "buckets page"                  -H "accept: text/html"
+check "the docs index to a browser"    GET /docs/        200 "docs index"                    -H "accept: text/html"
 check "a model page is NOT swallowed"  GET /models/Qwen/Qwen3-0.6B/ 200 "one model page"     -H "accept: */*"
+check "a docs page is NOT swallowed"   GET /docs/quickstart/        200 "one docs page"      -H "accept: */*"
+# The Spaces page fetches this from its own origin; the matcher lists exact paths, so it must be untouched.
+check "spaces.json is NOT swallowed"   GET /spaces/spaces.json      200 "spaces"             -H "accept: */*"
 check "and /v2/ is untouched"          GET /v2/          200 "kappa"                         -H "accept: */*"
 
 echo "== what the change adds"

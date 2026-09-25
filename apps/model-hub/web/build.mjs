@@ -3,8 +3,9 @@
 //   node build.mjs                 base / (set BASE=/path/ when served under a path;
 //                                  Git Bash: prefix MSYS_NO_PATHCONV=1)
 
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { checkSealed } from "./qa/registry-sealed.mjs";
+import { checkKappa } from "./qa/registry-kappa.mjs";
 import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -12,8 +13,11 @@ import { fileURLToPath } from "node:url";
 import * as R from "./src/render.mjs";
 import * as B from "./src/braille.mjs";
 import { overview, metaDescription } from "./src/overview.mjs";
+import { ORIGIN } from "./src/origin.mjs";
 import { landing } from "./src/landing.mjs";
 import * as D from "./src/docs.mjs";
+import { artifactBody, artifactJson, artifactPath, artifactFile, metaLine } from "./src/registry-page.mjs";
+import { checkRegistryPages } from "./qa/registry-pages.mjs";
 
 const SITE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(SITE, "dist");
@@ -29,7 +33,7 @@ const BROWSE = `${base}models/`;
 const STAR_REPO = process.env.MODEL_HUB_REPO || "Hologram-Technologies/hologram-live";
 const INDEX = "https://github.com/humuhumu33/hologram-api";
 // The one base URL every dialect answers on, whatever prefix this build is served under.
-const ENDPOINT = "https://hub.uor.foundation";
+const ENDPOINT = ORIGIN;
 
 const data = JSON.parse(await readFile(join(SITE, "data", "models.json"), "utf8"));
 const models = R.prepare(data.models, data.snapshot);
@@ -37,7 +41,11 @@ const archivePath = join(SITE, "data", "archive.json");
 const archive = existsSync(archivePath) ? JSON.parse(await readFile(archivePath, "utf8")) : null;
 const starRepo = { name: STAR_REPO, url: `https://github.com/${STAR_REPO}`, stars: data.repo?.name === STAR_REPO ? data.repo.stars : null };
 
-// The header pill. With an archive it opens every captured day; the Wayback idea, one control.
+// The index control: with an archive it opens every captured day; the Wayback idea, one control.
+//
+// It is no longer in the lead row — that row carries the section's own address now, as the Registry and
+// Spaces rows do. The control stays in the page, hidden: a link to ?at=<day> must still open that day, and
+// the banner above the results is what says which day you are reading. Hidden, not removed.
 function indexPill() {
   const latest = `Index ${R.day(data.snapshot)}`;
   if (!archive) return `<a class="status endpoint" href="${INDEX}" title="Addresses refresh daily">${latest}</a>`;
@@ -139,7 +147,7 @@ const STYLES = ["kit/hologram-warm.css", "kit/hologram-gap-tokens.css", "tokens.
 // was (display: contents). Narrow, the same group becomes a sheet under the header, and one control stands in
 // for it at the end of the row: the menu button. Same markup, same ids, same controls; only the layout folds.
 const header = ({ section = "", search = false } = {}) => `<header class="top">
-  <a class="brand" href="${base}" aria-label="Hologram Models Hub"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
+  <a class="brand" href="${base}" aria-label="Hologram"><img class="mark on-dark" src="${base}logos/Hologram_Logomark_White.svg" alt="" width="32" height="32"><img class="word on-dark" src="${base}logos/Hologram_Wordmark_White.svg" alt="Hologram" width="172" height="16"><img class="mark on-light" src="${base}logos/Hologram_Logomark_Black.svg" alt="" width="32" height="32"><img class="word on-light" src="${base}logos/Hologram_Wordmark_Black.svg" alt="Hologram" width="172" height="16"></a>
   <div class="top-end">
     <div class="top-menu" id="top-menu">
       ${topNav(section)}
@@ -166,7 +174,16 @@ const chromeHead = [
   `<script type="module">import { mountChrome } from "${base}chrome.js"; mountChrome();</script>`,
 ].join("\n");
 
-const page = ({ title, description, body, search = false, model = "", home = false, section = "", styles = [] }) => `<!doctype html>
+// The tag beside every section heading: the landing's one line, per section. The hero teaches
+// `$ curl hub.uor.foundation`; each section repeats it with its own path, so the whole site is one lesson and
+// the tag is a command rather than an address a reader has to guess the verb for. Running it returns what the
+// section does and the requests that do it; a browser asking for the same URL gets the section's page.
+// chrome.js fills in the host and copies the whole command; the head link beside it is the same address in a
+// form a machine reads first.
+const sectionTag = (name) => `<button type="button" class="endpoint section-tag copy" data-section="${name}" aria-label="Copy the ${name} line"><span class="prompt" aria-hidden="true">$</span><span class="host">\u2026</span>${R.icon.copy}</button>`;
+const describedBy = (name) => name ? `<link rel="describedby" type="text/markdown" href="${base}${name}.md">` : "";
+
+const page = ({ title, description, body, search = false, model = "", home = false, section = "", sectionRoot = false, styles = [] }) => `<!doctype html>
 <html lang="en" class="dark" data-theme="dark" data-wallpaper="alps" data-base="${base}"${home ? ` data-page="landing" data-highlight="${HIGHLIGHT}"` : ""}${model ? ` data-model="${R.esc(model)}"` : ""}>
 <head>
 <meta charset="utf-8">
@@ -180,6 +197,7 @@ const page = ({ title, description, body, search = false, model = "", home = fal
 ${home ? `<script>if(location.search)location.replace(${JSON.stringify(BROWSE)}+location.search);</script>\n` : ""}<script type="application/json" id="wallpapers">${JSON.stringify(WALLPAPERS)}</script>
 ${privy ? `<script type="application/json" id="privy">${JSON.stringify(privy)}</script>` : ""}
 <link rel="service-desc" type="application/openapi+json" href="${base}openapi.json">
+${describedBy(sectionRoot ? section : "")}
 <link rel="service-doc" type="text/markdown" href="${base}agent.md">
 <link rel="llms-txt" href="${base}llms.txt">
 <link rel="alternate" type="application/json" href="${base}.well-known/model-hub.json">
@@ -206,7 +224,7 @@ ${body}
 
 // ---- landing: the front door. One hero, one screen, no scroll.
 const home = page({
-  title: "Hologram Models Hub",
+  title: "Hologram",
   description: "Discover, use and share self-verifying models, skills and artifacts.",
   home: true,
   body: landing({ base, models, endpoint: ENDPOINT, repo: starRepo }),
@@ -216,18 +234,18 @@ const home = page({
 const initial = R.parseState("");
 const r = R.query(models, initial);
 const sortMenu = R.SORTS.map(([k, label]) => `<li role="option" data-sort="${k}" aria-selected="${k === initial.sort}">${label}${R.icon.check}</li>`).join("");
-// What the lead row says about the index as a whole, the way the Registry's says how many rows are read live:
-// how many of these models are verified — every file named by its bytes — and how many are not there yet.
-const states = models.reduce((c, m) => ((c[m.state] = (c[m.state] || 0) + 1), c), {});
-const provenance = [[states.addressed, "verified"], [states.pending, "queued"], [states.skipped, "unverified"]]
-  .filter(([n]) => n).map(([n, word]) => `${n.toLocaleString("en-US")} ${word}`).join(" · ");
 const browse = page({
   section: "models",
+  sectionRoot: true,
   title: R.title(initial),
   description: `The ${models.length} trending models on Hugging Face, every file named by its bytes.`,
-  // The lead row is the same row every catalogue page opens with (.lead, chrome.css): name, count, address,
-  // provenance. Here the address is the index control, which is also the way into every earlier day.
-  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${indexPill()}<p class="prov">${provenance}</p></div>
+  // The lead row is the same row every catalogue page opens with (.lead, chrome.css): the section's name, how
+  // many of its things are listed, and the address they are read from. The address is the one an agent would
+  // call, not the name of the page — /models answers this page to a browser and its brief to everything else,
+  // so the row names the route that returns the models themselves. app.js fills it in and asks it whether it
+  // is up, which is what the dot says.
+  body: `<div class="lead"><h1>Models</h1><span class="pill" id="total">${r.results.length}</span>${sectionTag("models")}</div>
+${archive ? `<div class="archive-hidden" hidden>${indexPill()}</div>` : ""}
 <main class="browse" id="browse">
   <aside class="panel filters" aria-label="Filters">
     <button type="button" class="control square close-filters" id="close-filters" aria-label="Close filters">${R.icon.close}</button>
@@ -239,7 +257,6 @@ const browse = page({
     <div class="bar">
       <label class="field search">${R.icon.search}<input id="q" type="search" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models"></label>
       <button type="button" class="open-filters" id="open-filters">${R.icon.sliders}Filters</button>
-      <button type="button" class="switch" id="verified-only" role="switch" aria-checked="false"><span class="track" aria-hidden="true"><span class="thumb"></span></span>Verified only</button>
       <div class="sort">
         <button type="button" id="sort" aria-haspopup="listbox" aria-expanded="false"><span id="sort-label">Trending</span>${R.icon.chevron}</button>
         <ul role="listbox" id="sort-list" aria-label="Sort" hidden>${sortMenu}</ul>
@@ -376,7 +393,7 @@ function modelPage(m, files, ov, readme) {
   return page({
     section: "models",
     model: m.id,
-    title: `${m.name} · Hologram Models Hub`,
+    title: `${m.name} · Hologram`,
     description: metaDescription(ov) || `${m.id}: every file of this model with the address that proves its bytes.`,
     search: true,
     body: `<div class="head back-row"><a class="back" href="${BROWSE}">${R.icon.left}Models</a>${indexPill()}</div>
@@ -418,7 +435,7 @@ await mkdir(join(DIST, "models"), { recursive: true });
 await writeFile(join(DIST, "index.html"), home);
 await writeFile(join(DIST, "models", "index.html"), browse);
 await writeFile(join(DIST, "404.html"), page({
-  title: "Not found · Hologram Models Hub",
+  title: "Not found · Hologram",
   description: "Page not found.",
   search: true,
   body: `<section class="panel browse"><div class="empty"><p>This page does not exist.</p><a class="link" href="${BROWSE}">All models</a></div></section>`,
@@ -442,7 +459,7 @@ for (const m of models) {
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
 const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "chrome.js", "render.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "chrome.js", "render.mjs", "card-art.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
 
 // ---- the documentation
 //
@@ -455,11 +472,12 @@ const docPages = D.render(await D.load(join(SITE, "docs")), { base, spec });
 for (const p of docPages) {
   await mkdir(dirname(join(DIST, p.path)), { recursive: true });
   await writeFile(join(DIST, p.path), page({
-    title: p.slug === "index" ? "Docs · Hologram Models Hub" : `${p.title} · Docs · Hologram Models Hub`,
+    title: p.slug === "index" ? "Docs · Hologram" : `${p.title} · Docs · Hologram`,
     description: p.description,
     section: "docs",
+    sectionRoot: p.slug === "index",
     styles: ["docs.css"],
-    body: `<main class="docs">${D.sidebar(docPages, p.slug, base)}${D.article(p, docPages, base)}</main>`,
+    body: `<main class="docs">${D.sidebar(docPages, p.slug, base)}${D.article(p, docPages, base, p.slug === "index" ? sectionTag("docs") : "")}</main>`,
   }));
   await writeFile(join(DIST, "docs", `${p.slug}.md`), D.twin(p, { endpoint: ENDPOINT }));
 }
@@ -472,7 +490,7 @@ if (privy) {
   // round trip reads as one step rather than as a visit to somewhere else.
   await mkdir(join(DIST, "auth"), { recursive: true });
   await writeFile(join(DIST, "auth", "index.html"), page({
-    title: "Signing you in · Hologram Models Hub",
+    title: "Signing you in · Hologram",
     description: "Finishing sign-in.",
     body: `<section class="panel browse"><div class="empty"><p id="auth-landing">Signing you in…</p><a class="link" href="${base}">All models</a></div></section>`,
   }));
@@ -501,6 +519,22 @@ await writeFile(join(DIST, ".nojekyll"), "");
 // of that row is a copy that drifts, and a menu that changes shape when you cross into a section is the
 // one thing a top-level menu cannot do. So the file leaves two marks and the build fills them, from the
 // very same header() and topNav() every other page is built with.
+// Each Space is served exactly as its artifact is laid out: the shared public/spaces/runtime/ (one copy in
+// git) is placed inside every dist/spaces/<id>/runtime/ — the verified fetch, the store, the style and only
+// the ONNX Runtime pin that Space names — so a page that says ./runtime/… finds the same bytes here, on the
+// registry, on IPFS and in the OS.
+{
+  const spacesDir = join(DIST, "spaces");
+  const cat = JSON.parse(await readFile(join(spacesDir, "spaces.json"), "utf8"));
+  for (const s of cat.spaces) {
+    const rt = join(spacesDir, s.id, "runtime");
+    await mkdir(join(rt, "ort"), { recursive: true });
+    for (const f of ["holo-spaces-hf-fetch.mjs", "holo-opfs-kappastore.mjs", "space.css"]) await cp(join(spacesDir, "runtime", f), join(rt, f));
+    await cp(join(spacesDir, "runtime", "ort", s.ort), join(rt, "ort", s.ort), { recursive: true });
+  }
+  await rm(join(spacesDir, "runtime"), { recursive: true, force: true });   // nothing references the shared copy
+}
+
 // The Spaces and Buckets pages ship the same way: their own components, the site's header.
 for (const section of ["registry", "spaces", "buckets"]) {
   const path = join(DIST, section, "index.html");
@@ -508,15 +542,67 @@ for (const section of ["registry", "spaces", "buckets"]) {
   for (const mark of ["<!--chrome:head-->", "<!--chrome:header-->"]) {
     if (!html.includes(mark)) throw new Error(`${section}/index.html lost ${mark}: the shared header has nowhere to go`);
   }
-  html = html.replace("<!--chrome:head-->", chromeHead).replace("<!--chrome:header-->", header({ section }));
+  if (!html.includes("<!--chrome:tag-->")) throw new Error(`${section}/index.html lost <!--chrome:tag-->: the section tag has nowhere to go`);
+  html = html
+    .replace("<!--chrome:head-->", chromeHead + "\n" + describedBy(section))
+    .replace("<!--chrome:header-->", header({ section }))
+    .replace("<!--chrome:tag-->", sectionTag(section));
   await writeFile(path, html);
+}
+
+// ---- one mesh, three pages
+//
+// Models, Registry and Spaces draw the same faceted card background. It was three copies of the same
+// twenty lines once, and they drifted: the Registry mesh ended up half as bright and half again as
+// coarse as the Models one, because a taller card scaled the same viewBox differently. Now there is one
+// generator (card-art.mjs) and one set of rules (chrome.css), and this refuses to ship a second copy.
+{
+  const shipped = await readdir(DIST, { recursive: true });
+  const dupes = [];
+  for (const f of shipped) {
+    if (!/[.](?:m?js|css)$/.test(f)) continue;
+    const body = await readFile(join(DIST, f), "utf8");
+    if (/function art\s*\(\s*seed/.test(body) && f !== "card-art.mjs") dupes.push(`${f} draws its own mesh`);
+    if (/^[.]art\s*[{]/m.test(body) && f !== "chrome.css") dupes.push(`${f} styles the mesh itself`);
+  }
+  if (dupes.length) throw new Error(["the card mesh has more than one home:", ...dupes].join("\n  "));
+  console.log("card mesh: one generator, one stylesheet, three pages");
+}
+
+// ---- one page per indexed registry artifact
+//
+// Every row of registry/data/images.json becomes /registry/<id>/ in the model page's shape (src/registry-page.mjs),
+// with the profile scripts/registry.mjs fetched for it (README, tags, publisher, links) beside it as artifact.json,
+// the same document an agent reads. A row whose profile is missing still gets its page from the row alone, so a
+// refresh that fell short never costs a page; the gate below counts every one.
+const registryIndex = JSON.parse(await readFile(join(DIST, "registry", "data", "images.json"), "utf8"));
+const ranked = registryIndex.images.filter((r) => r.pulls != null || r.stars != null).sort((a, b) => (b.pulls || 0) - (a.pulls || 0) || (b.stars || 0) - (a.stars || 0));
+const rankOf = new Map(ranked.map((r, i) => [r.id, i + 1]));
+let artifactPages = 0;
+for (const r of registryIndex.images) {
+  if (r.here) continue;   // our own registry's rows are read live at load and open the sheet; a page would be stale
+  const profilePath = join(SITE, "public", "registry", "data", "artifacts", artifactFile(r.id));
+  const p = existsSync(profilePath) ? JSON.parse(await readFile(profilePath, "utf8")) : null;
+  const dir = join(DIST, "registry", ...r.id.split("/"));
+  await mkdir(dir, { recursive: true });
+  const rank = rankOf.get(r.id) || null;
+  await writeFile(join(dir, "index.html"), page({
+    section: "registry",
+    title: `${r.name} · ${r.registry} · Hologram`,
+    description: metaLine(r, p),
+    body: `${artifactBody(r, p, { base, rank })}\n<script type="module" src="${base}registry/artifact.js"></script>`,
+  }));
+  await writeFile(join(dir, "artifact.json"), artifactJson(r, p, { base, rank }));
+  artifactPages++;
 }
 
 // The Registry page ships from public/. It carries its own covers and its own hasher, and this
 // refuses to build a copy that would fetch either from somebody else.
 await writeFile(join(DIST, "buckets", "links.json"), JSON.stringify(bucketLinks));
+console.log(await checkRegistryPages(DIST, { base }));
 console.log(await checkBucketLinks(DIST, models.length));
 console.log(await checkSealed(DIST));
+console.log(await checkKappa(DIST));
 // Every link in the docs lands on something this build ships, and every page has something to run.
 console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));
 

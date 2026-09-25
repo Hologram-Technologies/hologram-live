@@ -3,7 +3,7 @@
 The same model experience as Hugging Face, where every byte is named by its address, verifiable by anyone and servable
 by anyone. A gap is closed only when it serves that, or is table stakes for adoption.
 
-Live: [hub.uor.foundation](https://hub.uor.foundation) and
+Live: [gethologram.ai](https://gethologram.ai) and
 [hologram-technologies.github.io/hologram-live/model-hub/](https://hologram-technologies.github.io/hologram-live/model-hub/).
 
 ## Where Model Hub already differs
@@ -51,7 +51,7 @@ file against its address in the browser, and every layer on `hologram pull`.
 
 | Date | Decision |
 |---|---|
-| 2026-09-17 | Host at `hub.uor.foundation` on the existing VPS; registry reads public, writes token-gated |
+| 2026-09-17 | Host at `gethologram.ai` on the existing VPS; registry reads public, writes token-gated |
 | 2026-09-17 | Pinning provider: Filebase |
 | 2026-09-17 | Weights on the hub: up to 15 GB, small permissive-licence models |
 | 2026-09-18 | Reversed: no weights on the VPS. IPFS through Filebase is the only copy of weights the hub offers; the registry holds the daily index only |

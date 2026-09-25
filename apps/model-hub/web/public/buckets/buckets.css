@@ -5,13 +5,13 @@
 
 main { display: block; }
 
-.lead { display: flex; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap;
-  padding: var(--space-8) 0 var(--space-2); }
-.lead-main { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
-.lead-end { margin-left: auto; display: flex; gap: var(--space-2); }
-.lead h1 { margin: 0; font-size: var(--text-3xl); font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-display); min-width: 0; overflow-wrap: anywhere; }
+/* The lead row is the site's (.lead in /chrome.css), the same row Models, Registry and Spaces open with.
+   A bucket's name can be long, so the title may break; the owner is dimmed so the name reads first. */
+.lead h1 { min-width: 0; overflow-wrap: anywhere; }
 .lead h1 .owner { color: var(--hh-text-dim); }
+/* What you can do here, on a row of its own under the lead, at the end: New bucket on the list, History
+   and Settings inside a bucket. */
+.actions { display: flex; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; padding-bottom: var(--space-4); }
 /* .pill and .panel come from /chrome.css. This only adds the modifier a full-bleed table
    needs: no padding, a hairline, and clipped corners. */
 .panel.flush { padding: 0; border: 1px solid var(--hh-line); overflow: hidden; }
@@ -23,9 +23,19 @@ main { display: block; }
 .crumbs a:hover { color: var(--hh-text); }
 .crumbs b { font-weight: var(--weight-normal); color: var(--hh-text); }
 
-.bar { display: flex; gap: var(--space-3); align-items: center; padding-bottom: var(--space-4);
+/* Inside a bucket: the filter and the check-everything button. (The list's bar is the site's .bar, from
+   /lib/catalog.css, with New bucket at its end at the same height as the search beside it.) */
+.tools { display: flex; gap: var(--space-3); align-items: center; padding-bottom: var(--space-4);
   flex-wrap: wrap; }
-.bar .field { flex: 1; min-width: 12rem; }
+.tools .field { flex: 1; min-width: 12rem; }
+#list-bar .button { height: var(--space-12); border-radius: var(--radius-lg); }
+/* A bucket's card: the bucket mark where a cover would be, the owner dimmed in the name. */
+.card .logo { display: grid; place-items: center; color: var(--hh-text); }
+.card .logo .i { width: var(--space-6); height: var(--space-6); color: var(--hh-text-dim); }
+.card h3 .owner { color: var(--hh-text-dim); }
+/* Inside a bucket the rail has nothing to say; the column takes the width. */
+.cols.one { grid-template-columns: minmax(0, 1fr); }
+.cols.one .rail { display: none; }
 
 .panel table { width: 100%; border-collapse: collapse; }
 .panel th { text-align: left; font-weight: var(--weight-normal); font-size: var(--text-xs);
@@ -85,13 +95,6 @@ td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(-
 .states td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--hh-text-faint); }
 .states td.act { text-align: right; white-space: nowrap; }
 .states .pill { margin-left: var(--space-2); }
-.ask label.choice { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2);
-  font-size: var(--text-sm); color: var(--hh-text); }
-.ask label.choice input { margin-top: 3px; }
-.ask label.choice small { display: block; color: var(--hh-text-dim); }
-.ask label.choice.off { opacity: .55; }
-.ask .key { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; background: var(--hh-fill);
-  padding: var(--space-3); border-radius: var(--radius-md); margin: var(--space-3) 0; user-select: all; }
 .prov.linked a { color: var(--hh-accent-legible); }
 .name .pill { margin-left: var(--space-2); }
 
@@ -112,31 +115,101 @@ td.addr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(-
 /* In immersive the ground is a photograph. Panels get a glass surface from /chrome.css, but
    the lead, the sub-line and the breadcrumbs sit on the bare image, so they need the same help
    any interface over a photo needs. Worth lifting into /chrome.css when these pages merge. */
-:root[data-theme="immersive"] .lead h1,
 :root[data-theme="immersive"] .prov,
 :root[data-theme="immersive"] .crumbs { text-shadow: 0 1px 3px rgb(0 0 0 / 55%); }
 :root[data-theme="immersive"] .prov { color: var(--hh-text); }
 
-/* One dialog does New bucket, Settings and Delete: three questions, one shape. */
-.ask { border: 1px solid var(--hh-line-strong); border-radius: var(--radius-xl);
-  background: var(--hh-popover); color: var(--hh-text); padding: var(--space-6);
-  width: min(26rem, calc(100vw - var(--space-8))); box-shadow: 0 24px 60px var(--hh-shadow); }
-.ask::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
-.ask h2 { margin: 0 0 var(--space-2); font-size: var(--text-lg); font-weight: var(--weight-medium); }
-.ask .muted { margin: 0 0 var(--space-4); color: var(--hh-text-dim); font-size: var(--text-sm); }
-.ask .field { width: 100%; margin-bottom: var(--space-3); }
-.ask label.row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);
-  font-size: var(--text-sm); color: var(--hh-text); }
-.ask-foot { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+/* One dialog does New bucket, Settings, the key and Delete: four questions, one shape.
+   Nothing here is smaller than 14px, because a sentence a person has to read to make a
+   decision is not a caption. Head, body and foot are separated by the kit's own hairline,
+   so the dialog has the same anatomy as a panel and needs no borders of its own invention. */
+.ask {
+  border: 1px solid var(--hh-line-strong); border-radius: var(--radius-xl);
+  background: var(--hh-popover); color: var(--hh-text); padding: 0;
+  width: min(30rem, calc(100vw - var(--space-6)));
+  box-shadow: 0 32px 64px -12px var(--hh-shadow);
+}
+.ask::backdrop { background: color-mix(in srgb, #000 55%, transparent); }
+.ask-head { padding: var(--space-6) var(--space-6) var(--space-5); }
+.ask .muted { max-width: 42ch; }
+.ask h2 {
+  margin: 0; font-size: var(--text-2xl); font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display); line-height: 1.2; overflow-wrap: anywhere;
+}
+.ask .muted { margin: var(--space-2) 0 0; color: var(--hh-text-dim); font-size: var(--text-sm); line-height: 1.55; }
+.ask .muted:empty { display: none; }
+.ask-body { padding: 0 var(--space-6) var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); }
+.ask-foot {
+  display: flex; justify-content: flex-end; gap: var(--space-3);
+  padding: var(--space-5) var(--space-6); border-top: 1px solid var(--hh-line);
+  background: color-mix(in srgb, var(--hh-fill) 40%, transparent);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+
+/* A label that stays. A placeholder is a hint, not a name: it leaves exactly when the
+   field has something in it and the reader has to remember what they were answering. */
+.ask .lab { display: block; margin-bottom: var(--space-2); font-size: var(--text-sm); color: var(--hh-text-dim); }
+.ask .field { width: 100%; }
+.ask .field input { font-size: var(--text-base); }
+.ask .field input::placeholder { color: var(--hh-text-faint); }
+
+/* owner / name, written the way the bucket is written everywhere else on this page. */
+.idrow { display: flex; align-items: center; gap: var(--space-2); }
+.idrow .field { flex: 1 1 0; min-width: 0; }
+.idrow .sep { flex: none; color: var(--hh-text-faint); font-size: var(--text-lg); }
+
+/* A choice is a card you press, not a dot beside a line of text. */
+.choices { display: flex; flex-direction: column; gap: var(--space-2); }
+/* Press the card, not the dot: the whole row is the target, and the one in force carries
+   the accent rather than a tick a reader has to hunt for. */
+.choice {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + 1px);
+  border: 1px solid var(--hh-line); border-radius: var(--radius-lg);
+  cursor: pointer; transition: border-color var(--hh-ease), background var(--hh-ease);
+}
+.choice:hover { border-color: var(--hh-line-strong); }
+.choice input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.choice .dot {
+  position: relative; flex: none; width: 18px; height: 18px; margin-top: 2px;
+  border: 1.5px solid var(--hh-line-strong); border-radius: 50%;
+  transition: border-color var(--hh-ease);
+}
+.choice input:checked + .dot { border-color: var(--hh-accent); }
+.choice input:checked + .dot::after {
+  content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--hh-accent);
+}
+.choice input:focus-visible + .dot { outline: 2px solid var(--hh-line-focus); outline-offset: 2px; }
+.choice:has(input:checked) { border-color: var(--hh-accent); background: color-mix(in srgb, var(--hh-accent) 7%, transparent); }
+.choice b { display: block; font-size: var(--text-base); font-weight: var(--weight-medium); letter-spacing: var(--tracking-normal); }
+.choice small { display: block; margin-top: 3px; font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.45; }
+.choice.off, .choice:has(input:disabled) { opacity: .45; cursor: default; }
+.choice.off:hover, .choice:has(input:disabled):hover { border-color: var(--hh-line); }
+
+/* A question that undoes something stands apart from one that does not. */
+.ask .apart { border-top: 1px solid var(--hh-line); padding-top: var(--space-5); }
+
+/* A key is shown once. It is set at reading size, selects in one click, and copies in one. */
+.keybox { border: 1px solid var(--hh-line-strong); border-radius: var(--radius-lg); background: var(--hh-fill); padding: var(--space-4); }
+.keybox code {
+  display: block; font-family: var(--font-mono); font-size: var(--text-base); line-height: 1.6;
+  color: var(--hh-text); overflow-wrap: anywhere; user-select: all;
+}
+.keybox .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-3); }
+.keybox .row span { font-size: var(--text-sm); color: var(--hh-text-dim); }
 
 @media (max-width: 720px) {
-  .lead { padding: var(--space-6) 0 var(--space-2); }
-  .lead h1 { font-size: var(--text-2xl); }
-  .lead-end { margin-left: 0; width: 100%; }
   .panel.flush { overflow-x: auto; }   /* three columns do not fit 360px; swiping beats hiding the size */
   th.hide, td.hide { display: none; }
   .panel td, .panel th { padding: var(--space-3); }
   .name span { max-width: 38vw; }
+  .ask-head { padding: var(--space-5) var(--space-5) var(--space-4); }
+  .ask-body { padding: 0 var(--space-5) var(--space-5); gap: var(--space-4); }
+  .ask-foot { padding: var(--space-4) var(--space-5); }
+  .ask-foot .button { flex: 1; justify-content: center; }
+  .idrow { flex-wrap: wrap; }
+  .idrow .field { flex-basis: 100%; }
+  .idrow .sep { display: none; }
   .facts { grid-template-columns: 1fr; gap: var(--space-1); }
   .facts dt { margin-top: var(--space-2); }
   .detail { padding: var(--space-4); }

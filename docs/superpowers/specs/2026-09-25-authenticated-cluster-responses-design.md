@@ -1,5 +1,12 @@
 # Authenticated cluster responses
 
+## Status
+
+Designed, **deferred**. This is hardening of the HTTP transport, not a
+prerequisite for anything. An earlier draft of this document — and the
+sequencing advice that came with it — claimed it unblocked Phase 2 (#179). That
+was wrong, and the correction is recorded under "What this is not" below.
+
 ## Goal
 
 A requester can tell who actually answered a cluster request, and that the
@@ -20,15 +27,41 @@ and one thing unavailable.
 Unprotected: the **peer list** in a join reply, and the **inventory** of object
 ids a peer claims to hold. A rogue or intercepted endpoint can shape either.
 
-Unavailable: a verified `(endpoint, node_id)` pairing. Phase 2 (#179) needs one,
-because an iroh address *is* a node id — building that phase without this one
-means building on the same unverified pairing that produced Phase 1's escalation
-path.
+Unavailable: cryptographic attribution for a reply — which *key* answered, as
+opposed to which TLS certificate.
 
 Object **bodies** are deliberately excluded: replication already verifies a
 stored object's digest against the advertised `blake3:` id, so a forged body is
 caught today. Signing them would duplicate that check and add a signature to the
 bulk transfer path.
+
+## What this is not
+
+Two corrections to an earlier draft, kept here because both were load-bearing in
+a recommendation.
+
+**It does not unblock Phase 2.** With iroh a peer is dialled by node id: the
+address *is* the identity and QUIC with TLS 1.3 authenticates it at the
+transport layer, so no `endpoint → identity` pairing exists to verify. Phase 2
+never has this problem. An earlier draft asserted the opposite and used it to
+argue this work should precede #179; that argument was unsound.
+
+**The threat is a malicious peer, not a network attacker.**
+`validate_cluster_endpoint` permits only HTTPS origins and loopback HTTP, so for
+every non-loopback peer TLS already prevents in-flight modification and already
+binds the endpoint to an identity. "A peer list can be forged", the framing
+inherited from #183, overstates what an on-path attacker can do against a
+correctly configured cluster.
+
+What response proofs genuinely add:
+
+- attribution independent of the PKI — which key answered, not which certificate
+- coverage where TLS is weak or absent: loopback, self-signed certificates, a
+  compromised certificate authority
+- protection against an **admitted but malicious peer**, which TLS does nothing
+  about
+
+That is defence in depth worth having. It is not an urgent hole.
 
 ## The response proof
 
@@ -88,9 +121,24 @@ answered.
   on a hostile signal would let an attacker who can answer on an endpoint remove
   a legitimate peer from this node's table, turning an authentication check into
   a denial-of-service lever. Refuse the exchange and keep the peer.
-- **The reply is unsigned, or its signature fails.** Refuse. Required, not
-  optional — the cluster protocol is untagged, so there is no migration window
-  to design around.
+- **A successful reply is unsigned, or its signature fails.** Refuse. Required,
+  not optional — the cluster protocol is untagged, so there is no migration
+  window to design around.
+
+### Only 2xx responses carry a proof
+
+This is a structural limit of the scheme, not a simplification. A reply is bound
+to the requester's `request_signature`, but a `401` is precisely the case where
+the request proof was *invalid* — so the responder has no valid signature to bind
+to. The errors one would most want authenticated are the ones that cannot be.
+
+Therefore: success responses carry a proof and are refused without one; error
+responses are unauthenticated and are not required to carry one.
+
+The consequence, recorded rather than hidden: a party who can answer on an
+endpoint can inject an unsigned error and induce backoff against a legitimate
+peer. It is bounded by the existing per-peer backoff and cannot forge content or
+identity, but it is a real availability lever that this design does not close.
 
 **Outbound proofs stay bound to the dialled origin.** The pairing is an added
 check, not a new dependency. Phase 1's property is therefore untouched, and a
@@ -123,6 +171,20 @@ attaches headers, and returns a `Response`. Neither hand-rolls it.
 one method returns `New`, `Matches`, or `Conflict`. `run()` owns it beside
 `PeerTable` and passes it to both requester call sites.
 
+## Open decision: is the inventory worth signing?
+
+The scope chosen when this was designed covers the join reply and the object
+inventory. On reflection the inventory's marginal value is low, and whoever picks
+this up should decide with the reasoning rather than inherit it:
+
+- a peer can **omit** ids, which no signature fixes
+- objects are content-addressed, so a forged body is already refused on store
+- over HTTPS no third party can alter the inventory in flight
+
+The join reply is where the value concentrates, because it carries the peer list
+and the responder's own record. Signing only the join reply is a defensible
+narrowing.
+
 ## Testing
 
 Unit: a golden vector for the response preimage; each bound field altered in turn
@@ -146,9 +208,9 @@ All eight `tests/cluster_e2e.rs` tests must keep passing unedited.
 ## Rollout
 
 A third breaking wire change, free while the cluster protocol is untagged. It
-ships as its own pull request stacked on #178's branch rather than folded into
-it: that branch is green and reviewed, and enlarging it would put a security
-change through a review already completed. It must merge after #178.
+ships as its own pull request rather than folded into #178, which is green and
+reviewed. It must merge after #178, and it is sequenced **after** #179 rather
+than before it, for the reason given under "What this is not".
 
 ## Recorded, deliberately not built
 

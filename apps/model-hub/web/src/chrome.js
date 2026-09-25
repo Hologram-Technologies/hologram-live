@@ -69,7 +69,7 @@ function foldingMenu() {
   wide.addEventListener("change", () => { if (wide.matches) open(false); });
 }
 
-// Dark, Light, Immersive. Dark for first visits; the choice is kept on this device.
+// Immersive, Dark, Light. Immersive for first visits; the choice is kept on this device.
 function themeSwitch() {
   const KEY = "hologram-models-hub.theme";
   const root = document.documentElement, button = $("#theme-button"), menu = $("#theme-menu");

@@ -159,7 +159,7 @@ function spaces(o) {
 
 // Model cards mix markdown with HTML. Raw HTML never renders: common tags become markdown, the rest become text.
 // Fenced code is left untouched.
-function htmlToMarkdown(text) {
+export function htmlToMarkdown(text) {
   const attr = (tag, name) => tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"))?.slice(1).find((x) => x !== undefined) || "";
   return text.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/).map((part, i) => {
     if (i % 2) return part;

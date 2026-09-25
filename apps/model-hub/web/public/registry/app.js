@@ -463,9 +463,14 @@ function art(seed, lit) {
   return `<svg class="art${lit ? " lit" : ""}" viewBox="0 0 ${ART_W} ${ART_H}" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><g class="facets">${faces}</g><path class="edges" d="${edges}"/></svg>`;
 }
 
+// An indexed row is a page (/registry/<id>/, built for every row, with the profile its source published); a row
+// read live from this registry opens the sheet, because what it shows is fetched and checked right here.
+const pagePath = (id) => id.split("/").map((s) => encodeURIComponent(s)).join("/");
+
 function card(r) {
-  const el = document.createElement("button");
-  el.type = "button";
+  const sheet = r.live || r.here;
+  const el = document.createElement(sheet ? "button" : "a");
+  if (sheet) el.type = "button"; else el.href = `${pagePath(r.id)}/`;
   el.className = "card" + (r.here ? " ours" : "");
   const tags = [];
   if (r.here) tags.push(`<span class="tag here">here</span>`);
@@ -475,7 +480,7 @@ function card(r) {
   if (r.signed) tags.push(`<span class="tag">signed</span>`);
   el.innerHTML = `<img class="logo" alt="" loading="lazy"><div class="tags">${tags.join("")}</div><h3></h3><p></p><div class="foot"></div>${art(r.id, !!r.here)}`;
   cover(el.querySelector("img"), r);
-  el.addEventListener("click", () => openSheet(r));
+  if (sheet) el.addEventListener("click", () => openSheet(r));
   el.querySelectorAll(".tag")[(r.here || r.kappa ? 1 : 0) + (r.official ? 1 : 0)].textContent = r.registry;
   el.querySelector("h3").textContent = r.id.replace(/^docker\.io\//, "");
   el.querySelector("p").textContent = r.description || "No description from this source.";

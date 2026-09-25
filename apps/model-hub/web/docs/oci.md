@@ -83,3 +83,9 @@ Formats whose layers are raw files work this way: ModelPack `weight.v1.raw`, Doc
 ## The hub's own registry
 
 `/v2/_catalog` and `/v2/model-hub/…` are a separate thing: a real OCI registry that stores the daily index as an artifact, tag `blake3_<hex>`, pulled with `hologram pull hub.uor.foundation/model-hub/index:<date>`. Model artifacts under `/v2/<owner>/<name>` are synthesised from the index and store nothing.
+
+## Every indexed artifact has a page
+
+The Registry section indexes images, charts, models, skills and policies from Docker Hub, Artifact Hub and Microsoft Artifact Registry. Each row has a page at `/registry/<id>/` (`docker.io/library/nginx`, `artifacthub/<repository>/<package>`, `mcr.microsoft.com/<repository>`) in the same shape as a model page: the logo and publisher, the pull command for the tool the artifact takes, the digest as an address, Overview with the README the source published, and Tags as the source lists them. The same profile is one JSON document beside it, `/registry/<id>/artifact.json` (`hologram.registry.artifact/v1`), naming the upstream API every value came from.
+
+Nothing on those pages is written by hand: `scripts/registry.mjs` fetches every profile and logo from the source's own API and vendors the logos into this origin, so a reader's browser never touches Docker Hub, Artifact Hub or Microsoft to draw the page. Where this host holds a row's manifest, the page carries its address on this host (`hub.uor.foundation/<upstream path>@sha256:…`) and Verify fetches that manifest from here and hashes it in the browser against the digest the upstream reports.

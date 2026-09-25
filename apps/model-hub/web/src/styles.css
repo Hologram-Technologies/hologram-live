@@ -609,3 +609,21 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 .ov-provenance { font-size: var(--text-sm); color: var(--hh-text-dim); line-height: 1.6; }
 .ov-provenance .copy { font-family: var(--font-mono); }
 
+
+/* ---- registry artifact page (src/registry-page.mjs): the model page's shape with what an image has and a model does not */
+.avatar.cover { border-radius: var(--radius-md); object-fit: contain; padding: var(--space-1); background: var(--hh-fill); }
+.hero .org .mono, .facts .mono, .ov-facts .mono { font-family: var(--font-mono); }
+.hero .org a { color: inherit; text-decoration: underline; text-decoration-color: var(--hh-line-focus); text-underline-offset: var(--space-1); }
+.ov-run { display: grid; gap: var(--space-3); }
+.ov-run .cmd { display: grid; gap: var(--space-1); }
+.ov-run .lbl { font-size: var(--text-sm); color: var(--hh-text); }
+.ov-run .lbl .dim, .ov-facts .dim, td .dim, dd .dim { color: var(--hh-text-dim); }
+.ov-facts .bad { color: var(--hh-bad); }
+.ov-run .cmdline { display: flex; align-items: center; gap: var(--space-3); margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--hh-line); border-radius: var(--radius-md); background: var(--hh-fill); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ov-run .cmdline code { flex: 1; min-width: 0; }
+.ov-run .cmdline .copy { flex: none; font-family: var(--font-sans); font-size: var(--text-sm); color: var(--hh-text-dim); }
+.ov-list li { display: inline-flex; align-items: center; gap: var(--space-2); }
+.ov-list li a .i { width: var(--hh-icon-small); height: var(--hh-icon-small); color: var(--hh-text-dim); }
+#tags td.path { max-width: 18rem; }
+#tags td .tag { margin-left: var(--space-2); }
+#tags td.dl .dl-yes .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }

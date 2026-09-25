@@ -44,6 +44,10 @@
   --hh-ui: var(--text-base);
   --hh-pad: var(--space-6);
   --hh-gutter: var(--space-6);
+  /* The card mesh's box: src/card-art.mjs draws a viewBox of exactly this size, so one unit is one pixel
+     and the facets match on every page. 260x200 composed from the kit's steps: 4x64+4, 3x64+8. */
+  --hh-art-w: calc(var(--space-16) * 4 + var(--space-1));
+  --hh-art-h: calc(var(--space-16) * 3 + var(--space-2));
 
   /* landing type: the kit's steps, sized by whichever of width or height is scarcer */
   --hh-display: clamp(var(--text-3xl), min(8.5vw, 11svh), calc(var(--text-6xl) * 1.3));
@@ -458,7 +462,7 @@ button.account-row:hover, button.account-row:focus-visible { background: var(--h
    or the column count. A shorter card clips the bottom. Change one number and you change both files. */
 .card { position: relative; overflow: hidden; isolation: isolate; }
 .art {
-  position: absolute; z-index: -1; top: 0; right: 0; width: min(55%, 260px); height: 200px;
+  position: absolute; z-index: -1; top: 0; right: 0; width: min(55%, var(--hh-art-w)); height: var(--hh-art-h);
   pointer-events: none; opacity: .85;
   -webkit-mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));
   mask-image: linear-gradient(90deg, transparent, var(--hh-text) var(--space-16));

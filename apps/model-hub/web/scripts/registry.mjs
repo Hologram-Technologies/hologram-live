@@ -30,7 +30,7 @@ const REG = join(SITE, "public", "registry");
 const DATA = join(REG, "data", "images.json");
 const ARTIFACTS = join(REG, "data", "artifacts");
 const ICONS = join(REG, "icons");
-const OURS = process.env.HOLOGRAM_REGISTRY || "https://hub.uor.foundation";
+const OURS = process.env.HOLOGRAM_REGISTRY || ORIGIN;   // the hub's one name, from src/origin.mjs
 const UA = "hologram-registry-index/1.0 (+https://gethologram.ai/registry)";
 
 const args = process.argv.slice(2);
@@ -47,6 +47,7 @@ const README_CAP = 160_000;
 const TAGS_CAP = 50;
 
 import { artifactFile, mark } from "../src/registry-page.mjs";
+import { ORIGIN } from "../src/origin.mjs";
 
 // ---------------------------------------------------------------- http, with the manners each source expects
 

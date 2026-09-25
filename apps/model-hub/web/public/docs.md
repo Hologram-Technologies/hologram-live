@@ -19,7 +19,7 @@ words, with no navigation, no markup and no scripts.
     GET /docs/sources.md
         Sources and failover. Where the bytes come from, how the hub picks a source, and how you pin one.
     GET /docs/spaces.md
-        Spaces. Apps that run entirely in your browser, each in its own sealed frame, with every model byte verified before it is used.
+        Apps. Apps that run entirely in your browser, each in its own sealed frame, with every model byte verified before it is used.
 
 ## Connect
 

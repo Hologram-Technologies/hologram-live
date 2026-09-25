@@ -23,7 +23,14 @@
         "webgpu",
         "opfs"
       ],
-      "entry": "kokoro-tts/index.html"
+      "entry": "kokoro-tts/index.html",
+      "sourceMeta": {
+        "likes": 364,
+        "author": "webml-community",
+        "updated": "2025-02-07T15:46:09.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/webml-community/kokoro-webgpu"
+      }
     },
     {
       "id": "remove-background",
@@ -47,7 +54,14 @@
         "webgpu",
         "opfs"
       ],
-      "entry": "remove-background/index.html"
+      "entry": "remove-background/index.html",
+      "sourceMeta": {
+        "likes": 156,
+        "author": "Xenova",
+        "updated": "2024-03-09T21:00:50.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/remove-background-webgpu"
+      }
     },
     {
       "id": "smollm-chat",
@@ -71,7 +85,328 @@
         "webgpu",
         "opfs"
       ],
-      "entry": "smollm-chat/index.html"
+      "entry": "smollm-chat/index.html",
+      "sourceMeta": {
+        "likes": 18,
+        "author": "webml-community",
+        "updated": "2024-08-19T14:56:46.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/webml-community/smollm-webgpu"
+      }
+    },
+    {
+      "id": "florence-2-vision",
+      "name": "Florence-2",
+      "task": "Vision",
+      "tagline": "Caption a photo, read the text in it, find what is in it. Florence-2, on your GPU.",
+      "root": "sha256:803ff0bcad4bf3d2c14480a1d0ed6ae760824e5a5e7d515a852fb37249c6ff6f",
+      "ipfs": "bafybeigbh6i46jsog5mmqz6wo7g5tz4okmgwsh6mxcple3a77kowtsgnby",
+      "bytes": 23142158,
+      "files": 11,
+      "models": [
+        "onnx-community/Florence-2-base-ft"
+      ],
+      "modelHosts": {
+        "onnx-community/Florence-2-base-ft": "https://huggingface.co"
+      },
+      "modelBytes": 359836131,
+      "ort": "transformers-3.2.1",
+      "source": "https://huggingface.co/spaces/Xenova/florence2-webgpu",
+      "requires": [
+        "webgpu",
+        "opfs"
+      ],
+      "entry": "florence-2-vision/index.html",
+      "sourceMeta": {
+        "likes": 95,
+        "author": "Xenova",
+        "updated": "2024-12-22T21:20:53.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/florence2-webgpu"
+      }
+    },
+    {
+      "id": "depth-anything",
+      "name": "Depth Anything",
+      "task": "Depth",
+      "tagline": "Turn a photo into depth, then tilt it in 3D. A 27 MB model on your CPU.",
+      "root": "sha256:025aec216e3fff6f263772b85428b16c666112dc1b9f16c9be1cc8c358b44aa7",
+      "ipfs": "bafybeib6ibkwjv3vt5qyajkdmzvsb4zonhxn4nboq7un5ak77cr7stfavu",
+      "bytes": 39742780,
+      "files": 13,
+      "models": [
+        "Xenova/depth-anything-small-hf"
+      ],
+      "modelHosts": {
+        "Xenova/depth-anything-small-hf": "https://huggingface.co"
+      },
+      "modelBytes": 27526228,
+      "ort": "transformers-2.14.1",
+      "source": "https://huggingface.co/spaces/Xenova/depth-anything-web",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "depth-anything/index.html",
+      "sourceMeta": {
+        "likes": 277,
+        "author": "Xenova",
+        "updated": "2024-01-29T09:36:57.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/depth-anything-web"
+      }
+    },
+    {
+      "id": "musicgen",
+      "name": "MusicGen",
+      "task": "Music",
+      "tagline": "Describe a sound and hear it composed. MusicGen small, on your CPU.",
+      "root": "sha256:84f2f0d27bae79f6e5eb3ad446d799edf495054f2dc6ca444fa80e0d67d4a686",
+      "ipfs": "bafybeidfzlflzxpl3eenamy3dvbu42v6fjhnbbhsysbnsw4iuxaimh3cui",
+      "bytes": 37915334,
+      "files": 10,
+      "models": [
+        "Xenova/musicgen-small"
+      ],
+      "modelHosts": {
+        "Xenova/musicgen-small": "https://huggingface.co"
+      },
+      "modelBytes": 659375436,
+      "ort": "onnxruntime-web-1.17.1",
+      "source": "https://huggingface.co/spaces/Xenova/musicgen-web",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "musicgen/index.html",
+      "sourceMeta": {
+        "likes": 258,
+        "author": "Xenova",
+        "updated": "2024-04-12T16:21:39.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/musicgen-web"
+      }
+    },
+    {
+      "id": "translator",
+      "name": "Translator",
+      "task": "Translate",
+      "tagline": "Translate between 200 languages. NLLB-200, on your CPU.",
+      "root": "sha256:e159111c2d8a48b783a5488f4243650f320836419f03a93c96d8030d56384fcd",
+      "ipfs": "bafybeib27jil7kvqpa7out64c2tu674cjbb5wep7xmpv6w5mmhbmit2qge",
+      "bytes": 23846630,
+      "files": 11,
+      "models": [
+        "Xenova/nllb-200-distilled-600M"
+      ],
+      "modelHosts": {
+        "Xenova/nllb-200-distilled-600M": "https://huggingface.co"
+      },
+      "modelBytes": 916814686,
+      "ort": "transformers-3.3.1",
+      "source": "https://huggingface.co/spaces/Xenova/react-translator",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "translator/index.html",
+      "sourceMeta": {
+        "likes": 94,
+        "author": "Xenova",
+        "updated": "2025-01-17T00:23:33.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/react-translator"
+      }
+    },
+    {
+      "id": "qwen3-reasoning",
+      "name": "Qwen3 Reasoning",
+      "task": "Reasoning",
+      "tagline": "A 0.6B model that thinks before it answers. Reasoning on or off, all on your device.",
+      "root": "sha256:6806da8ab8d23c00225d76fbe7c8099f3b5fae7310080af46f913c53079b9bd6",
+      "ipfs": "bafybeicvzce5tm33ghwgztyhstvcjfin3esre3aaaxamswswbz4mblyggi",
+      "bytes": 22754485,
+      "files": 11,
+      "models": [
+        "onnx-community/Qwen3-0.6B-ONNX"
+      ],
+      "modelHosts": {
+        "onnx-community/Qwen3-0.6B-ONNX": "https://huggingface.co"
+      },
+      "modelBytes": 583367632,
+      "ort": "transformers-3.5.0",
+      "source": "https://huggingface.co/spaces/webml-community/qwen3-webgpu",
+      "requires": [
+        "webgpu",
+        "opfs"
+      ],
+      "entry": "qwen3-reasoning/index.html",
+      "sourceMeta": {
+        "likes": 109,
+        "author": "webml-community",
+        "updated": "2025-04-29T02:03:46.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/webml-community/qwen3-webgpu"
+      }
+    },
+    {
+      "id": "tokenizer-playground",
+      "name": "Tokenizer Playground",
+      "task": "Tokenize",
+      "tagline": "See how GPT-4, Llama, Gemma, Mistral and Claude split the same text into tokens.",
+      "root": "sha256:09b8bcaa052e769c5599a27818069f8869d30d346084b34fdeab382c0af89621",
+      "ipfs": "bafybeia4vun6f2v6afoqdmq2ar32d4hc3cat2i4254tvrlkyo45ijhc774",
+      "bytes": 945573,
+      "files": 9,
+      "models": [
+        "Xenova/gpt-4",
+        "Xenova/text-davinci-003",
+        "Xenova/gpt-3",
+        "Xenova/grok-1-tokenizer",
+        "Xenova/claude-tokenizer",
+        "Xenova/mistral-tokenizer-v3",
+        "Xenova/mistral-tokenizer-v1",
+        "Xenova/gemma-tokenizer",
+        "Xenova/llama-3-tokenizer",
+        "Xenova/llama-tokenizer",
+        "Xenova/c4ai-command-r-v01-tokenizer",
+        "Xenova/t5-small",
+        "Xenova/bert-base-cased"
+      ],
+      "modelHosts": {
+        "Xenova/gpt-4": "https://huggingface.co",
+        "Xenova/text-davinci-003": "https://huggingface.co",
+        "Xenova/gpt-3": "https://huggingface.co",
+        "Xenova/grok-1-tokenizer": "https://huggingface.co",
+        "Xenova/claude-tokenizer": "https://huggingface.co",
+        "Xenova/mistral-tokenizer-v3": "https://huggingface.co",
+        "Xenova/mistral-tokenizer-v1": "https://huggingface.co",
+        "Xenova/gemma-tokenizer": "https://huggingface.co",
+        "Xenova/llama-3-tokenizer": "https://huggingface.co",
+        "Xenova/llama-tokenizer": "https://huggingface.co",
+        "Xenova/c4ai-command-r-v01-tokenizer": "https://huggingface.co",
+        "Xenova/t5-small": "https://huggingface.co",
+        "Xenova/bert-base-cased": "https://huggingface.co"
+      },
+      "modelBytes": 66937521,
+      "ort": null,
+      "source": "https://huggingface.co/spaces/Xenova/the-tokenizer-playground",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "tokenizer-playground/index.html",
+      "sourceMeta": {
+        "likes": 707,
+        "author": "Xenova",
+        "updated": "2024-10-31T20:47:29.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/the-tokenizer-playground"
+      }
+    },
+    {
+      "id": "doodle-dash",
+      "name": "Doodle Dash",
+      "task": "Game",
+      "tagline": "Draw the word before the clock runs out while a model guesses what you are sketching.",
+      "root": "sha256:18e45067d6350f64fb0d114830f8f29d85f3a454a815e8cf839d0d981a3f490b",
+      "ipfs": "bafybeiajgry7msykkalj33u3nh4qfkqutt2gn3zr2mecq4w7ar7jkpls4m",
+      "bytes": 39335185,
+      "files": 13,
+      "models": [
+        "Xenova/quickdraw-mobilevit-small"
+      ],
+      "modelHosts": {
+        "Xenova/quickdraw-mobilevit-small": "https://huggingface.co"
+      },
+      "modelBytes": 20944897,
+      "ort": "transformers-2.14.1",
+      "source": "https://huggingface.co/spaces/Xenova/doodle-dash",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "doodle-dash/index.html",
+      "sourceMeta": {
+        "likes": 90,
+        "author": "Xenova",
+        "updated": "2024-04-06T22:27:27.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/doodle-dash"
+      }
+    },
+    {
+      "id": "whisper",
+      "name": "Whisper",
+      "task": "Transcribe",
+      "tagline": "Drop in an audio file and read it back. Whisper tiny to medium, on your CPU.",
+      "root": "sha256:f31a1b781e267f8a4c051c890966b2b16e18d4e686e9c78efbea5ac8ea304c6d",
+      "ipfs": "bafybeibbx4o6km3t7ayq6r7euu4js2dekzej7hpgbw5i5mbxs3fdnynvbu",
+      "bytes": 39474294,
+      "files": 13,
+      "models": [
+        "Xenova/whisper-tiny",
+        "Xenova/whisper-tiny.en",
+        "Xenova/whisper-base",
+        "Xenova/whisper-base.en",
+        "Xenova/whisper-small",
+        "Xenova/whisper-small.en",
+        "Xenova/whisper-medium",
+        "Xenova/whisper-medium.en",
+        "distil-whisper/distil-medium.en",
+        "distil-whisper/distil-large-v2"
+      ],
+      "modelHosts": {
+        "Xenova/whisper-tiny": "https://gethologram.ai",
+        "Xenova/whisper-tiny.en": "https://gethologram.ai",
+        "Xenova/whisper-base": "https://huggingface.co",
+        "Xenova/whisper-base.en": "https://huggingface.co",
+        "Xenova/whisper-small": "https://huggingface.co",
+        "Xenova/whisper-small.en": "https://huggingface.co",
+        "Xenova/whisper-medium": "https://huggingface.co",
+        "Xenova/whisper-medium.en": "https://huggingface.co",
+        "distil-whisper/distil-medium.en": "https://huggingface.co",
+        "distil-whisper/distil-large-v2": "https://huggingface.co"
+      },
+      "modelBytes": 155845985,
+      "ort": "transformers-2.14.1",
+      "source": "https://huggingface.co/spaces/Xenova/whisper-web",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "whisper/index.html",
+      "sourceMeta": {
+        "likes": 1298,
+        "author": "Xenova",
+        "updated": "2024-01-29T09:58:48.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/Xenova/whisper-web"
+      }
+    },
+    {
+      "id": "attention-map",
+      "name": "Attention Map",
+      "task": "Explain",
+      "tagline": "See where a vision model looks. DINOv2 attention heads drawn over your photo.",
+      "root": "sha256:a41381a8a6e2dd444bd640e15e63bb5c197a67b26ab7aafc928c10556c61778f",
+      "ipfs": "bafybeiaxyj3d42jddeaflmlksymi45jijvfu2h3l7dvfrgntrw4uywuyqm",
+      "bytes": 24178416,
+      "files": 11,
+      "models": [
+        "onnx-community/dinov2-with-registers-small-with-attentions"
+      ],
+      "modelHosts": {
+        "onnx-community/dinov2-with-registers-small-with-attentions": "https://huggingface.co"
+      },
+      "modelBytes": 20105741,
+      "ort": "transformers-3.2.1",
+      "source": "https://huggingface.co/spaces/webml-community/attention-visualization",
+      "requires": [
+        "opfs"
+      ],
+      "entry": "attention-map/index.html",
+      "sourceMeta": {
+        "likes": 198,
+        "author": "webml-community",
+        "updated": "2024-12-31T16:33:55.000Z",
+        "read": "2026-09-25",
+        "api": "https://huggingface.co/api/spaces/webml-community/attention-visualization"
+      }
     }
   ]
 }

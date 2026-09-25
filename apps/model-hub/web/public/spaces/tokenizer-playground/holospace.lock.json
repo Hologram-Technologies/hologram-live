@@ -1,0 +1,66 @@
+{
+  "format": "hologram.space.lock/v1",
+  "id": "tokenizer-playground",
+  "root": "sha256:09b8bcaa052e769c5599a27818069f8869d30d346084b34fdeab382c0af89621",
+  "manifest": "manifest.json",
+  "ipfs": {
+    "recipe": "unixfs-v1-2025",
+    "root": "bafybeia4vun6f2v6afoqdmq2ar32d4hc3cat2i4254tvrlkyo45ijhc774"
+  },
+  "files": {
+    "assets/index-DEbmRw68.js": {
+      "sha256": "629d9419de13c466fceff332b1006bd0e1bea3ed8f103f7483ac10af11275710",
+      "bytes": 148034,
+      "cid": "bafkreidctwkbtxqtyrtpz37tgkyqa26q4g7kh3mpca7xja5mccxrcj2xca",
+      "mediaType": "text/javascript"
+    },
+    "assets/index-Dhl4q2CV.css": {
+      "sha256": "52aa162d2619c255d9a020d7b39f5deb025bae92fbe42cdb776b4e1e247c08f9",
+      "bytes": 8136,
+      "cid": "bafkreicsvilc2jqzyjk5tiba26zz6xplajn25ex34qwnw53ljypci7ai7e",
+      "mediaType": "text/css"
+    },
+    "assets/worker-BY3sBfmC.js": {
+      "sha256": "05a14776222deb6fc2431217e03c95ea8c271f4f9526fd9664f0a86e4b9ecb5c",
+      "bytes": 752017,
+      "cid": "bafkreiafufdxmirn5nx4eqysc7qdzfpkrqtr6t4ve36zmzhqvbxexhwllq",
+      "mediaType": "text/javascript"
+    },
+    "holospace.json": {
+      "sha256": "106f73cbe7236690c5f823379b98099de1d1a8e91510c27ae335a654e3e88dc6",
+      "bytes": 15390,
+      "cid": "bafkreiaqn5z4xzzdm2iml6bdg6nzqcm54hi2r2ivcdbhvyzvuzkoh2enyy",
+      "mediaType": "application/json"
+    },
+    "icon.svg": {
+      "sha256": "e1573e30ba1c56bf26c8197d262a6015319b33acaceffae38d3d6182253bdb55",
+      "bytes": 318,
+      "cid": "bafkreihbk47dboq4k27snsazputcuyavggnthlfm575ohdj5mgbcko63ku",
+      "mediaType": "image/svg+xml"
+    },
+    "index.html": {
+      "sha256": "e7205e8a511345bcdfe977e21cab0a190d35c29302fe9476a4d1393bf4b2a20c",
+      "bytes": 1220,
+      "cid": "bafkreihhebpiuuitiw6n72lx4iokwcqzbu24feyc72khnjgrhe57jmvcbq",
+      "mediaType": "text/html"
+    },
+    "runtime/holo-opfs-kappastore.mjs": {
+      "sha256": "438e2528a6f04dad1cbc9f1d09828a33aafcf25e95e6b8d16d4c553c42d8ce98",
+      "bytes": 5448,
+      "cid": "bafkreicdryssrjxqjwwrzpe7dueyfcrtvl6pexuv424nc3kmku6efwgota",
+      "mediaType": "text/javascript"
+    },
+    "runtime/holo-spaces-hf-fetch.mjs": {
+      "sha256": "41c210d503c17357559a3885488a7d36d6be5db40582b26fd2e7f218f06bd9a3",
+      "bytes": 12888,
+      "cid": "bafkreicbyiinka6bonlvlgryqveiu7jw227f3nafqkzg7uxh6impa26zum",
+      "mediaType": "text/javascript"
+    },
+    "runtime/space.css": {
+      "sha256": "9c5d3eb99921178b624089bd9a430063e9f4d608323e9b5832a66adf13c02803",
+      "bytes": 2122,
+      "cid": "bafkreie4lu7ltgjbc6fweqejxwnegadd5h2nmcbsh2nvqmvgnlprhqbiam",
+      "mediaType": "text/css"
+    }
+  }
+}

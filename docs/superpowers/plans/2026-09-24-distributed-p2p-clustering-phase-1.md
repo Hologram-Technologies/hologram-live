@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn a_malformed_node_id_is_rejected() {
         assert!(parse_node_id("ed25519:zz").is_err());
-        assert!(parse_node_id(&format!("ed25519:{}", "a".repeat(64))).is_err());
+        assert!(parse_node_id(&format!("ed25519:{}", "4".repeat(64))).is_err());
         assert!(parse_node_id("blake3:0123").is_err());
     }
 }
@@ -383,7 +383,7 @@ pub fn unhex(text: &str) -> Option<Vec<u8>> {
 
 Add `pub(crate) mod identity;` to `src/cluster/mod.rs`. It must be `pub(crate)`, not private: Task 4 calls `parse_node_id` from `src/config.rs` and Task 5 calls `NodeIdentity` from `src/app.rs`.
 
-Note on the `a_malformed_node_id_is_rejected` test: `"a".repeat(64)` decodes to 32 bytes of `0xaa`, which is not a valid compressed Edwards point, so `VerifyingKey::from_bytes` rejects it. That is the case the test pins.
+Note on the `a_malformed_node_id_is_rejected` test: it pins a byte string that decodes to 32 bytes which are NOT a valid compressed Edwards point. Verified against `ed25519-dalek 3.0.0`: `0x44`x32 (`"4".repeat(64)`) is rejected, while `0xaa`x32 (`"a".repeat(64)`) is a **valid, non-weak** key — an earlier draft of this plan had that backwards, so do not "simplify" the literal back to `a`.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 

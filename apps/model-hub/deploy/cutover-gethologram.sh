@@ -7,7 +7,10 @@
 #   1. the front door answers the new name too: the site label `hub.uor.foundation {` becomes
 #      `gethologram.ai, hub.uor.foundation {`, and a `www.gethologram.ai` block redirects to the apex;
 #   2. /benches/* is served: the benchmark JSON that Hologram-Technologies/hologram pushes into the hologram-website
-#      repository every run, refreshed by a 10-minute `git pull` instead of the daily site build;
+#      repository every run. A sparse checkout on the host is pulled every 10 minutes and COPIED into the site
+#      directory (never mounted into it: the daily build swaps that directory whole, and a bind mount whose mount
+#      point vanished stops the site container from starting, which is what took the site down on 2026-09-25);
+#      the host's build-site.sh is taught to copy it again after every swap;
 #   3. the manifest for the MCP registry names the new domain (the listing itself is `listing`, after DNS);
 #   4. everything is verified from outside, on both names, and rolled back if it does not verify.
 #
@@ -32,7 +35,7 @@ BENCHES=${BENCHES:-$HUB/benches}
 STAMP=$(date -u +%Y-%m-%d)
 BACKUP="$CADDYFILE.bak-$STAMP-gethologram"
 COMPOSE_BACKUP="$COMPOSE.bak-$STAMP-gethologram"
-CRON_LINE="*/10 * * * * git -C $BENCHES pull -q --ff-only >/dev/null 2>&1"
+CRON_LINE="*/10 * * * * git -C $BENCHES pull -q --ff-only >/dev/null 2>&1; mkdir -p $SITE/benches && cp -a $BENCHES/public/benches/. $SITE/benches/"
 
 die() { echo "FAIL $*" >&2; exit 1; }
 say() { echo "  $*"; }
@@ -50,7 +53,8 @@ preconditions() {
 	[ -f "$CADDYFILE" ] || die "no Caddyfile at $CADDYFILE"
 	grep -qE "^([^{]*, )?$OLD(, [^{]*)? \{" "$CADDYFILE" || die "$CADDYFILE has no site block naming $OLD: this script only edits that block"
 	[ -f "$COMPOSE" ] || die "no compose file at $COMPOSE"
-	grep -q './archive:/srv/archive:ro' "$COMPOSE" || die "$COMPOSE has no archive mount on the site service; refusing to guess where the benches mount goes"
+	[ -f "$HUB/build-site.sh" ] || die "no $HUB/build-site.sh on the host"
+	grep -q 'mkdir -p "$HUB/site/archive"' "$HUB/build-site.sh" || die "$HUB/build-site.sh has no archive mount-point line; refusing to guess where the benches copy goes"
 	[ -f "$SITE/agent.md" ] || die "$SITE/agent.md is missing: build the site first (build-site.sh)"
 	head -1 "$SITE/agent.md" | grep -q "^# $NEW\$" || die "$SITE/agent.md still opens with the old name: build the site from a revision that carries the rename (apps/model-hub/web/src/origin.mjs) before the front door learns the new name, or the hero would advertise a lie"
 	command -v git >/dev/null || die "git is needed for the benches checkout"
@@ -59,7 +63,7 @@ preconditions() {
 
 label_applied()   { grep -qE "^$NEW, $OLD \{" "$CADDYFILE"; }
 www_applied()     { grep -qE "^www\.$NEW \{" "$CADDYFILE"; }
-benches_applied() { grep -q 'header /benches/\* Access-Control-Allow-Origin' "$CADDYFILE" && grep -q './benches/public/benches:/srv/benches:ro' "$COMPOSE" && [ -d "$BENCHES/.git" ] && crontab -l 2>/dev/null | grep -qF "$BENCHES pull"; }
+benches_applied() { grep -q 'header /benches/\* Access-Control-Allow-Origin' "$CADDYFILE" && ! grep -q '/srv/benches' "$COMPOSE" && grep -qF 'benches/public/benches/.' "$HUB/build-site.sh" && [ -d "$BENCHES/.git" ] && [ -f "$SITE/benches/current.json" ] && crontab -l 2>/dev/null | grep -qF "cp -a $BENCHES/public/benches/."; }
 applied() { label_applied && www_applied && benches_applied; }
 
 apply_edits() {
@@ -100,17 +104,40 @@ PY
 }
 
 apply_compose() {
-	if grep -q './benches/public/benches:/srv/benches:ro' "$COMPOSE"; then say "compose already mounts the benches"; return; fi
+	# An earlier version of this script mounted ./benches/public/benches on /srv/benches inside the site bind. That
+	# mount needs a mount point inside ./site, and the daily build replaces ./site whole, so the next restart of the
+	# site container failed with "cannot create mount point" and the site answered 502. The mount is removed; the
+	# files are copied into ./site instead (apply_benches), and build-site.sh copies them again after every swap.
+	if ! grep -q '/srv/benches' "$COMPOSE"; then say "compose has no benches mount (correct)"; return; fi
 	python3 - "$COMPOSE" <<'PY'
+import io, re, sys
+path = sys.argv[1]
+text = io.open(path, encoding="utf-8").read()
+text = re.sub(r"      # /benches/\*: benchmark JSON[^\n]*\n", "", text)
+text, n = re.subn(r"      - \./benches/public/benches:/srv/benches:ro\n", "", text)
+if not n:
+    raise SystemExit("the benches mount line has a shape this script does not know")
+io.open(path, "w", encoding="utf-8", newline="\n").write(text)
+print("  compose: removed the benches mount from the site service")
+PY
+}
+
+apply_buildsite() {
+	# After every swap the site directory is new; the benches copy has to be made again, or /benches/* is 404 until
+	# the 10-minute cron runs. The line is inserted after the archive mount-point line, once.
+	local bs="$HUB/build-site.sh"
+	if grep -qF 'benches/public/benches/.' "$bs"; then say "build-site.sh already copies the benches after the swap"; return; fi
+	cp -a "$bs" "$bs.bak-$STAMP-gethologram"
+	python3 - "$bs" <<'PY'
 import io, sys
 path = sys.argv[1]
 text = io.open(path, encoding="utf-8").read()
-anchor = "      - ./archive:/srv/archive:ro\n"
+anchor = 'mkdir -p "$HUB/site/archive"\n'
 if anchor not in text:
-    raise SystemExit("the site service's archive mount line has a shape this script does not know")
-text = text.replace(anchor, anchor + "      # /benches/*: benchmark JSON from the hologram-website repository, pulled every 10 minutes (cutover-gethologram.sh).\n      - ./benches/public/benches:/srv/benches:ro\n", 1)
+    raise SystemExit("build-site.sh has no archive mount-point line")
+text = text.replace(anchor, anchor + '# /benches/*: the benchmark JSON pulled from hologram-website into ./benches (cutover-gethologram.sh); copied, not mounted.\n[ -d "$HUB/benches/public/benches" ] && { mkdir -p "$HUB/site/benches"; cp -a "$HUB/benches/public/benches/." "$HUB/site/benches/"; }\n', 1)
 io.open(path, "w", encoding="utf-8", newline="\n").write(text)
-print("  compose: the site service mounts ./benches/public/benches on /srv/benches")
+print("  build-site.sh: copies the benches into the site after every swap")
 PY
 }
 
@@ -124,11 +151,11 @@ apply_benches() {
 		say "benches checkout is current"
 	fi
 	[ -f "$BENCHES/public/benches/current.json" ] || die "$BENCHES/public/benches/current.json is missing after the checkout"
-	# The site container mounts /srv/benches inside the read-only site; the mount point must exist (same trap as archive).
-	mkdir -p "$SITE/benches"
-	if ! crontab -l 2>/dev/null | grep -qF "$BENCHES pull"; then
-		( crontab -l 2>/dev/null; echo "$CRON_LINE" ) | crontab -
-		say "cron: benches pull every 10 minutes"
+	mkdir -p "$SITE/benches" && cp -a "$BENCHES/public/benches/." "$SITE/benches/"
+	say "benches copied into the site"
+	if ! crontab -l 2>/dev/null | grep -qF "cp -a $BENCHES/public/benches/."; then
+		( crontab -l 2>/dev/null | grep -vF "$BENCHES pull"; echo "$CRON_LINE" ) | crontab -
+		say "cron: benches pull + copy every 10 minutes"
 	fi
 }
 
@@ -218,18 +245,23 @@ check)
 	say "site brief:      $(head -1 "$SITE/agent.md")"
 	label_applied   && say "label:   done" || say "label:   would add $NEW to the $OLD site block"
 	www_applied     && say "www:     done" || say "www:     would add the www.$NEW redirect block"
-	benches_applied && say "benches: done" || say "benches: would clone public/benches, mount it, add the header and the 10-minute pull"
+	benches_applied && say "benches: done" || say "benches: would clone public/benches, copy it into the site, teach build-site.sh, add the header and the 10-minute pull+copy"
+	docker exec "$CADDY" wget -q -T 5 -O /dev/null http://hub-site:8080/index.html 2>/dev/null && say "site:    hub-site answers" || say "site:    hub-site does NOT answer (install repairs it)"
 	resolves_here "$NEW" && say "dns:     $NEW resolves to this host" || say "dns:     $NEW does not resolve here yet ($(getent ahostsv4 "$NEW" | awk 'NR==1{print $1}' || echo unresolved))"
 	;;
 install)
 	preconditions
-	if applied; then say "already applied"; verify || die "the hub does not verify even though every edit is in place"; exit 0; fi
+	# Every applier is idempotent and says so when there is nothing to do, so a re-run is a repair, never a refusal.
+	applied && say "every edit is already in place; re-applying is a no-op and the site container is checked"
 	cp -a "$CADDYFILE" "$BACKUP"; say "backed up $CADDYFILE to $BACKUP"
 	cp -a "$COMPOSE" "$COMPOSE_BACKUP"; say "backed up $COMPOSE to $COMPOSE_BACKUP"
 	apply_benches
+	apply_buildsite
 	apply_compose
-	docker compose -f "$COMPOSE" up -d site >/dev/null || { restore; die "the site container did not come up with the benches mount"; }
-	say "site container recreated with the benches mount"
+	docker compose -f "$COMPOSE" up -d site >/dev/null || { restore; die "the site container did not come up"; }
+	for i in 1 2 3 4 5; do docker exec "$CADDY" wget -q -T 5 -O /dev/null http://hub-site:8080/index.html && break; sleep 2; done
+	docker exec "$CADDY" wget -q -T 5 -O /dev/null http://hub-site:8080/index.html || { restore; die "hub-site does not answer from the front door after the recreate"; }
+	say "site container up and answering"
 	apply_edits
 	if ! docker exec "$CADDY" caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
 		echo "FAIL the edited Caddyfile does not validate" >&2; restore; exit 1

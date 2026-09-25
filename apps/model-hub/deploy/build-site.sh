@@ -58,8 +58,9 @@ mkdir -p "$HUB/site/.well-known"
 # still exists from before 2026-09-23, delete it; it is not read.
 # The site container mounts ./archive on /srv/archive; the mount point must exist inside the read-only site.
 mkdir -p "$HUB/site/archive"
-# Same for ./benches (the benchmark JSON, see cutover-gethologram.sh): the site container mounts it on /srv/benches.
-mkdir -p "$HUB/site/benches"
+# /benches/*: the benchmark JSON pulled from hologram-website into ./benches (cutover-gethologram.sh); copied, not mounted,
+# because a mount point inside this directory would vanish at the next swap and stop the site container.
+[ -d "$HUB/benches/public/benches" ] && { mkdir -p "$HUB/site/benches"; cp -a "$HUB/benches/public/benches/." "$HUB/site/benches/"; }
 # site and resolve mount directories inside ./site; after the swap they must look again.
 docker compose -f "$HUB/docker-compose.yml" restart site resolve >/dev/null
 rm -rf "$HUB/site.prev"

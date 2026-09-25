@@ -262,7 +262,11 @@ impl AppState {
             nodes.retain(|node| node.node_id != local.node_id);
             nodes.push(local);
         }
-        Ok(crate::ownership::owner_for_operation(resource, &nodes, required_operation).cloned())
+        let admitted = self.admission().admitted();
+        Ok(
+            crate::ownership::owner_for_operation(resource, &nodes, required_operation, &admitted)
+                .cloned(),
+        )
     }
 
     pub(crate) fn cluster_token(&self) -> Option<&str> {

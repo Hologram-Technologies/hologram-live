@@ -248,7 +248,15 @@ async fn contact_peer(
         url.query(),
         &body,
     );
+    // Reports this node's membership epoch on the wire (see
+    // `proof::EPOCH_HEADER`). The receiver does not currently refuse on a
+    // mismatch: under this phase's one-directional token admission, a seed
+    // that is never dialed back never comes to admit the peers it has itself
+    // admitted, so the two sides' full admitted sets never converge to equal
+    // digests and a hard equality check would 409 every join after the first.
+    let epoch = crate::ownership::epoch(&state.admission().admitted());
     let response = sign_headers(client.post(url), &recipient, &request_proof, token)
+        .header(proof::EPOCH_HEADER, epoch)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(body)
         .send()

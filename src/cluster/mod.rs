@@ -5,6 +5,7 @@
 //! against another authority.
 
 pub(crate) mod identity;
+pub(crate) mod proof;
 mod replication;
 
 use crate::app::AppState;

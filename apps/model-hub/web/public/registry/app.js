@@ -183,8 +183,14 @@ async function probe(sample) {
 // An empty repository is still a repository, so it appears with an honest count.
 async function liveRows() {
   const repos = await reg.catalogue().catch(() => []);
-  const rows = await Promise.all(repos.map(async (repo) => {
+  const rows = (await Promise.all(repos.map(async (repo) => {
     const tags = await reg.tags(repo).catch(() => []);
+    // A repository the catalogue still lists after its last tag went holds
+    // nothing anyone can pull. The reference keeps the name until a garbage
+    // collection too, so this is not ours to fix in the registry; but a row
+    // reading "No tags yet." with a pull command that cannot work is worse
+    // than no row, so the browse page does not show one.
+    if (!tags.length) return null;
     return {
       id: `${location.host}/${repo}`,
       repo,
@@ -193,7 +199,7 @@ async function liveRows() {
       name: repo.split("/").slice(1).join("/") || repo,
       publisher: repo.split("/")[0],
       kind: "Artifact",
-      description: tags.length ? `${tags.length} tag${tags.length > 1 ? "s" : ""} in this registry.` : "No tags yet.",
+      description: `${tags.length} tag${tags.length > 1 ? "s" : ""} in this registry.`,
       pulls: null, stars: null, license: null, category: null,
       updated: null, updatedBucket: null, repoBucket: null, sizeBucket: null,
       official: false, verified: false, signed: false,
@@ -206,7 +212,7 @@ async function liveRows() {
       home: null,
       provenance: "read live from this registry",
     };
-  }));
+  }))).filter(Boolean);
   return rows;
 }
 

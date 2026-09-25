@@ -98,9 +98,10 @@ answer. Run `build-site.sh && publish.sh` first, never `build-site.sh` alone. Th
 
 `/benches/*` is the benchmark JSON that `Hologram-Technologies/hologram`'s benchmarks workflow pushes into the
 `hologram-website` repository; it used to be served by Pages. Now `/root/hub/benches` is a sparse clone of that
-repository refreshed by cron every 10 minutes and mounted on the site container at `/srv/benches`, so a push is live
-within 10 minutes instead of at the next daily build. The mount point `site/benches` must exist inside the read-only
-site (build-site.sh creates it), the same trap as `site/archive`.
+repository refreshed by cron every 10 minutes and **copied** into `site/benches`, so a push is live within 10 minutes
+instead of at the next daily build. It is copied, never mounted: the daily build swaps `site/` whole, and a bind mount
+whose mount point vanished stops the site container (that took the site down for a while on 2026-09-25). build-site.sh
+copies it again after every swap; the cutover script teaches the host's copy of build-site.sh to do so.
 
 Outside this host, the rename touches: the Privy app (redirect `https://gethologram.ai/auth/`), the MCP registry (a
 new listing, the old one left to expire), the uptime workflow (`HUB` at the top of `model-hub-uptime.yml`), and every

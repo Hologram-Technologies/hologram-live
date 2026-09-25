@@ -452,6 +452,7 @@ function modelPage(m, files, ov, readme) {
   <p class="frame-rel" id="same-row" hidden><span id="same"></span></p><script type="application/json" id="sources">${JSON.stringify(holders(files).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>`
     : `<p class="verdict" id="verdict" role="status" hidden></p><p class="verdict" id="dl-status" role="status" hidden></p>`}
 </section>
+${files ? `<section class="panel oci" id="oci" data-repo="${R.esc(m.id)}" aria-labelledby="oci-title" hidden></section>` : ""}
 <main class="detail">
   <section class="panel"><dl class="facts" id="facts">${facts}</dl></section>
   <section class="panel">

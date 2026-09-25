@@ -72,20 +72,28 @@ impl Admission for AllowlistAdmission {
 pub struct TokenAdmission {
     token: String,
     path: PathBuf,
+    /// From `cluster.trusted_keys`. Never persisted: rebuilt from config on
+    /// every start, so removing a key here and restarting actually revokes
+    /// it. Kept separate from `pinned` for exactly that reason — merging the
+    /// two would bake a since-removed configured key into the pin file the
+    /// first time any other node was admitted by ticket.
+    configured: BTreeSet<String>,
+    /// Identities admitted by ticket. Persisted, because these have no
+    /// standing configuration entry to rebuild from.
     pinned: Mutex<BTreeSet<String>>,
 }
 
 impl TokenAdmission {
     pub fn new(token: String, path: PathBuf, trusted: Vec<String>) -> Result<Self> {
-        let mut pinned: BTreeSet<String> = match std::fs::read(&path) {
+        let pinned: BTreeSet<String> = match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
             Err(error) => return Err(LiveError::io(&path, error)),
         };
-        pinned.extend(trusted);
         Ok(Self {
             token,
             path,
+            configured: trusted.into_iter().collect(),
             pinned: Mutex::new(pinned),
         })
     }
@@ -93,6 +101,9 @@ impl TokenAdmission {
 
 impl Admission for TokenAdmission {
     fn authorize(&self, node_id: &str, presented: Option<&str>) -> Decision {
+        if self.configured.contains(node_id) {
+            return Decision::Admit;
+        }
         let Ok(mut pinned) = self.pinned.lock() else {
             return Decision::Deny("admission state is poisoned".to_owned());
         };
@@ -111,7 +122,9 @@ impl Admission for TokenAdmission {
         }
         pinned.insert(node_id.to_owned());
         // A failed write must not admit silently on the next restart; log and
-        // keep the in-memory pin so this round still works.
+        // keep the in-memory pin so this round still works. Only `pinned` is
+        // ever written here — `configured` is never persisted, so a key
+        // removed from `cluster.trusted_keys` cannot survive in this file.
         match serde_json::to_vec_pretty(&*pinned)
             .map_err(LiveError::from)
             .and_then(|bytes| atomic_write(&self.path, &bytes))
@@ -123,10 +136,11 @@ impl Admission for TokenAdmission {
     }
 
     fn admitted(&self) -> BTreeSet<String> {
-        self.pinned
-            .lock()
-            .map(|pinned| pinned.clone())
-            .unwrap_or_default()
+        let mut admitted = self.configured.clone();
+        if let Ok(pinned) = self.pinned.lock() {
+            admitted.extend(pinned.iter().cloned());
+        }
+        admitted
     }
 }
 
@@ -215,5 +229,62 @@ mod tests {
             admission.authorize(ALICE, Some("not a ticket")),
             Decision::Deny(_)
         ));
+    }
+
+    // Regression for defect: `trusted_keys` must not leak into the pinned
+    // file. A configured key needs no ticket, but persisting it alongside
+    // ticket-pinned keys would bake it into the file forever, defeating
+    // revocation by editing `cluster.trusted_keys`.
+    #[test]
+    fn a_configured_key_is_not_persisted_into_the_pinned_file() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join("cluster-pinned.json");
+        let token = "a sufficiently long shared cluster admission token";
+
+        let admission =
+            TokenAdmission::new(token.to_owned(), path.clone(), vec![ALICE.to_owned()])
+                .expect("admission");
+
+        // Alice is trusted purely by configuration, no ticket needed.
+        assert!(matches!(admission.authorize(ALICE, None), Decision::Admit));
+
+        // Bob is admitted by ticket, which does get pinned to disk.
+        assert!(matches!(
+            admission.authorize(BOB, Some(&ticket(token, BOB))),
+            Decision::Admit
+        ));
+
+        let persisted = std::fs::read_to_string(&path).expect("pinned file must exist");
+        assert!(
+            !persisted.contains(ALICE),
+            "a configured key must never be written to the pinned file, got {persisted:?}"
+        );
+        assert!(
+            persisted.contains(BOB),
+            "a ticket-admitted key must be persisted, got {persisted:?}"
+        );
+    }
+
+    #[test]
+    fn removing_a_key_from_trusted_keys_revokes_it_on_restart() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join("cluster-pinned.json");
+        let token = "a sufficiently long shared cluster admission token";
+
+        let admission =
+            TokenAdmission::new(token.to_owned(), path.clone(), vec![ALICE.to_owned()])
+                .expect("admission");
+        assert!(matches!(admission.authorize(ALICE, None), Decision::Admit));
+        assert!(matches!(
+            admission.authorize(BOB, Some(&ticket(token, BOB))),
+            Decision::Admit
+        ));
+
+        // The operator removes Alice from cluster.trusted_keys and restarts.
+        let restarted =
+            TokenAdmission::new(token.to_owned(), path, Vec::new()).expect("restart");
+        assert!(matches!(restarted.authorize(ALICE, None), Decision::Deny(_)));
+        // Bob was admitted by ticket, so the pin file still carries him.
+        assert!(matches!(restarted.authorize(BOB, None), Decision::Admit));
     }
 }

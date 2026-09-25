@@ -112,7 +112,38 @@ An `iroh:` address in `seeds` while the feature is **off** must produce a clear
 configuration error. Silently ignoring it would leave a node quietly not joining
 the cluster its configuration says it should.
 
-## Discovery and relays default to off
+## Discovery and relays: the default follows the deployment mode
+
+An earlier draft of this document said simply "default to off". That was reasoned
+entirely from the operator-run cluster and is wrong for the other mode this
+product targets.
+
+For an **operator cluster**, off is right, and the reasoning below stands.
+
+For a **volunteer mesh** — nodes that come and go, such as a screensaver that
+starts a node while a machine is idle — off is actively wrong. Zero-configuration
+internet-wide reach is the whole point of that mode: an end user installing a
+screensaver cannot be asked to configure a relay endpoint, and a node whose
+address nobody can resolve cannot join a public mesh at all. Shipping off as the
+universal default would make that mode unusable out of the box, and the person it
+fails is precisely the one who will never open `live.toml`.
+
+So the default belongs to the mode, not to the transport:
+
+- operator cluster: `discovery = "none"`, `relays = []`
+- volunteer mesh: discovery and relays on, with publication documented as
+  **inherent to participating** rather than as an opt-in risk — because it is.
+  Joining a public mesh by dialling keys requires those keys to be resolvable.
+
+That is a disclosure obligation, not a default-safety one, and it should be
+stated where a participant sees it rather than buried in a config reference.
+
+The mode mechanism itself is **not designed here**: churn-tolerant membership is
+a separate epic, and this phase implements only the operator-cluster default plus
+the configuration keys a mode would set. This section exists so that the default
+is not mistaken for a decision that already covers both modes.
+
+### Why off is right for an operator cluster
 
 `discovery = "none"` with no relays. Enabling the feature never publishes
 anything; an operator opts into `mdns` for a LAN cluster, or `dns` plus relays for

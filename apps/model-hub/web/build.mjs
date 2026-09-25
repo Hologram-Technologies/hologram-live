@@ -460,7 +460,7 @@ for (const m of models) {
 // `task` (Hugging Face's pipeline tag) stays in the published catalog: the endpoint's list route filters on it.
 const slim = models.map(({ stateLabel, recency, isNew, ...m }) => m);
 await writeFile(join(DIST, "data", "models.json"), JSON.stringify({ snapshot: data.snapshot, models: slim }));
-for (const f of ["app.js", "chrome.js", "render.mjs", "card-art.mjs", "braille.mjs", "zip.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
+for (const f of ["app.js", "chrome.js", "render.mjs", "card-art.mjs", "braille.mjs", "zip.mjs", "provenance.mjs", "chrome.css", "styles.css", "tokens.css", "docs.css"]) await cp(join(SITE, "src", f), join(DIST, f));
 
 // ---- the documentation
 //

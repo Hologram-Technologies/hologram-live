@@ -782,7 +782,9 @@ async function registryArtifact() {
   const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
   const REFERRER_LABEL = {
     "application/vnd.hologram.tensors.v1": "Tensor table",
+    "application/vnd.hologram.tensors.v2": "Canonical tensor table",
     "application/vnd.hologram.provenance.v1": "Provenance",
+    "application/vnd.hologram.lineage.v1": "Lineage",
     "application/vnd.hologram.recipe.v1": "Recipe",
   };
   const section = $("#oci");
@@ -813,13 +815,13 @@ async function registryArtifact() {
 
     // The tensor table: referrer manifest, then its config blob, both checked against their digests.
     let tensors = null;
-    const t = referrers.find((r) => r.artifactType === "application/vnd.hologram.tensors.v1");
+    const t = referrers.find((r) => r.artifactType === "application/vnd.hologram.tensors.v2") || referrers.find((r) => r.artifactType === "application/vnd.hologram.tensors.v1");
     if (t) {
       const tm = await verifiedJson(`/v2/${repo}/manifests/${t.digest}`, t.digest, OCI_MANIFEST);
       const table = tm && (await verifiedJson(`/v2/${repo}/blobs/${tm.json.config.digest}`, tm.json.config.digest));
       if (table) {
-        const all = Object.values(table.json).flatMap((f) => f.tensors || []);
-        tensors = { count: all.length, distinct: new Set(all.map((x) => x.blake3)).size, files: Object.keys(table.json).length };
+        const all = Object.values(table.json.files || table.json).flatMap((f) => f.tensors || []);
+        tensors = { count: all.length, distinct: new Set(all.map((x) => x.kappa || x.blake3)).size, files: Object.keys(table.json.files || table.json).length };
       }
     }
 
@@ -854,13 +856,54 @@ async function registryArtifact() {
       <div class="oci-run">
         ${copy(`crane pull ${ref} model.tar`, "crane pull")}
         ${copy(`oras discover ${location.host}/${repo}:latest`, "oras discover")}
-      </div>`;
+      </div>
+      <div id="lineage"></div>`;
     section.hidden = false;
+    await lineage(repo, referrers, verifiedJson, OCI_MANIFEST);
   } catch (e) {
     if (e.code !== "ADDRESS_MISMATCH") return;
     section.innerHTML = `<h2 id="oci-title">Registry artifact</h2><p class="verdict bad">The registry served bytes that do not match their digest. Do not use this artifact.</p>`;
     section.hidden = false;
   }
+}
+
+// Provenance against each declared base. The registry's lineage claim names two tensor tables by digest; both are
+// fetched, checked against those digests, and scored here (provenance.mjs). The page shows its own numbers, and says
+// whether the registry's claim agrees with them.
+async function lineage(repo, referrers, verifiedJson, MANIFEST) {
+  const host = $("#lineage");
+  const claims = referrers.filter((r) => r.artifactType === "application/vnd.hologram.lineage.v1");
+  if (!claims.length) return;
+  const P = await import("./provenance.mjs");
+  const blocks = [];
+  for (const c of claims) {
+    try {
+      const m = await verifiedJson(`/v2/${repo}/manifests/${c.digest}`, c.digest, MANIFEST);
+      const claim = (await verifiedJson(`/v2/${repo}/blobs/${m.json.config.digest}`, m.json.config.digest)).json;
+      const baseRepo = claim.base.artifact.split("@")[0];
+      const [child, base] = await Promise.all([
+        verifiedJson(`/v2/${repo}/blobs/${claim.child.tensors}`, claim.child.tensors),
+        verifiedJson(`/v2/${baseRepo}/blobs/${claim.base.tensors}`, claim.base.tensors),
+      ]);
+      const s = P.score(child.json, base.json);
+      const agrees = s.bytesShared === claim.bytes_shared_pct && s.lineage === claim.lineage_pct && s.coverage === claim.coverage_pct;
+      const fact = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+      const basePage = `${base}models/${claim.base.id}/`;
+      blocks.push(`<div class="lineage">
+        <h3>Provenance: <a href="${R.esc(basePage)}">${R.esc(claim.base.id)}</a>${claim.base.declared ? ` <span class="pill">declared base</span>` : ""}</h3>
+        <dl class="facts">
+          ${fact("Verdict", `<span class="${s.lineage !== null && s.lineage <= 60 ? "dim" : "ok"}">${R.esc(P.verdict(s))}</span>`)}
+          ${fact("Bytes shared", `${s.bytesShared.toFixed(4)}%${s.wholeTensor !== s.bytesShared ? `, ${s.wholeTensor.toFixed(4)}% as whole tensors` : ""}`)}
+          ${fact("Lineage", s.lineage === null ? "no comparable tensors" : `${s.lineage.toFixed(2)}% sign agreement on ${s.coverage}% of weights`)}
+          ${fact("Independent training", `${claim.null.lineage_pct}% sign agreement`)}
+        </dl>
+        <p class="note">${agrees ? "Recomputed in your browser from both canonical tensor tables; the registry's claim agrees." : `<span class="bad">The registry claims ${claim.bytes_shared_pct}% bytes and ${claim.lineage_pct}% lineage; your browser computed the numbers above.</span>`} Bytes shared counts tensors whose canonical κ (values, shape, narrowest exact dtype) the base holds, whatever their names or files. Lineage compares sign bits at fixed positions.</p>
+      </div>`);
+    } catch (e) {
+      blocks.push(`<p class="verdict bad">A provenance record did not check out: ${R.esc(e.message)}</p>`);
+    }
+  }
+  host.innerHTML = blocks.join("");
 }
 
 function formatBytes(n) {

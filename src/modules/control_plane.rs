@@ -266,28 +266,16 @@ fn record_matches_signer(node: &crate::protocol::NodeRecord, signer: &str) -> Re
     Ok(())
 }
 
-/// The proof preimage is newline-separated, so a `\n` inside the signed path
-/// or query would let one request impersonate another field layout. Neither
-/// value can carry one — both come from the framework-parsed request target,
-/// which `http::Uri` refuses to build from a control character, and the client
-/// side gets them from a percent-encoding `Url` — but the separator's safety is
-/// load-bearing enough to assert here rather than infer from two other crates.
-fn separator_free(value: &str) -> Result<(), HttpError> {
-    if value.contains('\n') || value.contains('\r') {
-        return Err(HttpError(crate::error::LiveError::Authentication(
-            "cluster request target contains a line separator".to_owned(),
-        )));
-    }
-    Ok(())
-}
-
-/// Whether `proof` was minted for *this* node.
+/// Whether the recipient a caller signed against names *this* node.
 ///
 /// Two spellings name this node and both stay accepted. A peer that holds our
-/// key signs against our `node_id` — Phase 2's iroh addresses *are* node ids
-/// and have no origin, so that branch is load-bearing for the next phase. A
-/// peer reaching us over HTTP signs against the origin it dialled, which is
-/// the only name it can be sure of before it has learned our key.
+/// key addresses our `node_id`, compared by exact equality — Phase 2's iroh
+/// addresses *are* node ids and have no origin, so that branch is load-bearing
+/// for the next phase. A peer reaching us over HTTP addresses the origin it
+/// dialled, which is the only name it can be sure of before it has learned our
+/// key; that one is compared as a parsed origin, so a spelling difference in
+/// host case, default port, or trailing slash does not silently refuse a
+/// correctly configured peer forever.
 ///
 /// What must never be accepted is a *third* spelling, and the corresponding
 /// outbound rule is that `cluster::recipient_for` binds the origin being
@@ -295,22 +283,9 @@ fn separator_free(value: &str) -> Result<(), HttpError> {
 /// Binding such an id would let an admitted-but-rogue peer name a victim,
 /// collect the proof we mint, and replay it against the victim — which under
 /// asymmetric `cluster.trusted_keys` reaches a node that refuses the rogue.
-fn proof_names_self(
-    own_node_id: &str,
-    own_endpoint: Option<&str>,
-    proof: &crate::cluster::proof::RequestProof,
-    method: &str,
-    path: &str,
-    query: Option<&str>,
-    body: &[u8],
-) -> bool {
-    let mut recipients = vec![own_node_id.to_owned()];
-    if let Some(endpoint) = own_endpoint {
-        recipients.push(endpoint.trim_end_matches('/').to_owned());
-    }
-    recipients.iter().any(|recipient| {
-        crate::cluster::proof::verify_request(proof, recipient, method, path, query, body).is_ok()
-    })
+fn recipient_names_self(recipient: &str, own_node_id: &str, own_endpoint: Option<&str>) -> bool {
+    recipient == own_node_id
+        || own_endpoint.is_some_and(|endpoint| crate::cluster::same_origin(recipient, endpoint))
 }
 
 fn authorize_cluster_request(
@@ -321,26 +296,44 @@ fn authorize_cluster_request(
     query: Option<&str>,
     body: &[u8],
 ) -> Result<String, HttpError> {
-    separator_free(path)?;
-    if let Some(query) = query {
-        separator_free(query)?;
-    }
     let proof = crate::cluster::proof::RequestProof {
         node_id: header(headers, crate::cluster::proof::NODE_HEADER)?.to_owned(),
         timestamp: header(headers, crate::cluster::proof::TIMESTAMP_HEADER)?.to_owned(),
         signature: header(headers, crate::cluster::proof::SIGNATURE_HEADER)?.to_owned(),
     };
-    if !proof_names_self(
-        &state.identity().node_id(),
-        state.config().cluster.advertise_endpoint.as_deref(),
-        &proof,
-        method,
-        path,
-        query,
-        body,
-    ) {
+    // The recipient the caller signed against, echoed so it can be compared
+    // rather than guessed. Untrusted until the signature verifies over this
+    // exact value, which is why the check below runs in this order: an
+    // unauthenticated caller cannot reach the warning, and a caller that does
+    // reach it has proved it holds a key, so the log line means a real
+    // misconfiguration rather than noise.
+    let recipient = header(headers, crate::cluster::proof::RECIPIENT_HEADER)?.to_owned();
+    crate::cluster::proof::reject_separators(method, path, query, &recipient).map_err(HttpError)?;
+    if let Err(error) =
+        crate::cluster::proof::verify_request(&proof, &recipient, method, path, query, body)
+    {
+        tracing::debug!(%error, node = %proof.node_id, %method, %path, "cluster request proof did not verify");
         return Err(HttpError(crate::error::LiveError::Authentication(
             "invalid cluster request proof".to_owned(),
+        )));
+    }
+    let own_node_id = state.identity().node_id();
+    let own_endpoint = state.config().cluster.advertise_endpoint.as_deref();
+    if !recipient_names_self(&recipient, &own_node_id, own_endpoint) {
+        // Endpoints and node ids are not secret, and without them an operator
+        // whose seed spelling disagrees with this node's advertised endpoint
+        // has nothing to diagnose a silently unformed cluster with. The
+        // signature, the preimage, the token and the ticket are never logged.
+        tracing::warn!(
+            %recipient,
+            node = %proof.node_id,
+            accepted_node_id = %own_node_id,
+            accepted_endpoint = %own_endpoint.unwrap_or("<none advertised>"),
+            "refused a cluster request addressed to another node; check that the caller's \
+             configured seed and this node's cluster.advertise_endpoint name the same origin"
+        );
+        return Err(HttpError(crate::error::LiveError::Authentication(
+            "cluster request is addressed to another node".to_owned(),
         )));
     }
     let ticket = headers
@@ -407,10 +400,12 @@ mod tests {
     // Fix round 1: an outbound proof binds the origin it was minted for, so an
     // admitted-but-rogue peer cannot relay a proof we minted for *its* origin
     // to a node that trusts us and refuses it. The relayed proof carries the
-    // caller's real, legitimately admitted `node_id` — the node header is not
-    // what fails here, the recipient binding is.
+    // caller's real, legitimately admitted `node_id` and a signature that
+    // verifies perfectly — neither the node header nor the signature is what
+    // fails here, the recipient binding is.
     #[test]
     fn a_proof_minted_for_one_origin_is_refused_by_a_node_at_another() {
+        const ROGUE_ORIGIN: &str = "https://rogue.example:11435";
         const VICTIM_ORIGIN: &str = "https://victim.example:11435";
 
         let caller_dir = tempfile::tempdir().expect("caller state directory");
@@ -422,7 +417,7 @@ mod tests {
 
         let relayed = sign_request(
             &caller,
-            "https://rogue.example:11435",
+            ROGUE_ORIGIN,
             "GET",
             "/api/v1/cluster/objects",
             None,
@@ -433,42 +428,68 @@ mod tests {
             caller.node_id(),
             "the relayed proof must carry an identity the victim admits"
         );
+        verify_request(
+            &relayed,
+            ROGUE_ORIGIN,
+            "GET",
+            "/api/v1/cluster/objects",
+            None,
+            b"",
+        )
+        .expect("the signature itself is valid: only the recipient disqualifies it");
         assert!(
-            !super::proof_names_self(
-                &victim.node_id(),
-                Some(VICTIM_ORIGIN),
-                &relayed,
-                "GET",
-                "/api/v1/cluster/objects",
-                None,
-                b"",
-            ),
+            !super::recipient_names_self(ROGUE_ORIGIN, &victim.node_id(), Some(VICTIM_ORIGIN)),
             "a proof minted for another origin must not name this node"
         );
+    }
 
-        // Both spellings that genuinely name this node are still accepted, and
-        // a configured endpoint with a trailing slash still matches.
-        for recipient in [victim.node_id(), VICTIM_ORIGIN.to_owned()] {
-            let proof = sign_request(
-                &caller,
-                &recipient,
-                "GET",
-                "/api/v1/cluster/objects",
-                None,
-                b"",
-            );
+    // Fix round 2, finding A: origin-only binding must not turn a spelling
+    // difference into a cluster that silently never forms. Every spelling of
+    // this node's own endpoint is accepted; a different host is not.
+    #[test]
+    fn a_differently_spelled_endpoint_still_names_this_node() {
+        let dir = tempfile::tempdir().expect("state directory");
+        let node = NodeIdentity::load_or_create(&dir.path().join(KEY_FILE)).expect("identity");
+        let own_node_id = node.node_id();
+        let advertised = Some("https://node.example");
+
+        // The node id, compared by exact equality. Phase 2 signs only this form.
+        assert!(super::recipient_names_self(
+            &own_node_id,
+            &own_node_id,
+            advertised
+        ));
+        // Spellings of the advertised origin that must all be accepted.
+        for recipient in [
+            "https://node.example",
+            "https://Node.Example",
+            "https://node.example:443",
+            "https://NODE.example:443/",
+            "https://node.example/",
+        ] {
             assert!(
-                super::proof_names_self(
-                    &victim.node_id(),
-                    Some(&format!("{VICTIM_ORIGIN}/")),
-                    &proof,
-                    "GET",
-                    "/api/v1/cluster/objects",
-                    None,
-                    b"",
-                ),
-                "recipient {recipient} must name this node"
+                super::recipient_names_self(recipient, &own_node_id, advertised),
+                "recipient {recipient} names this node"
             );
         }
+        // A genuinely different origin must still be refused.
+        for recipient in [
+            "https://other.example",
+            "https://node.example:11435",
+            "http://node.example",
+            "https://node.example.evil.test",
+        ] {
+            assert!(
+                !super::recipient_names_self(recipient, &own_node_id, advertised),
+                "recipient {recipient} must not name this node"
+            );
+        }
+        // With nothing advertised, only the node id can name this node.
+        assert!(super::recipient_names_self(&own_node_id, &own_node_id, None));
+        assert!(!super::recipient_names_self(
+            "https://node.example",
+            &own_node_id,
+            None
+        ));
     }
 }

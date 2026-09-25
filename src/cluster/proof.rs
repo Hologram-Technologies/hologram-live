@@ -4,13 +4,14 @@
 //! digest, so a captured proof cannot be replayed against a different route or
 //! a different peer.
 //!
-//! The preimage is newline-separated, so every field it binds must be free of
-//! a literal newline. `path` and `query` are the only ones that are not
-//! constants: on the sending side they come from the `reqwest::Url` this crate
-//! builds, which percent-encodes control characters, and on the receiving side
-//! from `axum::extract::OriginalUri` — the framework-parsed request target,
-//! never a caller-supplied header or body field — which
-//! `src/modules/control_plane.rs` additionally screens before signing over it.
+//! The preimage is newline-separated, so every string field it binds must be
+//! free of a line separator. [`reject_separators`] enforces that for `method`,
+//! `path`, `query` and `recipient`, and **both** sides call it — the signer in
+//! `src/cluster/{mod,replication}.rs` before minting a proof, the verifier in
+//! `src/modules/control_plane.rs` before checking one. `timestamp` needs no
+//! guard: [`verify_request`] parses it as a `u64` before it reaches the
+//! preimage, so it is digits or nothing, and the body is bound only as a
+//! fixed-width blake3 digest.
 
 use crate::cluster::identity::{verify_signature, NodeIdentity};
 use crate::error::{LiveError, Result};
@@ -20,6 +21,11 @@ pub const NODE_HEADER: &str = "x-hologram-cluster-node";
 pub const TIMESTAMP_HEADER: &str = "x-hologram-cluster-timestamp";
 pub const SIGNATURE_HEADER: &str = "x-hologram-cluster-signature";
 pub const TICKET_HEADER: &str = "x-hologram-cluster-ticket";
+/// The recipient the caller signed against, echoed so the receiver can compare
+/// it rather than guess which spelling of itself was used. Untrusted on its
+/// own: the signature must verify over this exact value, and it must then be
+/// shown to name the receiving node.
+pub const RECIPIENT_HEADER: &str = "x-hologram-cluster-recipient";
 const SIGNING_CONTEXT: &str = "dev.hologram.live.cluster.v2";
 const MAX_CLOCK_SKEW_MILLIS: u64 = 30_000;
 
@@ -41,6 +47,43 @@ pub fn canonical_query(raw: Option<&str>) -> String {
     let mut segments: Vec<&str> = raw.split('&').filter(|s| !s.is_empty()).collect();
     segments.sort_unstable();
     segments.join("&")
+}
+
+/// Rejects a preimage field carrying a line separator.
+///
+/// The preimage separates its fields with `\n`, so a field containing one
+/// could in principle shift the field layout a verifier reads. No collision is
+/// reachable today — an injected separator yields eight segments where every
+/// verifier-side field is separator-free, so it cannot match the seven-segment
+/// form — but the guard runs on both the signing and the verifying side and
+/// fails closed, because a one-sided guard is exactly how a later edit
+/// introduces a real collision.
+///
+/// `recipient` is not structurally safe despite coming from a validated
+/// endpoint: `url::Url::parse` silently *strips* interior tab/CR/LF, so
+/// `validate_cluster_endpoint` accepts a configured endpoint containing one
+/// while `normalize_endpoint` passes the raw bytes straight through.
+///
+/// The offending value is never included in the error: only the field name.
+pub fn reject_separators(
+    method: &str,
+    path: &str,
+    query: Option<&str>,
+    recipient: &str,
+) -> Result<()> {
+    for (field, value) in [
+        ("method", Some(method)),
+        ("path", Some(path)),
+        ("query", query),
+        ("recipient", Some(recipient)),
+    ] {
+        if value.is_some_and(|value| value.contains('\n') || value.contains('\r')) {
+            return Err(LiveError::Authentication(format!(
+                "cluster request {field} contains a line separator"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub fn preimage(
@@ -243,6 +286,44 @@ mod tests {
             .is_err(),
             "body"
         );
+    }
+
+    // Fix round 2, finding B: the guard covers every string field the preimage
+    // binds, not just the request target, and it is the same function on both
+    // sides. `recipient` is included because a configured endpoint can carry a
+    // separator that `Url::parse` strips but `normalize_endpoint` does not.
+    #[test]
+    fn every_preimage_field_is_screened_for_a_line_separator() {
+        reject_separators("GET", "/p", Some("a=1"), "ed25519:aa").expect("clean fields");
+        reject_separators("GET", "/p", None, "https://node.example").expect("no query");
+
+        assert!(
+            reject_separators("GE\nT", "/p", None, "ed25519:aa").is_err(),
+            "method"
+        );
+        assert!(
+            reject_separators("GET", "/p\nx", None, "ed25519:aa").is_err(),
+            "path"
+        );
+        assert!(
+            reject_separators("GET", "/p", Some("a=1\nb=2"), "ed25519:aa").is_err(),
+            "query"
+        );
+        assert!(
+            reject_separators("GET", "/p", None, "https://node.example\nx").is_err(),
+            "recipient"
+        );
+        assert!(
+            reject_separators("GET", "/p\rx", None, "ed25519:aa").is_err(),
+            "carriage return"
+        );
+
+        // The message names the field and never echoes the value.
+        let error =
+            reject_separators("GET", "/secret\npath", None, "ed25519:aa").expect_err("must reject");
+        let message = error.to_string();
+        assert!(message.contains("path"), "{message}");
+        assert!(!message.contains("secret"), "{message}");
     }
 
     // Review Focus 5: the window must reject a future proof as firmly as a stale one.

@@ -224,9 +224,7 @@ async fn contact_peer(
     url.set_path(JOIN_PATH);
     let body = serde_json::to_vec(&ClusterJoinRequest { node })?;
     let recipient = recipient_for(endpoint);
-    // `url.path()` is `JOIN_PATH` and there is no query: both are values this
-    // crate owns, and `Url` percent-encodes anything that could pass for the
-    // preimage's newline separator.
+    proof::reject_separators("POST", url.path(), url.query(), &recipient)?;
     let request_proof = proof::sign_request(
         state.identity(),
         &recipient,
@@ -235,7 +233,7 @@ async fn contact_peer(
         url.query(),
         &body,
     );
-    let response = sign_headers(client.post(url), &request_proof, token)
+    let response = sign_headers(client.post(url), &recipient, &request_proof, token)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(body)
         .send()
@@ -288,15 +286,50 @@ fn recipient_for(endpoint: &str) -> String {
     normalize_endpoint(endpoint)
 }
 
+/// Whether two endpoint spellings name the same origin.
+///
+/// Origin-only binding would otherwise be brittle in a way an operator cannot
+/// diagnose: a seed configured as `https://Seed.Example:443/` names the same
+/// server as an `advertise_endpoint` of `https://seed.example`, but the raw
+/// strings differ, so every request from that peer would fail authentication
+/// forever. Comparing the *parsed* origin — scheme, lowercased host, and the
+/// port with the scheme default made explicit — reconciles host case, implicit
+/// versus explicit default port, the IPv6 bracket forms that `Url` canonicalizes
+/// on parse, and the trailing slash.
+///
+/// It stays exact on those three components. There is deliberately no substring
+/// or prefix fallback, and an IP address is *not* reconciled with a DNS name
+/// that resolves to it: that is a genuinely different origin, and failing is
+/// the correct answer.
+pub(crate) fn same_origin(left: &str, right: &str) -> bool {
+    match (origin_parts(left), origin_parts(right)) {
+        (Some(left), Some(right)) => left == right,
+        // A value with no host — a node id, or anything unparsable — has no
+        // origin to compare, so it can only match by exact equality elsewhere.
+        _ => false,
+    }
+}
+
+fn origin_parts(endpoint: &str) -> Option<(String, String, u16)> {
+    let url = reqwest::Url::parse(endpoint).ok()?;
+    Some((
+        url.scheme().to_ascii_lowercase(),
+        url.host_str()?.to_ascii_lowercase(),
+        url.port_or_known_default()?,
+    ))
+}
+
 /// Attaches the per-node proof and the admission ticket for *our* identity.
 /// The ticket is derived from the shared token and our node id, so it admits
 /// this node and no other even if it is captured in flight.
 fn sign_headers(
     request: reqwest::RequestBuilder,
+    recipient: &str,
     request_proof: &proof::RequestProof,
     token: &str,
 ) -> reqwest::RequestBuilder {
     request
+        .header(proof::RECIPIENT_HEADER, recipient)
         .header(proof::NODE_HEADER, &request_proof.node_id)
         .header(proof::TIMESTAMP_HEADER, &request_proof.timestamp)
         .header(proof::SIGNATURE_HEADER, &request_proof.signature)
@@ -383,6 +416,60 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o077, 0);
+    }
+
+    // Fix round 2, finding A: differing spellings of one origin must reconcile,
+    // so that origin-only binding does not silently refuse a correctly
+    // configured peer forever. A genuinely different host must still fail.
+    #[test]
+    fn spellings_of_one_origin_match_and_different_origins_do_not() {
+        // Host case.
+        assert!(same_origin(
+            "https://Seed.Example:11435",
+            "https://seed.example:11435"
+        ));
+        // Implicit versus explicit default port, per scheme.
+        assert!(same_origin(
+            "https://seed.example",
+            "https://seed.example:443"
+        ));
+        assert!(same_origin("http://seed.example", "http://seed.example:80"));
+        // Trailing slash, and all three together.
+        assert!(same_origin(
+            "https://SEED.example/",
+            "https://seed.example:443"
+        ));
+        // IPv6 bracket forms canonicalized by the parser.
+        assert!(same_origin(
+            "http://[0:0:0:0:0:0:0:1]:11435",
+            "http://[::1]:11435"
+        ));
+
+        // Genuinely different origins, including the cases that must not be
+        // reconciled by any fallback.
+        assert!(!same_origin(
+            "https://seed.example:11435",
+            "https://other.example:11435"
+        ));
+        assert!(!same_origin(
+            "https://127.0.0.1:11435",
+            "https://localhost:11435"
+        ));
+        assert!(!same_origin("https://seed.example", "http://seed.example"));
+        assert!(!same_origin(
+            "https://seed.example:11435",
+            "https://seed.example:11436"
+        ));
+        // A prefix is not a match.
+        assert!(!same_origin(
+            "https://seed.example.evil.test",
+            "https://seed.example"
+        ));
+        // A node id has no origin, so it never matches one.
+        assert!(!same_origin(
+            "ed25519:d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+            "https://seed.example"
+        ));
     }
 
     // Fix round 1: outbound proofs bind the origin being dialled and nothing

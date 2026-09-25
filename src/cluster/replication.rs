@@ -123,9 +123,6 @@ pub(super) fn cluster_url(endpoint: &str, path: &str) -> Result<reqwest::Url> {
     Ok(url)
 }
 
-/// `path` and `query` come from the `Url` this crate built, which
-/// percent-encodes anything that could be mistaken for a field separator in
-/// the signed preimage, so neither can carry a newline.
 pub(super) async fn signed_get(
     state: &AppState,
     client: &reqwest::Client,
@@ -133,6 +130,7 @@ pub(super) async fn signed_get(
     token: &str,
     recipient: &str,
 ) -> Result<reqwest::Response> {
+    proof::reject_separators("GET", url.path(), url.query(), recipient)?;
     let request_proof = proof::sign_request(
         state.identity(),
         recipient,
@@ -141,7 +139,7 @@ pub(super) async fn signed_get(
         url.query(),
         &[],
     );
-    sign_headers(client.get(url), &request_proof, token)
+    sign_headers(client.get(url), recipient, &request_proof, token)
         .send()
         .await
         .map_err(|error| LiveError::Transport(format!("send cluster replication request: {error}")))

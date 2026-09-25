@@ -21,6 +21,7 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+use std::time::Duration;
 
 pub const KEY_FILE: &str = "node.key";
 const NODE_ID_PREFIX: &str = "ed25519:";
@@ -37,21 +38,13 @@ impl NodeIdentity {
         match std::fs::read_to_string(path) {
             Ok(text) => {
                 secure_key_file(path)?;
-                let bytes = unhex(text.trim()).ok_or_else(|| {
-                    LiveError::Config(format!(
-                        "{} is not a valid node key; remove it to generate a new identity",
-                        path.display()
-                    ))
-                })?;
-                let bytes: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
-                    LiveError::Config(format!(
-                        "{} is not a valid node key; remove it to generate a new identity",
-                        path.display()
-                    ))
-                })?;
-                Ok(Self {
-                    signing: SigningKey::from_bytes(&bytes),
-                })
+                match decode_key_text(&text, path) {
+                    Some(result) => result,
+                    // The file exists but is empty: this is the window
+                    // between a concurrent writer's `create_new` and its
+                    // `write_all` + `sync_all`, not corruption.
+                    None => wait_for_concurrent_writer(path),
+                }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => create_key_file(path),
             Err(error) => Err(LiveError::io(path, error)),
@@ -107,6 +100,61 @@ fn create_key_file(path: &Path) -> Result<NodeIdentity> {
     }
 }
 
+/// Decodes key file text into an identity. `None` means the file is present
+/// but empty — the caller should retry rather than report corruption, since
+/// an empty file is exactly what a concurrent writer's `create_new` leaves
+/// behind before its `write_all` lands. Any other unparsable content is
+/// reported as a genuine configuration error.
+fn decode_key_text(text: &str, path: &Path) -> Option<Result<NodeIdentity>> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(
+        unhex(trimmed)
+            .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok())
+            .map(|bytes| NodeIdentity {
+                signing: SigningKey::from_bytes(&bytes),
+            })
+            .ok_or_else(|| corrupt_key_error(path)),
+    )
+}
+
+fn corrupt_key_error(path: &Path) -> LiveError {
+    LiveError::Config(format!(
+        "{} is not a valid node key; remove it to generate a new identity",
+        path.display()
+    ))
+}
+
+/// Retries a short, bounded number of times for a concurrent writer to
+/// finish populating a just-created key file, rather than immediately
+/// telling the loser of a `create_key_file` startup race that its key is
+/// corrupt. Real corruption (non-hex content) is still reported immediately
+/// by `decode_key_text` and never reaches this retry loop.
+fn wait_for_concurrent_writer(path: &Path) -> Result<NodeIdentity> {
+    const ATTEMPTS: u32 = 30;
+    const DELAY: Duration = Duration::from_millis(10);
+    for _ in 0..ATTEMPTS {
+        std::thread::sleep(DELAY);
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                if let Some(result) = decode_key_text(&text, path) {
+                    return result;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return create_key_file(path);
+            }
+            Err(error) => return Err(LiveError::io(path, error)),
+        }
+    }
+    Err(LiveError::Config(format!(
+        "{} is still empty after waiting for a concurrent writer to finish; delete it and restart if no other hologram process is starting",
+        path.display()
+    )))
+}
+
 #[cfg(unix)]
 fn secure_key_file(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -128,6 +176,16 @@ pub fn parse_node_id(node_id: &str) -> Result<VerifyingKey> {
     let encoded = node_id.strip_prefix(NODE_ID_PREFIX).ok_or_else(|| {
         LiveError::Protocol(format!("cluster node id must start with {NODE_ID_PREFIX}"))
     })?;
+    // `unhex` is deliberately case-insensitive (it also decodes signatures,
+    // where canonical case does not matter), so the canonical-form rule
+    // lives here: a node id is a map key (`NodeDirectory`, `trusted_keys`,
+    // pinned admission), and "AABB..." and "aabb..." must not become two
+    // distinct members of the same key.
+    if encoded.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err(LiveError::Protocol(
+            "cluster node id must be lowercase hexadecimal".to_owned(),
+        ));
+    }
     let bytes = unhex(encoded)
         .ok_or_else(|| LiveError::Protocol("cluster node id is not hexadecimal".to_owned()))?;
     let bytes: [u8; 32] = bytes
@@ -248,5 +306,92 @@ mod tests {
         // false), so it does not exercise this rejection path.
         assert!(parse_node_id(&format!("ed25519:{}", "4".repeat(64))).is_err());
         assert!(parse_node_id("blake3:0123").is_err());
+    }
+
+    // Finding 2: uppercase and lowercase hex decode to the same key, so an
+    // uppercase node id must be rejected rather than silently accepted as a
+    // second spelling of the same member.
+    #[test]
+    fn an_uppercase_node_id_is_rejected() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let identity =
+            NodeIdentity::load_or_create(&directory.path().join(KEY_FILE)).expect("identity");
+        let node_id = identity.node_id();
+        let encoded = node_id.strip_prefix("ed25519:").expect("has prefix");
+
+        // The lowercase form must parse (proves the payload itself is a
+        // valid key), while uppercasing only the hex payload must not.
+        parse_node_id(&node_id).expect("lowercase node id parses");
+        let uppercased = format!("ed25519:{}", encoded.to_ascii_uppercase());
+        assert!(parse_node_id(&uppercased).is_err());
+    }
+
+    // Finding 1: the loser of a `create_key_file` startup race reads the
+    // file in the window between the winner's `create_new` (which leaves it
+    // empty) and its `write_all` + `sync_all`. That must be retried, not
+    // reported as corruption. Deterministic without real multi-process
+    // concurrency: create the file empty first, then populate it from
+    // another thread partway through `load_or_create`'s retry loop.
+    #[test]
+    fn a_key_file_that_is_still_being_written_is_retried_not_rejected() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join(KEY_FILE);
+        std::fs::write(&path, "").expect("create empty key file");
+
+        let mut secret = [0_u8; 32];
+        getrandom::fill(&mut secret).expect("generate test key");
+        let expected_node_id = format!(
+            "ed25519:{}",
+            hex(SigningKey::from_bytes(&secret).verifying_key().as_bytes())
+        );
+
+        let writer_path = path.clone();
+        let encoded = hex(&secret);
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            // Simulates the race winner finishing its write of the file
+            // that this test pre-created empty above.
+            std::fs::write(&writer_path, format!("{encoded}\n")).expect("finish writing key");
+        });
+
+        let identity = NodeIdentity::load_or_create(&path)
+            .expect("a still-being-written key must be retried, not rejected as corrupt");
+        writer.join().expect("writer thread panicked");
+
+        assert_eq!(identity.node_id(), expected_node_id);
+    }
+
+    // Finding 3: mirrors `existing_cluster_token_permissions_are_hardened`
+    // (the test this module's predecessor, `cluster.rs`'s token handling,
+    // carried) so the corrective-chmod branch of `secure_key_file` keeps
+    // real coverage instead of only ever being exercised on a freshly
+    // created 0600 file.
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_key_files_loose_permissions_are_hardened() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join(KEY_FILE);
+        let mut secret = [0_u8; 32];
+        getrandom::fill(&mut secret).expect("generate test key");
+        std::fs::write(&path, hex(&secret)).expect("write key");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+            .expect("make key world-readable");
+
+        let identity = NodeIdentity::load_or_create(&path).expect("load loosely-permissioned key");
+        assert_eq!(
+            identity.node_id(),
+            format!(
+                "ed25519:{}",
+                hex(SigningKey::from_bytes(&secret).verifying_key().as_bytes())
+            )
+        );
+
+        let mode = std::fs::metadata(&path)
+            .expect("key metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0);
     }
 }

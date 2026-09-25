@@ -4,6 +4,7 @@
 //! content, and deliberately does not retry an in-flight mutable mutation
 //! against another authority.
 
+pub(crate) mod admission;
 pub(crate) mod identity;
 pub(crate) mod proof;
 mod replication;

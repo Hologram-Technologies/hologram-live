@@ -141,6 +141,11 @@ pub struct ClusterConfig {
     pub replication_max_objects_per_round: usize,
     /// Maximum bytes accepted for one immutable object transfer.
     pub replication_max_object_bytes: u64,
+    /// Identities always eligible to participate, as `ed25519:<64 hex>`.
+    pub trusted_keys: Vec<String>,
+    /// `token` pins a new identity on first contact with a valid ticket;
+    /// `allowlist` admits only `trusted_keys`.
+    pub admission: String,
 }
 
 impl Default for ClusterConfig {
@@ -155,6 +160,8 @@ impl Default for ClusterConfig {
             max_peers: 64,
             replication_max_objects_per_round: 1_000,
             replication_max_object_bytes: 512 * 1024 * 1024,
+            trusted_keys: Vec::new(),
+            admission: "token".to_owned(),
         }
     }
 }
@@ -869,6 +876,23 @@ impl AppConfig {
         {
             return Err(LiveError::Config(
                 "cluster intervals, timeout, TTL, peer, and replication bounds must be valid"
+                    .to_owned(),
+            ));
+        }
+        if !matches!(self.cluster.admission.as_str(), "token" | "allowlist") {
+            return Err(LiveError::Config(format!(
+                "unsupported cluster.admission {:?}; expected token or allowlist",
+                self.cluster.admission
+            )));
+        }
+        for key in &self.cluster.trusted_keys {
+            crate::cluster::identity::parse_node_id(key).map_err(|error| {
+                LiveError::Config(format!("cluster.trusted_keys entry {key:?}: {error}"))
+            })?;
+        }
+        if self.cluster.admission == "allowlist" && self.cluster.trusted_keys.is_empty() {
+            return Err(LiveError::Config(
+                "cluster.admission \"allowlist\" requires at least one cluster.trusted_keys entry"
                     .to_owned(),
             ));
         }
@@ -1885,5 +1909,21 @@ path = "/usr/local/bin/plugin"
             sha256: "ab".repeat(32),
         });
         config
+    }
+
+    // Review Focus 2: a bad key must fail at startup, not at the first join.
+    #[test]
+    fn a_malformed_trusted_key_is_rejected_at_startup() {
+        let mut config = AppConfig::default();
+        config.cluster.trusted_keys = vec!["not-a-key".to_owned()];
+        let error = config.validate().expect_err("malformed trusted key");
+        assert!(matches!(error, LiveError::Config(_)), "got {error:?}");
+    }
+
+    #[test]
+    fn an_unsupported_admission_mode_is_rejected() {
+        let mut config = AppConfig::default();
+        config.cluster.admission = "anyone".to_owned();
+        assert!(config.validate().is_err());
     }
 }

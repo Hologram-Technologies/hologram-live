@@ -21,43 +21,51 @@
 .card .foot{font-family:var(--mono)}
 
 /* ---- watch: one Space open. The shape every reader already knows from a video page: the frame on the left,
-   as wide as the column allows; its name, who made it and what it does beneath; the other Spaces down the
-   right, each a thumbnail and a line, one click from swapping in. The catalogue (lead row, rail, grid) leaves
-   the page while a Space is open and comes back when it closes. */
+   as wide as the column allows and never taller than the screen, so it is whole without scrolling; its name,
+   who made it and what it does beneath; the other Spaces down the right, each a thumbnail and a line, one
+   click from swapping in. The catalogue (lead row, rail, grid) leaves the page while a Space is open and comes
+   back when it closes. Every size below is derived from the viewport, so the proportions hold on any screen. */
 main.watching .lead,main.watching .cols{display:none}
-.watch{display:none}
-main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start}
-@media (min-width:1100px){main.watching .watch{grid-template-columns:minmax(0,1fr) 402px}}
-.watch-back{display:inline-flex;align-items:center;gap:4px;height:40px;margin:0 0 4px;font-size:14px;color:var(--dim)}
+.watch{display:none;--watch-chrome:188px;--watch-gap:24px;--next-w:402px}
+main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto;gap:16px var(--watch-gap);align-items:start;margin-top:4px}
+@media (min-width:1100px){main.watching .watch{grid-template-columns:minmax(0,1fr) var(--next-w)}}
+.watch-back{grid-column:1/-1;justify-self:start;display:inline-flex;align-items:center;gap:4px;height:36px;font-size:14px;color:var(--dim);transition:color 150ms}
 .watch-back:hover{color:var(--text)}
 .watch-back svg{width:16px;height:16px}
+.watch-main{min-width:0}
 
-/* the frame: the Space in its sealed iframe, edge to edge, with nothing drawn over it */
-.player{position:relative;aspect-ratio:16/9;min-height:520px;max-height:80vh;border-radius:12px;overflow:hidden;
-  background:var(--ground);box-shadow:0 0 0 1px var(--line),0 24px 60px -30px var(--hh-shadow)}
-.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--ground)}
-.player .need{position:absolute;inset:0;display:grid;place-content:center;padding:40px 24px;color:var(--dim);font-size:15px;line-height:1.6;max-width:60ch;margin:auto;text-align:center}
+/* the frame: the Space in its sealed iframe, edge to edge, with nothing drawn over it. Its height is the screen's
+   minus the chrome above it, so the whole frame is on screen the moment it opens; the record beneath scrolls. */
+.player{position:relative;width:100%;height:clamp(420px,calc(100vh - var(--watch-chrome)),1400px);border-radius:14px;overflow:hidden;
+  background:var(--ground);box-shadow:0 0 0 1px var(--line),0 30px 80px -40px var(--hh-shadow)}
+.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--ground);opacity:0;animation:reveal 360ms cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes reveal{to{opacity:1}}
+.player .need{position:absolute;inset:0;display:grid;place-content:center;padding:40px 24px;color:var(--dim);font-size:15px;line-height:1.6;text-align:center}
+.player .need p{max-width:60ch;margin:0 auto}
 .player .need b{color:var(--text);font-weight:500}
-@media (max-width:640px){.player{min-height:0;aspect-ratio:4/3;border-radius:10px}}
+@media (max-width:1099px){.player{height:clamp(360px,calc(100vh - var(--watch-chrome)),900px)}}
+@media (max-width:640px){.watch{--watch-chrome:150px}.player{height:clamp(320px,calc(100vh - var(--watch-chrome)),700px);border-radius:10px}}
+@media (prefers-reduced-motion:reduce){.player iframe{animation:none;opacity:1}}
 
 /* beneath the frame: name, then the row a channel would have — mark, name, what it does, and the actions */
-.watch-title{margin:16px 0 10px;font-family:var(--font-display);font-size:var(--text-xl);font-weight:var(--weight-medium);letter-spacing:var(--tracking-display);line-height:1.3}
+.watch-title{margin:16px 0 10px;font-family:var(--font-display);font-size:var(--text-xl);font-weight:var(--weight-medium);letter-spacing:var(--tracking-display);line-height:1.3;overflow-wrap:anywhere}
 .watch-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .watch-row .mark{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:0 0 0 1px var(--line);color:var(--text);flex:none}
 .watch-row .mark svg{width:22px;height:22px}
-.watch-row .who{display:grid;gap:2px;min-width:0;flex:1}
+.watch-row .who{display:grid;gap:2px;min-width:0;flex:1 1 200px}
 .watch-row .who b{font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .watch-row .who span{font-size:12.5px;color:var(--dim);font-family:var(--mono)}
-.watch-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
-.pill{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:36px;background:var(--fill);color:var(--text);font-size:14px;white-space:nowrap;transition:background 150ms,color 150ms}
+.watch-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;min-width:0}
+.pill{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:36px;background:var(--fill);color:var(--text);font-size:14px;white-space:nowrap;transition:background 150ms,color 150ms,opacity 150ms}
 .pill:hover{background:color-mix(in srgb, var(--text) 12%, var(--fill))}
 .pill.primary{background:var(--text);color:var(--ground);font-weight:500}
 .pill.primary:hover{opacity:.88}
-.pill.status{font-family:var(--mono);font-size:12.5px;color:var(--dim);max-width:34ch;overflow:hidden;text-overflow:ellipsis}
+.pill.status{font-family:var(--mono);font-size:12.5px;color:var(--dim);max-width:min(34ch,100%);overflow:hidden;text-overflow:ellipsis}
 .pill.status .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
 .pill.status .dot.ok{background:var(--ok)}
 .pill.status .dot.bad{background:var(--bad)}
 .pill svg{width:16px;height:16px;flex:none}
+@media (max-width:640px){.watch-actions{margin-left:0;width:100%}}
 
 /* the description box: what a Space is made of, in the words its own record carries */
 .watch-desc{margin-top:14px;padding:14px 16px;border-radius:12px;background:var(--fill);font-size:14px;line-height:1.6;color:var(--text)}
@@ -67,16 +75,18 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;a
 .watch-desc dd{margin:0;font-family:var(--mono);overflow-wrap:anywhere}
 .watch-desc a{color:var(--text);text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:3px}
 .watch-desc a:hover{text-decoration-color:var(--text)}
+@media (max-width:480px){.watch-desc dl{grid-template-columns:minmax(0,1fr)}.watch-desc dt{margin-top:6px}}
 
-/* the right column: up next, then every other Space as a row */
-.upnext{display:grid;gap:8px}
-.upnext .next-head{display:flex;align-items:baseline;gap:8px;padding:12px 16px;border-radius:12px;background:var(--surface);box-shadow:0 0 0 1px var(--line)}
-.upnext .next-head b{font-size:14px;font-weight:500}
-.upnext .next-head span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.next{display:grid;grid-template-columns:168px minmax(0,1fr);gap:10px;padding:0;border-radius:10px;text-align:left;color:inherit;cursor:pointer;background:none}
+/* the right column: up next, then every other Space as a row. It starts level with the frame's top edge. */
+.upnext{display:grid;gap:8px;align-content:start;min-width:0}
+.upnext .next-head{display:flex;align-items:baseline;gap:8px;min-width:0;padding:12px 16px;border-radius:12px;background:var(--surface);box-shadow:0 0 0 1px var(--line)}
+.upnext .next-head b{font-size:14px;font-weight:500;flex:none}
+.upnext .next-head span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.next{display:grid;grid-template-columns:168px minmax(0,1fr);gap:10px;padding:0;border-radius:10px;text-align:left;color:inherit;cursor:pointer;background:none;transition:transform 200ms cubic-bezier(.2,.7,.2,1)}
 .next:hover .thumb{box-shadow:0 0 0 1px var(--line2)}
+.next:active{transform:scale(.99)}
 .next:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-.thumb{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--surface);box-shadow:0 0 0 1px var(--line);display:grid;place-items:center;isolation:isolate;color:var(--text)}
+.thumb{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--surface);box-shadow:0 0 0 1px var(--line);display:grid;place-items:center;isolation:isolate;color:var(--text);transition:box-shadow 150ms}
 .thumb .art{width:100%;height:100%;mask:none;-webkit-mask:none;opacity:.9}
 .thumb svg.icon{position:relative;z-index:1;width:30px;height:30px}
 .thumb .len{position:absolute;right:6px;bottom:6px;z-index:1;padding:2px 5px;border-radius:4px;background:color-mix(in srgb, var(--ground) 80%, transparent);font-family:var(--mono);font-size:11px;color:var(--text)}
@@ -84,6 +94,8 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;a
 .next .text b{font-size:14px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .next .text span{font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .next .text .now{color:var(--ok)}
+/* between one column and two, the other Spaces sit in a row of cards rather than a list */
+@media (min-width:640px) and (max-width:1099px){.upnext{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}.upnext .next-head{grid-column:1/-1}.next{grid-template-columns:minmax(0,1fr);gap:8px}}
 @media (max-width:480px){.next{grid-template-columns:136px minmax(0,1fr)}}
 
 :root[data-theme="immersive"] .player,:root[data-theme="immersive"] .watch-desc,:root[data-theme="immersive"] .upnext .next-head,:root[data-theme="immersive"] .thumb,:root[data-theme="immersive"] .pill{-webkit-backdrop-filter:var(--hh-glass);backdrop-filter:var(--hh-glass)}
@@ -119,8 +131,8 @@ main.watching .watch{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;a
   </div>
 
   <section class="watch" id="watch" aria-live="polite">
-    <div>
-      <button type="button" class="watch-back" id="s-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Spaces</button>
+    <button type="button" class="watch-back" id="s-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Spaces</button>
+    <div class="watch-main">
       <div class="player" id="player"></div>
       <h1 class="watch-title" id="s-name"></h1>
       <div class="watch-row">

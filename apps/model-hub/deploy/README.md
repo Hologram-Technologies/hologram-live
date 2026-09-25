@@ -48,6 +48,34 @@ crontab -e   # 45 9 * * * /root/hub/build-site.sh && /root/hub/snapshot.sh && { 
 
 Append `Caddyfile.hub` (with the token) to the front Caddyfile, then `caddy reload`. Point an `A` record for the domain at the host, DNS only, and Caddy issues the certificate.
 
+## Moving the write gate into the registry (measured, not done)
+
+Writes are gated at Caddy by one shared password. The registry can gate them itself instead — `auth.token.local`,
+which issues and validates bearer tokens, so `docker login hub.uor.foundation` works as it does against any public
+registry: per user, revocable, scoped to one repository, and in the audit log under the name that made the write.
+`registry/config.token-auth.yml` is that configuration, ready to use.
+
+**It is not switched on, because it also ends anonymous raw-HTTP reads.** Measured against the real binary with that
+exact configuration and no credentials configured on the client side:
+
+| | |
+|---|---|
+| `crane ls`, `crane manifest`, `crane pull`, `oras manifest fetch` | **work** — an OCI client fetches an anonymous pull token itself, invisibly |
+| `crane catalog` | **UNAUTHORIZED** — the catalogue scope is not granted to an anonymous token |
+| `curl /v2/`, `curl /v2/_catalog`, `curl …/tags/list` | **401** |
+| the same `curl` carrying a token it fetched from `/auth/token` first | 200 |
+| an anonymous write | **401 with a `Bearer` challenge**, which is the point |
+| a pull-only token used to push; a token for another repository used here | **401** each |
+
+So the trade is: **per-user push, against anonymous reading by anything that is not an OCI client.** The hub's front
+page promises the second — "No account, no key, no SDK, and every read below is anonymous" — and the agent guide,
+`/llms.txt` and the MCP story all rest on raw HTTP working. A `curl` that must fetch a token first is a different
+product.
+
+The sequencing that gets both: keep the proxy gate until the hub issues credentials against its own accounts (the
+Privy sign-in already exists), then switch `/v2/` to `auth.token.local` **and** publish the token-fetch step in the
+agent guide on the same day, so nothing that reads the hub today stops working without being told how to continue.
+
 ## Traps (measured)
 
 - The registry builds an outbound HTTPS client at startup: mount `/etc/ssl/certs` or it panics.

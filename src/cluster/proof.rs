@@ -78,6 +78,18 @@ pub fn sign_request(
     }
 }
 
+/// Whether `claimed_millis` falls within `MAX_CLOCK_SKEW_MILLIS` of
+/// `reference_millis`, inclusive on both ends.
+///
+/// Pulled out as a pure function (rather than inlining `now_millis()`
+/// directly into the comparison) so the exact `>` vs `>=` boundary can be
+/// pinned deterministically in tests, without racing the wall clock.
+/// `abs_diff` makes the window symmetric: a clock running ahead is refused
+/// exactly as firmly as one running behind.
+fn within_clock_window(reference_millis: u64, claimed_millis: u64) -> bool {
+    reference_millis.abs_diff(claimed_millis) <= MAX_CLOCK_SKEW_MILLIS
+}
+
 pub fn verify_request(
     proof: &RequestProof,
     recipient: &str,
@@ -90,9 +102,7 @@ pub fn verify_request(
         .timestamp
         .parse::<u64>()
         .map_err(|_| LiveError::Authentication("invalid cluster timestamp".to_owned()))?;
-    // abs_diff makes the window symmetric: a clock running ahead is refused
-    // exactly as one running behind.
-    if now_millis().abs_diff(timestamp_millis) > MAX_CLOCK_SKEW_MILLIS {
+    if !within_clock_window(now_millis(), timestamp_millis) {
         return Err(LiveError::Authentication(
             "cluster timestamp is outside the allowed clock window".to_owned(),
         ));
@@ -197,5 +207,33 @@ mod tests {
                 "offset {offset} must be outside the window"
             );
         }
+    }
+
+    // Finding (fix round 1): the bidirectional test above only proves the
+    // window rejects *far* offsets in both directions — it never pins the
+    // `<=` vs `<` boundary the design depends on. Testing `within_clock_window`
+    // directly (rather than through `verify_request`, which reads the real
+    // wall clock) makes all four corners exact and deterministic instead of
+    // racing `now_millis()`.
+    #[test]
+    fn the_clock_window_boundary_is_exact_on_both_sides() {
+        let reference = 1_700_000_000_000_u64;
+
+        assert!(
+            within_clock_window(reference, reference - MAX_CLOCK_SKEW_MILLIS),
+            "exactly at the past boundary must be accepted"
+        );
+        assert!(
+            !within_clock_window(reference, reference - MAX_CLOCK_SKEW_MILLIS - 1),
+            "one millisecond past the past boundary must be rejected"
+        );
+        assert!(
+            within_clock_window(reference, reference + MAX_CLOCK_SKEW_MILLIS),
+            "exactly at the future boundary must be accepted"
+        );
+        assert!(
+            !within_clock_window(reference, reference + MAX_CLOCK_SKEW_MILLIS + 1),
+            "one millisecond past the future boundary must be rejected"
+        );
     }
 }

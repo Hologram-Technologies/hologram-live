@@ -110,6 +110,18 @@ async function main() {
       else ok("Ollama blob: verified bytes", `${gb.length} bytes`);
     } else bad("Ollama manifest names the GGUF", `status ${m.status}`);
 
+    // Git LFS batch: download hrefs to the verifying /_blob/ route; uploads refused; unknown oids answered per object
+    const lfs = (b) => get("/fixture/tiny.git/info/lfs/objects/batch", { method: "POST", headers: { "content-type": "application/vnd.git-lfs+json" }, body: JSON.stringify(b) });
+    const bt = await lfs({ operation: "download", transfers: ["basic"], objects: [{ oid: sha(large), size: large.length }, { oid: "0".repeat(64), size: 1 }] });
+    const bj = bt.status === 200 ? await bt.json() : null;
+    const href = bj?.objects?.[0]?.actions?.download?.href;
+    const got = href && await body(await fetch(href, { signal: AbortSignal.timeout(30_000) }));
+    if (got?.equals(large) && bj.objects[1].error?.code === 404) ok("Git LFS batch: verified href, unknown oid 404", href.replace(/sha256:(.{12}).*/, "sha256:$1…"));
+    else bad("Git LFS batch: verified href, unknown oid 404", `${bt.status} ${JSON.stringify(bj).slice(0, 100)}`);
+    const up = await lfs({ operation: "upload", objects: [{ oid: sha(large), size: large.length }] });
+    if (up.status === 403) ok("Git LFS batch: upload refused", "403");
+    else bad("Git LFS batch: upload refused", String(up.status));
+
     const refused = log.join("").split("\n").filter((l) => l.includes('"refused"')).length;
     if (refused >= 3) ok("every lie was logged", `${refused} refusals`);
     else bad("every lie was logged", `${refused} refusals`);

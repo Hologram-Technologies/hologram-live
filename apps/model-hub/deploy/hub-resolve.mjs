@@ -15,6 +15,7 @@
 //   GET  /api/models/<org>/<name>/refs                                     branches: main at the indexed revision (llama.cpp -hf)
 //   GET|HEAD /v2/<org>/<name>/manifests/<quant> and /blobs/<digest>        Ollama's registry dialect (see below)
 //   (same routes, Accept: application/vnd.oci.image.manifest.v1+json)      OCI model artifacts, CNCF ModelPack: oras, modctl, Docker Model Runner
+//   POST /<org>/<name>.git/info/lfs/objects/batch                         Git LFS batch API, download only (lfs.url)
 //   POST /mcp                                                              MCP for agents: search_models, get_model, resolve_file
 // Older clients read those three headers from our 302 and GET the Location; huggingface_hub 1.32 follows the redirect
 // on HEAD too, so while Hugging Face is the source it meets Hugging Face's own Xet headers and downloads through Xet
@@ -625,6 +626,31 @@ async function serveVerified(req, res, doc, entry, via, headers) {
   catch (e) { if (!res.headersSent) return refuse(res, 502, "NoVerifiedSource", `${entry[0]} of ${doc.id}: ${e.message}`); res.destroy(); }
 }
 
+// ---- Git LFS: `git -c lfs.url=https://gethologram.ai/<org>/<name>.git/info/lfs lfs pull` (download only)
+//
+// The batch API answers where each object can be fetched; git-lfs then checks every object against the oid its git
+// pointer names (sha256) and refuses one that differs. So this route verifies without any help from us; with
+// HUB_VERIFY=1 the href is this process's own verifying /_blob/ route as well.
+async function lfsBatch(req, res, id) {
+  const reply = (status, body) => { const text = JSON.stringify(body); res.writeHead(status, { "content-type": "application/vnd.git-lfs+json", "content-length": Buffer.byteLength(text) }); res.end(text); };
+  let ask;
+  try { const chunks = []; for await (const c of req) { chunks.push(c); if (chunks.reduce((n, x) => n + x.length, 0) > 4 << 20) throw new Error("too large"); } ask = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch { return reply(400, { message: "The batch request is not JSON." }); }
+  if (ask.operation !== "download") return reply(403, { message: "This endpoint is read-only: download only." });
+  const doc = await model(id);
+  if (!doc) return reply(404, { message: `${id} is not in the Hologram index yet.` });
+  const byOid = new Map(doc.files.map((f) => [hex(f[2]), f]));
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || `127.0.0.1:${PORT}`);
+  const objects = (ask.objects || []).slice(0, 1000).map(({ oid, size }) => {
+    const entry = byOid.get(String(oid));
+    if (!entry) return { oid, size, error: { code: 404, message: `${oid} is not part of ${doc.id} at ${doc.revision}.` } };
+    if (VERIFY) { blobs.set(entry[2].slice(7), { doc, entry }); return { oid, size: entry[1], authenticated: true, actions: { download: { href: `http://${host}/_blob/${entry[2]}`, expires_in: 3600 } } }; }
+    const { source } = choose(doc, entry, null);
+    return { oid, size: entry[1], authenticated: true, actions: { download: { href: urlFor(doc, source, entry), expires_in: 3600 } } };
+  });
+  return reply(200, { transfer: "basic", objects, hash_algo: "sha256" });
+}
+
 const revisionOk = (doc, rev) => rev === "main" || (rev.length >= 7 && doc.revision.startsWith(rev));
 
 http.createServer(async (req, res) => {
@@ -636,6 +662,8 @@ http.createServer(async (req, res) => {
     res.setHeader("access-control-allow-origin", "*");
     res.setHeader("access-control-expose-headers", "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location");
     if (req.method === "OPTIONS") { res.writeHead(204, { "access-control-allow-methods": "GET, HEAD, OPTIONS", "access-control-allow-headers": "range, accept, content-type, if-none-match, user-agent", "access-control-max-age": "86400" }); return res.end(); }
+    const lfs = url.pathname.match(/^\/([^/]+\/[^/]+?)(?:\.git)?\/info\/lfs\/objects\/batch$/);
+    if (lfs && req.method === "POST") return lfsBatch(req, res, decodeURIComponent(lfs[1]));
     if (req.method !== "GET" && req.method !== "HEAD") return refuse(res, 405, "ReadOnly", "The hub endpoint is read-only.");
     let path = decodeURIComponent(url.pathname), via = url.searchParams.get("source");
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);

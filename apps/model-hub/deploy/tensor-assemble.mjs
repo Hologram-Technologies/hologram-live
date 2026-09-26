@@ -50,8 +50,11 @@ async function* readRange(origin, repo, rev, path, a, len, direct) {
       if (r.status !== 206 && !(r.status === 200 && pos === 0)) { r.body?.cancel(); throw new Error(`status ${r.status}`); }
       for await (const c of r.body) { const b = Buffer.from(c); const take = Math.min(b.length, end - pos + 1); if (take > 0) { yield b.subarray(0, take); pos += take; } if (pos > end) break; }
     } catch (e) {
-      const code = e?.cause?.code || e?.code;
-      if (["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH"].includes(code)) { markDown(direct || origin); break; }
+      // A network-level failure (refused, unresolvable, unreachable) marks the host down for a minute. Node reports these
+      // as "fetch failed" with the code one or two levels down (an AggregateError when several addresses were tried),
+      // so the whole chain is read; HTTP status errors are not network failures and keep the normal retry.
+      const codes = [e?.code, e?.cause?.code, ...(e?.cause?.errors || []).map((x) => x?.code)];
+      if (codes.some((c) => ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN"].includes(c)) || (e instanceof TypeError && e.message === "fetch failed" && !String(e.cause?.name).includes("Timeout"))) { markDown(direct || origin); break; }
       await new Promise((r) => setTimeout(r, 2 ** k * 500));
     }
   }

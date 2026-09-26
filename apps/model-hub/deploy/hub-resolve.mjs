@@ -28,10 +28,18 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { kappaMirror } from "./kappa-mirror.mjs";
 
+// HUB_VERIFY=1: run on the user's own machine as a verifying edge. Same dialects, same index; instead of redirecting
+// a client to a holder, fetch the file, check it against the index's sha256 and only then hand it over
+// (verified-bytes.mjs). Point any client here: HF_ENDPOINT=http://127.0.0.1:8090, ollama pull 127.0.0.1:8090/<repo>:<quant>.
+const VERIFY = process.env.HUB_VERIFY === "1";
+// Loaded only in that mode: the hosted endpoint redirects and never needs it (its installer swaps this one file).
+const { streamVerified } = VERIFY ? await import("./verified-bytes.mjs") : {};
+const CACHE = process.env.HUB_CACHE || join(homedir(), ".cache", "hologram");
 const DATA = process.env.HUB_DATA || "/data";          // the site's published data: files/<org>/<name>.json, models.json
-const STATE = process.env.HUB_STATE || "/state";        // requested.txt (models asked for but not indexed), override.json
+const STATE = process.env.HUB_STATE || (VERIFY ? join(CACHE, "state") : "/state"); // requested.txt, override.json
 const PORT = Number(process.env.PORT || 8090);
 const ORDER = ["huggingface.co", "modelscope.cn", "ipfs"];
 const PROBE = { model: "sentence-transformers/all-MiniLM-L6-v2", file: "config.json" };
@@ -483,6 +491,14 @@ async function ollama(req, res, id, kind, ref) {
   const entry = doc.files.find((f) => f[2] === ref);
   if (entry) { // the weights: never through us
     if (req.method === "HEAD") { res.writeHead(200, { "content-length": entry[1], "docker-content-digest": ref, "accept-ranges": "bytes", "content-type": "application/octet-stream" }); return res.end(); }
+    if (VERIFY) {
+      // Ollama follows a same-host redirect itself and wants its last answer to be a 307 to another host: send it to
+      // the other loopback name of this same process, which serves the verified file there.
+      blobs.set(hex(ref), { doc, entry });
+      const host = String(req.headers.host || `127.0.0.1:${PORT}`), other = host.startsWith("localhost") ? host.replace("localhost", "127.0.0.1") : host.replace(/^[^:]+/, "localhost");
+      res.writeHead(307, { location: `http://${other}/_blob/${ref}`, "docker-content-digest": ref, "x-hub-source": "verified", "cache-control": "no-store", "content-length": "0" });
+      return res.end();
+    }
     const { source, reason } = choose(doc, entry, null);
     console.log(JSON.stringify({ t: new Date().toISOString(), dialect: /^ollama/i.test(req.headers["user-agent"] || "") ? "ollama" : "oci", model: doc.id, file: entry[0], source: source.kind, reason }));
     res.writeHead(307, { location: urlFor(doc, source, entry), "docker-content-digest": ref, "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });
@@ -595,6 +611,20 @@ async function mcp(req, res) {
   return json(res, 200, Array.isArray(body) ? answers : answers[0], { ...cors, "cache-control": "no-store", ...(version ? { "mcp-protocol-version": version } : {}) });
 }
 
+// ---- the verifying edge (HUB_VERIFY=1)
+const blobs = new Map();   // sha256 hex -> { doc, entry } of a blob a manifest named, for the /_blob/ hop
+function holders(doc, entry, via) {
+  const have = doc.sources.filter((s) => !s.p2p && !s.pull && ORDER.includes(s.kind) && !(s.missing || []).includes(entry[0]) && (!via || s.kind === via));
+  have.sort((a, b) => (health[b.kind].ok - health[a.kind].ok) || ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
+  return have.map((s) => ({ kind: s.kind, url: urlFor(doc, s, entry) })).filter((h) => h.url);
+}
+async function serveVerified(req, res, doc, entry, via, headers) {
+  const all = { ...headers, "x-hub-source": "verified", "cache-control": "no-store" };
+  const log = (e) => console.log(JSON.stringify({ t: new Date().toISOString(), model: doc.id, file: entry[0], ...e }));
+  try { return await streamVerified(req, res, CACHE, hex(entry[2]), entry[1], holders(doc, entry, via), all, log); }
+  catch (e) { if (!res.headersSent) return refuse(res, 502, "NoVerifiedSource", `${entry[0]} of ${doc.id}: ${e.message}`); res.destroy(); }
+}
+
 const revisionOk = (doc, rev) => rev === "main" || (rev.length >= 7 && doc.revision.startsWith(rev));
 
 http.createServer(async (req, res) => {
@@ -612,6 +642,12 @@ http.createServer(async (req, res) => {
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
     // The κ mirror: /v2/<upstream host>/<path>/… for every image the Registry page indexes (kappa-mirror.mjs).
+    const blob = VERIFY && path.match(/^\/_blob\/sha256:([0-9a-f]{64})$/);
+    if (blob) {
+      const known = blobs.get(blob[1]);
+      if (!known) return refuse(res, 404, "BlobUnknown", "Ask for the blob through its model's manifest first.");
+      return serveVerified(req, res, known.doc, known.entry, null, { "docker-content-digest": `sha256:${blob[1]}` });
+    }
     if (path.startsWith("/v2/") && await kappaMirror(req, res, path)) return;
     const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs|tags)\/(.+)$/);
     if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
@@ -669,6 +705,7 @@ http.createServer(async (req, res) => {
       if (!entry) return refuse(res, 404, "EntryNotFound", `${file[3]} is not in ${doc.id} at ${doc.revision}.`);
       const { source, reason, denied } = choose(doc, entry, via);
       if (denied) return refuse(res, 404, denied.code, denied.message);
+      if (VERIFY) return serveVerified(req, res, doc, entry, via, { "x-repo-commit": doc.revision, "x-linked-etag": `"${hex(entry[2])}"`, "x-linked-size": String(entry[1]), etag: `"${hex(entry[2])}"` });
       const location = urlFor(doc, source, entry);
       if (req.method === "GET" || reason !== "first choice") console.log(JSON.stringify({ t: new Date().toISOString(), model: doc.id, file: entry[0], method: req.method, source: source.kind, reason }));
       res.writeHead(302, { location, "x-repo-commit": doc.revision, "x-linked-etag": `"${hex(entry[2])}"`, "x-linked-size": String(entry[1]), etag: `"${hex(entry[2])}"`, "accept-ranges": "bytes", "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });

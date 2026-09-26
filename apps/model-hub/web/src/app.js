@@ -15,9 +15,26 @@ if ($("#archive")) archive();
 if ($("#gh-stars")) stars();
 if ($(".land-track")) strip();
 if ($("#get")) getIt();
+heroStats();
 
 // Get it: one control, every way to take this model. Pick a tool, pick a format, copy one command. When the tensor
 // index holds the model, OCI joins the tools and the page's one address becomes the model's OCI index digest.
+// The counts beside the name: the build's daily numbers, refreshed from Hugging Face's own API when it answers.
+async function heroStats() {
+  const el = $("#hero-stats"); if (!el) return;
+  try {
+    const r = await fetch(`https://huggingface.co/api/models/${el.dataset.repo}?expand[]=downloads&expand[]=likes`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (Number.isFinite(j.downloads)) {
+      $("#stat-downloads").textContent = R.count(j.downloads);
+      const dd = [...document.querySelectorAll("#facts dt")].find((d) => d.textContent.startsWith("Downloads"))?.nextElementSibling;
+      if (dd) dd.textContent = R.count(j.downloads);
+    }
+    if (Number.isFinite(j.likes)) $("#stat-likes").textContent = R.count(j.likes);
+  } catch {}
+}
+
 async function getIt() {
   const data = JSON.parse($("#get-data").textContent), repo = data.repo, host = location.host, esc = R.esc;
   // The address, as it is used: this host, the model's name, the short digest. Upgraded below when indexed.

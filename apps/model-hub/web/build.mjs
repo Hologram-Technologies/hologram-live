@@ -326,6 +326,11 @@ function probe(files) {
     .sort((a, b) => a[1] - b[1]).pop()?.[0];
 }
 
+// Downloads and likes, as Hugging Face counts them: baked in from the daily data, then refreshed in the page.
+function stats(m) {
+  return `<span class="stats" id="hero-stats" data-repo="${R.esc(m.id)}"><span title="Downloads, last 30 days, on Hugging Face">${R.icon.down}<b id="stat-downloads">${R.count(m.downloads || 0)}</b></span><span class="dot" aria-hidden="true">·</span><span title="Likes on Hugging Face">${R.icon.star}<b id="stat-likes">${R.count(m.likes || 0)}</b></span></span>`;
+}
+
 function modelPage(m, files, ov, readme) {
   const fact = (label, value) => (value ? `<div><dt>${label}</dt><dd>${value}</dd></div>` : "");
   const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
@@ -426,7 +431,7 @@ function modelPage(m, files, ov, readme) {
   <div class="hero">
     ${R.avatar(m, base)}
     <div class="who">
-      <h1>${R.esc(m.name)}</h1>
+      <div class="title-row"><h1>${R.esc(m.name)}</h1>${stats(m)}</div>
       <p class="sub" id="hero-sub">${[R.esc(m.org), m.params ? `${R.params(m.params)} parameters` : "", m.weightBytes ? R.bytes(m.weightBytes) : "", m.license ? R.esc(licence(m.license)) : ""].filter(Boolean).join(" · ")}</p>
     </div>
     <div class="actions">
@@ -435,13 +440,13 @@ function modelPage(m, files, ov, readme) {
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
   </div>
-  ${m.manifest && files ? `<div class="ledger">
-    <div class="lrow"><span class="rl">Address</span>${signature(m)}</div>
-    <div class="lrow" id="ipfs-row" hidden><span class="rl">IPFS</span><div class="addr-row"><code class="addr" id="ipfs-cid"></code><button type="button" class="copy icon" id="ipfs-copy" data-copy="" aria-label="Copy the IPFS address">${R.icon.copy}</button></div></div>
-    <div class="lrow"><span class="rl" id="held-label">Held on</span><div>${sourceList(files.sources || [])}<p class="verdict" id="verdict" role="status" hidden></p></div></div>
-    <div class="lrow tall"><span class="rl">Get it</span><div>${getIt(m, files, downloadMenu)}<p class="verdict" id="dl-status" role="status" hidden></p></div></div>
-    <div class="lrow" id="same-row" hidden><span class="rl">Relation</span><p class="same" id="same"></p></div>
-  </div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>`
+  ${m.manifest && files ? `<div class="frame">
+    <div class="fcol"><span class="rl">Address</span>${signature(m)}
+      <div class="ipfs-line" id="ipfs-row" hidden><span class="tag">IPFS</span><code id="ipfs-cid"></code><button type="button" class="copy mini" id="ipfs-copy" data-copy="" aria-label="Copy the IPFS address">${R.icon.copy}</button></div></div>
+    <div class="fcol"><span class="rl" id="held-label">Held on</span>${sourceList(files.sources || [])}<p class="verdict" id="verdict" role="status" hidden></p></div>
+    <div class="fcol fcol-get"><span class="rl">Get it</span>${getIt(m, files, downloadMenu)}<p class="verdict" id="dl-status" role="status" hidden></p></div>
+  </div>
+  <p class="frame-rel" id="same-row" hidden><span id="same"></span></p><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>`
     : `<p class="verdict" id="verdict" role="status" hidden></p><p class="verdict" id="dl-status" role="status" hidden></p>`}
 </section>
 <main class="detail">

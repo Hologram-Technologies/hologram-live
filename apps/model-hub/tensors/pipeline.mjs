@@ -10,7 +10,9 @@
 //                                              (Filebase: IPFS_API=https://rpc.filebase.io IPFS_API_TOKEN=<key>); --budget-gb N
 //   node audit.mjs                             prove every hash is a κ: held objects, the sealed root down, the CAR
 //   node pipeline.mjs status                   one screen: models, tensors, bytes, queue, failures, latest root
-//   node pipeline.mjs nightly [--budget-gb N]  discover -> run -> gate -> seal -> car
+//   node pipeline.mjs witness                  names log: what every indexed name serves on Hugging Face now; flags replacements
+//   node pipeline.mjs names <repo> [--at ISO]  what a name pointed to (from the verified names log)
+//   node pipeline.mjs nightly [--budget-gb N]  discover -> witness -> run -> gate -> seal -> car
 //
 // State lives in $TENSOR_STATE (default ./state): sha256/ (held objects), models.json, queue.json, gates.json,
 // failures.json, sources/<repo>.json, roots/<day>.json. Nothing is written to any live host.
@@ -20,12 +22,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { Store } from "./lib/store.mjs";
 import { indexModel, T } from "./lib/model.mjs";
+import { NamesLog, verifyLog, pointedAt } from "./lib/names.mjs";
 import { assemble } from "../deploy/tensor-assemble.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STATE = process.env.TENSOR_STATE || join(HERE, "state");
 mkdirSync(join(STATE, "sources"), { recursive: true }); mkdirSync(join(STATE, "roots"), { recursive: true });
 const store = new Store(STATE);
+const names = new NamesLog(STATE);
 const read = (f, d) => { try { return JSON.parse(readFileSync(join(STATE, f), "utf8")); } catch { return d; } };
 const write = (f, v) => writeFileSync(join(STATE, f), JSON.stringify(v, null, 1));
 const day = () => new Date().toISOString().slice(0, 10);
@@ -87,6 +91,8 @@ async function run(repos) {
       const { sources, ...rest } = r;
       if (models[repo] && models[repo].rev !== r.rev) (rest.history ||= models[repo].history || []).push({ rev: models[repo].rev, index: models[repo].index, until: new Date().toISOString() });
       models[repo] = { ...rest, indexedAt: new Date().toISOString(), gated: false };
+      names.witnessFiles(repo, r.rev, Object.fromEntries(Object.entries(r.blobs).filter(([, b]) => b.path && (b.upstream || b.held)).map(([d, b]) => [b.path, d])));
+      names.indexed(repo, r.rev, r.index, r.table);
       delete failures[repo];
       spent += r.weightBytes;
       log(`  ${r.tensors} tensors, ${(r.weightBytes / 1e9).toFixed(2)} GB in ${r.seconds} s; index ${r.index.slice(0, 19)}; canonical ${r.canonical?.slice(0, 19)}`);
@@ -198,6 +204,32 @@ async function gate(repos) {
   }
 }
 
+// ---------------------------------------------------------------- witness
+// What every indexed name serves on Hugging Face now: its revision and every LFS file's sha256, appended to the
+// names log. A changed sha256 under the same name, revision and path is a silent replacement: logged and reported.
+async function witness() {
+  const { info, tree } = await import("./lib/src.mjs");
+  const models = read("models.json", {});
+  let seen = 0, moved = 0; const replaced = [];
+  for (const repo of Object.keys(models)) {
+    try {
+      const rev = (await info(repo)).sha;
+      const files = Object.fromEntries((await tree(repo, rev)).filter((f) => f.oid).map((f) => [f.path, `sha256:${f.oid}`]));
+      if (models[repo].rev !== rev) moved++;
+      for (const a of names.witnessFiles(repo, rev, files)) { replaced.push(a); log(`  REPLACED ${repo}@${rev.slice(0, 12)}: ${Object.keys(a.files).join(", ")}`); }
+      seen++;
+    } catch (e) { log(`  witness ${repo}: ${e.message}`); }
+  }
+  write("replacements.json", [...read("replacements.json", []), ...replaced.map(({ name, revision, files, before, at }) => ({ name, revision, files, before, at }))]);
+  log(`witnessed ${seen} names: ${moved} on a new revision, ${replaced.length} silent replacements; log at entry ${names.seq}`);
+}
+
+function namesQuery(repo) {
+  const head = JSON.parse(readFileSync(names.headPath, "utf8"));
+  const [entries, problems] = verifyLog(readFileSync(names.path, "utf8"), head);
+  console.log(JSON.stringify({ intact: !problems.length, problems, seq: head.seq, witness: head.witness, ...pointedAt(entries, repo, { when: arg("--at") }) }, null, 1));
+}
+
 // ---------------------------------------------------------------- seal
 // The day's root: every gated model's index digest, plus the derived relations. Stored as a κ object;
 // roots/<day>.json and latest.json name it. Tables and manifests are shared across days by digest.
@@ -215,7 +247,10 @@ function seal() {
   }
   const edges = [...shared].map(([k, v]) => { const [a, b] = k.split(" "); const lic = pub[a].license !== pub[b].license; return { a, b, ...v, sameWeights: pub[a].canonical === pub[b].canonical, licenceDiffers: lic }; }).sort((x, y) => y.bytes - x.bytes);
   const distinct = idx.size, instances = [...idx.values()].reduce((a, l) => a + l.length, 0);
+  const head = names.signHead();
+  const namesLog = existsSync(names.path) ? store.put(readFileSync(names.path)).digest : null, namesHead = store.put(readFileSync(names.headPath)).digest;
   const root = { v: 1, day: day(), mediaType: "application/vnd.hologram.tensor-index.v1+json", models: pub, sameWeights, edges,
+    names: { log: namesLog, head: namesHead, seq: head.seq, witness: head.witness, publicKey: head.public_key },
     counts: { models: Object.keys(pub).length, distinctPayloads: distinct, payloadInstances: instances } };
   const put = store.putJson(root);
   write(`roots/${day()}.json`, { digest: put.digest, size: put.size });
@@ -249,7 +284,7 @@ latest root      ${latest ? `${latest.day} ${latest.digest}` : "none"}`);
 
 const [cmd, ...rest] = process.argv.slice(2);
 const repos = rest.filter((x) => !x.startsWith("--") && !/^\d+(\.\d+)?$/.test(x) && !x.endsWith(".txt"));
-if (["run", "gate", "seal", "nightly", "discover", "car", "pin"].includes(cmd)) lock();
+if (["run", "gate", "seal", "nightly", "discover", "car", "pin", "witness"].includes(cmd)) lock();
 if (cmd === "discover") await discover();
 else if (cmd === "run") await run(repos);
 else if (cmd === "gate") await gate(repos);
@@ -257,8 +292,10 @@ else if (cmd === "seal") seal();
 else if (cmd === "car") await car();
 else if (cmd === "pin") await pin(repos);
 else if (cmd === "status") status();
+else if (cmd === "witness") await witness();
+else if (cmd === "names") namesQuery(repos[0]);
 else if (cmd === "nightly") {
-  await discover(); await run([]); await gate([]); seal();
+  await discover(); await witness(); await run([]); await gate([]); seal();
   try { await car(); } catch (e) { log(`car skipped: ${e.message}`); }   // the CAR is published separately; never blocks promotion
 }
-else console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 12).join("\n"));
+else console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 15).join("\n"));

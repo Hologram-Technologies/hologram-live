@@ -6,7 +6,8 @@
 // Recorded from huggingface_hub 1.32 (web/qa/hf-dialect/recorder.mjs), the whole dialect a download needs:
 //   GET  /api/models?search=&author=&pipeline_tag=&library=&filter=&sort=&limit=   list and search (HfApi.list_models)
 //   GET  [/via/<source>]/api/models/<org>/<name>[/revision/<rev>]          model info: sha, siblings
-//   GET  [/via/<source>]/api/models/<org>/<name>/tree/<rev>[/<dir>]        file listing
+//   GET  [/via/<source>]/api/models/<org>/<name>/tree/<rev>[/<dir>]        file listing (?recursive=; any ?cursor= page is [])
+//   GET  [/via/<source>]/api/models/<org>/<name>/treesize/<rev>[/<dir>]    total bytes under a folder (hfd.sh)
 //   HEAD [/via/<source>]/<org>/<name>/resolve/<rev>/<path>                 302 + X-Repo-Commit, X-Linked-ETag, X-Linked-Size
 //   GET  [/via/<source>]/<org>/<name>/resolve/<rev>/<path>                 302 to the chosen source (Range is re-sent there)
 //   GET  …/resolve/<rev>/SHA256SUMS                                        generated: `sha256sum -c` checks a download
@@ -200,6 +201,58 @@ const json = (res, status, body, headers = {}) => { const text = JSON.stringify(
 const refuse = (res, status, code, message) => json(res, status, { error: message }, { "x-error-code": code, "x-error-message": message });
 const hex = (address) => address.split(":")[1];
 const isLfs = (f) => Boolean(f[3]);
+
+// Hugging Face's tree listing of the files under `dir`: the direct children (files and folders), or with `recursive`
+// every file and every folder beneath. A folder's oid is sha1 over its files' paths and addresses: stable and
+// distinct, but not git's tree sha1 (the hub holds file sha256s, not git objects). An LFS file's oid is its sha256.
+// Hugging Face's `oid` for a file kept in git (not LFS) is git's blob sha1, and `hf cache verify` checks it that way
+// (measured with huggingface_hub 2.0: our sha256 there failed every small file). The index holds sha256 only, so the
+// sha1 is computed once per file from bytes that first matched the index's sha256, and kept by that sha256 for ever
+// (content in, content out: it never goes stale). Until a file's sha1 is known its oid stays the sha256.
+const gitOid = new Map();
+let gitOidsRead = false;
+async function gitOids(doc, files) {
+  const store = join(STATE, "git-oids.jsonl");
+  if (!gitOidsRead) {
+    gitOidsRead = true;
+    try { for (const l of (await readFile(store, "utf8")).split("\n")) if (l) { const [s, g] = JSON.parse(l); gitOid.set(s, g); } } catch { /* first run */ }
+  }
+  const todo = files.filter((f) => !isLfs(f) && f[1] <= 64 * 1048576 && !gitOid.has(f[2]));
+  const one = async (f) => {
+    for (const kind of ORDER) {
+      const source = doc.sources?.find((s) => s.kind === kind && !s.p2p && !(s.missing || []).includes(f[0]));
+      if (!source || !health[kind].ok || (kind === "huggingface.co" && !f[4])) continue;
+      try {
+        const r = await fetch(urlFor(doc, source, f), { signal: AbortSignal.timeout(10_000), headers: { "user-agent": "hub-resolve git-oid" } });
+        if (!r.ok) continue;
+        const bytes = Buffer.from(await r.arrayBuffer());
+        if (sha(bytes) !== f[2]) continue;                                // a source never vouches for itself
+        const g = createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+        gitOid.set(f[2], g);
+        await mkdir(STATE, { recursive: true }).catch(() => {});
+        await appendFile(store, JSON.stringify([f[2], g]) + "\n").catch(() => {});
+        return;
+      } catch { /* next source */ }
+    }
+  };
+  const work = (async () => { for (let i = 0; i < todo.length; i += 8) await Promise.all(todo.slice(i, i + 8).map(one)); })();
+  await Promise.race([work, new Promise((r) => setTimeout(r, 12_000))]);  // a slow source costs one answer, not the listing
+}
+
+function listing(files, dir, recursive) {
+  const out = [], dirs = new Map();
+  for (const f of files) {
+    const parts = f[0].slice(dir.length).split("/");
+    for (let i = 1; i < parts.length && (recursive || i === 1); i++) {
+      const d = dir + parts.slice(0, i).join("/");
+      if (!dirs.has(d)) dirs.set(d, createHash("sha1"));
+      dirs.get(d).update(`${f[0]} ${f[2]}\n`);
+    }
+    if (recursive || parts.length === 1) out.push({ type: "file", oid: isLfs(f) ? hex(f[2]) : gitOid.get(f[2]) || hex(f[2]), size: f[1], path: f[0], ...(isLfs(f) ? { lfs: { oid: hex(f[2]), size: f[1], pointerSize: 0 } } : {}) });
+  }
+  for (const [d, h] of dirs) out.push({ type: "directory", oid: h.digest("hex"), size: 0, path: d });
+  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
 
 async function missing(res, id) {
   let gated = false;
@@ -555,19 +608,29 @@ http.createServer(async (req, res) => {
       if (!doc) return missing(res, refs[1]);
       return json(res, 200, { branches: [{ name: "main", ref: "refs/heads/main", targetCommit: doc.revision }], tags: [], converts: [] });
     }
-    const info = path.match(/^\/api\/models\/([^/]+\/[^/]+?)(?:\/revision\/(.+))?$/), tree = path.match(/^\/api\/models\/([^/]+\/[^/]+)\/tree\/([^/]+)(?:\/(.*))?$/);
+    const info = path.match(/^\/api\/models\/([^/]+\/[^/]+?)(?:\/revision\/(.+))?$/), tree = path.match(/^\/api\/models\/([^/]+\/[^/]+)\/(tree|treesize)\/([^/]+)(?:\/(.*))?$/);
     if (tree) {
       const doc = await model(tree[1]);
       if (!doc) return missing(res, tree[1]);
-      if (!revisionOk(doc, tree[2])) return refuse(res, 404, "RevisionNotFound", `The hub has ${doc.id} at ${doc.revision} only.`);
-      const dir = tree[3] ? `${tree[3].replace(/\/$/, "")}/` : "";
-      return json(res, 200, doc.files.filter((f) => f[0].startsWith(dir)).map((f) => ({ type: "file", oid: hex(f[2]), size: f[1], path: f[0], ...(isLfs(f) ? { lfs: { oid: hex(f[2]), size: f[1], pointerSize: 0 } } : {}) })));
+      if (!revisionOk(doc, tree[3])) return refuse(res, 404, "RevisionNotFound", `The hub has ${doc.id} at ${doc.revision} only.`);
+      const at = (tree[4] || "").replace(/\/$/, ""), dir = at ? `${at}/` : "";
+      const under = doc.files.filter((f) => f[0].startsWith(dir));
+      // A path that names nothing is Hugging Face's EntryNotFound, not an empty listing: clients tell the two apart.
+      if (at && !under.length) return refuse(res, 404, "EntryNotFound", `${at} is not a folder in ${doc.id} at ${doc.revision}.`);
+      if (tree[2] === "treesize") return json(res, 200, { path: at, size: under.reduce((s, f) => s + f[1], 0) });
+      // One page holds the whole listing, so any next page is empty (text-generation-webui pages until it gets []).
+      if (url.searchParams.has("cursor")) return json(res, 200, []);
+      await gitOids(doc, under);
+      return json(res, 200, listing(under, dir, ["true", "1"].includes(url.searchParams.get("recursive") || "")));
     }
     if (info) {
       const doc = await model(info[1]);
       if (!doc) return missing(res, info[1]);
       if (info[2] && !revisionOk(doc, info[2])) return refuse(res, 404, "RevisionNotFound", `The hub has ${doc.id} at ${doc.revision} only.`);
-      return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings: doc.files.map((f) => ({ rfilename: f[0] })) });
+      // ?blobs=true (huggingface_hub's files_metadata=True): size and the LFS sha256 per file, as Hugging Face sends.
+      const blobs = ["true", "1"].includes(url.searchParams.get("blobs") || "");
+      const siblings = doc.files.map((f) => blobs ? { rfilename: f[0], size: f[1], ...(isLfs(f) ? { lfs: { sha256: hex(f[2]), size: f[1], pointerSize: 0 } } : {}) } : { rfilename: f[0] });
+      return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings, ...(blobs ? { usedStorage: doc.files.reduce((s, f) => s + f[1], 0) } : {}) });
     }
 
     const file = path.match(/^\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+)$/);

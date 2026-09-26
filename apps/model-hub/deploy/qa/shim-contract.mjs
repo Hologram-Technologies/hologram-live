@@ -9,6 +9,7 @@
 //
 // Nothing here touches the live host: the shim runs on a loopback port against a directory of fixtures.
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -150,13 +151,14 @@ async function main() {
       const info = await get(`/api/models/${orphan}`);
       if (info.status !== 200) { bad(`the hub serves ${orphan}`, `getModel ${info.status}`); continue; }
       const doc = await info.json();
-      const tree = await (await get(`/api/models/${orphan}/tree/main`)).json();
-      const hashed = Array.isArray(tree) && tree.length && tree.every((f) => /^[0-9a-f]{64}$/.test(f.oid));
+      const tree = (await (await get(`/api/models/${orphan}/tree/main?recursive=true`)).json()).filter((e) => e.type === "file");
+      const hashed = Array.isArray(tree) && tree.length && tree.every((f) => (f.lfs ? /^[0-9a-f]{64}$/ : /^[0-9a-f]{40}([0-9a-f]{24})?$/).test(f.oid));
       if (hashed) ok(`the hub serves ${orphan} from its own objects`, `${tree.length} files, revision ${String(doc.sha).slice(0, 8)}`);
       else bad(`the hub serves ${orphan} from its own objects`, `tree ${JSON.stringify(tree).slice(0, 60)}`);
 
-      const red = await get(`/${orphan}/resolve/main/${tree[0].path}`, { method: "HEAD" });
-      if (red.status === 302 && (red.headers.get("etag") || "").includes(tree[0].oid)) ok(`  and redirects with the index hash`, `→ ${red.headers.get("x-hub-source")}`);
+      const big = tree.find((f) => f.lfs) || tree[0], want256 = big.lfs ? big.lfs.oid : big.oid;
+      const red = await get(`/${orphan}/resolve/main/${big.path}`, { method: "HEAD" });
+      if (red.status === 302 && (red.headers.get("etag") || "").includes(want256)) ok(`  and redirects with the index hash`, `→ ${red.headers.get("x-hub-source")}`);
       else bad(`  and redirects with the index hash`, `status ${red.status}, etag ${red.headers.get("etag")}`);
 
       const oci = await get(`/v2/${orphan.toLowerCase()}/manifests/latest`, { headers: { accept: "application/vnd.oci.image.manifest.v1+json" } });
@@ -181,6 +183,53 @@ async function main() {
     const small = await tool("get_model", { id: M });
     if (!small.files_truncated && small.files.length === small.files_total) ok("a small model is not truncated", `${small.files_total} files`);
     else bad("a small model is not truncated", `${small.files.length}/${small.files_total}`);
+
+    // ---- the Hugging Face listing, as the clients that page and walk it expect (MODEL-CLIENTS-GAP-CLOSURE G1, G2)
+    const all = await (await get(`/api/models/${M}/tree/main?recursive=true&expand=false`)).json();
+    const files = all.filter((e) => e.type === "file"), folders = all.filter((e) => e.type === "directory");
+    const nested = files.find((e) => e.path.includes("/"));
+    if (files.length === doc.files.length) ok("recursive tree lists every file", `${files.length} files, ${folders.length} folders`);
+    else bad("recursive tree lists every file", `${files.length} of ${doc.files.length}`);
+    if (!nested || folders.some((d) => nested.path.startsWith(`${d.path}/`))) ok("recursive tree lists the folders too", nested ? nested.path.split("/")[0] : "(no folders)");
+    else bad("recursive tree lists the folders too", `no folder entry for ${nested.path}`);
+    const top = await (await get(`/api/models/${M}/tree/main`)).json();
+    if (top.every((e) => !e.path.includes("/"))) ok("plain tree lists direct children only", `${top.length} entries`);
+    else bad("plain tree lists direct children only", `nested ${top.find((e) => e.path.includes("/")).path} — HfFileSystem.ls would misread it`);
+    if (nested) {
+      const d = nested.path.split("/")[0], sub = await (await get(`/api/models/${M}/tree/main/${d}`)).json();
+      if (sub.length && sub.every((e) => e.path.startsWith(`${d}/`))) ok("tree of a folder lists that folder", `${d}: ${sub.length}`);
+      else bad("tree of a folder lists that folder", JSON.stringify(sub).slice(0, 80));
+    }
+    const page2 = await get(`/api/models/${M}/tree/main?recursive=true&cursor=abc`);
+    const p2 = await page2.json();
+    if (page2.status === 200 && Array.isArray(p2) && !p2.length) ok("any next page is empty", "text-generation-webui stops");
+    else bad("any next page is empty", `${page2.status}, ${p2.length} entries — a cursor loop never ends`);
+    const nowhere = await get(`/api/models/${M}/tree/main/no-such-folder`);
+    if (nowhere.status === 404 && nowhere.headers.get("x-error-code") === "EntryNotFound") ok("a missing folder is EntryNotFound", "404");
+    else bad("a missing folder is EntryNotFound", `status ${nowhere.status}, ${nowhere.headers.get("x-error-code")}`);
+    const size = await (await get(`/api/models/${M}/treesize/main`)).json();
+    const want = doc.files.reduce((s, f) => s + f[1], 0);
+    if (size.size === want) ok("treesize is the sum of the file sizes", String(want));
+    else bad("treesize is the sum of the file sizes", `${size.size} vs ${want}`);
+    const meta = await (await get(`/api/models/${M}?blobs=true`)).json();
+    const lfs = meta.siblings.filter((s) => s.lfs);
+    if (meta.siblings.every((s) => Number.isInteger(s.size)) && lfs.length && lfs.every((s) => /^[0-9a-f]{64}$/.test(s.lfs.sha256)))
+      ok("?blobs=true siblings carry size and lfs.sha256", `${lfs.length} LFS of ${meta.siblings.length}`);
+    else bad("?blobs=true siblings carry size and lfs.sha256", JSON.stringify(meta.siblings[0]));
+    const w = lfs[0] && doc.files.find((f) => f[0] === lfs[0].rfilename);
+    if (w && w[2] === `sha256:${lfs[0].lfs.sha256}`) ok("  the sha256 is the index's", w[0]);
+    else bad("  the sha256 is the index's", lfs[0]?.rfilename);
+    // `hf cache verify` checks a git-kept file against git's blob sha1, an LFS file against its sha256.
+    const cfg = files.find((e) => e.path === "config.json"), cfgRow = doc.files.find((f) => f[0] === "config.json");
+    const body = cfg && Buffer.from(await (await fetch(cfgRow[4])).arrayBuffer());
+    const gitSha1 = body && createHash("sha1").update(`blob ${body.length} `).update(body).digest("hex");
+    if (cfg && !cfg.lfs && cfg.oid === gitSha1) ok("a small file's oid is git's blob sha1", cfg.oid.slice(0, 12));
+    else bad("a small file's oid is git's blob sha1", `${cfg?.oid} vs ${gitSha1}`);
+    if (files.filter((e) => e.lfs).every((e) => e.oid === e.lfs.oid && /^[0-9a-f]{64}$/.test(e.oid))) ok("an LFS file's oid is its sha256", `${files.filter((e) => e.lfs).length} files`);
+    else bad("an LFS file's oid is its sha256", "mismatch");
+    const plainInfo = await (await get(`/api/models/${M}`)).json();
+    if (plainInfo.siblings.every((s) => Object.keys(s).length === 1)) ok("without blobs, siblings stay names only", "as Hugging Face");
+    else bad("without blobs, siblings stay names only", JSON.stringify(plainInfo.siblings[0]));
 
     console.log(`\n${pass.length} passed, ${fail.length} failed`);
     if (fail.length) for (const f of fail) console.log(`  ${f}`);

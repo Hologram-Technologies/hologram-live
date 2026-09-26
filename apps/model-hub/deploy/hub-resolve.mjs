@@ -139,7 +139,7 @@ async function indexed(id) {
       const pin = Object.entries(pins.doc.models || {}).find(([k, v]) => k.toLowerCase() === id.toLowerCase() && v.revision === index.revision)?.[1];
       const sources = [{ kind: "huggingface.co", resolve: null, missing: [] }];
       if (pin) sources.push({ kind: "ipfs", resolve: `${pins.doc.gateway}${pin.root}/`, missing: pin.hidden ? [] : index.files.map((f) => f.path).filter((p) => p.split("/").some((part) => part.startsWith("."))) });
-      doc = { id: index.name || id, revision: index.revision, manifest: index.manifest, sources, files: index.files.map((f) => [f.path, f.size, f.address, f.weights ? 1 : 0, f.url]) };
+      doc = { id: index.name || id, revision: index.revision, manifest: index.manifest, sources, files: index.files.map((f) => [f.path, f.size, f.address, f.weights ? 1 : 0, f.url, f.hub_etag?.startsWith("gitsha1:") ? f.hub_etag.slice(8) : undefined]) };
     }
   } catch { /* the index did not answer: treat as unknown for now */ }
   if (remote.size > 500) remote.clear();
@@ -201,14 +201,24 @@ const json = (res, status, body, headers = {}) => { const text = JSON.stringify(
 const refuse = (res, status, code, message) => json(res, status, { error: message }, { "x-error-code": code, "x-error-message": message });
 const hex = (address) => address.split(":")[1];
 const isLfs = (f) => Boolean(f[3]);
+// An LFS file sits in git as a pointer whose text is fixed by the file's sha256 and size, so Hugging Face's `oid` for it
+// (git's blob sha1 of the pointer) and `pointerSize` follow from what the index holds, exactly, with no bytes.
+function lfsPointer(f) {
+  const text = `version https://git-lfs.github.com/spec/v1
+oid sha256:${hex(f[2])}
+size ${f[1]}
+`;
+  return { oid: createHash("sha1").update(`blob ${Buffer.byteLength(text)} ${text}`).digest("hex"), pointerSize: Buffer.byteLength(text) };
+}
 
 // Hugging Face's tree listing of the files under `dir`: the direct children (files and folders), or with `recursive`
 // every file and every folder beneath. A folder's oid is sha1 over its files' paths and addresses: stable and
-// distinct, but not git's tree sha1 (the hub holds file sha256s, not git objects). An LFS file's oid is its sha256.
+// distinct, but not git's tree sha1 (the hub holds file sha256s, not git objects). File oids are Hugging Face's exactly.
 // Hugging Face's `oid` for a file kept in git (not LFS) is git's blob sha1, and `hf cache verify` checks it that way
 // (measured with huggingface_hub 2.0: our sha256 there failed every small file). The index holds sha256 only, so the
 // sha1 is computed once per file from bytes that first matched the index's sha256, and kept by that sha256 for ever
-// (content in, content out: it never goes stale). Until a file's sha1 is known its oid stays the sha256.
+// (content in, content out: it never goes stale). The address index already carries the sha1 it checked the bytes
+// against (`hub_etag`), so this only runs for models known from elsewhere. Until a sha1 is known the oid is the sha256.
 const gitOid = new Map();
 let gitOidsRead = false;
 async function gitOids(doc, files) {
@@ -217,7 +227,7 @@ async function gitOids(doc, files) {
     gitOidsRead = true;
     try { for (const l of (await readFile(store, "utf8")).split("\n")) if (l) { const [s, g] = JSON.parse(l); gitOid.set(s, g); } } catch { /* first run */ }
   }
-  const todo = files.filter((f) => !isLfs(f) && f[1] <= 64 * 1048576 && !gitOid.has(f[2]));
+  const todo = files.filter((f) => !isLfs(f) && !f[5] && f[1] <= 64 * 1048576 && !gitOid.has(f[2]));
   const one = async (f) => {
     for (const kind of ORDER) {
       const source = doc.sources?.find((s) => s.kind === kind && !s.p2p && !(s.missing || []).includes(f[0]));
@@ -248,7 +258,9 @@ function listing(files, dir, recursive) {
       if (!dirs.has(d)) dirs.set(d, createHash("sha1"));
       dirs.get(d).update(`${f[0]} ${f[2]}\n`);
     }
-    if (recursive || parts.length === 1) out.push({ type: "file", oid: isLfs(f) ? hex(f[2]) : gitOid.get(f[2]) || hex(f[2]), size: f[1], path: f[0], ...(isLfs(f) ? { lfs: { oid: hex(f[2]), size: f[1], pointerSize: 0 } } : {}) });
+    if (!recursive && parts.length > 1) continue;
+    if (isLfs(f)) { const p = lfsPointer(f); out.push({ type: "file", oid: p.oid, size: f[1], path: f[0], lfs: { oid: hex(f[2]), size: f[1], pointerSize: p.pointerSize } }); }
+    else out.push({ type: "file", oid: f[5] || gitOid.get(f[2]) || hex(f[2]), size: f[1], path: f[0] });
   }
   for (const [d, h] of dirs) out.push({ type: "directory", oid: h.digest("hex"), size: 0, path: d });
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -453,7 +465,17 @@ async function ollama(req, res, id, kind, ref) {
   if (kind === "manifests") {
     const { file, sharded, quants } = pickGguf(doc, ref);
     if (!file) return ociError(res, 404, "MANIFEST_UNKNOWN", sharded ? `${ref} of ${doc.id} is split across several files; Ollama needs a single GGUF file.` : quants.length ? `${doc.id} has no ${ref}. It has: ${[...new Set(quants)].join(", ")}.` : `${doc.id} has no GGUF file; Ollama pulls GGUF models.`);
-    const bytes = await manifestFor(doc, ref, file);
+    let bytes = await manifestFor(doc, ref, file);
+    // llama.cpp before b8498 (distro builds, older embedders) asks this route with its own user agent and reads the
+    // file name from Hugging Face's extension to the manifest, `ggufFile` (captured from huggingface.co 2026-09-26).
+    if (/^llama-cpp/i.test(req.headers["user-agent"] || "")) {
+      const m = JSON.parse(bytes.toString("utf8"));
+      const p = lfsPointer(file);
+      m.ggufFile = { rfilename: file[0], blobId: p.oid, size: file[1], lfs: { sha256: hex(file[2]), size: file[1], pointerSize: p.pointerSize } };
+      bytes = Buffer.from(JSON.stringify(m));
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": bytes.length, "x-repo-commit": doc.revision, "cache-control": "no-store" });
+      return res.end(req.method === "HEAD" ? undefined : bytes);
+    }
     res.writeHead(200, { "content-type": MANIFEST_TYPE, "content-length": bytes.length, "docker-content-digest": sha(bytes), "x-repo-commit": doc.revision, "cache-control": "no-store" });
     return res.end(req.method === "HEAD" ? undefined : bytes);
   }
@@ -629,7 +651,7 @@ http.createServer(async (req, res) => {
       if (info[2] && !revisionOk(doc, info[2])) return refuse(res, 404, "RevisionNotFound", `The hub has ${doc.id} at ${doc.revision} only.`);
       // ?blobs=true (huggingface_hub's files_metadata=True): size and the LFS sha256 per file, as Hugging Face sends.
       const blobs = ["true", "1"].includes(url.searchParams.get("blobs") || "");
-      const siblings = doc.files.map((f) => blobs ? { rfilename: f[0], size: f[1], ...(isLfs(f) ? { lfs: { sha256: hex(f[2]), size: f[1], pointerSize: 0 } } : {}) } : { rfilename: f[0] });
+      const siblings = doc.files.map((f) => blobs ? { rfilename: f[0], size: f[1], ...(isLfs(f) ? { blobId: lfsPointer(f).oid, lfs: { sha256: hex(f[2]), size: f[1], pointerSize: lfsPointer(f).pointerSize } } : { ...(f[5] || gitOid.get(f[2]) ? { blobId: f[5] || gitOid.get(f[2]) } : {}) }) } : { rfilename: f[0] });
       return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings, ...(blobs ? { usedStorage: doc.files.reduce((s, f) => s + f[1], 0) } : {}) });
     }
 

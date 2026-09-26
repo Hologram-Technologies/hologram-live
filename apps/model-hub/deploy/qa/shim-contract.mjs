@@ -56,6 +56,13 @@ async function fixtures() {
   for (const [n, size] of [["config.json", 612], ["tokenizer.json", 1_200_000], ["tokenizer_config.json", 1400], ["vocab.json", 800_000], ["zzz-last.json", 10]])
     many.files.push([n, size, `sha256:${n.padEnd(64, "f").slice(0, 64).replace(/[^0-9a-f]/g, "a")}`, 0, `https://example.invalid/${n}`]);
   await writeFile(join(FIX, "files", "fixture", "many-files.json"), JSON.stringify(many));
+
+  // A GGUF quantisation repo as the address index lists one (bartowski's Q8_0, proven byte-exact from IPFS objects).
+  const gguf = { ...base, files: [
+    ["README.md", 9807, "sha256:09b1f05942d11f5c4f1a5b3a0e4fc5a6bd6e0a47f0c2f7f5ad2a4c7b9e1d3f01", 0, "https://example.invalid/README.md"],
+    ["SmolLM2-135M-Instruct-Q8_0.gguf", 144811392, "sha256:5a1395716f7913741cc7b61ebe0d2f7ee2c1ca3ad83dd6d3f2a0a5b0f9d7c2e1", 1,
+      "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q8_0.gguf"]] };
+  await writeFile(join(FIX, "files", "fixture", "gguf-repo.json"), JSON.stringify(gguf));
   console.log(`  synthesised fixture/hf-only (1 source) and fixture/many-files (${many.files.length} files)`);
 }
 
@@ -152,7 +159,7 @@ async function main() {
       if (info.status !== 200) { bad(`the hub serves ${orphan}`, `getModel ${info.status}`); continue; }
       const doc = await info.json();
       const tree = (await (await get(`/api/models/${orphan}/tree/main?recursive=true`)).json()).filter((e) => e.type === "file");
-      const hashed = Array.isArray(tree) && tree.length && tree.every((f) => (f.lfs ? /^[0-9a-f]{64}$/ : /^[0-9a-f]{40}([0-9a-f]{24})?$/).test(f.oid));
+      const hashed = Array.isArray(tree) && tree.length && tree.every((f) => /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(f.oid) && (!f.lfs || /^[0-9a-f]{64}$/.test(f.lfs.oid)));
       if (hashed) ok(`the hub serves ${orphan} from its own objects`, `${tree.length} files, revision ${String(doc.sha).slice(0, 8)}`);
       else bad(`the hub serves ${orphan} from its own objects`, `tree ${JSON.stringify(tree).slice(0, 60)}`);
 
@@ -179,6 +186,17 @@ async function main() {
     const thin = found.find((m) => m.id === "thesysdev/OUI-1");
     if (thin && thin.hologram && thin.hologram.listed === false) ok("a thin row says it is thin", "hologram.listed false");
     else if (thin) bad("a thin row says it is thin", `hologram ${JSON.stringify(thin.hologram)}`);
+
+    // ---- llama.cpp before b8498 reads the GGUF file name from Hugging Face's `ggufFile` manifest extension
+    const old = await get("/v2/FIXTURE/GGUF-REPO/manifests/q8_0", { headers: { "user-agent": "llama-cpp/b8400-cf23ee244", accept: "application/json" } });
+    const om = old.status === 200 ? await old.json() : {};
+    if (om.ggufFile?.rfilename === "SmolLM2-135M-Instruct-Q8_0.gguf" && om.ggufFile.lfs?.sha256?.startsWith("5a1395716f79") && om.layers?.length)
+      ok("old llama.cpp gets ggufFile (any case)", om.ggufFile.rfilename);
+    else bad("old llama.cpp gets ggufFile (any case)", `status ${old.status} ${JSON.stringify(om).slice(0, 80)}`);
+    const oll = await get("/v2/fixture/gguf-repo/manifests/Q8_0", { headers: { "user-agent": "ollama/0.12.0" } });
+    const olm = oll.status === 200 ? await oll.json() : {};
+    if (!olm.ggufFile && olm.layers?.some((l) => l.digest.startsWith("sha256:5a1395716f79"))) ok("Ollama's manifest stays Ollama's", "no ggufFile, model layer present");
+    else bad("Ollama's manifest stays Ollama's", `status ${oll.status}`);
 
     const small = await tool("get_model", { id: M });
     if (!small.files_truncated && small.files.length === small.files_total) ok("a small model is not truncated", `${small.files_total} files`);
@@ -225,8 +243,16 @@ async function main() {
     const gitSha1 = body && createHash("sha1").update(`blob ${body.length} `).update(body).digest("hex");
     if (cfg && !cfg.lfs && cfg.oid === gitSha1) ok("a small file's oid is git's blob sha1", cfg.oid.slice(0, 12));
     else bad("a small file's oid is git's blob sha1", `${cfg?.oid} vs ${gitSha1}`);
-    if (files.filter((e) => e.lfs).every((e) => e.oid === e.lfs.oid && /^[0-9a-f]{64}$/.test(e.oid))) ok("an LFS file's oid is its sha256", `${files.filter((e) => e.lfs).length} files`);
-    else bad("an LFS file's oid is its sha256", "mismatch");
+    if (files.filter((e) => e.lfs).every((e) => /^[0-9a-f]{40}$/.test(e.oid) && /^[0-9a-f]{64}$/.test(e.lfs.oid) && e.lfs.pointerSize > 100)) ok("an LFS file: pointer sha1 as oid, sha256 in lfs", `${files.filter((e) => e.lfs).length} files`);
+    else bad("an LFS file: pointer sha1 as oid, sha256 in lfs", JSON.stringify(files.find((e) => e.lfs)));
+    // The whole listing, entry by entry, against Hugging Face's own at the same commit.
+    try {
+      const theirs = await (await fetch(`https://huggingface.co/api/models/${M}/tree/${doc.revision}?recursive=true`, { signal: AbortSignal.timeout(20_000) })).json();
+      const key = (e) => JSON.stringify([e.path, e.oid, e.size, e.lfs?.oid || null, e.lfs?.pointerSize || null]);
+      const want = new Set(theirs.filter((e) => e.type === "file").map(key)), differ = files.filter((e) => !want.has(key(e)));
+      if (!differ.length && want.size === files.length) ok("every file entry equals huggingface.co's", `${files.length} of ${want.size}`);
+      else bad("every file entry equals huggingface.co's", `${differ.length} differ, e.g. ${differ[0] && key(differ[0])}`);
+    } catch (e) { console.log(`skip every file entry equals huggingface.co's (${e.message})`); }
     const plainInfo = await (await get(`/api/models/${M}`)).json();
     if (plainInfo.siblings.every((s) => Object.keys(s).length === 1)) ok("without blobs, siblings stay names only", "as Hugging Face");
     else bad("without blobs, siblings stay names only", JSON.stringify(plainInfo.siblings[0]));

@@ -10,6 +10,7 @@
 //                                                        or a render that exists nowhere as a file); Range honoured
 //   GET      /v2/models/<owner>/<name>/tags/list
 //   GET      /v2/models/<owner>/<name>/tensors            the tensor table (also the manifest's config blob)
+//   GET      /v2/models/<owner>/<name>/provenance         per-κ provenance sample: narrow dtype, sign, row blocks
 //
 // State ($HUB_STATE/tensors, built by tensors/pipeline.mjs and synced like the κ mirror's):
 //   models.json   { "<owner>/<name>": { rev, index, manifests: {format: digest}, table, blobs: {digest: {path,size,layout?,held?,upstream?}}, gated } }
@@ -144,7 +145,7 @@ export async function tensorMirror(req, res, path) {
     res.end(req.method === "HEAD" ? undefined : t);
     return true;
   }
-  const mm = path.match(/^\/v2\/(models|tensors)\/([^/]+\/[^/]+)\/(manifests|blobs|tags|tensors|alternatives)(?:\/([^/]+))?$/);
+  const mm = path.match(/^\/v2\/(models|tensors)\/([^/]+\/[^/]+)\/(manifests|blobs|tags|tensors|provenance|alternatives)(?:\/([^/]+))?$/);
   if (!mm) return false;
   const [, space, name, kind, ref] = mm;
   const { models, alts, lower } = await load();
@@ -158,6 +159,7 @@ export async function tensorMirror(req, res, path) {
     res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(t) }); res.end(req.method === "HEAD" ? undefined : t);
     return true;
   }
+  if (kind === "provenance") { const b = m.provenance && await held(m.provenance); if (!b) return ociError(res, 404, "BLOB_UNKNOWN", "no provenance sample for this model"), true; send(res, b, "application/vnd.hologram.provenance.v1+json", m.provenance); return true; }
   if (kind === "tensors") { const b = await held(m.table); if (!b) return ociError(res, 404, "BLOB_UNKNOWN", "table not held"), true; send(res, b, "application/vnd.hologram.tensors.v1+json", m.table); return true; }
 
   if (kind === "manifests") {

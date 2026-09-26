@@ -203,7 +203,7 @@ async function gate(repos) {
 // roots/<day>.json and latest.json name it. Tables and manifests are shared across days by digest.
 function seal() {
   const models = read("models.json", {}), idx = alternativesIndex();
-  const pub = Object.fromEntries(Object.entries(models).filter(([, m]) => m.gated).map(([r, m]) => [r, { rev: m.rev, index: m.index, canonical: m.canonical, tensors: m.tensors, weightBytes: m.weightBytes, license: m.license }]));
+  const pub = Object.fromEntries(Object.entries(models).filter(([, m]) => m.gated).map(([r, m]) => [r, { rev: m.rev, index: m.index, canonical: m.canonical, tensors: m.tensors, weightBytes: m.weightBytes, license: m.license, ...(m.provenance ? { provenance: m.provenance } : {}) }]));
   // relations: same weights (canonical κ equal), and tensors shared across repos (bytes)
   const byCanon = new Map(); for (const [r, m] of Object.entries(pub)) if (m.canonical) (byCanon.get(m.canonical) || byCanon.set(m.canonical, []).get(m.canonical)).push(r);
   const sameWeights = [...byCanon.values()].filter((l) => l.length > 1);

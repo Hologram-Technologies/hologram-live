@@ -34,6 +34,23 @@ IPFS_API=http://127.0.0.1:5001 node pipeline.mjs pin <repo>   # optional: payloa
 
 One runner at a time (a lock file); every stage is idempotent and resumes where it stopped.
 
+## Provenance sample
+
+Computed in the same single pass from the canonical bytes `hashpass.mjs` emits (`lib/sample.mjs`), and kept out of
+the tensor table so the table stays small. One object per model, `application/vnd.hologram.provenance.v1+json`,
+reachable from the day root (so it travels in the CAR) and served at `/v2/models/<owner>/<name>/provenance`:
+
+    { v, repo, revision, method, rows: [[κ, narrowDtype, narrow, signB64, blocks], ...] }     one row per distinct κ
+
+| Field | What it is |
+|---|---|
+| `narrowDtype`, `narrow` | the narrowest of BF16, F16, F32 that holds every value exactly, and sha256 of the payload in it. Equals κ when the tensor is already stored narrowest (the common case); an f32 file of bf16 values gets the bf16 tensor's digest. An equivalence key only, never a replacement for κ (and not `canonical`, the model κ) |
+| `signB64` | the sign bits at element indices floor(k·n/4096), k < 4096, MSB-first: agreement between same-name, same-shape tensors measures lineage (independent training 49.9 %, fine-tunes, merges and edits 95.6-100 %, ten measured pairs) |
+| `blocks` | [sha256, bytes] per 1024 rows of the narrow payload: a vocabulary resize keeps every earlier block |
+
+Float tensors only (BF16, F16, F32); GGUF quantised types and integers carry no sample. About 0.8 KB per distinct
+tensor. `test/sample.test.mjs` holds the rules to vectors from the Python reference (`tensorhash.py`).
+
 ## Serve
 
 `deploy/tensor-mirror.mjs` answers `/v2/models/<org>/<name>/…` (weight files 307 to Hugging Face while it serves)

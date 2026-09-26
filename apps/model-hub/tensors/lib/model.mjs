@@ -112,13 +112,14 @@ export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log
       segments: f.result.segments.map((s) => [s.kind, s.digest, s.len, s.off]) };
     f.layout = store.putJson(layout);
   }
-  // Provenance: one row per distinct κ (the same κ has the same sample): [κ, narrowDtype, narrow, signB64, blocks].
+  // Provenance: one row per distinct (κ, shape): [κ, shape, narrowDtype, narrow, signB64, blocks]. Shape is part of the
+  // key because row blocks cut along axis 0: the same bytes under two shapes (a reshape alias) have different blocks.
   const provRows = new Map();
   for (const [key, s] of samples) {
-    const kappa = kappaOf.get(key);
-    if (provRows.has(kappa)) continue;
+    const kappa = kappaOf.get(key), shape = s.shape, id = `${kappa}|${JSON.stringify(shape)}`;
+    if (provRows.has(id)) continue;
     const r = s.result();
-    provRows.set(kappa, [kappa, r.narrowDtype, r.narrow, Buffer.from(r.sign, "hex").toString("base64"), r.blocks || []]);
+    provRows.set(id, [kappa, shape, r.narrowDtype, r.narrow, Buffer.from(r.sign, "hex").toString("base64"), r.blocks || []]);
   }
   const provenance = provRows.size ? store.putJson({ v: 1, repo, revision: rev,
     method: "hologram.provenance/v1: narrowest exact dtype of BF16, F16, F32; sign bits at floor(k*n/4096), k<4096, MSB-first; sha256 per 1024 rows of the narrow payload",

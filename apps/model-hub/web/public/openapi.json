@@ -786,7 +786,7 @@
    },
    "TreeEntry": {
     "type": "object",
-    "description": "One file, with the hash a download must match.",
+    "description": "One file, with the hash a download must match; or, when `recursive` is given, one folder.",
     "required": [
      "type",
      "oid",
@@ -795,8 +795,11 @@
     ],
     "properties": {
      "type": {
-      "const": "file",
-      "description": "Only files: the index holds no directory entries."
+      "enum": [
+       "file",
+       "directory"
+      ],
+      "description": "`directory` only when `recursive` is given. A folder's `oid` is a stable SHA-1 over its files, not git's tree hash."
      },
      "oid": {
       "type": "string",
@@ -811,7 +814,7 @@
      },
      "lfs": {
       "type": "object",
-      "description": "Present on large files, for clients that branch on it. Its `oid` repeats the SHA-256 above rather than differing from it.",
+      "description": "Present on every file, small ones included, and its `oid` repeats the SHA-256 above. That is what makes Hugging Face's own `hf cache verify` check every file by SHA-256: it checks an entry without `lfs` by git's blob SHA-1, which the hub does not hold.",
       "properties": {
        "oid": {
         "type": "string",
@@ -3312,7 +3315,7 @@
     ],
     "operationId": "listModelFiles",
     "summary": "Every file, with its size and its SHA-256",
-    "description": "`oid` is the SHA-256 of the file's bytes, which is the value you check a download against. This is the only place the expected hashes come from: never take a hash from the source that serves the bytes.",
+    "description": "`oid` is the SHA-256 of the file's bytes, which is the value you check a download against. This is the only place the expected hashes come from: never take a hash from the source that serves the bytes.\n\nWithout `recursive`, every file and only files, in one page. With `recursive` (as `huggingface_hub` always sends it) the answer is Hugging Face's: `true` adds folder entries, `false` lists the direct children, folders included. Any `cursor` page is empty: the first page holds everything.",
     "parameters": [
      {
       "name": "owner",
@@ -3343,11 +3346,26 @@
        "type": "string"
       },
       "example": "main"
+     },
+     {
+      "name": "recursive",
+      "in": "query",
+      "required": false,
+      "description": "Absent: every file, files only. `true`: every file and folder beneath. `false`: the direct children, folders included (Hugging Face's meanings).",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "true",
+        "false",
+        "True",
+        "False"
+       ]
+      }
      }
     ],
     "responses": {
      "200": {
-      "description": "One entry per file.",
+      "description": "One entry per file (and per folder when `recursive` is given).",
       "content": {
        "application/json": {
         "schema": {
@@ -3454,6 +3472,21 @@
       "example": "main"
      },
      {
+      "name": "recursive",
+      "in": "query",
+      "required": false,
+      "description": "Absent: every file, files only. `true`: every file and folder beneath. `false`: the direct children, folders included (Hugging Face's meanings).",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "true",
+        "false",
+        "True",
+        "False"
+       ]
+      }
+     },
+     {
       "name": "prefix",
       "in": "path",
       "required": true,
@@ -3467,7 +3500,7 @@
     ],
     "responses": {
      "200": {
-      "description": "One entry per file under the prefix; empty if nothing matches.",
+      "description": "One entry per file under the prefix.",
       "content": {
        "application/json": {
         "schema": {
@@ -3475,6 +3508,103 @@
          "items": {
           "$ref": "#/components/schemas/TreeEntry"
          }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not in the index, indexed at another revision, or nothing under the prefix (`X-Error-Code: EntryNotFound`, as Hugging Face).",
+      "headers": {
+       "x-error-code": {
+        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HubError"
+        },
+        "example": {
+         "error": "no-such-folder is not a folder in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/models/{owner}/{name}/treesize/{revision}": {
+   "get": {
+    "tags": [
+     "Models"
+    ],
+    "operationId": "getModelSize",
+    "summary": "The total bytes of every file",
+    "description": "Hugging Face's `treesize`, which download scripts (hfd.sh) read before they start. `/treesize/{revision}/{prefix}` sums one folder.",
+    "parameters": [
+     {
+      "name": "owner",
+      "in": "path",
+      "required": true,
+      "description": "The owning organisation or user, exactly as on Hugging Face.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "sentence-transformers"
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "description": "The model name.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "all-MiniLM-L6-v2"
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "schema": {
+       "type": "string"
+      },
+      "example": "main"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The sum of the file sizes.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "path",
+          "size"
+         ],
+         "properties": {
+          "path": {
+           "type": "string"
+          },
+          "size": {
+           "type": "integer"
+          }
+         }
+        },
+        "example": {
+         "path": "",
+         "size": 976948716
         }
        }
       }

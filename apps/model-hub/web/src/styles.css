@@ -386,8 +386,8 @@
 .title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-5); min-width: 0; }
 .stats { display: inline-flex; align-items: center; gap: var(--space-3); font-size: var(--hh-ui); color: var(--hh-text-dim); white-space: nowrap; }
 .stats > span:not(.dot) { display: inline-flex; align-items: center; gap: var(--space-1); }
-.stats b { font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
-.stats .i { width: 18px; height: 18px; }
+.stats b { font-weight: inherit; font-variant-numeric: tabular-nums; color: var(--hh-text); }
+.stats .i { width: 1em; height: 1em; color: var(--hh-text-dim); }
 .stats .dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .7; font-size: 0; overflow: hidden; }
 .hero .tags { height: auto; gap: var(--space-2); }
 .actions { display: flex; gap: var(--space-3); }

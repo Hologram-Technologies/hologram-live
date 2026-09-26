@@ -15,6 +15,7 @@
 //   GET  /api/models/<org>/<name>/refs                                     branches: main at the indexed revision (llama.cpp -hf)
 //   GET|HEAD /v2/<org>/<name>/manifests/<quant> and /blobs/<digest>        Ollama's registry dialect (see below)
 //   (same routes, Accept: application/vnd.oci.image.manifest.v1+json)      OCI model artifacts, CNCF ModelPack: oras, modctl, Docker Model Runner
+//   GET  /api/v1/models/<org>/<name>/repo/files, /repo?FilePath=, /revisions   ModelScope's dialect (MODELSCOPE_ENDPOINT)
 //   POST /<org>/<name>.git/info/lfs/objects/batch                         Git LFS batch API, download only (lfs.url)
 //   POST /mcp                                                              MCP for agents: search_models, get_model, resolve_file
 // Older clients read those three headers from our 302 and GET the Location; huggingface_hub 1.32 follows the redirect
@@ -275,11 +276,13 @@ function listing(files, dir, recursive) {
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+// A model asked for but not indexed: the next index run picks it up.
+const record = (id) => { if (/^[\w.-]+\/[\w.-]+$/.test(id)) appendFile(join(STATE, "requested.txt"), `${new Date().toISOString().slice(0, 10)} ${id}\n`).catch(() => {}); };
 async function missing(res, id) {
   let gated = false;
   try { gated = JSON.parse(await readFile(join(DATA, "models.json"), "utf8")).models.some((m) => m.id.toLowerCase() === id.toLowerCase() && m.state === "skipped"); } catch { /* no catalog */ }
   if (gated) return refuse(res, 403, "GatedRepo", `${id} is gated on Hugging Face. The hub serves public models only; use huggingface.co directly for this one.`);
-  if (/^[\w.-]+\/[\w.-]+$/.test(id)) appendFile(join(STATE, "requested.txt"), `${new Date().toISOString().slice(0, 10)} ${id}\n`).catch(() => {});
+  record(id);
   return refuse(res, 404, "RepoNotFound", `${id} is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile.`);
 }
 // The catalog the site shows, in the shape Hugging Face's list route answers. A search costs an agent a few hundred
@@ -681,6 +684,34 @@ http.createServer(async (req, res) => {
     if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
     if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);
     if (path === "/api/hub/health") return json(res, 200, { sources: health, order: ORDER }, { "cache-control": "no-store", "access-control-allow-origin": "*" });
+
+    // ModelScope's dialect: `MODELSCOPE_ENDPOINT=https://gethologram.ai` (modelscope 1.40 SDK, recorded 2026-09-26).
+    // Its SDK hashes every file against the listing's Sha256 on download and on every cache hit: the strongest client.
+    const ms = path.match(/^\/api\/v1\/models\/([^/]+\/[^/]+?)(\/repo\/files|\/repo|\/revisions)?$/);
+    if (ms || path === "/api/v1/repos/internalAccelerationInfo") {
+      const ok = (Data) => json(res, 200, { Code: 200, Data, Message: "success", Success: true });
+      const no = (status, Message) => json(res, status, { Code: status, Data: null, Message, Success: false });
+      if (!ms) return ok({});
+      const doc = await model(ms[1]);
+      if (!doc) { record(ms[1]); return no(404, `${ms[1]} is not in the Hologram index yet; the request was recorded for the next index run.`); }
+      const rev = url.searchParams.get("Revision") || "master";
+      if (rev !== "master" && !revisionOk(doc, rev)) return no(404, `The hub has ${doc.id} at ${doc.revision} (master) only.`);
+      if (ms[2] === "/revisions") return ok({ RevisionMap: { Branches: [{ Revision: "master", CreatedAt: 0 }], Tags: [] } });
+      if (!ms[2]) return ok({ Name: doc.id.split("/")[1], Path: doc.id.split("/")[0], Revision: doc.revision, ModelId: doc.id });
+      if (ms[2] === "/repo/files") {
+        const dirs = [...new Set(doc.files.flatMap((f) => f[0].split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))))];
+        return ok({ Files: [
+          ...dirs.map((d) => ({ Name: d.split("/").pop(), Path: d, Type: "tree", Size: 0, Sha256: "", IsLFS: false, Revision: doc.revision })),
+          ...doc.files.map((f) => ({ Name: f[0].split("/").pop(), Path: f[0], Type: "blob", Size: f[1], Sha256: hex(f[2]), IsLFS: isLfs(f), Revision: doc.revision })),
+        ] });
+      }
+      const entry = doc.files.find((f) => f[0] === url.searchParams.get("FilePath"));
+      if (!entry) return no(404, `${url.searchParams.get("FilePath")} is not in ${doc.id}.`);
+      if (VERIFY) return serveVerified(req, res, doc, entry, via, { etag: `"${hex(entry[2])}"` });
+      const { source } = choose(doc, entry, via);
+      res.writeHead(302, { location: urlFor(doc, source, entry), etag: `"${hex(entry[2])}"`, "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });
+      return res.end();
+    }
 
     // Measured with huggingface_hub 1.32: the client follows our redirect on HEAD, meets Hugging Face's Xet headers
     // there, and then asks *this* endpoint for the Xet read token. The token is Hugging Face's to give: send the

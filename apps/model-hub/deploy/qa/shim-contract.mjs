@@ -187,6 +187,24 @@ async function main() {
     if (thin && thin.hologram && thin.hologram.listed === false) ok("a thin row says it is thin", "hologram.listed false");
     else if (thin) bad("a thin row says it is thin", `hologram ${JSON.stringify(thin.hologram)}`);
 
+    // ---- ModelScope's dialect (MODELSCOPE_ENDPOINT): the SDK hashes every file against Sha256, on every cache hit too
+    const msf = await (await get(`/api/v1/models/${M}/repo/files?Revision=master&Recursive=True`)).json();
+    const blobsMs = (msf.Data?.Files || []).filter((f) => f.Type === "blob");
+    const sameMs = blobsMs.length === doc.files.length && blobsMs.every((f) => doc.files.some((d) => d[0] === f.Path && d[1] === f.Size && d[2] === `sha256:${f.Sha256}`));
+    if (msf.Code === 200 && sameMs) ok("ModelScope file list: every Sha256 is the index's", `${blobsMs.length} files`);
+    else bad("ModelScope file list: every Sha256 is the index's", JSON.stringify(msf).slice(0, 100));
+    const msget = await get(`/api/v1/models/${M}/repo?Revision=master&FilePath=config.json`);
+    if (msget.status === 302 && msget.headers.get("location")) ok("ModelScope file download redirects to a holder", msget.headers.get("x-hub-source"));
+    else bad("ModelScope file download redirects to a holder", String(msget.status));
+    const acc = await (await get("/api/v1/repos/internalAccelerationInfo")).json();
+    const revs = await (await get(`/api/v1/models/${M}/revisions`)).json();
+    if (acc.Code === 200 && revs.Data?.RevisionMap?.Branches?.[0]?.Revision === "master") ok("ModelScope side calls answered", "acceleration info, revisions");
+    else bad("ModelScope side calls answered", JSON.stringify([acc, revs]).slice(0, 100));
+    const msno = await get("/api/v1/models/nobody/not-a-model/repo/files");
+    const msnoj = await msno.json();
+    if (msno.status === 404 && msnoj.Success === false) ok("ModelScope: unknown model is its 404", msnoj.Message.slice(0, 40));
+    else bad("ModelScope: unknown model is its 404", String(msno.status));
+
     // ---- llama.cpp before b8498 reads the GGUF file name from Hugging Face's `ggufFile` manifest extension
     const old = await get("/v2/FIXTURE/GGUF-REPO/manifests/q8_0", { headers: { "user-agent": "llama-cpp/b8400-cf23ee244", accept: "application/json" } });
     const om = old.status === 200 ? await old.json() : {};

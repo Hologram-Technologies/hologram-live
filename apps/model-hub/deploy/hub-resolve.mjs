@@ -654,6 +654,14 @@ async function lfsBatch(req, res, id) {
   return reply(200, { transfer: "basic", objects, hash_algo: "sha256" });
 }
 
+// Where every digest this endpoint hands out comes from, so nobody has to trust the endpoint: the canonical manifest
+// (the sorted file list: path, size, sha256) is named by its own BLAKE3 and published in the public address index,
+// commit history and all. Fetch it, hash it, compare it with the tree: a gateway that swapped a digest is caught.
+function trust(doc) {
+  const m = /^blake3:([0-9a-f]{64})$/.exec(doc.manifest || "");
+  return m ? { manifest: doc.manifest, manifest_url: `${API}/v1/manifests/${m[1]}.json`, check: "blake3 of manifest_url's bytes equals manifest; its files equal this model's tree" } : { manifest: doc.manifest || null };
+}
+
 const revisionOk = (doc, rev) => rev === "main" || (rev.length >= 7 && doc.revision.startsWith(rev));
 
 http.createServer(async (req, res) => {
@@ -747,7 +755,7 @@ http.createServer(async (req, res) => {
       // ?blobs=true (huggingface_hub's files_metadata=True): size and the LFS sha256 per file, as Hugging Face sends.
       const blobs = ["true", "1"].includes(url.searchParams.get("blobs") || "");
       const siblings = doc.files.map((f) => blobs ? { rfilename: f[0], size: f[1], ...(isLfs(f) ? { blobId: lfsPointer(f).oid, lfs: { sha256: hex(f[2]), size: f[1], pointerSize: lfsPointer(f).pointerSize } } : { ...(f[5] || gitOid.get(f[2]) ? { blobId: f[5] || gitOid.get(f[2]) } : {}) }) } : { rfilename: f[0] });
-      return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings, ...(blobs ? { usedStorage: doc.files.reduce((s, f) => s + f[1], 0) } : {}) });
+      return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings, ...(blobs ? { usedStorage: doc.files.reduce((s, f) => s + f[1], 0) } : {}), hologram: trust(doc) });
     }
 
     const file = path.match(/^\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+)$/);

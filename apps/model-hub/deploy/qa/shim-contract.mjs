@@ -187,6 +187,15 @@ async function main() {
     if (thin && thin.hologram && thin.hologram.listed === false) ok("a thin row says it is thin", "hologram.listed false");
     else if (thin) bad("a thin row says it is thin", `hologram ${JSON.stringify(thin.hologram)}`);
 
+    // ---- the trust root: model info names the public canonical manifest every digest comes from
+    const tr = (await (await get(`/api/models/${M}`)).json()).hologram;
+    try {
+      const man = await (await fetch(tr.manifest_url, { signal: AbortSignal.timeout(20_000) })).json();
+      const same = man.files.length === doc.files.length && man.files.every((f) => doc.files.some((d) => d[0] === f.path && d[1] === f.size && d[2] === f.address));
+      if (same && man.revision === doc.revision) ok("model info names the public manifest; its files are the tree's", tr.manifest.slice(0, 20));
+      else bad("model info names the public manifest; its files are the tree's", `${man.files.length} files, revision ${man.revision}`);
+    } catch (e) { bad("model info names the public manifest", `${tr?.manifest_url}: ${e.message}`); }
+
     // ---- ModelScope's dialect (MODELSCOPE_ENDPOINT): the SDK hashes every file against Sha256, on every cache hit too
     const msf = await (await get(`/api/v1/models/${M}/repo/files?Revision=master&Recursive=True`)).json();
     const blobsMs = (msf.Data?.Files || []).filter((f) => f.Type === "blob");

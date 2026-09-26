@@ -19,6 +19,24 @@ gethologram.ai, gethologram.ai {
 		request_header -Authorization
 		reverse_proxy hub-resolve:8090
 	}
+	# The tensor index: every indexed model as an OCI artifact rebuilt from κ-addressed tensors. The plain name
+	# /v2/<org>/<name>/ is already routed above (@ollama); these are the explicit spaces, /v2/models/… (redirects
+	# while Hugging Face serves) and /v2/tensors/… (always rebuilt), plus the catalogue and per-model summary.
+	@tensors path_regexp tensors ^/v2/(models|tensors)/
+	handle @tensors {
+		request_header -Authorization
+		reverse_proxy hub-resolve:8090
+	}
+	# The address is also a link: a browser opening <host>/<org>/<name> lands on that model's page (hub-resolve
+	# knows its real capitalisation; an unknown name opens the search). The site's own sections are never matched.
+	@modelpage {
+		path_regexp modelpage ^/[^/]+/[^/]+/?$
+		header Accept *text/html*
+		not path /models/* /registry/* /spaces/* /buckets/* /docs/* /at/* /data/* /kit/* /fonts/* /logos/* /vendor/* /wallpapers/* /auth/* /avatars/* /lib/* /api/* /v1/* /v2/* /via/*
+	}
+	handle @modelpage {
+		reverse_proxy hub-resolve:8090
+	}
 
 	handle @hf {
 		request_header -Authorization

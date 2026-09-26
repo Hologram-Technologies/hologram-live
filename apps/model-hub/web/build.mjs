@@ -6,6 +6,7 @@
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { checkSealed } from "./qa/registry-sealed.mjs";
 import { checkKappa } from "./qa/registry-kappa.mjs";
+import { checkTensorIndex } from "./qa/tensor-index.mjs";
 import { bucketsOf, checkBucketLinks } from "./qa/buckets-links.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -273,20 +274,46 @@ ${archive ? `<div class="archive-hidden" hidden>${indexPill()}</div>` : ""}
 // Sources a file can be downloaded from, as table columns. The hub registry holds the daily index only (decision
 // 2026-09-18), so it is not a weights source here; data.mjs still records it if a model ever appears there.
 const SOURCE_COLUMNS = [["huggingface.co", "Hugging Face"], ["modelscope.cn", "ModelScope"], ["ipfs", "IPFS"], ["bittorrent", "P2P"]];
-// The manifest address drawn as braille: 32 bytes, 32 cells, two rows of 16. Lossless: the dots are the bits.
-function signature(manifest) {
-  const bytes = B.hexToBytes(manifest.split(":")[1]);
-  return `<div class="signature" title="${R.esc(manifest)}">
-    <span class="label">Address</span>
-    <span class="bx glyph" id="glyph" aria-hidden="true"><span>${B.cells(bytes.slice(0, 16))}</span><span>${B.cells(bytes.slice(16))}</span></span>
+// One address per model, written the way it is used: host/org/name@digest. When the tensor index holds the model,
+// app.js swaps in its OCI index digest (the address every client pulls by) and the host the page is served from.
+// The braille glyph of the manifest stays in the page, hidden: Verify still animates and checks it bit by bit.
+function signature(m) {
+  const bytes = B.hexToBytes(m.manifest.split(":")[1]);
+  return `<div class="signature" title="${R.esc(m.manifest)}">
+    <div class="addr-row">
+      <code class="addr" id="addr-text" data-repo="${R.esc(m.id)}">${R.esc(m.id.toLowerCase())}<span class="at">@${R.esc(R.shortAddress(m.manifest))}</span></code>
+      <button type="button" class="copy icon" id="addr" data-copy="${R.esc(m.manifest)}" aria-label="Copy the address">${R.icon.copy}</button>
+    </div>
+    <span class="bx glyph" id="glyph" aria-hidden="true" hidden><span>${B.cells(bytes.slice(0, 16))}</span><span>${B.cells(bytes.slice(16))}</span></span>
   </div>`;
 }
 
-// Where the identical bytes live. One line per source; Verify checks every one of them.
+// Where the bytes are held. One line per holder; Verify checks every one of them.
 function sourceList(sources) {
   return `<div class="sources">
-    <span class="label">${sources.length > 1 ? "Identical bytes on" : "Available from"}</span>
     <ul>${sources.map((s) => `<li data-source="${R.esc(s.kind)}"${s.p2p ? ' title="Peer to peer via BitTorrent. Your torrent client checks every piece; Hugging Face seeds it, so it completes with zero peers."' : s.pull ? ` title="Stored on Hologram. hologram pull ${R.esc(s.pull)} verifies every chunk as it arrives."` : ""}><span class="state">${s.p2p ? R.icon.nodes : R.icon.seal}${B.loader("orbit")}${R.icon.check}${R.icon.close}</span><a href="${R.esc(s.page)}"${s.p2p ? " download" : ' target="_blank" rel="noopener"'}>${R.esc(s.name)}${s.p2p ? R.icon.down : R.icon.external}</a></li>`).join("")}</ul>
+  </div>`;
+}
+
+// Get it: one control for every way to take the model. Pick a tool, pick a format, copy one command. The tools
+// this build knows about are written here (Hugging Face always; Ollama when the repo ships GGUF files; the
+// browser download); app.js adds OCI when the tensor index holds the model, and renders every command with the
+// host the page is served from.
+// Licence ids as people say them; anything unknown shows as written.
+const LICENCE = { "apache-2.0": "Apache 2.0", mit: "MIT", "bsd-3-clause": "BSD 3-Clause", "cc-by-4.0": "CC BY 4.0", "cc-by-nc-4.0": "CC BY-NC 4.0",
+  "cc-by-sa-4.0": "CC BY-SA 4.0", "openrail": "OpenRAIL", "creativeml-openrail-m": "OpenRAIL-M", "gpl-3.0": "GPL 3.0", other: "Custom licence" };
+const licence = (id) => LICENCE[String(id).toLowerCase()] || id;
+const quantOf = (path) => (/[-._]((?:I?Q\d[\w]*)|F16|BF16|F32)\.gguf$/i.exec(path) || [])[1] || null;
+function getIt(m, files, downloadMenu) {
+  const quants = [...new Set(files.files.map(([p]) => /\.gguf$/i.test(p) ? quantOf(p) : null).filter(Boolean))];
+  const data = { repo: m.id, ollama: quants };
+  return `<div class="get" id="get">
+    <div class="seg" id="get-tools" role="tablist" aria-label="Tool"></div>
+    <div class="seg small" id="get-formats" aria-label="Format"></div>
+    <div class="get-cmd" id="get-line"><code id="get-cmd"></code><button type="button" class="copy" id="get-copy" data-copy="" aria-label="Copy the command">${R.icon.copy}</button></div>
+    <div class="get-cmd get-browser" id="get-browser" hidden><code>${R.bytes(files.files.reduce((s, f) => s + (f[1] || 0), 0))} as one zip, every file checked in this tab</code>${downloadMenu}</div>
+    <p class="get-note" id="get-note"></p>
+    <script type="application/json" id="get-data">${JSON.stringify(data)}</script>
   </div>`;
 }
 
@@ -299,6 +326,11 @@ function probe(files) {
     .sort((a, b) => a[1] - b[1]).pop()?.[0];
 }
 
+// Downloads and likes, as Hugging Face counts them: baked in from the daily data, then refreshed in the page.
+function stats(m) {
+  return `<span class="stats" id="hero-stats" data-repo="${R.esc(m.id)}"><span title="Downloads, last 30 days, on Hugging Face">${R.icon.down}<b id="stat-downloads">${R.count(m.downloads || 0)}</b></span><span class="dot" aria-hidden="true">·</span><span title="Likes on Hugging Face">${R.icon.star}<b id="stat-likes">${R.count(m.likes || 0)}</b></span></span>`;
+}
+
 function modelPage(m, files, ov, readme) {
   const fact = (label, value) => (value ? `<div><dt>${label}</dt><dd>${value}</dd></div>` : "");
   const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
@@ -308,9 +340,7 @@ function modelPage(m, files, ov, readme) {
     fact("Trending", `#${m.rank}`),
     fact("Downloads, 30 days", R.count(m.downloads)),
     m.weightBytes ? fact("Weights", R.bytes(m.weightBytes)) : "",
-    files?.sources?.length ? fact("Sources", String(files.sources.length)) : "",
     m.revision ? fact("Revision", copy(m.revision, m.revision.slice(0, 12))) : "",
-    m.manifest ? fact("Manifest", copy(m.manifest, R.shortAddress(m.manifest))) : "",
     // A model card may name the buckets its checkpoints and data live in (`buckets:` in the
     // card's YAML, HF's own field). Each becomes a link, and the bucket page links back.
     bucketsOf(readme).length
@@ -401,22 +431,26 @@ function modelPage(m, files, ov, readme) {
   <div class="hero">
     ${R.avatar(m, base)}
     <div class="who">
-      <p class="org">${R.esc(m.org)}</p>
-      <h1>${R.esc(m.name)}</h1>
-      <div class="tags">${R.tags(m, { full: true })}</div>
+      <div class="title-row"><h1>${R.esc(m.name)}</h1>${stats(m)}</div>
+      <p class="sub" id="hero-sub">${[R.esc(m.org), m.params ? `${R.params(m.params)} parameters` : "", m.weightBytes ? R.bytes(m.weightBytes) : "", m.license ? R.esc(licence(m.license)) : ""].filter(Boolean).join(" · ")}</p>
     </div>
     <div class="actions">
       ${m.manifest && files
-        ? `<button type="button" class="button primary" data-verify="${R.esc(m.id)}" data-manifest="${R.esc(m.manifest)}" data-probe="${R.esc(probe(files) || "")}">${R.icon.check}${B.loader("orbit")}<span>Verify</span></button>${downloadMenu}`
+        ? `<button type="button" class="button" data-verify="${R.esc(m.id)}" data-manifest="${R.esc(m.manifest)}" data-probe="${R.esc(probe(files) || "")}">${R.icon.check}${B.loader("orbit")}<span>Verify</span></button>`
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
   </div>
-  ${m.manifest && files ? `<div class="provenance">${signature(m.manifest)}${sourceList(files.sources || [])}</div><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>` : ""}
-  <p class="verdict" id="verdict" role="status" hidden></p>
-  <p class="verdict" id="dl-status" role="status" hidden></p>
+  ${m.manifest && files ? `<div class="frame">
+    <div class="fcol"><span class="rl">Address</span>${signature(m)}
+      <div class="ipfs-line" id="ipfs-row" hidden><span class="tag">IPFS</span><code id="ipfs-cid"></code><button type="button" class="copy mini" id="ipfs-copy" data-copy="" aria-label="Copy the IPFS address">${R.icon.copy}</button></div></div>
+    <div class="fcol"><span class="rl" id="held-label">Held on</span>${sourceList(files.sources || [])}<p class="verdict" id="verdict" role="status" hidden></p></div>
+    <div class="fcol fcol-get"><span class="rl">Get it</span>${getIt(m, files, downloadMenu)}<p class="verdict" id="dl-status" role="status" hidden></p></div>
+  </div>
+  <p class="frame-rel" id="same-row" hidden><span id="same"></span></p><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>`
+    : `<p class="verdict" id="verdict" role="status" hidden></p><p class="verdict" id="dl-status" role="status" hidden></p>`}
 </section>
 <main class="detail">
-  <section class="panel"><dl class="facts">${facts}</dl></section>
+  <section class="panel"><dl class="facts" id="facts">${facts}</dl></section>
   <section class="panel">
     <div class="panel-tabs" role="tablist" aria-label="Model">
       <button type="button" class="tab" role="tab" id="tab-overview" aria-controls="pane-overview" aria-selected="true">Overview</button>
@@ -603,6 +637,7 @@ console.log(await checkRegistryPages(DIST, { base }));
 console.log(await checkBucketLinks(DIST, models.length));
 console.log(await checkSealed(DIST));
 console.log(await checkKappa(DIST));
+console.log(checkTensorIndex());
 // Every link in the docs lands on something this build ships, and every page has something to run.
 console.log(D.check(docPages, { exists: (p) => existsSync(join(DIST, p.replace(/^\//, ""))) }));
 

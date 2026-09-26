@@ -1,0 +1,26 @@
+# Pilot: chosen to break the design. Top 10 by downloads, then the edge cases.
+sentence-transformers/all-MiniLM-L6-v2
+cross-encoder/ms-marco-MiniLM-L6-v2
+BAAI/bge-small-en-v1.5
+sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+google-bert/bert-base-uncased
+BAAI/bge-m3
+Qwen/Qwen3-0.6B
+google-t5/t5-small
+openai/clip-vit-base-patch32
+amazon/chronos-2
+# dual format, legacy pickle
+openai-community/gpt2
+# pickle-only (.pth, torch zip)
+hexgrad/Kokoro-82M
+# GGUF
+openbmb/MiniCPM5-2B-DSpark-GGUF
+# same weights, different names and files (timm repack)
+facebook/dinov2-large
+timm/vit_large_patch14_dinov2.lvd142m
+# vocab-resized re-upload
+HuggingFaceTB/SmolLM2-135M
+unsloth/SmolLM2-135M
+# byte-identical re-upload
+Qwen/Qwen2.5-0.5B-Instruct
+unsloth/Qwen2.5-0.5B-Instruct

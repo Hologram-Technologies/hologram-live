@@ -119,7 +119,7 @@ export function alternativesIndex() {
 // CID must be the raw CID of its κ; larger ones get the chunked DAG and are verified by reading them back.
 async function pin(repos) {
   const api = process.env.IPFS_API; if (!api) { console.error("set IPFS_API (a Kubo RPC endpoint you control)"); process.exit(1); }
-  const { range, cdnUrl } = await import("./lib/src.mjs");
+  const { stream, cdnUrl } = await import("./lib/src.mjs");
   // raw-leaf CIDv1 of a sha256 (what a payload of at most 1 MiB must pin as); no dependencies, so pin runs anywhere
   const cidFromSha256 = (hex) => { const bytes = Buffer.concat([Buffer.from([1, 0x55, 0x12, 0x20]), Buffer.from(hex, "hex")]); const A = "abcdefghijklmnopqrstuvwxyz234567"; let bits = 0, v = 0, o = "b"; for (const x of bytes) { v = (v << 8) | x; bits += 8; while (bits >= 5) { o += A[(v >>> (bits - 5)) & 31]; bits -= 5; } } if (bits) o += A[(v << (5 - bits)) & 31]; return o; };
   const pins = read("pins.json", {}), models = read("models.json", {});
@@ -132,13 +132,35 @@ async function pin(repos) {
     const m = models[repo]; let added = 0, bytes = 0, reused = 0;
     for (const [k, r, rev, path, off, len] of rows) {
       if (pins[k]) { reused++; continue; }
-      const buf = await range(await cdnUrl(r, rev, path), off, off + len - 1);
-      if (`sha256:${createHash("sha256").update(buf).digest("hex")}` !== k) throw new Error(`${repo}/${path}@${off}: bytes do not match ${k}`);
-      const fd = new FormData(); fd.append("file", new Blob([buf]), k.slice(7));
+      // Memory stays at a few chunks whatever the tensor's size: a 1 GB embedding must never be held whole on a shared
+      // host. With IPFS_ADD_CMD (e.g. "docker exec -i hub-ipfs ipfs add -Q --cid-version=1 --raw-leaves
+      // --chunker=size-1048576 --pin") every payload streams from Hugging Face through sha256 into the node's stdin.
+      // Without it, the RPC path buffers one payload, so it refuses payloads over PIN_BUFFER_MB (default 64).
+      const h = createHash("sha256"), src = stream((fresh) => cdnUrl(r, rev, path, fresh), off, off + len - 1);
       const headers = process.env.IPFS_API_TOKEN ? { authorization: `Bearer ${process.env.IPFS_API_TOKEN}` } : {};
-      const res = await fetch(`${api.replace(/\/$/, "")}/api/v0/add?cid-version=1&raw-leaves=true&chunker=size-1048576&pin=true&quieter=true`, { method: "POST", body: fd, headers });
-      if (!res.ok) throw new Error(`ipfs add: ${res.status} ${await res.text()}`);
-      const cid = JSON.parse((await res.text()).trim().split("\n").pop()).Hash;
+      let cid;
+      if (process.env.IPFS_ADD_CMD) {
+        const { spawn } = await import("node:child_process");
+        const child = spawn("sh", ["-c", process.env.IPFS_ADD_CMD], { stdio: ["pipe", "pipe", "inherit"] });
+        let outText = ""; child.stdout.on("data", (d) => (outText += d));
+        const exited = new Promise((ok) => child.on("close", ok));
+        for await (const c of src) { h.update(c); if (!child.stdin.write(c)) await new Promise((ok) => child.stdin.once("drain", ok)); }
+        child.stdin.end();
+        const code = await exited;
+        if (code !== 0) throw new Error(`ipfs add exited ${code}`);
+        cid = outText.trim().split(/\s+/).pop();
+      } else {
+        if (len > Number(process.env.PIN_BUFFER_MB || 64) * 2 ** 20) throw new Error(`${repo}/${path}@${off}: ${(len / 2 ** 20).toFixed(0)} MB payload needs IPFS_ADD_CMD (streaming) rather than the buffered RPC path`);
+        const parts = []; for await (const c of src) { h.update(c); parts.push(c); }
+        const fd = new FormData(); fd.append("file", new Blob(parts), k.slice(7));
+        const res = await fetch(`${api.replace(/\/$/, "")}/api/v0/add?cid-version=1&raw-leaves=true&chunker=size-1048576&pin=true&quieter=true`, { method: "POST", body: fd, headers });
+        if (!res.ok) throw new Error(`ipfs add: ${res.status} ${await res.text()}`);
+        cid = JSON.parse((await res.text()).trim().split("\n").pop()).Hash;
+      }
+      if (`sha256:${h.digest("hex")}` !== k) {                        // the bytes were not the κ: take the pin back and stop
+        if (api) await fetch(`${api.replace(/\/$/, "")}/api/v0/pin/rm?arg=${cid}`, { method: "POST", headers }).catch(() => {});
+        throw new Error(`${repo}/${path}@${off}: bytes do not match ${k}; pin removed`);
+      }
       if (len <= 1 << 20 && cid !== cidFromSha256(k.slice(7)).toString()) throw new Error(`${k}: CID ${cid} is not its raw CID`);
       pins[k] = { cid, len, at: new Date().toISOString() }; added++; bytes += len; spentAll += len;
       if (added % 50 === 0) write("pins.json", pins);                 // resumable mid-model

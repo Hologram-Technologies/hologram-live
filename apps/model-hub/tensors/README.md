@@ -34,6 +34,22 @@ IPFS_API=http://127.0.0.1:5001 node pipeline.mjs pin <repo>   # optional: payloa
 
 One runner at a time (a lock file); every stage is idempotent and resumes where it stopped.
 
+## Decentralised: Filebase
+
+Tensors pass through a small Kubo node on their way to Filebase, a few GB at a time, so any number of models fit
+a small disk. `pin` streams each payload from Hugging Face into the node and refuses bytes that do not hash to their
+κ. `filebase.mjs ship` then puts each batch up as one CAR. The CAR is a directory whose entry names are the κ and
+whose links are the tensors' own CIDs. A batch counts only when Filebase reports our root CID and tensors read back
+through Filebase's gateway hash to their κ. The node then unpins it, except for payloads named by `--keep`.
+
+    IPFS_API=http://127.0.0.1:5101 PIN_CONCURRENCY=4 IPFS_ADD_CMD="docker exec -i hub-ipfs ipfs add -Q --cid-version=1 --raw-leaves --chunker=size-1048576 --pin" node pipeline.mjs pin --list all.txt --ungated --budget-gb 4
+    node filebase.mjs ship --keep top10.txt --batch-gb 4    # FB_ENV names the Filebase key file; it is never logged
+    node filebase.mjs map                                   # the κ -> CID map for payloads over 1 MiB, as one object
+    node filebase.mjs put state/car/<day>.car tensor-index/<day>.car <root>   # the day index: every manifest
+
+A payload of at most 1 MiB needs no map: its CID is the raw CID of its κ. The same holds for every manifest, config
+and layout in the day index.
+
 ## Serve
 
 `deploy/tensor-mirror.mjs` answers `/v2/models/<org>/<name>/…` (weight files 307 to Hugging Face while it serves)

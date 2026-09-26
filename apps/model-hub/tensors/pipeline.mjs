@@ -125,49 +125,60 @@ async function pin(repos) {
   const pins = read("pins.json", {}), models = read("models.json", {});
   const list = arg("--list"); if (!repos.length && list) repos = readFileSync(list, "utf8").split(/\r?\n/).map((l) => l.replace(/#.*/, "").trim()).filter(Boolean);
   const budget = Number(arg("--budget-gb", "Infinity")) * 1e9; let spentAll = 0;
+  // A payload is correct when its bytes hash to its κ, whatever the model's gate says; --ungated pins indexed models
+  // whose layouts have not been rebuilt yet. The budget is checked per payload, so a 50 GB model fits a small disk.
+  const ungated = process.argv.includes("--ungated"), N = Number(process.env.PIN_CONCURRENCY || 1);
+  const bufMax = Number(process.env.PIN_BUFFER_MB || 64) * 2 ** 20;
+  const headers = process.env.IPFS_API_TOKEN ? { authorization: `Bearer ${process.env.IPFS_API_TOKEN}` } : {};
+  const { spawn } = await import("node:child_process");
+  const pinOne = async ([k, r, rev, path, off, len]) => {
+    const h = createHash("sha256"), src = stream((fresh) => cdnUrl(r, rev, path, fresh), off, off + len - 1);
+    let cid;
+    if (process.env.IPFS_ADD_CMD && len > bufMax) {                   // big payload: stream into the node, never whole
+      const child = spawn("sh", ["-c", process.env.IPFS_ADD_CMD], { stdio: ["pipe", "pipe", "inherit"] });
+      let outText = ""; child.stdout.on("data", (d) => (outText += d));
+      const exited = new Promise((ok) => child.on("close", ok));
+      for await (const c of src) { h.update(c); if (!child.stdin.write(c)) await new Promise((ok) => child.stdin.once("drain", ok)); }
+      child.stdin.end();
+      const code = await exited;
+      if (code !== 0) throw new Error(`ipfs add exited ${code}`);
+      cid = outText.trim().split(/\s+/).pop();
+    } else {                                                          // small payload: one buffered RPC call
+      if (len > bufMax) throw new Error(`${r}/${path}@${off}: ${(len / 2 ** 20).toFixed(0)} MB payload needs IPFS_ADD_CMD (streaming) rather than the buffered RPC path`);
+      const parts = []; for await (const c of src) { h.update(c); parts.push(c); }
+      const fd = new FormData(); fd.append("file", new Blob(parts), k.slice(7));
+      const res = await fetch(`${api.replace(/\/$/, "")}/api/v0/add?cid-version=1&raw-leaves=true&chunker=size-1048576&pin=true&quieter=true`, { method: "POST", body: fd, headers });
+      if (!res.ok) throw new Error(`ipfs add: ${res.status} ${await res.text()}`);
+      cid = JSON.parse((await res.text()).trim().split("\n").pop()).Hash;
+    }
+    if (`sha256:${h.digest("hex")}` !== k) {                          // the bytes were not the κ: take the pin back and stop
+      await fetch(`${api.replace(/\/$/, "")}/api/v0/pin/rm?arg=${cid}`, { method: "POST", headers }).catch(() => {});
+      throw new Error(`${r}/${path}@${off}: bytes do not match ${k}; pin removed`);
+    }
+    if (len <= 1 << 20 && cid !== cidFromSha256(k.slice(7)).toString()) throw new Error(`${k}: CID ${cid} is not its raw CID`);
+    return cid;
+  };
   for (const repo of repos) {
-    if (!models[repo]?.gated) { log(`pin ${repo}: not indexed and gated yet, skipped`); continue; }
+    if (!models[repo]) { log(`pin ${repo}: not indexed, skipped`); continue; }
+    if (!models[repo].gated && !ungated) { log(`pin ${repo}: not gated yet, skipped (--ungated pins it anyway)`); continue; }
     if (spentAll >= budget) { log(`pin budget reached (${(spentAll / 1e9).toFixed(1)} GB)`); break; }
     const rows = JSON.parse(readFileSync(join(STATE, "sources", `${safe(repo)}.json`), "utf8"));
-    const m = models[repo]; let added = 0, bytes = 0, reused = 0;
-    for (const [k, r, rev, path, off, len] of rows) {
-      if (pins[k]) { reused++; continue; }
-      // Memory stays at a few chunks whatever the tensor's size: a 1 GB embedding must never be held whole on a shared
-      // host. With IPFS_ADD_CMD (e.g. "docker exec -i hub-ipfs ipfs add -Q --cid-version=1 --raw-leaves
-      // --chunker=size-1048576 --pin") every payload streams from Hugging Face through sha256 into the node's stdin.
-      // Without it, the RPC path buffers one payload, so it refuses payloads over PIN_BUFFER_MB (default 64).
-      const h = createHash("sha256"), src = stream((fresh) => cdnUrl(r, rev, path, fresh), off, off + len - 1);
-      const headers = process.env.IPFS_API_TOKEN ? { authorization: `Bearer ${process.env.IPFS_API_TOKEN}` } : {};
-      let cid;
-      if (process.env.IPFS_ADD_CMD) {
-        const { spawn } = await import("node:child_process");
-        const child = spawn("sh", ["-c", process.env.IPFS_ADD_CMD], { stdio: ["pipe", "pipe", "inherit"] });
-        let outText = ""; child.stdout.on("data", (d) => (outText += d));
-        const exited = new Promise((ok) => child.on("close", ok));
-        for await (const c of src) { h.update(c); if (!child.stdin.write(c)) await new Promise((ok) => child.stdin.once("drain", ok)); }
-        child.stdin.end();
-        const code = await exited;
-        if (code !== 0) throw new Error(`ipfs add exited ${code}`);
-        cid = outText.trim().split(/\s+/).pop();
-      } else {
-        if (len > Number(process.env.PIN_BUFFER_MB || 64) * 2 ** 20) throw new Error(`${repo}/${path}@${off}: ${(len / 2 ** 20).toFixed(0)} MB payload needs IPFS_ADD_CMD (streaming) rather than the buffered RPC path`);
-        const parts = []; for await (const c of src) { h.update(c); parts.push(c); }
-        const fd = new FormData(); fd.append("file", new Blob(parts), k.slice(7));
-        const res = await fetch(`${api.replace(/\/$/, "")}/api/v0/add?cid-version=1&raw-leaves=true&chunker=size-1048576&pin=true&quieter=true`, { method: "POST", body: fd, headers });
-        if (!res.ok) throw new Error(`ipfs add: ${res.status} ${await res.text()}`);
-        cid = JSON.parse((await res.text()).trim().split("\n").pop()).Hash;
+    const todo = []; const queued = new Set(); let reused = 0;
+    for (const row of rows) { if (pins[row[0]] || queued.has(row[0])) { reused++; continue; } queued.add(row[0]); todo.push(row); }
+    let added = 0, bytes = 0, next = 0, stop = false;
+    const worker = async () => {
+      while (!stop && next < todo.length) {
+        if (spentAll >= budget) { stop = true; break; }
+        const row = todo[next++]; spentAll += row[5];
+        const cid = await pinOne(row);
+        pins[row[0]] = { cid, len: row[5], at: new Date().toISOString() }; added++; bytes += row[5];
+        if (added % 200 === 0) write("pins.json", pins);              // resumable mid-model
       }
-      if (`sha256:${h.digest("hex")}` !== k) {                        // the bytes were not the κ: take the pin back and stop
-        if (api) await fetch(`${api.replace(/\/$/, "")}/api/v0/pin/rm?arg=${cid}`, { method: "POST", headers }).catch(() => {});
-        throw new Error(`${repo}/${path}@${off}: bytes do not match ${k}; pin removed`);
-      }
-      if (len <= 1 << 20 && cid !== cidFromSha256(k.slice(7)).toString()) throw new Error(`${k}: CID ${cid} is not its raw CID`);
-      pins[k] = { cid, len, at: new Date().toISOString() }; added++; bytes += len; spentAll += len;
-      if (added % 50 === 0) write("pins.json", pins);                 // resumable mid-model
-    }
-    write("pins.json", pins);
-    log(`pinned ${repo}: ${added} payloads (${(bytes / 1e6).toFixed(1)} MB) added, ${reused} already pinned by another model or format`);
-    void m;
+    };
+    try { await Promise.all(Array.from({ length: Math.max(1, N) }, worker)); }
+    finally { write("pins.json", pins); }
+    log(`pinned ${repo}: ${added} payloads (${(bytes / 1e6).toFixed(1)} MB) added, ${reused} already pinned by another model or format${stop ? ", budget reached" : ""}`);
+    if (stop) break;
   }
 }
 async function rebuild(m, blob, idx, prefer) {

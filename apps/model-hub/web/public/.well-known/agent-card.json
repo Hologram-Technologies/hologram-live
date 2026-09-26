@@ -83,6 +83,7 @@
     "listModelRefs",
     "listModelFiles",
     "listModelFilesUnder",
+    "getModelSize",
     "getXetReadToken"
    ],
    "examples": [

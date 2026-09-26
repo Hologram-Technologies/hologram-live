@@ -13,7 +13,9 @@
 // file on the origin) or { url, off: 0, len } (the payload as its own object, e.g. an IPFS gateway path by CID).
 import { createHash } from "node:crypto";
 
-const MAX_BUFFER = 256 << 20; // segments up to this size are verified before release; larger ones abort on mismatch
+// segments up to this size are verified before release; larger ones stream and abort on mismatch. Hosts with little
+// memory lower it (TENSOR_MAX_BUFFER_MB) and the read window (TENSOR_WINDOW).
+const MAX_BUFFER = Number(globalThis.process?.env?.TENSOR_MAX_BUFFER_MB || 256) * 2 ** 20;
 const UA = { "user-agent": "hologram-tensor-assemble/0.1" };
 const cdn = new Map();
 // A host that refused a connection is skipped for a minute, so a dead origin costs one failure, not one per read.
@@ -87,7 +89,7 @@ function candidates(ctx, layout, seg) {
 // Speed: adjacent payloads that live contiguously in one source file are read as one Range request (up to
 // GROUP bytes), and up to WINDOW reads are in flight at once; bytes are still released in order, each segment
 // only after its κ checks. A segment that fails from its first source is retried from every other holder.
-const GROUP = 64 << 20, GAP = 1 << 20, WINDOW = 4;
+const GROUP = Math.min(64 << 20, MAX_BUFFER), GAP = 1 << 20, WINDOW = Number(globalThis.process?.env?.TENSOR_WINDOW || 4);
 export async function* assemble(layout, ctx, { start = 0, end = layout.size - 1 } = {}) {
   const origin = ctx.origin || "https://huggingface.co";
   // 1. units in file order: literal | view | big (streamed) | group (one read, many segments)

@@ -1,0 +1,20 @@
+[package]
+name = "prism-stdlib"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Generated portable Prism application and production-system runtime"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/UOR-Foundation/PrismPM"
+homepage = "https://github.com/UOR-Foundation/PrismPM"
+readme = "README.md"
+include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE", "generation-manifest.json"]
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+
+[lib]
+path = "src/lib.rs"

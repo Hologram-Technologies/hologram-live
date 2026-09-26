@@ -14,11 +14,13 @@ members = [
     "crates/hologram-application-watch",
     "crates/hologram-client",
     "crates/hologram-view-surface",
+    "crates/prism-stdlib",
+    "crates/prism-hologram",
 ]
 resolver = "2"
 # The gate tools judge the binary from outside; cargo must not claim them.
 # Vendored store crates are built as dependencies, never linted, formatted or tested as ours.
-exclude = ["apps/registry/gates/differential", "third_party/kappa/crates", "third_party/dcbor"]
+exclude = ["apps/registry/gates/differential", "third_party/kappa/crates", "third_party/dcbor", ".prism"]
 
 [lib]
 name = "hologram_live"
@@ -37,6 +39,7 @@ test = false
 doc = false
 
 [dependencies]
+prism-hologram = { path = "crates/prism-hologram" }
 axum = { version = "0.8", features = ["json", "tokio", "http1", "http2"] }
 blake3 = "1"
 bytes = { version = "1", optional = true }

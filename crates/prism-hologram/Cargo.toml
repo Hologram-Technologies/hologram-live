@@ -1,0 +1,21 @@
+[package]
+name = "prism-hologram"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Extensible local and remote module host for Hologram"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Hologram-Technologies/hologram-live"
+homepage = "https://github.com/Hologram-Technologies/hologram-live"
+readme = "README.md"
+include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE", "generation-manifest.json"]
+
+[features]
+default = ["std"]
+std = ["prism-stdlib/std"]
+
+[dependencies]
+prism-stdlib = { version = "=0.2.0", path = "../prism-stdlib", default-features = false, features = [] }
+
+[lib]
+path = "src/lib.rs"

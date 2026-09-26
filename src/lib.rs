@@ -59,3 +59,4 @@ pub mod update;
 pub mod util;
 
 pub use error::{LiveError, Result};
+pub use prism_hologram::*;

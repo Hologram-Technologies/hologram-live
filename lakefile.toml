@@ -1,0 +1,6 @@
+name = "PrismHologram"
+version = "1.0.0"
+defaultTargets = ["PrismHologram"]
+
+[[lean_lib]]
+name = "PrismHologram"

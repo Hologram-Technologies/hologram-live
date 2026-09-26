@@ -1,4 +1,6 @@
 /target/
+/.lexlean/
+/.prism/
 /node_modules/
 /apps/docs/node_modules/
 /apps/docs/dist/

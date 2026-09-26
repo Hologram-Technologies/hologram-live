@@ -8,6 +8,19 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
+    let raw_args: Vec<String> = std::env::args().collect();
+    if raw_args.iter().any(|arg| arg == "--prism") || std::env::var("HOLOGRAM_ENGINE").as_deref() == Ok("prismpm") {
+        let cmd_name = raw_args.get(1).map(|s| s.as_str()).unwrap_or("help");
+        let cmd_to_run = if cmd_name == "--prism" {
+            raw_args.get(2).map(|s| s.as_str()).unwrap_or("help")
+        } else {
+            cmd_name
+        };
+        let response = hologram_live::dispatchString(cmd_to_run.to_string());
+        println!("{response}");
+        return;
+    }
+
     #[cfg(feature = "oci")]
     let cli = {
         // The reference image's command names, when this binary is linked as

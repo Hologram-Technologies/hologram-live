@@ -3935,6 +3935,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "prism-hologram",
  "prost",
  "protoc-bin-vendored",
  "redb",
@@ -5869,6 +5870,17 @@ dependencies = [
  "serdect 0.4.3",
  "wnaf",
 ]
+
+[[package]]
+name = "prism-hologram"
+version = "1.0.0"
+dependencies = [
+ "prism-stdlib",
+]
+
+[[package]]
+name = "prism-stdlib"
+version = "0.2.0"
 
 [[package]]
 name = "proc-macro-crate"

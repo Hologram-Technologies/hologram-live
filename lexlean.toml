@@ -1,0 +1,46 @@
+spec = "lexlean/project/1"
+name = "hologram-live"
+language = "1.1"
+module_prefix = "PrismHologram"
+source_roots = [".prism/sdk/inputs/stdlib", "src"]
+entrypoints = ["src/Hologram.lex.tex"]
+build_root = ".lexlean"
+lockfile = "lexlean.lock"
+lean_workspace = "."
+lean_toolchain = "leanprover/lean4:v4.32.1"
+
+[[lexicon_source]]
+package = "lexlean.std.bool"
+kind = "builtin"
+
+[[lexicon_source]]
+package = "lexlean.std.nat"
+kind = "builtin"
+
+[[lexicon_source]]
+package = "prism.arch"
+kind = "path"
+path = ".prism/sdk/inputs/language/prism.arch"
+
+[[lexicon_source]]
+package = "prism.qual"
+kind = "path"
+path = ".prism/sdk/inputs/language/prism.qual"
+
+[[lexicon_source]]
+package = "prism.sec"
+kind = "path"
+path = ".prism/sdk/inputs/language/prism.sec"
+
+[limits]
+max_file_bytes = 16777216
+max_total_source_bytes = 268435456
+max_primitive_atoms = 10000000
+max_token_lattice_edges = 20000000
+max_parse_states = 20000000
+max_ir_nodes = 10000000
+max_scope_depth = 2048
+max_import_depth = 256
+max_diagnostics = 256
+max_child_output_bytes = 67108864
+child_timeout_ms = 600000

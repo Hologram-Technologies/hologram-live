@@ -54,6 +54,19 @@ oras pull gethologram.ai/tensors/qwen/qwen3-0.6b:sharded # every file rebuilt fr
 node pull.mjs Qwen/Qwen3-0.6B --format safetensors-sharded --out ./qwen   # assembled on this machine
 ```
 
+## Names log
+
+Which name pointed at which bytes, when, witnessed by whom (`lib/names.mjs`). Append-only JSON lines, each carrying
+the sha256 of the entry before it; the head is signed with the witness's Ed25519 key (`names.key`, 0600, never
+published) and its public half travels with it. Entry kinds: `witnessed` (name, revision, {path: sha256}),
+`indexed` (name, revision, index, table), `replaced` (same name, revision and path, a different sha256: a silent
+replacement, also written to `replacements.json`), `moved` (a new revision). `run` records what it indexed;
+`witness` (in `nightly`, after `discover`) records what Hugging Face serves under every indexed name now, from
+the revision and LFS sha256s, no weight bytes. `seal` signs the head and names log and head in the day root, so
+`car` carries them and `audit` replays the chain and checks the signature. `node pipeline.mjs names <repo>
+[--at ISO]` answers what a name pointed to. It records per-file history, so it can replace `models.json`
+`history` (kept for now).
+
 ## Ship (Ilya)
 
 `deploy/tensor-sync.sh <state>` refuses unless `web/qa/tensor-index.mjs` passes, rsyncs to

@@ -38,6 +38,14 @@ const ref = (d, where, mustHold = true) => {
 const latest = JSON.parse(readFileSync(join(STATE, "latest.json"), "utf8"));
 const root = JSON.parse(ref(latest.digest, "latest.json -> day root"));
 const models = JSON.parse(readFileSync(join(STATE, "models.json"), "utf8"));
+
+// The names log: its chain replays to the signed head, and the signature verifies.
+if (root.names?.log) {
+  const { verifyLog } = await import("./lib/names.mjs");
+  const [entries, problems] = verifyLog(ref(root.names.log, "names log").toString(), JSON.parse(ref(root.names.head, "names head")));
+  out.names = { entries: entries.length, problems };
+}
+
 for (const [repo, r] of Object.entries(root.models)) {
   out.models++;
   const idx = JSON.parse(ref(r.index, `${repo} index`));
@@ -85,7 +93,7 @@ for (const d of out.reached) {
 const report = {
   heldObjects: out.held, heldNameEqualsHash: out.held - out.heldBad.length, heldBad: out.heldBad.slice(0, 5),
   sealedRoot: latest.digest, modelsInRoot: out.models,
-  referencesWalked: out.refs, referencesThatFailed: out.refsBad.slice(0, 5), distinctObjectsReached: out.reached.size,
+  names: out.names || null, referencesWalked: out.refs, referencesThatFailed: out.refsBad.slice(0, 5), distinctObjectsReached: out.reached.size,
   identifiersThatAreNotKappa: out.notKappa.slice(0, 5), notKappaCount: out.notKappa.length,
   tensorRows: out.tensors, tensorRowsWithoutKappa: out.tensorsBad, layoutSegments: out.segments, layoutsThatDoNotCoverTheirFile: out.layoutsBad,
   car: { blocks, blocksWhoseBytesDoNotMatchTheirCid: blockBad, root: car.root, sealsThisRoot: car.sealed === latest.digest },

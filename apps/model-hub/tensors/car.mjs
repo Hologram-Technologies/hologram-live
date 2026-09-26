@@ -32,6 +32,7 @@ export async function buildCar() {
   for (const [repo, r] of Object.entries(root.models)) {
     const m = models[repo];
     need.add(r.index);
+    if (r.provenance) need.add(r.provenance);        // per-κ provenance sample (sample.mjs)
     for (const md of Object.values(m.manifests)) {
       need.add(md);
       const man = json(md);

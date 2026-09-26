@@ -34,6 +34,23 @@ IPFS_API=http://127.0.0.1:5001 node pipeline.mjs pin <repo>   # optional: payloa
 
 One runner at a time (a lock file); every stage is idempotent and resumes where it stopped.
 
+## Provenance sample
+
+Computed in the same single pass from the canonical bytes `hashpass.mjs` emits (`lib/sample.mjs`), and kept out of
+the tensor table so the table stays small. One object per model, `application/vnd.hologram.provenance.v1+json`,
+reachable from the day root (so it travels in the CAR) and served at `/v2/models/<owner>/<name>/provenance`:
+
+    { v, repo, revision, method, rows: [[κ, shape, narrowDtype, narrow, signB64, blocks], ...] }   one row per distinct (κ, shape)
+
+| Field | What it is |
+|---|---|
+| `narrowDtype`, `narrow` | the narrowest of BF16, F16, F32 that holds every value exactly, and sha256 of the payload in it. Equals κ when the tensor is already stored narrowest (the common case); an f32 file of bf16 values gets the bf16 tensor's digest. An equivalence key only, never a replacement for κ (and not `canonical`, the model κ) |
+| `signB64` | the sign bits at element indices floor(k·n/4096), k < 4096, MSB-first: agreement between same-name, same-shape tensors measures lineage (independent training 49.9 %, fine-tunes, merges and edits 95.6-100 %, ten measured pairs) |
+| `blocks` | [sha256, bytes] per 1024 rows of axis 0 of the narrow payload: a vocabulary resize keeps every earlier block. Rows cut along the shape, so a row is keyed by κ and shape (a reshape alias gets its own row) |
+
+Float tensors only (BF16, F16, F32); GGUF quantised types and integers carry no sample. About 0.8 KB per distinct
+tensor. `test/sample.test.mjs` holds the rules to vectors from the Python reference (`tensorhash.py`).
+
 ## Decentralised: Filebase
 
 Tensors pass through a small Kubo node on their way to Filebase, a few GB at a time, so any number of models fit

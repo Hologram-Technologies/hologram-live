@@ -41,6 +41,7 @@ const models = JSON.parse(readFileSync(join(STATE, "models.json"), "utf8"));
 for (const [repo, r] of Object.entries(root.models)) {
   out.models++;
   const idx = JSON.parse(ref(r.index, `${repo} index`));
+  if (r.provenance) for (const row of JSON.parse(ref(r.provenance, `${repo} provenance`)).rows) { if (!K.test(row[0]) || !K.test(row[3])) out.notKappa.push(`${repo} provenance row ${row[0]}`); }
   if (r.canonical && !K.test(r.canonical)) out.notKappa.push(`${repo} canonical: ${r.canonical}`);
   for (const m of idx.manifests) {
     const man = JSON.parse(ref(m.digest, `${repo} manifest ${m.annotations?.["org.hologram.format"]}`));

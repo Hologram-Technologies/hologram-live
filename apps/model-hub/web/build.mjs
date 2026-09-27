@@ -274,16 +274,18 @@ ${archive ? `<div class="archive-hidden" hidden>${indexPill()}</div>` : ""}
 // Sources a file can be downloaded from, as table columns. The hub registry holds the daily index only (decision
 // 2026-09-18), so it is not a weights source here; data.mjs still records it if a model ever appears there.
 const SOURCE_COLUMNS = [["huggingface.co", "Hugging Face"], ["modelscope.cn", "ModelScope"], ["ipfs", "IPFS"], ["bittorrent", "P2P"]];
-// One address per model, written the way it is used: host/org/name@digest. When the tensor index holds the model,
-// app.js swaps in its OCI index digest (the address every client pulls by) and the host the page is served from.
+// One address per model, written the way it is used: host/org/name, then the digest that proves it as one short hash.
+// The hash toggles between its two spellings (sha256 and the IPFS CID of the same bytes) once app.js knows the CID.
+// When the tensor index holds the model, app.js swaps in its OCI index digest and the host the page is served from.
 // The braille glyph of the manifest stays in the page, hidden: Verify still animates and checks it bit by bit.
 function signature(m) {
   const bytes = B.hexToBytes(m.manifest.split(":")[1]);
-  return `<div class="signature" title="${R.esc(m.manifest)}">
-    <div class="addr-row">
-      <code class="addr" id="addr-text" data-repo="${R.esc(m.id)}">${R.esc(m.id.toLowerCase())}<span class="at">@${R.esc(R.shortAddress(m.manifest))}</span></code>
-      <button type="button" class="copy icon" id="addr" data-copy="${R.esc(m.manifest)}" aria-label="Copy the address">${R.icon.copy}</button>
-    </div>
+  const [algo, hex] = m.manifest.split(":");
+  return `<div class="addr-line signature" title="${R.esc(m.manifest)}">
+    <code class="addr" id="addr-text" data-repo="${R.esc(m.id)}">${R.esc(m.id.toLowerCase())}</code>
+    <button type="button" class="hash" id="hash" data-sha="${R.esc(m.manifest)}" data-cid="" aria-label="The digest; click for its other spelling"><span class="kind">${R.esc(algo)}</span><span id="hash-text">${R.esc(hex.slice(0, 8))}…${R.esc(hex.slice(-6))}</span></button>
+    <span class="grow"></span>
+    <button type="button" class="copy mini" id="addr" data-copy="${R.esc(m.manifest)}" aria-label="Copy the address">${R.icon.copy}</button>
     <span class="bx glyph" id="glyph" aria-hidden="true" hidden><span>${B.cells(bytes.slice(0, 16))}</span><span>${B.cells(bytes.slice(16))}</span></span>
   </div>`;
 }
@@ -295,7 +297,7 @@ function sourceList(sources) {
   </div>`;
 }
 
-// Get it: one control for every way to take the model. Pick a tool, pick a format, copy one command. The tools
+// Get it: one line for every way to take the model. Pick a tool, copy one command (formats are a menu inside it). The tools
 // this build knows about are written here (Hugging Face always; Ollama when the repo ships GGUF files; the
 // browser download); app.js adds OCI when the tensor index holds the model, and renders every command with the
 // host the page is served from.
@@ -309,10 +311,8 @@ function getIt(m, files, downloadMenu) {
   const data = { repo: m.id, ollama: quants };
   return `<div class="get" id="get">
     <div class="seg" id="get-tools" role="tablist" aria-label="Tool"></div>
-    <div class="seg small" id="get-formats" aria-label="Format"></div>
-    <div class="get-cmd" id="get-line"><code id="get-cmd"></code><button type="button" class="copy" id="get-copy" data-copy="" aria-label="Copy the command">${R.icon.copy}</button></div>
+    <div class="get-cmd" id="get-line"><code id="get-cmd"></code><div class="fmt" id="get-formats" hidden></div><button type="button" class="copy" id="get-copy" data-copy="" aria-label="Copy the command">${R.icon.copy}</button></div>
     <div class="get-cmd get-browser" id="get-browser" hidden><code>${R.bytes(files.files.reduce((s, f) => s + (f[1] || 0), 0))} as one zip, every file checked in this tab</code>${downloadMenu}</div>
-    <p class="get-note" id="get-note"></p>
     <script type="application/json" id="get-data">${JSON.stringify(data)}</script>
   </div>`;
 }
@@ -440,11 +440,10 @@ function modelPage(m, files, ov, readme) {
         : `<a class="button" href="https://huggingface.co/${R.esc(m.id)}" target="_blank" rel="noopener">Hugging Face${R.icon.external}</a>`}
     </div>
   </div>
-  ${m.manifest && files ? `<div class="frame">
-    <div class="fcol"><span class="rl">Address</span>${signature(m)}
-      <div class="ipfs-line" id="ipfs-row" hidden><span class="tag">IPFS</span><code id="ipfs-cid"></code><button type="button" class="copy mini" id="ipfs-copy" data-copy="" aria-label="Copy the IPFS address">${R.icon.copy}</button></div></div>
-    <div class="fcol"><span class="rl" id="held-label">Held on</span>${sourceList(files.sources || [])}<p class="verdict" id="verdict" role="status" hidden></p></div>
-    <div class="fcol fcol-get"><span class="rl">Get it</span>${getIt(m, files, downloadMenu)}<p class="verdict" id="dl-status" role="status" hidden></p></div>
+  ${m.manifest && files ? `<div class="rows">
+    <div class="row"><span class="rl">Address</span>${signature(m)}</div>
+    <div class="row"><span class="rl" id="held-label">Held on</span><div class="rv">${sourceList(files.sources || [])}<p class="verdict" id="verdict" role="status" hidden></p></div></div>
+    <div class="row"><span class="rl">Get it</span><div class="rv">${getIt(m, files, downloadMenu)}<p class="verdict" id="dl-status" role="status" hidden></p></div></div>
   </div>
   <p class="frame-rel" id="same-row" hidden><span id="same"></span></p><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>`
     : `<p class="verdict" id="verdict" role="status" hidden></p><p class="verdict" id="dl-status" role="status" hidden></p>`}

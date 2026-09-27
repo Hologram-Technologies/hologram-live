@@ -38,8 +38,8 @@ async function heroStats() {
 async function getIt() {
   const data = JSON.parse($("#get-data").textContent), repo = data.repo, host = location.host, esc = R.esc;
   // The address, as it is used: this host, the model's name, the short digest. Upgraded below when indexed.
-  const addrText = $("#addr-text"), addrAt = addrText?.querySelector(".at");
-  if (addrText) addrText.firstChild.textContent = `${host}/${repo.toLowerCase()}`;
+  const addrText = $("#addr-text"), hashBtn = $("#hash");
+  if (addrText) addrText.textContent = `${host}/${repo.toLowerCase()}`;
   const tools = new Map([
     ...(data.ollama.length ? [["ollama", { name: "Ollama", formats: data.ollama, cmd: (f) => `ollama run ${host}/${repo}:${f}`,
       note: "The GGUF file, checked against its address as it arrives." }]] : []),
@@ -53,15 +53,32 @@ async function getIt() {
     const t = tools.get(tool);
     if (!t.formats.includes(fmt)) fmt = t.formats[0] || null;
     toolsEl.innerHTML = [...tools].map(([k, v]) => `<button type="button" role="tab" data-tool="${k}" aria-selected="${k === tool}">${esc(v.name)}</button>`).join("");
-    fmtEl.innerHTML = t.formats.map((f) => `<button type="button" data-fmt="${esc(f)}" aria-pressed="${f === fmt}">${esc(f)}</button>`).join("");
+    fmtEl.innerHTML = t.formats.length ? `<button type="button" class="fmt-btn" aria-haspopup="menu" aria-expanded="false">${esc(fmt)}${R.icon.chevron}</button><div class="fmt-menu" role="menu" hidden>${t.formats.map((f) => `<button type="button" role="menuitemradio" data-fmt="${esc(f)}" aria-checked="${f === fmt}">${esc(f)}</button>`).join("")}</div>` : "";
     fmtEl.hidden = !t.formats.length;
     const browser = tool === "browser";
     $("#get-line").hidden = browser; $("#get-browser").hidden = !browser;
     if (!browser) { const c = t.cmd(fmt); $("#get-cmd").textContent = c; $("#get-copy").dataset.copy = c; }
-    $("#get-note").textContent = t.note;
+    $("#get-line").title = t.note; $("#get-browser").title = t.note;
   };
   toolsEl.addEventListener("click", (e) => { const b = e.target.closest("[data-tool]"); if (b) { tool = b.dataset.tool; draw(); } });
-  fmtEl.addEventListener("click", (e) => { const b = e.target.closest("[data-fmt]"); if (b) { fmt = b.dataset.fmt; draw(); } });
+  fmtEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const b = e.target.closest("[data-fmt]"); if (b) { fmt = b.dataset.fmt; draw(); return; }
+    const open = e.target.closest(".fmt-btn"); if (open) { const m = fmtEl.querySelector(".fmt-menu"); m.hidden = !m.hidden; open.setAttribute("aria-expanded", String(!m.hidden)); }
+  });
+  document.addEventListener("click", () => { const m = fmtEl.querySelector(".fmt-menu"); if (m) m.hidden = true; });
+  // The one hash, in either spelling: sha256 (what OCI clients pull by) or the IPFS CID of the same bytes.
+  const drawHash = (which) => {
+    if (!hashBtn) return;
+    const cid = hashBtn.dataset.cid, useCid = which === "cid" && cid;
+    const [algo, hex] = hashBtn.dataset.sha.split(":");
+    hashBtn.dataset.show = useCid ? "cid" : "sha";
+    hashBtn.querySelector(".kind").textContent = useCid ? "ipfs" : algo;
+    $("#hash-text").textContent = useCid ? `${cid.slice(0, 7)}…${cid.slice(-4)}` : `${hex.slice(0, 8)}…${hex.slice(-6)}`;
+    hashBtn.title = useCid ? `ipfs://${cid}` : hashBtn.dataset.sha;
+    hashBtn.style.cursor = cid ? "pointer" : "default";
+  };
+  hashBtn?.addEventListener("click", () => drawHash(hashBtn.dataset.show === "cid" ? "sha" : "cid"));
   draw();
 
   let s = null;
@@ -78,16 +95,10 @@ async function getIt() {
   draw();
   // The one address: the model's OCI index, the digest every client pulls by.
   if (addrText) {
-    addrText.firstChild.textContent = `${host}/${s.reference.replace(/^models\//, "")}`;
-    addrAt.textContent = `@${R.shortAddress(s.index)}`;
+    addrText.textContent = `${host}/${s.reference.replace(/^models\//, "")}`;
     $("#addr").dataset.copy = `${host}/${s.reference}@${s.index}`;
     $(".signature").title = `${host}/${s.reference}@${s.index}`;
-    if (s.ipfs && $("#ipfs-row")) {                                 // the same hash, as the manifest's IPFS address
-      $("#ipfs-cid").innerHTML = `${esc(s.ipfs.slice(0, 7))}…${esc(s.ipfs.slice(-4))}<span class="at"> ${s.pinned ? "manifest, on IPFS" : "manifest"}</span>`;
-      $("#ipfs-copy").dataset.copy = `ipfs://${s.ipfs}`;
-      $("#ipfs-row").title = s.pinned ? `ipfs://${s.ipfs}` : `ipfs://${s.ipfs} — the same hash as the address; resolvable on IPFS once the day's index is published`;
-      $("#ipfs-row").hidden = false;
-    }
+    if (hashBtn) { hashBtn.dataset.sha = s.index; hashBtn.dataset.cid = s.ipfs || ""; drawHash("sha"); }
   }
   $("#hero-sub").insertAdjacentHTML("beforeend", ` · ${R.count(s.tensors)} tensors`);
   // Relations: one quiet row, only when there is one.

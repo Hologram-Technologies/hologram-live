@@ -98,7 +98,10 @@ export async function range(url, a, b, tries = 6) {
 // Stream bytes [a, b] as chunks, resuming after drops. `getUrl(fresh)` supplies (and renews) the URL.
 export async function* stream(getUrl, a, b, tries = 8) {
   let pos = a, url = await getUrl(false);
+  // `tries` counts attempts that made no progress: each request is bounded (10 min), and a long range simply resumes
+  // where the last request stopped, so a 50 GB file is never cut off by the attempt budget.
   for (let k = 0; k < tries && pos <= b; k++) {
+    const start = pos;
     try {
       const r = await fetch(url, { headers: { ...UA, range: `bytes=${pos}-${b}` }, signal: AbortSignal.timeout(600_000) });
       if (r.status === 403 || r.status === 410) { r.body?.cancel(); url = await getUrl(true); continue; }
@@ -112,7 +115,9 @@ export async function* stream(getUrl, a, b, tries = 8) {
         if (pos > b) break;
       }
       if (pos > b) return;
-    } catch { await sleep(2 ** k * 1000); }
+    } catch {}
+    if (pos > start) { k = -1; continue; }
+    await sleep(2 ** k * 1000);
   }
   if (pos <= b) throw new Error(`stream failed at ${pos} of ${b}`);
 }

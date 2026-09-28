@@ -48,9 +48,10 @@ async function upload(dir, key) {
   const root = await hashOf(dir);
   mkdirSync(STAGE, { recursive: true });
   const car = join(STAGE, `${root}.car`);
-  await pipeline(Readable.fromWeb((await rpc("dag/export", [["arg", root]])).body), createWriteStream(car));
-  const size = statSync(car).size;
+  let size;
   try {
+    await pipeline(Readable.fromWeb((await rpc("dag/export", [["arg", root]])).body), createWriteStream(car));   // a failed export leaves no file
+    size = statSync(car).size;
     rclone("copyto", `/a/${root}.car`, `fb:${BUCKET}/${key}`, "--header-upload", "x-amz-meta-import: car", "-q",
       "--s3-chunk-size", "64M", "--s3-upload-concurrency", "2");
   } finally { rmSync(car, { force: true }); }

@@ -85,7 +85,9 @@ const recordsCache = new Map();
 async function withRecords(id, doc) {
   if (!RECORDS) return doc;
   const key = id.toLowerCase(), hit = recordsCache.get(key);
-  let recs = hit && Date.now() - hit.at < 300_000 ? hit.recs : undefined;
+  // a model with records is kept 5 minutes; a failed or empty answer only 30 s, so a cold start (the first walk of a
+  // model's records can outlast the timeout) does not hide the records for long
+  let recs = hit && Date.now() - hit.at < (hit.recs ? 300_000 : 30_000) ? hit.recs : undefined;
   if (recs === undefined) {
     try { const r = await fetch(`${RECORDS}/v2/models/${key}/records`, { signal: AbortSignal.timeout(8000) }); recs = r.ok ? await r.json() : null; } catch { recs = null; }
     if (recordsCache.size > 500) recordsCache.clear();
@@ -99,7 +101,7 @@ async function withRecords(id, doc) {
   return {
     ...(doc || { sources: [{ kind: "huggingface.co", resolve: null, missing: [] }] }),
     id: recs.repo, revision: recs.revision, digests: "records", manifest: doc?.manifest || recs.index,
-    records: { index: recs.index, url: `${RECORDS}/v2/models/${key}/records` },
+    records: { index: recs.index, url: `${HUB}/v2/models/${key}/records` },          // the public address, not the internal one
     files: files.map((r) => [r.path, r.size, r.kappa, r.holders.some((h) => h.kind === "hub") ? 0 : 1, hf(r) || `https://huggingface.co/${recs.repo}/resolve/${recs.revision}/${encodePath(r.path)}`]),
   };
 }

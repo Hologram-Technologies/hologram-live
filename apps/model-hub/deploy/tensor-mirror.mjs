@@ -29,7 +29,7 @@ const HF = process.env.HF_ORIGIN || "https://huggingface.co";
 const IPFS_GATEWAYS = (process.env.TENSOR_IPFS_GATEWAYS || "").split(",").filter(Boolean);   // piece holders by raw CID
 const INDEX = "application/vnd.oci.image.index.v1+json", MANIFEST = "application/vnd.oci.image.manifest.v1+json";
 
-let state = { at: 0, mtime: 0, models: {}, alts: new Map(), lower: new Map() };
+let state = { at: 0, mtime: 0, models: {}, alts: new Map(), lower: new Map(), coverage: new Map() };
 async function load() {
   if (Date.now() - state.at < 30_000) return state;
   state.at = Date.now();
@@ -37,18 +37,24 @@ async function load() {
     const s = await stat(join(ROOT, "models.json"));
     if (s.mtimeMs !== state.mtime) {
       const models = JSON.parse(await readFile(join(ROOT, "models.json"), "utf8"));
-      const alts = new Map();
+      const alts = new Map(), tensorsOf = new Map();
       for (const f of await readdir(join(ROOT, "sources")).catch(() => [])) {
         for (const [k, repo, rev, path, off, len] of JSON.parse(await readFile(join(ROOT, "sources", f), "utf8"))) {
           if (!models[repo]?.gated) continue;                       // only gated models serve as sources
           if (!alts.has(k)) alts.set(k, []);
           alts.get(k).push({ repo, rev, path, off, len });
+          (tensorsOf.get(repo) || tensorsOf.set(repo, new Map()).get(repo)).set(k, len);
         }
       }
       const gw = process.env.IPFS_GATEWAY;                          // pinned payloads, each its own IPFS object
-      if (gw) {
-        const pins = JSON.parse(await readFile(join(ROOT, "pins.json"), "utf8").catch(() => "{}"));
-        for (const [k, p] of Object.entries(pins)) (alts.get(k) || alts.set(k, []).get(k)).push({ url: `${gw.replace(/\/$/, "")}/ipfs/${p.cid}`, off: 0, len: p.len });
+      const pins = JSON.parse(await readFile(join(ROOT, "pins.json"), "utf8").catch(() => "{}"));
+      if (gw) for (const [k, p] of Object.entries(pins)) (alts.get(k) || alts.set(k, []).get(k)).push({ url: `${gw.replace(/\/$/, "")}/ipfs/${p.cid}`, off: 0, len: p.len });
+      // Per model: how many of its κ-addressed tensors are their own IPFS object, and one small one to check.
+      const coverage = new Map();
+      for (const [repo, ks] of tensorsOf) {
+        let pinned = 0, sample = null;
+        for (const [k, len] of ks) if (pins[k]) { pinned++; if (len > 0 && (!sample || len < sample.len)) sample = { kappa: k, cid: pins[k].cid, len }; }
+        coverage.set(repo, { pinned, total: ks.size, sample });
       }
       const lower = new Map(Object.keys(models).map((r) => [r.toLowerCase(), r]));   // OCI names are lowercase
       // relations from the latest sealed day root: same weights, and tensors shared with other models
@@ -57,7 +63,7 @@ async function load() {
         const car = JSON.parse(await readFile(join(ROOT, "car", "ipfs.json"), "utf8").catch(() => "null"));
         root.car = car && car.sealed === latest.digest ? car.root : null;   // the day's CAR exists for this very root
       } catch { root = null; }
-      state = { at: Date.now(), mtime: s.mtimeMs, models, alts, lower, root };
+      state = { at: Date.now(), mtime: s.mtimeMs, models, alts, lower, root, coverage };
     }
   } catch { /* nothing published yet */ }
   return state;
@@ -127,7 +133,7 @@ function rawCid(digest) {
 }
 
 // What the Models and Registry pages show for one model: its address, formats and relations. Small, derived.
-function summary(repo, m, root) {
+function summary(repo, m, root, coverage) {
   const lc = repo.toLowerCase();
   const edges = (root?.edges || []).filter((e) => e.a === repo || e.b === repo)
     .map((e) => ({ repo: e.a === repo ? e.b : e.a, bytes: e.bytes, tensors: e.tensors, sameWeights: e.sameWeights, licenceDiffers: e.licenceDiffers }));
@@ -137,6 +143,9 @@ function summary(repo, m, root) {
     formats: Object.fromEntries(Object.entries(m.manifests).map(([f, d]) => [f, { digest: d, tag: f === "safetensors-sharded" ? "sharded" : f }])),
     ipfs: rawCid(m.index),                                    // the manifest's IPFS address: the same sha256, as a raw CID
     pinned: Boolean(root?.car),                               // published in the day's CAR
+    // Every tensor its own IPFS object (pinned by κ, read through IPFS_GATEWAY): the page lists IPFS as a holder
+    // of the tensor bytes only when this covers every tensor, and Verify checks the sample against its κ.
+    ipfsTensors: coverage?.get(repo) ? { ...coverage.get(repo), gateway: (process.env.IPFS_GATEWAY || "https://ipfs.filebase.io").replace(/\/$/, "") } : null,
     sameWeights: (root?.sameWeights || []).find((g) => g.includes(repo))?.filter((r) => r !== repo) || [],
     shares: edges.filter((e) => !e.sameWeights).sort((a, b) => b.bytes - a.bytes),
     root: root?.digest || null, day: root?.day || null,
@@ -146,8 +155,8 @@ function summary(repo, m, root) {
 export async function tensorMirror(req, res, path) {
   // The catalogue of models with a tensor index, for the Registry page and agents.
   if (path === "/v2/models/_catalog") {
-    const { models, root } = await load();
-    const rows = Object.entries(models).filter(([, m]) => m.gated).map(([r, m]) => summary(r, m, root));
+    const { models, root, coverage } = await load();
+    const rows = Object.entries(models).filter(([, m]) => m.gated).map(([r, m]) => summary(r, m, root, coverage));
     const t = JSON.stringify({ day: root?.day || null, root: root?.digest || null, models: rows });
     res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(t), "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
     res.end(req.method === "HEAD" ? undefined : t);
@@ -157,10 +166,10 @@ export async function tensorMirror(req, res, path) {
   // assembled from its tensors (what a client sees when Hugging Face is gone).
   const sm = path.match(/^\/v2\/models\/([^/]+\/[^/]+)\/summary$/);
   if (sm) {
-    const { models, lower, root } = await load();
+    const { models, lower, root, coverage } = await load();
     const repo = models[sm[1]] ? sm[1] : lower.get(sm[1].toLowerCase()), m = repo && models[repo];
     if (!m || !m.gated) { ociError(res, 404, "NAME_UNKNOWN", `${sm[1]} has no tensor index yet`); return true; }
-    const t = JSON.stringify(summary(repo, m, root));
+    const t = JSON.stringify(summary(repo, m, root, coverage));
     res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(t), "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
     res.end(req.method === "HEAD" ? undefined : t);
     return true;

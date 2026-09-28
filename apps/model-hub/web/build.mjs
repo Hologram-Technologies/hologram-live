@@ -290,6 +290,11 @@ function signature(m) {
 }
 
 // Where the bytes are held. One line per holder; Verify checks every one of them.
+// Held on lists who holds the tensor bytes, each checked by Verify against its address. The hub's own registry copy
+// ("Hologram") is not a separate holder here: the page's address and Get it already point at this hub, and Verify had
+// no URL of its own to check it with.
+const holders = (files) => (files.sources || []).filter((s) => s.kind !== "hologram");
+
 function sourceList(sources) {
   return `<div class="sources">
     <ul>${sources.map((s) => `<li data-source="${R.esc(s.kind)}"${s.p2p ? ' title="Peer to peer via BitTorrent. Your torrent client checks every piece; Hugging Face seeds it, so it completes with zero peers."' : s.pull ? ` title="Stored on Hologram. hologram pull ${R.esc(s.pull)} verifies every chunk as it arrives."` : ""}><span class="state">${s.p2p ? R.icon.nodes : R.icon.seal}${B.loader("orbit")}${R.icon.check}${R.icon.close}</span><a href="${R.esc(s.page)}"${s.p2p ? " download" : ' target="_blank" rel="noopener"'}>${R.esc(s.name)}${s.p2p ? R.icon.down : R.icon.external}</a></li>`).join("")}</ul>
@@ -441,10 +446,10 @@ function modelPage(m, files, ov, readme) {
   </div>
   ${m.manifest && files ? `<div class="rows">
     <div class="row"><span class="rl">Address</span>${signature(m)}</div>
-    <div class="row"><span class="rl" id="held-label">Held on</span><div class="rv">${sourceList(files.sources || [])}<p class="verdict" id="verdict" role="status" hidden></p></div></div>
+    <div class="row"><span class="rl" id="held-label">Held on</span><div class="rv">${sourceList(holders(files))}<p class="verdict" id="verdict" role="status" hidden></p></div></div>
     <div class="row"><span class="rl">Get it</span><div class="rv">${getIt(m, files, downloadMenu)}<p class="verdict" id="dl-status" role="status" hidden></p></div></div>
   </div>
-  <p class="frame-rel" id="same-row" hidden><span id="same"></span></p><script type="application/json" id="sources">${JSON.stringify((files.sources || []).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>`
+  <p class="frame-rel" id="same-row" hidden><span id="same"></span></p><script type="application/json" id="sources">${JSON.stringify(holders(files).map(({ kind, name, resolve, p2p, pull, page }) => ({ kind, name, resolve, p2p, pull, page: p2p ? page : undefined })))}</script>`
     : `<p class="verdict" id="verdict" role="status" hidden></p><p class="verdict" id="dl-status" role="status" hidden></p>`}
 </section>
 <main class="detail">

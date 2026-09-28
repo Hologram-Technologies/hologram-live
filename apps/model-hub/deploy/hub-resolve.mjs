@@ -32,6 +32,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { kappaMirror } from "./kappa-mirror.mjs";
+import { tensorMirror, tensorMirrorRoot, tensorSource, modelPageRedirect } from "./tensor-mirror.mjs";
 
 // HUB_VERIFY=1: run on the user's own machine as a verifying edge. Same dialects, same index; instead of redirecting
 // a client to a holder, fetch the file, check it against the index's sha256 and only then hand it over
@@ -43,7 +44,9 @@ const CACHE = process.env.HUB_CACHE || join(homedir(), ".cache", "hologram");
 const DATA = process.env.HUB_DATA || "/data";          // the site's published data: files/<org>/<name>.json, models.json
 const STATE = process.env.HUB_STATE || (VERIFY ? join(CACHE, "state") : "/state"); // requested.txt, override.json
 const PORT = Number(process.env.PORT || 8090);
-const ORDER = ["huggingface.co", "modelscope.cn", "ipfs"];
+// "tensors" is last: files rebuilt from κ-addressed tensors (tensor-mirror.mjs), used when every whole-file
+// source is down, or when asked for with /via/tensors.
+const ORDER = ["huggingface.co", "modelscope.cn", "ipfs", "tensors"];
 const PROBE = { model: "sentence-transformers/all-MiniLM-L6-v2", file: "config.json" };
 
 // ---- the index on disk (re-read when the daily build swaps it)
@@ -57,6 +60,14 @@ function refresh() {
   byLower = map;
 }
 async function model(id) {
+  const doc = await baseModel(id);
+  if (doc && !doc.sources.some((s) => s.kind === "tensors")) {
+    const t = await tensorSource(doc.id, doc.revision, doc.files).catch(() => null);
+    if (t) doc.sources.push(t);
+  }
+  return doc;
+}
+async function baseModel(id) {
   refresh();
   const path = byLower.get(id.toLowerCase());
   if (!path) return (await indexed(id)) || (await fromHub(id));
@@ -160,7 +171,8 @@ async function indexed(id) {
 // ---- health: one small verified fetch per source, in the background
 const health = Object.fromEntries(ORDER.map((k) => [k, { ok: true, checked: null, reason: "not probed yet" }]));
 const encodePath = (p) => p.split("/").map(encodeURIComponent).join("/");
-const urlFor = (doc, source, [path, , , , hfUrl]) => (source.kind === "huggingface.co" ? hfUrl : source.resolve + encodePath(path));
+// The tensors source is addressed by digest and answered by this same origin, so its URL is relative.
+const urlFor = (doc, source, [path, , address, , hfUrl]) => (source.kind === "huggingface.co" ? hfUrl : source.byDigest ? source.resolve + address : source.resolve + encodePath(path));
 async function probe() {
   const doc = await model(PROBE.model).catch(() => null);
   let forced = [];
@@ -172,7 +184,7 @@ async function probe() {
     else if (!source || !file) health[kind] = { ok: true, checked: null, reason: "no probe file on this source" };
     else {
       try {
-        const r = await fetch(urlFor(doc, source, file), { signal: AbortSignal.timeout(kind === "ipfs" ? 20_000 : 8_000), headers: { "user-agent": "hub-resolve probe" } });
+        const r = await fetch(new URL(urlFor(doc, source, file), `http://127.0.0.1:${PORT}`), { signal: AbortSignal.timeout(kind === "ipfs" ? 20_000 : 8_000), headers: { "user-agent": "hub-resolve probe" } });
         if (!r.ok) throw new Error(`answered ${r.status}`);
         const got = `sha256:${createHash("sha256").update(Buffer.from(await r.arrayBuffer())).digest("hex")}`;
         if (got !== file[2]) throw new Error("served different bytes");
@@ -638,6 +650,9 @@ http.createServer(async (req, res) => {
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
+    // The tensor mirror: /v2/models/<org>/<name>/… (redirects while Hugging Face serves) and /v2/tensors/… (always
+    // rebuilt from tensors): every indexed model as a tiny OCI artifact (tensor-mirror.mjs).
+    if ((path.startsWith("/v2/models/") || path.startsWith("/v2/tensors/")) && await tensorMirror(req, res, path)) return;
     // The κ mirror: /v2/<upstream host>/<path>/… for every image the Registry page indexes (kappa-mirror.mjs).
     const blob = VERIFY && path.match(/^\/_blob\/sha256:([0-9a-f]{64})$/);
     if (blob) {
@@ -646,6 +661,9 @@ http.createServer(async (req, res) => {
       return serveVerified(req, res, known.doc, known.entry, null, { "docker-content-digest": `sha256:${blob[1]}` });
     }
     if (path.startsWith("/v2/") && await kappaMirror(req, res, path)) return;
+    // The plain name <org>/<name>: the tensor index answers what it holds (formats, the bare name, its digests);
+    // everything else, such as an Ollama quant tag, falls through to the Ollama dialect below.
+    if (await tensorMirrorRoot(req, res, path)) return;
     const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs|tags)\/(.+)$/);
     if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
     if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);
@@ -720,6 +738,9 @@ http.createServer(async (req, res) => {
       return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings, ...(blobs ? { usedStorage: doc.files.reduce((s, f) => s + f[1], 0) } : {}), hologram: trust(doc) });
     }
 
+    // A browser opening the plain address <host>/<org>/<name>: the model's page (Caddy routes only HTML requests
+    // for two-segment paths outside the site's sections here).
+    if (await modelPageRedirect(req, res, path, async (id) => (await model(id))?.id)) return;
     const file = path.match(/^\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+)$/);
     if (file && file[1] !== "api/models") {
       const doc = await model(file[1]);

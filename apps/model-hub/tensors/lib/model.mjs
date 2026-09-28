@@ -29,9 +29,13 @@ const SMALL = 16 << 20;
 // Weights of other frameworks travel with the original format only; renders carry configs and tokenizers.
 const FOREIGN = /\.(safetensors|gguf|bin|pt|pth|ckpt|h5|msgpack|onnx|onnx_data|ot|tflite|mlmodel|pb|npz|keras)$|^(onnx|openvino|coreml|tf|flax)\//i;
 
+// The canonical model κ is the sha256 of these bytes, and the bytes are held: the model's identity is itself an
+// object anyone can fetch and check (its lines name every tensor κ, so it is the root of the weights alone).
+export function canonicalBytes(tensors) {
+  return Buffer.from([...new Set(tensors.map((t) => `${t.dtype}|${JSON.stringify(t.shape)}|${t.kappa}`))].sort().join("\n"));
+}
 export function canonicalKappa(tensors) {
-  const lines = [...new Set(tensors.map((t) => `${t.dtype}|${JSON.stringify(t.shape)}|${t.kappa}`))].sort();
-  return `sha256:${createHash("sha256").update(lines.join("\n")).digest("hex")}`;
+  return `sha256:${createHash("sha256").update(canonicalBytes(tensors)).digest("hex")}`;
 }
 
 export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log = () => {}, headersOnly = false } = {}) {
@@ -128,7 +132,7 @@ export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log
     method: "hologram.provenance/v1: narrowest exact dtype of BF16, F16, F32; sign bits at floor(k*n/4096), k<4096, MSB-first; sha256 per 1024 rows of the narrow payload",
     rows: [...provRows.values()] }) : null;
   const canonSet = src.length ? tensors.filter((t) => src.some((f) => f.path === t.file)) : tensors;
-  const canonical = canonSet.length ? canonicalKappa(canonSet) : null;
+  const canonical = canonSet.length ? store.put(canonicalBytes(canonSet)).digest : null;
   // Pieces: for every payload over 1 MiB, the sha256 of each 1 MiB of it, so any range of it can be fetched from any
   // holder and checked piece by piece (deploy/kappa-get.mjs). Named by the table, so the model's one address reaches
   // every piece hash.

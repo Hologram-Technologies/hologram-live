@@ -6,7 +6,8 @@
 // Recorded from huggingface_hub 1.32 (web/qa/hf-dialect/recorder.mjs), the whole dialect a download needs:
 //   GET  /api/models?search=&author=&pipeline_tag=&library=&filter=&sort=&limit=   list and search (HfApi.list_models)
 //   GET  [/via/<source>]/api/models/<org>/<name>[/revision/<rev>]          model info: sha, siblings
-//   GET  [/via/<source>]/api/models/<org>/<name>/tree/<rev>[/<dir>]        file listing
+//   GET  [/via/<source>]/api/models/<org>/<name>/tree/<rev>[/<dir>]        file listing (?recursive=; any ?cursor= page is [])
+//   GET  [/via/<source>]/api/models/<org>/<name>/treesize/<rev>[/<dir>]    total bytes under a folder (hfd.sh)
 //   HEAD [/via/<source>]/<org>/<name>/resolve/<rev>/<path>                 302 + X-Repo-Commit, X-Linked-ETag, X-Linked-Size
 //   GET  [/via/<source>]/<org>/<name>/resolve/<rev>/<path>                 302 to the chosen source (Range is re-sent there)
 //   GET  …/resolve/<rev>/SHA256SUMS                                        generated: `sha256sum -c` checks a download
@@ -14,6 +15,8 @@
 //   GET  /api/models/<org>/<name>/refs                                     branches: main at the indexed revision (llama.cpp -hf)
 //   GET|HEAD /v2/<org>/<name>/manifests/<quant> and /blobs/<digest>        Ollama's registry dialect (see below)
 //   (same routes, Accept: application/vnd.oci.image.manifest.v1+json)      OCI model artifacts, CNCF ModelPack: oras, modctl, Docker Model Runner
+//   GET  /api/v1/models/<org>/<name>/repo/files, /repo?FilePath=, /revisions   ModelScope's dialect (MODELSCOPE_ENDPOINT)
+//   POST /<org>/<name>.git/info/lfs/objects/batch                         Git LFS batch API, download only (lfs.url)
 //   POST /mcp                                                              MCP for agents: search_models, get_model, resolve_file
 // Older clients read those three headers from our 302 and GET the Location; huggingface_hub 1.32 follows the redirect
 // on HEAD too, so while Hugging Face is the source it meets Hugging Face's own Xet headers and downloads through Xet
@@ -27,10 +30,18 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { kappaMirror } from "./kappa-mirror.mjs";
 
+// HUB_VERIFY=1: run on the user's own machine as a verifying edge. Same dialects, same index; instead of redirecting
+// a client to a holder, fetch the file, check it against the index's sha256 and only then hand it over
+// (verified-bytes.mjs). Point any client here: HF_ENDPOINT=http://127.0.0.1:8090, ollama pull 127.0.0.1:8090/<repo>:<quant>.
+const VERIFY = process.env.HUB_VERIFY === "1";
+// Loaded only in that mode: the hosted endpoint redirects and never needs it (its installer swaps this one file).
+const { streamVerified } = VERIFY ? await import("./verified-bytes.mjs") : {};
+const CACHE = process.env.HUB_CACHE || join(homedir(), ".cache", "hologram");
 const DATA = process.env.HUB_DATA || "/data";          // the site's published data: files/<org>/<name>.json, models.json
-const STATE = process.env.HUB_STATE || "/state";        // requested.txt (models asked for but not indexed), override.json
+const STATE = process.env.HUB_STATE || (VERIFY ? join(CACHE, "state") : "/state"); // requested.txt, override.json
 const PORT = Number(process.env.PORT || 8090);
 const ORDER = ["huggingface.co", "modelscope.cn", "ipfs"];
 const PROBE = { model: "sentence-transformers/all-MiniLM-L6-v2", file: "config.json" };
@@ -200,12 +211,37 @@ const json = (res, status, body, headers = {}) => { const text = JSON.stringify(
 const refuse = (res, status, code, message) => json(res, status, { error: message }, { "x-error-code": code, "x-error-message": message });
 const hex = (address) => address.split(":")[1];
 const isLfs = (f) => Boolean(f[3]);
+// Hugging Face's tree listing of the files under `dir`: the direct children (files and folders), or with `recursive`
+// every file and every folder beneath. A folder's oid is sha1 over its files' paths and addresses: stable and
+// distinct, but not git's tree sha1 (the hub holds file sha256s, not git objects).
+//
+// Every file's `oid` is its sha256 (the hub's documented contract: Spaces and agents check downloads against it), and
+// every file, small ones included, carries `lfs` with the same sha256. That is what makes Hugging Face's own tools
+// check it: `hf cache verify` (huggingface_hub 2.0, measured) checks an entry with `lfs` by sha256 and an entry
+// without it by git's blob sha1, which the hub does not hold, so without `lfs` every small file failed.
+function listing(files, dir, recursive) {
+  const out = [], dirs = new Map();
+  for (const f of files) {
+    const parts = f[0].slice(dir.length).split("/");
+    for (let i = 1; i < parts.length && (recursive || i === 1); i++) {
+      const d = dir + parts.slice(0, i).join("/");
+      if (!dirs.has(d)) dirs.set(d, createHash("sha1"));
+      dirs.get(d).update(`${f[0]} ${f[2]}\n`);
+    }
+    if (!recursive && parts.length > 1) continue;
+    out.push({ type: "file", oid: hex(f[2]), size: f[1], path: f[0], lfs: { oid: hex(f[2]), size: f[1], pointerSize: 0 } });
+  }
+  for (const [d, h] of dirs) out.push({ type: "directory", oid: h.digest("hex"), size: 0, path: d });
+  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
 
+// A model asked for but not indexed: the next index run picks it up.
+const record = (id) => { if (/^[\w.-]+\/[\w.-]+$/.test(id)) appendFile(join(STATE, "requested.txt"), `${new Date().toISOString().slice(0, 10)} ${id}\n`).catch(() => {}); };
 async function missing(res, id) {
   let gated = false;
   try { gated = JSON.parse(await readFile(join(DATA, "models.json"), "utf8")).models.some((m) => m.id.toLowerCase() === id.toLowerCase() && m.state === "skipped"); } catch { /* no catalog */ }
   if (gated) return refuse(res, 403, "GatedRepo", `${id} is gated on Hugging Face. The hub serves public models only; use huggingface.co directly for this one.`);
-  if (/^[\w.-]+\/[\w.-]+$/.test(id)) appendFile(join(STATE, "requested.txt"), `${new Date().toISOString().slice(0, 10)} ${id}\n`).catch(() => {});
+  record(id);
   return refuse(res, 404, "RepoNotFound", `${id} is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile.`);
 }
 // The catalog the site shows, in the shape Hugging Face's list route answers. A search costs an agent a few hundred
@@ -400,7 +436,16 @@ async function ollama(req, res, id, kind, ref) {
   if (kind === "manifests") {
     const { file, sharded, quants } = pickGguf(doc, ref);
     if (!file) return ociError(res, 404, "MANIFEST_UNKNOWN", sharded ? `${ref} of ${doc.id} is split across several files; Ollama needs a single GGUF file.` : quants.length ? `${doc.id} has no ${ref}. It has: ${[...new Set(quants)].join(", ")}.` : `${doc.id} has no GGUF file; Ollama pulls GGUF models.`);
-    const bytes = await manifestFor(doc, ref, file);
+    let bytes = await manifestFor(doc, ref, file);
+    // llama.cpp before b8498 (distro builds, older embedders) asks this route with its own user agent and reads the
+    // file name from Hugging Face's extension to the manifest, `ggufFile` (captured from huggingface.co 2026-09-26).
+    if (/^llama-cpp/i.test(req.headers["user-agent"] || "")) {
+      const m = JSON.parse(bytes.toString("utf8"));
+      m.ggufFile = { rfilename: file[0], blobId: hex(file[2]), size: file[1], lfs: { sha256: hex(file[2]), size: file[1], pointerSize: 0 } };
+      bytes = Buffer.from(JSON.stringify(m));
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": bytes.length, "x-repo-commit": doc.revision, "cache-control": "no-store" });
+      return res.end(req.method === "HEAD" ? undefined : bytes);
+    }
     res.writeHead(200, { "content-type": MANIFEST_TYPE, "content-length": bytes.length, "docker-content-digest": sha(bytes), "x-repo-commit": doc.revision, "cache-control": "no-store" });
     return res.end(req.method === "HEAD" ? undefined : bytes);
   }
@@ -408,6 +453,14 @@ async function ollama(req, res, id, kind, ref) {
   const entry = doc.files.find((f) => f[2] === ref);
   if (entry) { // the weights: never through us
     if (req.method === "HEAD") { res.writeHead(200, { "content-length": entry[1], "docker-content-digest": ref, "accept-ranges": "bytes", "content-type": "application/octet-stream" }); return res.end(); }
+    if (VERIFY) {
+      // Ollama follows a same-host redirect itself and wants its last answer to be a 307 to another host: send it to
+      // the other loopback name of this same process, which serves the verified file there.
+      blobs.set(hex(ref), { doc, entry });
+      const host = String(req.headers.host || `127.0.0.1:${PORT}`), other = host.startsWith("localhost") ? host.replace("localhost", "127.0.0.1") : host.replace(/^[^:]+/, "localhost");
+      res.writeHead(307, { location: `http://${other}/_blob/${ref}`, "docker-content-digest": ref, "x-hub-source": "verified", "cache-control": "no-store", "content-length": "0" });
+      return res.end();
+    }
     const { source, reason } = choose(doc, entry, null);
     console.log(JSON.stringify({ t: new Date().toISOString(), dialect: /^ollama/i.test(req.headers["user-agent"] || "") ? "ollama" : "oci", model: doc.id, file: entry[0], source: source.kind, reason }));
     res.writeHead(307, { location: urlFor(doc, source, entry), "docker-content-digest": ref, "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });
@@ -520,6 +573,53 @@ async function mcp(req, res) {
   return json(res, 200, Array.isArray(body) ? answers : answers[0], { ...cors, "cache-control": "no-store", ...(version ? { "mcp-protocol-version": version } : {}) });
 }
 
+// ---- the verifying edge (HUB_VERIFY=1)
+const blobs = new Map();   // sha256 hex -> { doc, entry } of a blob a manifest named, for the /_blob/ hop
+function holders(doc, entry, via) {
+  const have = doc.sources.filter((s) => !s.p2p && !s.pull && ORDER.includes(s.kind) && !(s.missing || []).includes(entry[0]) && (!via || s.kind === via));
+  have.sort((a, b) => (health[b.kind].ok - health[a.kind].ok) || ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
+  return have.map((s) => ({ kind: s.kind, url: urlFor(doc, s, entry) })).filter((h) => h.url);
+}
+async function serveVerified(req, res, doc, entry, via, headers) {
+  const all = { ...headers, "x-hub-source": "verified", "cache-control": "no-store" };
+  const log = (e) => console.log(JSON.stringify({ t: new Date().toISOString(), model: doc.id, file: entry[0], ...e }));
+  try { return await streamVerified(req, res, CACHE, hex(entry[2]), entry[1], holders(doc, entry, via), all, log); }
+  catch (e) { if (!res.headersSent) return refuse(res, 502, "NoVerifiedSource", `${entry[0]} of ${doc.id}: ${e.message}`); res.destroy(); }
+}
+
+// ---- Git LFS: `git -c lfs.url=https://gethologram.ai/<org>/<name>.git/info/lfs lfs pull` (download only)
+//
+// The batch API answers where each object can be fetched; git-lfs then checks every object against the oid its git
+// pointer names (sha256) and refuses one that differs. So this route verifies without any help from us; with
+// HUB_VERIFY=1 the href is this process's own verifying /_blob/ route as well.
+async function lfsBatch(req, res, id) {
+  const reply = (status, body) => { const text = JSON.stringify(body); res.writeHead(status, { "content-type": "application/vnd.git-lfs+json", "content-length": Buffer.byteLength(text) }); res.end(text); };
+  let ask;
+  try { const chunks = []; for await (const c of req) { chunks.push(c); if (chunks.reduce((n, x) => n + x.length, 0) > 4 << 20) throw new Error("too large"); } ask = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch { return reply(400, { message: "The batch request is not JSON." }); }
+  if (ask.operation !== "download") return reply(403, { message: "This endpoint is read-only: download only." });
+  const doc = await model(id);
+  if (!doc) return reply(404, { message: `${id} is not in the Hologram index yet.` });
+  const byOid = new Map(doc.files.map((f) => [hex(f[2]), f]));
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || `127.0.0.1:${PORT}`);
+  const objects = (ask.objects || []).slice(0, 1000).map(({ oid, size }) => {
+    const entry = byOid.get(String(oid));
+    if (!entry) return { oid, size, error: { code: 404, message: `${oid} is not part of ${doc.id} at ${doc.revision}.` } };
+    if (VERIFY) { blobs.set(entry[2].slice(7), { doc, entry }); return { oid, size: entry[1], authenticated: true, actions: { download: { href: `http://${host}/_blob/${entry[2]}`, expires_in: 3600 } } }; }
+    const { source } = choose(doc, entry, null);
+    return { oid, size: entry[1], authenticated: true, actions: { download: { href: urlFor(doc, source, entry), expires_in: 3600 } } };
+  });
+  return reply(200, { transfer: "basic", objects, hash_algo: "sha256" });
+}
+
+// Where every digest this endpoint hands out comes from, so nobody has to trust the endpoint: the canonical manifest
+// (the sorted file list: path, size, sha256) is named by its own BLAKE3 and published in the public address index,
+// commit history and all. Fetch it, hash it, compare it with the tree: a gateway that swapped a digest is caught.
+function trust(doc) {
+  const m = /^blake3:([0-9a-f]{64})$/.exec(doc.manifest || "");
+  return m ? { manifest: doc.manifest, manifest_url: `${API}/v1/manifests/${m[1]}.json`, check: "blake3 of manifest_url's bytes equals manifest; its files equal this model's tree" } : { manifest: doc.manifest || null };
+}
+
 const revisionOk = (doc, rev) => rev === "main" || (rev.length >= 7 && doc.revision.startsWith(rev));
 
 http.createServer(async (req, res) => {
@@ -531,17 +631,53 @@ http.createServer(async (req, res) => {
     res.setHeader("access-control-allow-origin", "*");
     res.setHeader("access-control-expose-headers", "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location");
     if (req.method === "OPTIONS") { res.writeHead(204, { "access-control-allow-methods": "GET, HEAD, OPTIONS", "access-control-allow-headers": "range, accept, content-type, if-none-match, user-agent", "access-control-max-age": "86400" }); return res.end(); }
+    const lfs = url.pathname.match(/^\/([^/]+\/[^/]+?)(?:\.git)?\/info\/lfs\/objects\/batch$/);
+    if (lfs && req.method === "POST") return lfsBatch(req, res, decodeURIComponent(lfs[1]));
     if (req.method !== "GET" && req.method !== "HEAD") return refuse(res, 405, "ReadOnly", "The hub endpoint is read-only.");
     let path = decodeURIComponent(url.pathname), via = url.searchParams.get("source");
     const prefix = path.match(/^\/via\/([a-z.]+)(\/.*)$/);
     if (prefix) { via = prefix[1] === "modelscope" ? "modelscope.cn" : prefix[1] === "huggingface" ? "huggingface.co" : prefix[1]; path = prefix[2]; }
 
     // The κ mirror: /v2/<upstream host>/<path>/… for every image the Registry page indexes (kappa-mirror.mjs).
+    const blob = VERIFY && path.match(/^\/_blob\/sha256:([0-9a-f]{64})$/);
+    if (blob) {
+      const known = blobs.get(blob[1]);
+      if (!known) return refuse(res, 404, "BlobUnknown", "Ask for the blob through its model's manifest first.");
+      return serveVerified(req, res, known.doc, known.entry, null, { "docker-content-digest": `sha256:${blob[1]}` });
+    }
     if (path.startsWith("/v2/") && await kappaMirror(req, res, path)) return;
     const oci = path.match(/^\/v2\/([^/]+\/[^/]+)\/(manifests|blobs|tags)\/(.+)$/);
     if (oci) return ollama(req, res, oci[1], oci[2], oci[3]);
     if (path === "/api/models" || path === "/api/models/") return list(res, url.searchParams);
     if (path === "/api/hub/health") return json(res, 200, { sources: health, order: ORDER }, { "cache-control": "no-store", "access-control-allow-origin": "*" });
+
+    // ModelScope's dialect: `MODELSCOPE_ENDPOINT=https://gethologram.ai` (modelscope 1.40 SDK, recorded 2026-09-26).
+    // Its SDK hashes every file against the listing's Sha256 on download and on every cache hit: the strongest client.
+    const ms = path.match(/^\/api\/v1\/models\/([^/]+\/[^/]+?)(\/repo\/files|\/repo|\/revisions)?$/);
+    if (ms || path === "/api/v1/repos/internalAccelerationInfo") {
+      const ok = (Data) => json(res, 200, { Code: 200, Data, Message: "success", Success: true });
+      const no = (status, Message) => json(res, status, { Code: status, Data: null, Message, Success: false });
+      if (!ms) return ok({});
+      const doc = await model(ms[1]);
+      if (!doc) { record(ms[1]); return no(404, `${ms[1]} is not in the Hologram index yet; the request was recorded for the next index run.`); }
+      const rev = url.searchParams.get("Revision") || "master";
+      if (rev !== "master" && !revisionOk(doc, rev)) return no(404, `The hub has ${doc.id} at ${doc.revision} (master) only.`);
+      if (ms[2] === "/revisions") return ok({ RevisionMap: { Branches: [{ Revision: "master", CreatedAt: 0 }], Tags: [] } });
+      if (!ms[2]) return ok({ Name: doc.id.split("/")[1], Path: doc.id.split("/")[0], Revision: doc.revision, ModelId: doc.id });
+      if (ms[2] === "/repo/files") {
+        const dirs = [...new Set(doc.files.flatMap((f) => f[0].split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))))];
+        return ok({ Files: [
+          ...dirs.map((d) => ({ Name: d.split("/").pop(), Path: d, Type: "tree", Size: 0, Sha256: "", IsLFS: false, Revision: doc.revision })),
+          ...doc.files.map((f) => ({ Name: f[0].split("/").pop(), Path: f[0], Type: "blob", Size: f[1], Sha256: hex(f[2]), IsLFS: isLfs(f), Revision: doc.revision })),
+        ] });
+      }
+      const entry = doc.files.find((f) => f[0] === url.searchParams.get("FilePath"));
+      if (!entry) return no(404, `${url.searchParams.get("FilePath")} is not in ${doc.id}.`);
+      if (VERIFY) return serveVerified(req, res, doc, entry, via, { etag: `"${hex(entry[2])}"` });
+      const { source } = choose(doc, entry, via);
+      res.writeHead(302, { location: urlFor(doc, source, entry), etag: `"${hex(entry[2])}"`, "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });
+      return res.end();
+    }
 
     // Measured with huggingface_hub 1.32: the client follows our redirect on HEAD, meets Hugging Face's Xet headers
     // there, and then asks *this* endpoint for the Xet read token. The token is Hugging Face's to give: send the
@@ -555,19 +691,33 @@ http.createServer(async (req, res) => {
       if (!doc) return missing(res, refs[1]);
       return json(res, 200, { branches: [{ name: "main", ref: "refs/heads/main", targetCommit: doc.revision }], tags: [], converts: [] });
     }
-    const info = path.match(/^\/api\/models\/([^/]+\/[^/]+?)(?:\/revision\/(.+))?$/), tree = path.match(/^\/api\/models\/([^/]+\/[^/]+)\/tree\/([^/]+)(?:\/(.*))?$/);
+    const info = path.match(/^\/api\/models\/([^/]+\/[^/]+?)(?:\/revision\/(.+))?$/), tree = path.match(/^\/api\/models\/([^/]+\/[^/]+)\/(tree|treesize)\/([^/]+)(?:\/(.*))?$/);
     if (tree) {
       const doc = await model(tree[1]);
       if (!doc) return missing(res, tree[1]);
-      if (!revisionOk(doc, tree[2])) return refuse(res, 404, "RevisionNotFound", `The hub has ${doc.id} at ${doc.revision} only.`);
-      const dir = tree[3] ? `${tree[3].replace(/\/$/, "")}/` : "";
-      return json(res, 200, doc.files.filter((f) => f[0].startsWith(dir)).map((f) => ({ type: "file", oid: hex(f[2]), size: f[1], path: f[0], ...(isLfs(f) ? { lfs: { oid: hex(f[2]), size: f[1], pointerSize: 0 } } : {}) })));
+      if (!revisionOk(doc, tree[3])) return refuse(res, 404, "RevisionNotFound", `The hub has ${doc.id} at ${doc.revision} only.`);
+      const at = (tree[4] || "").replace(/\/$/, ""), dir = at ? `${at}/` : "";
+      const under = doc.files.filter((f) => f[0].startsWith(dir));
+      // A path that names nothing is Hugging Face's EntryNotFound, not an empty listing: clients tell the two apart.
+      if (at && !under.length) return refuse(res, 404, "EntryNotFound", `${at} is not a folder in ${doc.id} at ${doc.revision}.`);
+      if (tree[2] === "treesize") return json(res, 200, { path: at, size: under.reduce((s, f) => s + f[1], 0) });
+      // One page holds the whole listing, so any next page is empty (text-generation-webui pages until it gets []).
+      if (url.searchParams.has("cursor")) return json(res, 200, []);
+      // Without ?recursive the hub's documented answer: every file under the prefix, files only (agents, Spaces and
+      // the hub's own gates rely on it). With it, Hugging Face's: folders too, and only direct children when false
+      // (huggingface_hub always sends it: HfFileSystem.ls, vLLM, SGLang walk one level at a time).
+      const r = url.searchParams.get("recursive");
+      if (r === null) return json(res, 200, listing(under, dir, true).filter((e) => e.type === "file"));
+      return json(res, 200, listing(under, dir, ["true", "1"].includes(r.toLowerCase())));
     }
     if (info) {
       const doc = await model(info[1]);
       if (!doc) return missing(res, info[1]);
       if (info[2] && !revisionOk(doc, info[2])) return refuse(res, 404, "RevisionNotFound", `The hub has ${doc.id} at ${doc.revision} only.`);
-      return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings: doc.files.map((f) => ({ rfilename: f[0] })) });
+      // ?blobs=true (huggingface_hub's files_metadata=True): size and the LFS sha256 per file, as Hugging Face sends.
+      const blobs = ["true", "1"].includes(url.searchParams.get("blobs") || "");
+      const siblings = doc.files.map((f) => blobs ? { rfilename: f[0], size: f[1], lfs: { sha256: hex(f[2]), size: f[1], pointerSize: 0 } } : { rfilename: f[0] });
+      return json(res, 200, { _id: hex(doc.manifest).slice(0, 24), id: doc.id, modelId: doc.id, sha: doc.revision, private: false, gated: false, disabled: false, tags: [], downloads: 0, likes: 0, siblings, ...(blobs ? { usedStorage: doc.files.reduce((s, f) => s + f[1], 0) } : {}), hologram: trust(doc) });
     }
 
     const file = path.match(/^\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+)$/);
@@ -584,6 +734,7 @@ http.createServer(async (req, res) => {
       if (!entry) return refuse(res, 404, "EntryNotFound", `${file[3]} is not in ${doc.id} at ${doc.revision}.`);
       const { source, reason, denied } = choose(doc, entry, via);
       if (denied) return refuse(res, 404, denied.code, denied.message);
+      if (VERIFY) return serveVerified(req, res, doc, entry, via, { "x-repo-commit": doc.revision, "x-linked-etag": `"${hex(entry[2])}"`, "x-linked-size": String(entry[1]), etag: `"${hex(entry[2])}"` });
       const location = urlFor(doc, source, entry);
       if (req.method === "GET" || reason !== "first choice") console.log(JSON.stringify({ t: new Date().toISOString(), model: doc.id, file: entry[0], method: req.method, source: source.kind, reason }));
       res.writeHead(302, { location, "x-repo-commit": doc.revision, "x-linked-etag": `"${hex(entry[2])}"`, "x-linked-size": String(entry[1]), etag: `"${hex(entry[2])}"`, "accept-ranges": "bytes", "x-hub-source": source.kind, "cache-control": "no-store", "content-length": "0" });

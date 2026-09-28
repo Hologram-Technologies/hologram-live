@@ -87,6 +87,7 @@ const ociErrorResponse = (status, description, example) => ({ description, conte
 
 const OWNER = { name: "owner", in: "path", required: true, description: "The owning organisation or user, exactly as on Hugging Face.", schema: { type: "string" }, example: "sentence-transformers" };
 const NAME = { name: "name", in: "path", required: true, description: "The model name.", schema: { type: "string" }, example: "all-MiniLM-L6-v2" };
+const RECURSIVE = { name: "recursive", in: "query", required: false, description: "Absent: every file, files only. `true`: every file and folder beneath. `false`: the direct children, folders included (Hugging Face's meanings).", schema: { type: "string", enum: ["true", "false", "True", "False"] } };
 const REVISION = { name: "revision", in: "path", required: true, description: "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.", schema: { type: "string" }, example: "main" };
 const FILEPATH = { name: "path", in: "path", required: true, description: "The file path inside the repository. It may contain slashes; do not encode them. The literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.", schema: { type: "string" }, example: "config.json", "x-hologram-multi-segment": true };
 const SOURCE = { name: "source", in: "path", required: true, description: "Pin one byte source instead of letting the hub choose.", schema: { type: "string", enum: ["huggingface", "modelscope", "ipfs"] }, example: "ipfs" };
@@ -567,10 +568,10 @@ function document(server, evidence) {
       tags: ["Models"],
       operationId: "listModelFiles",
       summary: "Every file, with its size and its SHA-256",
-      description: "`oid` is the SHA-256 of the file's bytes, which is the value you check a download against. This is the only place the expected hashes come from: never take a hash from the source that serves the bytes.",
-      parameters: [OWNER, NAME, REVISION],
+      description: "`oid` is the SHA-256 of the file's bytes, which is the value you check a download against. This is the only place the expected hashes come from: never take a hash from the source that serves the bytes.\n\nWithout `recursive`, every file and only files, in one page. With `recursive` (as `huggingface_hub` always sends it) the answer is Hugging Face's: `true` adds folder entries, `false` lists the direct children, folders included. Any `cursor` page is empty: the first page holds everything.",
+      parameters: [OWNER, NAME, REVISION, RECURSIVE],
       responses: {
-        200: { description: "One entry per file.", content: json({ type: "array", items: ref("TreeEntry") }, trimArray(body("models.tree"))) },
+        200: { description: "One entry per file (and per folder when `recursive` is given).", content: json({ type: "array", items: ref("TreeEntry") }, trimArray(body("models.tree"))) },
         404: hubError(404, "Not in the index, or indexed at another revision.", { error: "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only." }),
       },
       ...probe(`/api/models/${evidence.sample.model}/tree/main`, { contentType: "application/json" }),
@@ -582,9 +583,22 @@ function document(server, evidence) {
       operationId: "listModelFilesUnder",
       summary: "The files under one directory",
       description: "The same entries, filtered to one directory prefix.",
-      parameters: [OWNER, NAME, REVISION, { name: "prefix", in: "path", required: true, description: "Directory prefix, with or without a trailing slash.", schema: { type: "string" }, example: "1_Pooling", "x-hologram-multi-segment": true }],
+      parameters: [OWNER, NAME, REVISION, RECURSIVE, { name: "prefix", in: "path", required: true, description: "Directory prefix, with or without a trailing slash.", schema: { type: "string" }, example: "1_Pooling", "x-hologram-multi-segment": true }],
       responses: {
-        200: { description: "One entry per file under the prefix; empty if nothing matches.", content: json({ type: "array", items: ref("TreeEntry") }) },
+        200: { description: "One entry per file under the prefix.", content: json({ type: "array", items: ref("TreeEntry") }) },
+        404: hubError(404, "Not in the index, indexed at another revision, or nothing under the prefix (`X-Error-Code: EntryNotFound`, as Hugging Face).", { error: "no-such-folder is not a folder in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41." }),
+      },
+    },
+  };
+  spec.paths["/api/models/{owner}/{name}/treesize/{revision}"] = {
+    get: {
+      tags: ["Models"],
+      operationId: "getModelSize",
+      summary: "The total bytes of every file",
+      description: "Hugging Face's `treesize`, which download scripts (hfd.sh) read before they start. `/treesize/{revision}/{prefix}` sums one folder.",
+      parameters: [OWNER, NAME, REVISION],
+      responses: {
+        200: { description: "The sum of the file sizes.", content: json({ type: "object", required: ["path", "size"], properties: { path: { type: "string" }, size: { type: "integer" } } }, { path: "", size: 976948716 }) },
         404: hubError(404, "Not in the index, or indexed at another revision.", { error: "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only." }),
       },
     },
@@ -1127,14 +1141,14 @@ function schemas() {
     },
     TreeEntry: {
       type: "object",
-      description: "One file, with the hash a download must match.",
+      description: "One file, with the hash a download must match; or, when `recursive` is given, one folder.",
       required: ["type", "oid", "size", "path"],
       properties: {
-        type: { const: "file", description: "Only files: the index holds no directory entries." },
+        type: { enum: ["file", "directory"], description: "`directory` only when `recursive` is given. A folder's `oid` is a stable SHA-1 over its files, not git's tree hash." },
         oid: { ...sha256, description: "The SHA-256 of the file's bytes, 64 hex characters, and the value a download must be checked against. **This differs from Hugging Face**, whose `oid` is a 40-character git blob SHA-1 and which carries the SHA-256 only inside `lfs`, only on large files. Here every file reports its SHA-256 in this field; the length is the tell. A client written against Hugging Face's meaning will read a perfectly good hash as an unusable one." },
         size: { type: "integer" },
         path: { type: "string" },
-        lfs: { type: "object", description: "Present on large files, for clients that branch on it. Its `oid` repeats the SHA-256 above rather than differing from it.", properties: { oid: sha256, size: { type: "integer" }, pointerSize: { type: "integer" } } },
+        lfs: { type: "object", description: "Present on every file, small ones included, and its `oid` repeats the SHA-256 above. That is what makes Hugging Face's own `hf cache verify` check every file by SHA-256: it checks an entry without `lfs` by git's blob SHA-1, which the hub does not hold.", properties: { oid: sha256, size: { type: "integer" }, pointerSize: { type: "integer" } } },
       },
     },
     Refs: {

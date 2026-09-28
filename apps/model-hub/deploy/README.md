@@ -76,6 +76,27 @@ The sequencing that gets both: keep the proxy gate until the hub issues credenti
 Privy sign-in already exists), then switch `/v2/` to `auth.token.local` **and** publish the token-fetch step in the
 agent guide on the same day, so nothing that reads the hub today stops working without being told how to continue.
 
+## Verified on your own machine (`HUB_VERIFY=1`)
+
+The hosted endpoint redirects, so the bytes come from whichever holder it picks. Almost no client checks what it
+downloads (huggingface_hub checks a length, transformers.js nothing, llama.cpp skips its etag for Hugging Face). So the
+same `hub-resolve.mjs` runs locally as a verifying edge.
+- It has the same dialects and reads the same public index.
+- It fetches each file itself and passes the bytes through as they land.
+- It holds back the last 64 KiB until the whole file equals the index's sha256. On a mismatch it cuts the connection, so a client can never finish a wrong file.
+- A client's retry goes to the next holder.
+- Files are cached by sha256 under `~/.cache/hologram` and re-hashed the first time a process serves them.
+
+```
+HUB_VERIFY=1 node deploy/hub-resolve.mjs                      # :8090; needs only deploy/*.mjs, no dependencies
+HF_ENDPOINT=http://127.0.0.1:8090 hf download HuggingFaceTB/SmolLM2-135M-Instruct
+ollama pull 127.0.0.1:8090/bartowski/SmolLM2-135M-Instruct-GGUF:Q8_0 --insecure
+```
+
+Tests:
+- `node deploy/qa/verify-edge.mjs`, offline, with a holder that flips a byte: 8/0.
+- Measured 2026-09-26: huggingface_hub 2.0 fetched SmolLM2-135M-Instruct through the edge, 24 files verified, and `hf cache verify` checked 25.
+
 ## Traps (measured)
 
 - The registry builds an outbound HTTPS client at startup: mount `/etc/ssl/certs` or it panics.

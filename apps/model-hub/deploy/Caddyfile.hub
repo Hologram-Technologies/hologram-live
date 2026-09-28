@@ -22,7 +22,7 @@ gethologram.ai, gethologram.ai {
 	# The tensor index: every indexed model as an OCI artifact rebuilt from κ-addressed tensors. The plain name
 	# /v2/<org>/<name>/ is already routed above (@ollama); these are the explicit spaces, /v2/models/… (redirects
 	# while Hugging Face serves) and /v2/tensors/… (always rebuilt), plus the catalogue and per-model summary.
-	@tensors path_regexp tensors ^/v2/(models|tensors)/
+	@tensors path_regexp tensors ^/v2/(models|tensors|kappa)/
 	handle @tensors {
 		request_header -Authorization
 		reverse_proxy hub-resolve:8090

@@ -85,21 +85,27 @@ const recordsCache = new Map();
 async function withRecords(id, doc) {
   if (!RECORDS) return doc;
   const key = id.toLowerCase(), hit = recordsCache.get(key);
-  let recs = hit && Date.now() - hit.at < 300_000 ? hit.recs : undefined;
+  // a model with records is kept 5 minutes; a failed or empty answer only 30 s, so a cold start (the first walk of a
+  // model's records can outlast the timeout) does not hide the records for long
+  let recs = hit && Date.now() - hit.at < (hit.recs ? 300_000 : 30_000) ? hit.recs : undefined;
   if (recs === undefined) {
     try { const r = await fetch(`${RECORDS}/v2/models/${key}/records`, { signal: AbortSignal.timeout(8000) }); recs = r.ok ? await r.json() : null; } catch { recs = null; }
     if (recordsCache.size > 500) recordsCache.clear();
     recordsCache.set(key, { at: Date.now(), recs });
   }
   if (!recs?.records) return doc;
-  const files = recs.records.filter((r) => r.type === "file").sort((a, b) => (a.path < b.path ? -1 : 1));
+  // the repository's own files: every name a file record has in the original format (the same bytes can be two files)
+  const fileRecs = recs.records.filter((r) => r.type === "file");
+  if (!fileRecs.length || fileRecs.some((r) => !Array.isArray(r.names))) return doc;              // records without names: the index
+  const files = fileRecs.flatMap((r) => r.names.filter((n) => n.format === "original").map((n) => ({ ...r, path: n.path }))).sort((a, b) => (a.path < b.path ? -1 : 1));
+  if (!files.length) return doc;
   const hf = (r) => r.holders.find((h) => h.kind === "hf" && h.at === 0)?.url;
   const was = new Map((doc?.files || []).map((f) => [f[0], f[2]]));
   for (const r of files) if (was.has(r.path) && was.get(r.path) !== r.kappa) console.log(JSON.stringify({ t: new Date().toISOString(), model: recs.repo, file: r.path, index: was.get(r.path), record: r.kappa, used: "record" }));
   return {
     ...(doc || { sources: [{ kind: "huggingface.co", resolve: null, missing: [] }] }),
     id: recs.repo, revision: recs.revision, digests: "records", manifest: doc?.manifest || recs.index,
-    records: { index: recs.index, url: `${RECORDS}/v2/models/${key}/records` },
+    records: { index: recs.index, url: `${HUB}/v2/models/${key}/records` },          // the public address, not the internal one
     files: files.map((r) => [r.path, r.size, r.kappa, r.holders.some((h) => h.kind === "hub") ? 0 : 1, hf(r) || `https://huggingface.co/${recs.repo}/resolve/${recs.revision}/${encodePath(r.path)}`]),
   };
 }
@@ -681,7 +687,7 @@ http.createServer(async (req, res) => {
 
     // The tensor mirror: /v2/models/<org>/<name>/… (redirects while Hugging Face serves) and /v2/tensors/… (always
     // rebuilt from tensors): every indexed model as a tiny OCI artifact (tensor-mirror.mjs).
-    if ((path.startsWith("/v2/models/") || path.startsWith("/v2/tensors/")) && await tensorMirror(req, res, path)) return;
+    if ((path.startsWith("/v2/models/") || path.startsWith("/v2/tensors/") || path.startsWith("/v2/kappa/")) && await tensorMirror(req, res, path)) return;
     // The κ mirror: /v2/<upstream host>/<path>/… for every image the Registry page indexes (kappa-mirror.mjs).
     const blob = VERIFY && path.match(/^\/_blob\/sha256:([0-9a-f]{64})$/);
     if (blob) {

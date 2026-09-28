@@ -17,7 +17,9 @@ const RECORDS = process.env.RECORDS, M = process.env.MODEL || "HuggingFaceTB/Smo
 if (!RECORDS) { console.error("RECORDS is required"); process.exit(2); }
 const recs = await (await fetch(`${RECORDS}/v2/models/${M.toLowerCase()}/records`)).json();
 const known = new Set(recs.records.map((r) => r.kappa.slice(7)));
-const files = recs.records.filter((r) => r.type === "file");
+// the repository's real file list, independent of the records: the original format's manifest
+const orig = await (await fetch(`${RECORDS}/v2/models/${M.toLowerCase()}/manifests/original`, { headers: { accept: "application/vnd.oci.image.manifest.v1+json" } })).json();
+const files = orig.layers.map((l) => ({ path: l.annotations["org.opencontainers.image.title"], size: l.size, kappa: l.digest, held: recs.records.find((r) => r.kappa === l.digest)?.holders.some((h) => h.kind === "hub") }));
 const cfg = files.find((f) => f.path === "config.json");
 const WRONG = "e".repeat(64);
 
@@ -27,7 +29,7 @@ const [org, name] = M.split("/");
 await mkdir(join(data, "files", org), { recursive: true });
 await writeFile(join(data, "files", org, `${name}.json`), JSON.stringify({ revision: recs.revision, manifest: `blake3:${"1".repeat(64)}`,
   sources: [{ kind: "huggingface.co", resolve: null, missing: [] }],
-  files: files.map((f) => [f.path, f.size, f.path === "config.json" ? `sha256:${WRONG}` : f.kappa, f.holders.some((h) => h.kind === "hub") ? 0 : 1, `https://huggingface.co/${M}/resolve/${recs.revision}/${f.path}`]) }));
+  files: files.map((f) => [f.path, f.size, f.path === "config.json" ? `sha256:${WRONG}` : f.kappa, f.held ? 0 : 1, `https://huggingface.co/${M}/resolve/${recs.revision}/${f.path}`]) }));
 
 const shim = spawn(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "..", "hub-resolve.mjs")], {
   env: { ...process.env, HUB_DATA: data, HUB_STATE: join(data, "state"), PORT: String(PORT), HUB: "http://127.0.0.1:9", TENSOR_RECORDS: RECORDS }, stdio: ["ignore", "pipe", "pipe"] });
@@ -69,6 +71,10 @@ try {
   views.add(oci.headers.get("docker-content-digest")?.slice(7)); views.add(JSON.parse(ociBody).config?.digest?.slice(7));
   await see("OCI manifest", `/v2/${lc}/manifests/latest`, { headers: { accept: "application/vnd.oci.image.manifest.v1+json" } });
   await see("Ollama tags", `/v2/${lc}/tags/list`);
+  // the listing is the repository's, file for file: no render-only name, no original name lost
+  const want = new Set(files.map((f) => f.path)), got = new Set(tree.map((e) => e.path));
+  const lost = [...want].filter((p) => !got.has(p)), extra = [...got].filter((p) => !want.has(p));
+  if (!lost.length && !extra.length) console.log(`ok   the listing is the repository's own ${want.size} files`); else bad(`listing differs: lost ${lost.join(",")} extra ${extra.join(",")}`);
   const tcfg = tree.find((e) => e.path === "config.json");
   if (tcfg?.oid === cfg.kappa.slice(7)) console.log(`ok   config.json answers the record's ${tcfg.oid.slice(0, 12)}…, not the index's wrong digest`); else bad(`config.json answers ${tcfg?.oid}`);
   if (logs.join("").includes('"used":"record"')) console.log("ok   the disagreement is logged"); else bad("the disagreement was not logged");

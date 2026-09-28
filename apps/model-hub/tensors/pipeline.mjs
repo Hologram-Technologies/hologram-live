@@ -131,7 +131,14 @@ async function pin(repos) {
   const bufMax = Number(process.env.PIN_BUFFER_MB || 64) * 2 ** 20;
   const headers = process.env.IPFS_API_TOKEN ? { authorization: `Bearer ${process.env.IPFS_API_TOKEN}` } : {};
   const { spawn } = await import("node:child_process");
-  const pinOne = async ([k, r, rev, path, off, len]) => {
+  // Big payloads stream into the node one at a time: several concurrent multi-GB adds push a small Kubo past its
+  // memory limit (seen on the hub VPS: OOM-killed at 600 MB with four Krea-2 tensors in flight). Small ones stay parallel.
+  let bigLock = Promise.resolve();
+  const pinOne = async (row) => {
+    if (process.env.IPFS_ADD_CMD && row[5] > bufMax) { const prev = bigLock; let done; bigLock = new Promise((ok) => (done = ok)); await prev; try { return await pinOneNow(row); } finally { done(); } }
+    return pinOneNow(row);
+  };
+  const pinOneNow = async ([k, r, rev, path, off, len]) => {
     const h = createHash("sha256"), src = stream((fresh) => cdnUrl(r, rev, path, fresh), off, off + len - 1);
     let cid;
     if (process.env.IPFS_ADD_CMD && len > bufMax) {                   // big payload: stream into the node, never whole

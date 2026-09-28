@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: hologram-verify
-Version: 0.1.0
-Summary: Every file huggingface_hub hands your code is checked against Hologram's κ index first.
-License: Apache-2.0
-Requires-Python: >=3.9
-Description-Content-Type: text/markdown
-Requires-Dist: huggingface_hub>=0.20

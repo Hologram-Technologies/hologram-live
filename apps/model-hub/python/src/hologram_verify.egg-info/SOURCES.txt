@@ -1,8 +1,0 @@
-pyproject.toml
-src/hologram_verify/__init__.py
-src/hologram_verify/auto.py
-src/hologram_verify.egg-info/PKG-INFO
-src/hologram_verify.egg-info/SOURCES.txt
-src/hologram_verify.egg-info/dependency_links.txt
-src/hologram_verify.egg-info/requires.txt
-src/hologram_verify.egg-info/top_level.txt

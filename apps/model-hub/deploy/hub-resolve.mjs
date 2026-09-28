@@ -681,7 +681,7 @@ http.createServer(async (req, res) => {
 
     // The tensor mirror: /v2/models/<org>/<name>/… (redirects while Hugging Face serves) and /v2/tensors/… (always
     // rebuilt from tensors): every indexed model as a tiny OCI artifact (tensor-mirror.mjs).
-    if ((path.startsWith("/v2/models/") || path.startsWith("/v2/tensors/")) && await tensorMirror(req, res, path)) return;
+    if ((path.startsWith("/v2/models/") || path.startsWith("/v2/tensors/") || path.startsWith("/v2/kappa/")) && await tensorMirror(req, res, path)) return;
     // The κ mirror: /v2/<upstream host>/<path>/… for every image the Registry page indexes (kappa-mirror.mjs).
     const blob = VERIFY && path.match(/^\/_blob\/sha256:([0-9a-f]{64})$/);
     if (blob) {

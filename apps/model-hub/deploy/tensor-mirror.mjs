@@ -23,6 +23,7 @@ import { assemble } from "./tensor-assemble.mjs";
 
 const ROOT = process.env.TENSOR_STATE || join(process.env.HUB_STATE || "/state", "tensors");
 const HF = process.env.HF_ORIGIN || "https://huggingface.co";
+const IPFS_GATEWAYS = (process.env.TENSOR_IPFS_GATEWAYS || "").split(",").filter(Boolean);   // piece holders by raw CID
 const INDEX = "application/vnd.oci.image.index.v1+json", MANIFEST = "application/vnd.oci.image.manifest.v1+json";
 
 let state = { at: 0, mtime: 0, models: {}, alts: new Map(), lower: new Map() };
@@ -212,12 +213,25 @@ export async function tensorMirror(req, res, path) {
   if (start > end || start >= layout.size) { res.writeHead(416, { "content-range": `bytes */${layout.size}` }); res.end(); return true; }
   res.writeHead(status, { ...base, "content-type": "application/octet-stream", "content-length": end - start + 1, "x-hub-source": "tensors", "cache-control": "no-store",
     ...(status === 206 ? { "content-range": `bytes ${start}-${end}/${layout.size}` } : {}) });
-  const ctx = { origin: HF, repo, rev: m.rev, literal: held, alternatives: (k) => alts.get(k) || [], prefer: force === "tensors" ? "alternatives" : undefined };
+  const P = await piecesOf(m);
+  const ctx = { origin: HF, repo, rev: m.rev, literal: held, alternatives: (k) => alts.get(k) || [], prefer: force === "tensors" ? "alternatives" : undefined,
+    pieces: (k) => P?.of?.[k], ipfs: IPFS_GATEWAYS };
   try {
     for await (const c of assemble(layout, ctx, { start, end })) if (!res.write(c)) await new Promise((ok) => res.once("drain", ok));
     res.end();
   } catch (e) { res.destroy(e); }                                  // a tensor that fails verification ends the transfer; the client's digest check refuses it
   return true;
+}
+
+// The model's piece lists (named by its tensor table): every payload over 1 MiB is fetched and checked per piece.
+const piecesCache = new Map();
+async function piecesOf(m) {
+  if (piecesCache.has(m.table)) return piecesCache.get(m.table);
+  let P = null;
+  try { const t = JSON.parse((await held(m.table))?.toString("utf8") || "null"); if (t?.pieces) P = JSON.parse((await held(t.pieces))?.toString("utf8") || "null"); } catch { P = null; }
+  if (piecesCache.size > 200) piecesCache.clear();
+  piecesCache.set(m.table, P);
+  return P;
 }
 
 // For hub-resolve: the "tensors" source of a model at a revision, if the tensor index holds it. Files the index

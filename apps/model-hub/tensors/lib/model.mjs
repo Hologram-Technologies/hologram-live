@@ -4,6 +4,7 @@
 //   tensors     the manifest's config: every tensor's name, dtype, shape, κ, and the canonical model κ
 //   manifest    one per format (original, safetensors, safetensors-sharded), layers = files by digest
 //   index       an OCI image index over the formats: the model's address
+//   pieces      per payload over 1 MiB: the sha256 of each 1 MiB, named by the table (deploy/kappa-get.mjs)
 //   provenance  per distinct κ: narrowest-dtype digest, sign sample, row-block digests (sample.mjs); not in the table
 import { createHash } from "node:crypto";
 import { info, tree, cdnUrl, whole } from "./src.mjs";
@@ -11,6 +12,7 @@ import { plan as planFile, isWeightPath } from "./containers.mjs";
 import { hashFile, emissionOrder } from "./hashpass.mjs";
 import { planFormat, RenderHasher, RENDERABLE } from "./render.mjs";
 import { TensorSample, SAMPLED } from "./sample.mjs";
+import { PIECE } from "../../deploy/kappa-get.mjs";
 
 export const T = {
   manifest: "application/vnd.oci.image.manifest.v1+json",
@@ -19,6 +21,7 @@ export const T = {
   tensors: "application/vnd.hologram.tensors.v1+json",
   layout: "application/vnd.hologram.layout.v1+json",
   provenance: "application/vnd.hologram.provenance.v1+json",
+  pieces: "application/vnd.hologram.pieces.v1+json",
   file: "application/octet-stream",
 };
 export const FORMATS = ["safetensors", "safetensors-sharded"];
@@ -126,7 +129,13 @@ export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log
     rows: [...provRows.values()] }) : null;
   const canonSet = src.length ? tensors.filter((t) => src.some((f) => f.path === t.file)) : tensors;
   const canonical = canonSet.length ? canonicalKappa(canonSet) : null;
-  const table = store.putJson({ v: 1, repo, revision: rev, canonical, files: planned.map((f) => f.path), tensors: rows });
+  // Pieces: for every payload over 1 MiB, the sha256 of each 1 MiB of it, so any range of it can be fetched from any
+  // holder and checked piece by piece (deploy/kappa-get.mjs). Named by the table, so the model's one address reaches
+  // every piece hash.
+  const of = {};
+  for (const f of planned) for (const sg of f.result.segments) if (sg.pieces && !of[sg.digest]) of[sg.digest] = sg.pieces;
+  const pieces = Object.keys(of).length ? store.putJson({ v: 1, piece: PIECE, of: Object.fromEntries(Object.keys(of).sort().map((k) => [k, of[k]])) }) : null;
+  const table = store.putJson({ v: 1, repo, revision: rev, canonical, files: planned.map((f) => f.path), tensors: rows, ...(pieces ? { pieces: pieces.digest } : {}) });
 
   const annot = (format) => ({ "org.hologram.format": format, "org.hologram.repo": repo, "org.hologram.revision": rev,
     ...(canonical ? { "org.hologram.canonical": canonical } : {}), "org.opencontainers.image.source": `https://huggingface.co/${repo}/tree/${rev}` });
@@ -181,7 +190,7 @@ export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log
   for (const f of planned) f.result.segments.forEach((s) => { if (s.kind !== "l") sources.push([s.digest, repo, rev, f.path, s.off, s.len]); });
 
   return {
-    repo, rev, index: index.digest, table: table.digest, canonical, provenance: provenance?.digest || null, manifests: Object.fromEntries(Object.entries(manifests).map(([k, v]) => [k, v.digest])),
+    repo, rev, index: index.digest, table: table.digest, canonical, provenance: provenance?.digest || null, pieces: pieces?.digest || null, manifests: Object.fromEntries(Object.entries(manifests).map(([k, v]) => [k, v.digest])),
     blobs, sources, tensors: nT, weightBytes: bytes, seconds: Math.round((Date.now() - t0) / 1000),
     files: planned.map((f) => ({ path: f.path, digest: `sha256:${f.oid}`, size: f.size, container: f.plan.container, layout: f.layout.digest })),
     renders: rendered, license: meta.cardData?.license || meta.tags?.find((t) => t.startsWith("license:"))?.slice(8) || null,

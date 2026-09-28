@@ -30,6 +30,11 @@ const t0 = Date.now();
 const man = JSON.parse(await get(`manifests/${rev}-${format}`, "application/vnd.oci.image.manifest.v1+json"));
 const annot = man.annotations || {};
 console.log(`${annot["org.hologram.repo"]}@${annot["org.hologram.revision"]?.slice(0, 12)} as ${format}: ${man.layers.length} files, canonical ${annot["org.hologram.canonical"]?.slice(0, 19)}`);
+// The piece lists, named by the tensor table (the manifest's config): every payload over 1 MiB is fetched and
+// checked per piece, from its own location, every alternative, and --ipfs gateways by the pieces' raw CIDs.
+const table = JSON.parse(await blob(man.config.digest));
+const P = table.pieces ? JSON.parse(await blob(table.pieces)) : null;
+const ipfs = args.includes("--ipfs") ? [args[args.indexOf("--ipfs") + 1]] : [];
 let bytes = 0; const sources = new Map();
 for (const l of man.layers) {
   const path = l.annotations["org.opencontainers.image.title"], lay = l.annotations["org.hologram.layout"];
@@ -40,7 +45,7 @@ for (const l of man.layers) {
   if (lay) {
     const layout = JSON.parse(await blob(lay));
     const alts = JSON.parse(await get(`alternatives/${lay}`).catch(() => Buffer.from("{}")));
-    const ctx = { repo: annot["org.hologram.repo"], rev: annot["org.hologram.revision"], literal: blob, alternatives: (k) => alts[k] || [], prefer,
+    const ctx = { repo: annot["org.hologram.repo"], rev: annot["org.hologram.revision"], literal: blob, alternatives: (k) => alts[k] || [], prefer, pieces: (k) => P?.of?.[k], ipfs,
       report: (e) => { if (e.ok) { const k = e.from.replace(/@\d+$/, ""); sources.set(k, (sources.get(k) || 0) + e.len); } } };
     for await (const c of assemble(layout, ctx)) await write(c);
   } else {

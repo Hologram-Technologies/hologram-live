@@ -191,7 +191,9 @@ async function pin(repos) {
 async function rebuild(m, blob, idx, prefer) {
   const layout = store.json(m.blobs[blob].layout);
   const h = createHash("sha256"); let n = 0; const from = new Map(); let bad = 0;
-  const ctx = { repo: m.repo, rev: m.rev, literal: (d) => store.get(d), alternatives: (k) => idx.get(k) || [], prefer,
+  const T = m.table && store.json(m.table), P = T?.pieces && store.json(T.pieces);
+  const ctx = { repo: m.repo, rev: m.rev, literal: (d) => store.get(d), alternatives: (k) => idx.get(k) || [], prefer, pieces: (k) => P?.of?.[k],
+    ipfs: (process.env.TENSOR_IPFS_GATEWAYS || "").split(",").filter(Boolean),
     report: (e) => { if (e.ok) { const r = e.from.replace(/@\d+$/, ""); from.set(r, (from.get(r) || 0) + e.len); } else bad++; } };
   for await (const c of assemble(layout, ctx)) { h.update(c); n += c.length; }
   const digest = `sha256:${h.digest("hex")}`;

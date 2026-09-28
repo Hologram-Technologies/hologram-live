@@ -37,6 +37,8 @@ export async function buildCar() {
       need.add(md);
       const man = json(md);
       need.add(man.config.digest);
+      const pieces = json(man.config.digest).pieces;
+      if (pieces) need.add(pieces);                    // per-payload piece hashes (deploy/kappa-get.mjs)
       for (const l of man.layers) {
         if (m.blobs[l.digest]?.held) need.add(l.digest);
         const lay = l.annotations?.["org.hologram.layout"];

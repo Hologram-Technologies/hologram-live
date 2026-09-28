@@ -9,9 +9,13 @@
 //   ["s", κ, len, off]                      original layout: raw storage at `off` in this same file
 //   ["t", κ, len, { f, o }]                 render: tensor payload at offset o of file f of the model
 //   ["v", κ, len, { f, o, n, s, sub }]      render: tensor viewed inside storage s (n bytes at o of file f)
+// A payload with a piece list (ctx.pieces(κ) -> [hex], from the model's pieces object) goes through get(κ): only the
+// pieces a range covers are read, each checked before release, from its own location, every alternative, and
+// ctx.ipfs gateways by the pieces' raw CIDs. Without a piece list the older paths below apply.
 // Alternative holders of a κ come from ctx.alternatives(κ): { repo, rev, path, off, len } (a range in another
 // file on the origin) or { url, off: 0, len } (the payload as its own object, e.g. an IPFS gateway path by CID).
 import { createHash } from "node:crypto";
+import { get, PIECE, ipfsPieces, note, demoted, deadline, within } from "./kappa-get.mjs";
 
 // segments up to this size are verified before release; larger ones stream and abort on mismatch. Hosts with little
 // memory lower it (TENSOR_MAX_BUFFER_MB) and the read window (TENSOR_WINDOW).
@@ -62,6 +66,8 @@ async function* readRange(origin, repo, rev, path, a, len, direct) {
 }
 async function readAll(it) { const parts = []; for await (const c of it) parts.push(c); return Buffer.concat(parts); }
 const sha = (b) => `sha256:${createHash("sha256").update(b).digest("hex")}`;
+// A holder is a host: its record (kappa-get.mjs standing) is kept per host, so one lie demotes every read from it.
+const holderOf = (src, origin) => hostOf(src.url || origin);
 const label = (src, off) => (src.url ? src.url : `${src.repo}/${src.path}@${off ?? src.off}`);
 
 export function gather(buf, sub, shape, len) {
@@ -103,6 +109,7 @@ export async function* assemble(layout, ctx, { start = 0, end = layout.size - 1 
     const item = { seg, a, len };
     if (kind === "l") { units.push({ type: "l", items: [item] }); cur = null; continue; }
     if (kind === "v") { units.push({ type: "v", items: [item] }); cur = null; continue; }
+    if (len > PIECE && ctx.pieces?.(kappa)) { units.push({ type: len > MAX_BUFFER ? "P" : "p", items: [item] }); cur = null; continue; }
     if (len > MAX_BUFFER) { units.push({ type: "big", items: [item] }); cur = null; continue; }
     const src = candidates(ctx, layout, seg)[0];
     item.src = src;
@@ -115,18 +122,40 @@ export async function* assemble(layout, ctx, { start = 0, end = layout.size - 1 
   // One segment from any holder but `skip`, verified.
   const fallback = async (it, skip) => {
     const [, kappa, len] = it.seg; const tried = [];
+    const viaIpfs = async () => {
+      // a payload of at most one piece is its own piece: its κ is its IPFS raw CID, so any gateway can hold it
+      if (len > PIECE) return null;
+      for (const gw of ctx.ipfs || []) {
+        const h = ipfsPieces(gw), from = h.kind; tried.push(from);
+        try { const buf = await h.piece(kappa.slice(7)); if (buf && sha(buf) === kappa) { note(from, true); ctx.report?.({ kappa, len, from, ok: true }); return buf; } if (buf) { note(from, false); ctx.report?.({ kappa, len, from, ok: false }); } }
+        catch (e) { ctx.report?.({ kappa, len, from, ok: false, error: e.message }); }
+      }
+      return null;
+    };
+    if (demoted(hostOf(origin))) { const b = await viaIpfs(); if (b) return b; }       // the origin has lied more than it served
     for (const src of candidates(ctx, layout, it.seg)) {
       if (skip && !src.url && src.repo === skip.repo && src.path === skip.path) continue;
       const from = label(src); tried.push(from);
       try {
-        const buf = await readAll(readRange(origin, src.repo, src.rev, src.path, src.off, len, src.url));
-        if (sha(buf) === kappa) { ctx.report?.({ kappa, len, from, ok: true }); return buf; }
-        ctx.report?.({ kappa, len, from, ok: false });
-      } catch (e) { ctx.report?.({ kappa, len, from, ok: false, error: e.message }); }
+        const buf = await within(readAll(readRange(origin, src.repo, src.rev, src.path, src.off, len, src.url)), deadline(len), from);
+        if (sha(buf) === kappa) { note(holderOf(src, origin), true); ctx.report?.({ kappa, len, from, ok: true }); return buf; }
+        note(holderOf(src, origin), false); ctx.report?.({ kappa, len, from, ok: false });
+      } catch (e) { if (e.slow) note(holderOf(src, origin), false); ctx.report?.({ kappa, len, from, ok: false, error: e.message }); }
     }
+    { const b = await viaIpfs(); if (b) return b; }
     throw new Error(`no source verified ${kappa} (tried ${tried.join(", ") || "none"})`);
   };
-  // 2. resolve a unit to verified buffers (groups and literals); views and bigs are handled inline
+  // A pieced payload through get(κ): its own location, every alternative, and ctx.ipfs gateways by raw CID.
+  const viaPieces = (it) => {
+    const [, kappa, len] = it.seg;
+    const holders = [
+      ...candidates(ctx, layout, it.seg).map((src) => ({ kind: holderOf(src, origin), range: (off, n) => readAll(readRange(origin, src.repo, src.rev, src.path, src.off + off, n, src.url)) })),   // get() applies the deadline
+      ...(ctx.ipfs || []).map(ipfsPieces),
+    ];
+    return get(kappa, { size: len, pieces: ctx.pieces(kappa), from: Math.max(0, start - it.a), to: Math.min(len - 1, end - it.a), holders,
+      report: (e) => ctx.report?.({ kappa, len: Math.min(PIECE, len - e.piece * PIECE), piece: e.piece, from: e.holder, ok: e.ok, ...(e.error ? { error: e.error } : {}) }) });
+  };
+  // 2. resolve a unit to verified buffers (groups, literals, pieced payloads that fit the buffer); views and bigs are handled inline
   const fetchUnit = async (u) => {
     if (u.type === "l") { const [, kappa] = u.items[0].seg; const buf = await ctx.literal(kappa); if (!buf || sha(buf) !== kappa) throw new Error(`literal ${kappa} missing or corrupt`); return [buf]; }
     if (u.type === "v") {
@@ -137,9 +166,10 @@ export async function* assemble(layout, ctx, { start = 0, end = layout.size - 1 
       if (sha(bytes) !== kappa) throw new Error(`tensor ${kappa} failed verification after gather`);
       ctx.report?.({ kappa, len, from: `${ctx.repo}/${where.f}`, ok: true }); return [bytes];
     }
+    if (u.type === "p") return [await readAll(viaPieces(u.items[0]))];   // every piece checked; already cut to the range
     if (u.type === "g") {
       let whole = null;
-      if (u.src) { try { whole = await readAll(readRange(origin, u.src.repo, u.src.rev, u.src.path, u.start, u.end - u.start, u.src.url)); } catch { whole = null; } }
+      if (u.src && !(demoted(holderOf(u.src, origin)) && ctx.ipfs?.length)) { try { whole = await within(readAll(readRange(origin, u.src.repo, u.src.rev, u.src.path, u.start, u.end - u.start, u.src.url)), deadline(u.end - u.start), label(u.src)); } catch (e) { if (e.slow) note(holderOf(u.src, origin), false); whole = null; } }
       const out = [];
       for (const it of u.items) {
         const [, kappa, len] = it.seg;
@@ -154,10 +184,16 @@ export async function* assemble(layout, ctx, { start = 0, end = layout.size - 1 
   // 3. in order, with a window of reads in flight
   const pending = [];
   let next = 0;
-  const fill = () => { while (pending.length < WINDOW && next < units.length) { const u = units[next++]; pending.push({ u, p: u.type === "big" ? null : fetchUnit(u) }); } };
+  const fill = () => { while (pending.length < WINDOW && next < units.length) { const u = units[next++]; pending.push({ u, p: u.type === "big" || u.type === "P" ? null : fetchUnit(u) }); } };
   fill();
   while (pending.length) {
     const { u, p } = pending.shift();
+    if (u.type === "P") {                                              // pieced and larger than the buffer: streamed, each piece checked
+      for await (const c of viaPieces(u.items[0])) yield c;
+      fill();
+      continue;
+    }
+    if (u.type === "p") { const [buf] = await p; fill(); yield buf; continue; }
     if (u.type !== "big") {
       const bufs = await p; fill();
       for (let k = 0; k < u.items.length; k++) yield cut(u.items[k], bufs[k]);

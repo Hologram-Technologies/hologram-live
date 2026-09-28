@@ -33,7 +33,10 @@ export async function recordsOf(repo, m, { json, alts = () => [] }) {
   const index = await json(m.index);
   const ri = put(m.index, { type: "oci-index", media: index?.mediaType }); hold(ri, hub(m.index));
   const pieceSets = new Map();
-  for (const md of Object.values(m.manifests)) {
+  // original first: a file's bytes can appear under other names in other formats (model.safetensors is also the
+  // sharded render's model-00001-of-00001.safetensors); every name is kept, per format, and `path` is the original's
+  const formats = Object.entries(m.manifests).sort(([a], [b]) => (a === "original" ? -1 : b === "original" ? 1 : 0));
+  for (const [format, md] of formats) {
     const man = await json(md);
     const rm = put(md, { type: "oci-manifest", media: man?.mediaType }, m.index); hold(rm, hub(md));
     if (!man) continue;
@@ -46,7 +49,10 @@ export async function recordsOf(repo, m, { json, alts = () => [] }) {
     }
     for (const l of man.layers) {
       const path = l.annotations?.["org.opencontainers.image.title"], blob = m.blobs[l.digest] || {};
-      const rf = put(l.digest, { type: "file", size: l.size, path }, md);
+      const rf = put(l.digest, { type: "file", size: l.size }, md);
+      if (!rf.path) rf.path = path;
+      rf.names ||= [];
+      if (!rf.names.some((n) => n.format === format && n.path === path)) rf.names.push({ format, path });
       if (blob.held) hold(rf, hub(l.digest));
       if (blob.upstream) hold(rf, { kind: "hf", url: `${HF}/${repo}/resolve/${m.rev}/${enc(blob.path || path)}`, at: 0 });
       small(rf);

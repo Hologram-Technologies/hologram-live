@@ -94,7 +94,11 @@ async function withRecords(id, doc) {
     recordsCache.set(key, { at: Date.now(), recs });
   }
   if (!recs?.records) return doc;
-  const files = recs.records.filter((r) => r.type === "file").sort((a, b) => (a.path < b.path ? -1 : 1));
+  // the repository's own files: every name a file record has in the original format (the same bytes can be two files)
+  const fileRecs = recs.records.filter((r) => r.type === "file");
+  if (!fileRecs.length || fileRecs.some((r) => !Array.isArray(r.names))) return doc;              // records without names: the index
+  const files = fileRecs.flatMap((r) => r.names.filter((n) => n.format === "original").map((n) => ({ ...r, path: n.path }))).sort((a, b) => (a.path < b.path ? -1 : 1));
+  if (!files.length) return doc;
   const hf = (r) => r.holders.find((h) => h.kind === "hf" && h.at === 0)?.url;
   const was = new Map((doc?.files || []).map((f) => [f[0], f[2]]));
   for (const r of files) if (was.has(r.path) && was.get(r.path) !== r.kappa) console.log(JSON.stringify({ t: new Date().toISOString(), model: recs.repo, file: r.path, index: was.get(r.path), record: r.kappa, used: "record" }));

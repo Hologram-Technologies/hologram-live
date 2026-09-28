@@ -32,7 +32,7 @@ gethologram.ai, gethologram.ai {
 	@modelpage {
 		path_regexp modelpage ^/[^/]+/[^/]+/?$
 		header Accept *text/html*
-		not path /models/* /registry/* /spaces/* /buckets/* /docs/* /at/* /data/* /kit/* /fonts/* /logos/* /vendor/* /wallpapers/* /auth/* /avatars/* /lib/* /api/* /v1/* /v2/* /via/*
+		not path /models/* /registry/* /spaces/* /buckets/* /docs/* /at/* /data/* /kit/* /fonts/* /logos/* /vendor/* /wallpapers/* /auth/* /avatars/* /lib/* /archive/* /benches/* /.well-known/* /api/* /v1/* /v2/* /via/*
 	}
 	handle @modelpage {
 		reverse_proxy hub-resolve:8090

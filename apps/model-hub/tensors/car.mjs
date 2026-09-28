@@ -33,6 +33,8 @@ export async function buildCar() {
     const m = models[repo];
     need.add(r.index);
     if (r.provenance) need.add(r.provenance);        // per-κ provenance sample (sample.mjs)
+    if (r.records) need.add(r.records);              // the Registry's records of every κ the model reaches
+    if (r.canonical) need.add(r.canonical);          // the model κ: its held bytes name every tensor κ
     for (const md of Object.values(m.manifests)) {
       need.add(md);
       const man = json(md);

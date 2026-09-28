@@ -11,6 +11,8 @@
 //   GET      /v2/models/<owner>/<name>/tags/list
 //   GET      /v2/models/<owner>/<name>/tensors            the tensor table (also the manifest's config blob)
 //   GET      /v2/models/<owner>/<name>/provenance         per-κ provenance sample: narrow dtype, sign, row blocks
+//   GET      /v2/models/<owner>/<name>/records[/<κ>]      the Registry's records of every κ the model reaches (kappa-records.mjs)
+//   GET      /v2/kappa/<κ>                                that κ's record, whichever model reaches it
 //
 // State ($HUB_STATE/tensors, built by tensors/pipeline.mjs and synced like the κ mirror's):
 //   models.json   { "<owner>/<name>": { rev, index, manifests: {format: digest}, table, blobs: {digest: {path,size,layout?,held?,upstream?}}, gated } }
@@ -20,6 +22,7 @@ import { readFile, stat, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { assemble } from "./tensor-assemble.mjs";
+import { recordsOf } from "./kappa-records.mjs";
 
 const ROOT = process.env.TENSOR_STATE || join(process.env.HUB_STATE || "/state", "tensors");
 const HF = process.env.HF_ORIGIN || "https://huggingface.co";
@@ -74,6 +77,22 @@ function send(res, bytes, type, digest) {
   res.writeHead(200, { "content-type": type, "content-length": bytes.length, "docker-content-digest": digest, etag: `"${digest}"`,
     "docker-distribution-api-version": "registry/2.0", "cache-control": "public, max-age=31536000, immutable" });
   res.end(res.req.method === "HEAD" ? undefined : bytes);
+}
+
+// The Registry's records of one model, from one walk of its index (cached per index κ).
+const recCache = new Map();
+async function records(repo, m) {
+  if (recCache.has(m.index)) return recCache.get(m.index);
+  const { alts } = await load();
+  const recs = await recordsOf(repo, m, { json: async (d) => { const b = await held(d); return b ? JSON.parse(b.toString("utf8")) : null; }, alts: (k) => alts.get(k) || [] });
+  if (recCache.size > 100) recCache.clear();
+  recCache.set(m.index, recs);
+  return recs;
+}
+function sendJson(res, obj) {
+  const t = JSON.stringify(obj);
+  res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(t), "cache-control": "public, max-age=300" });
+  res.end(res.req.method === "HEAD" ? undefined : t);
 }
 
 // Is Hugging Face serving right now? Probed at most once a minute.
@@ -146,7 +165,17 @@ export async function tensorMirror(req, res, path) {
     res.end(req.method === "HEAD" ? undefined : t);
     return true;
   }
-  const mm = path.match(/^\/v2\/(models|tensors)\/([^/]+\/[^/]+)\/(manifests|blobs|tags|tensors|provenance|alternatives)(?:\/([^/]+))?$/);
+  const kk = path.match(/^\/v2\/kappa\/(sha256:[0-9a-f]{64})$/);
+  if (kk) {
+    const { models } = await load();
+    for (const [repo, m] of Object.entries(models)) {
+      if (!m.gated) continue;
+      const r = (await records(repo, m)).get(kk[1]);
+      if (r) { sendJson(res, { ...r, model: repo }); return true; }
+    }
+    ociError(res, 404, "BLOB_UNKNOWN", `${kk[1]} is not reached by any indexed model`); return true;
+  }
+  const mm = path.match(/^\/v2\/(models|tensors)\/([^/]+\/[^/]+)\/(manifests|blobs|tags|tensors|provenance|alternatives|records)(?:\/([^/]+))?$/);
   if (!mm) return false;
   const [, space, name, kind, ref] = mm;
   const { models, alts, lower } = await load();
@@ -161,6 +190,12 @@ export async function tensorMirror(req, res, path) {
     return true;
   }
   if (kind === "provenance") { const b = m.provenance && await held(m.provenance); if (!b) return ociError(res, 404, "BLOB_UNKNOWN", "no provenance sample for this model"), true; send(res, b, "application/vnd.hologram.provenance.v1+json", m.provenance); return true; }
+  if (kind === "records") {
+    const recs = await records(repo, m);
+    if (ref) { const r = recs.get(ref); if (!r) return ociError(res, 404, "BLOB_UNKNOWN", `${ref} is not reached by models/${repo}`), true; sendJson(res, r); return true; }
+    sendJson(res, { v: 1, repo, revision: m.rev, index: m.index, records: [...recs.values()] });
+    return true;
+  }
   if (kind === "tensors") { const b = await held(m.table); if (!b) return ociError(res, 404, "BLOB_UNKNOWN", "table not held"), true; send(res, b, "application/vnd.hologram.tensors.v1+json", m.table); return true; }
 
   if (kind === "manifests") {

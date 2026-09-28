@@ -92,6 +92,44 @@ A direct download from Hugging Face took 8.7–25 s on the same link. The honest
 - Pieces for literals and small files.
 - IPFS here was on the same machine; a remote gateway is not yet measured.
 
+## Registry records, and the edge on your own machine
+
+**Registry records.** `deploy/kappa-records.mjs` walks a model from its index κ and records every object it reaches:
+- index, manifests, tensor table and pieces;
+- files, layouts, literals, tensors and storages;
+- the model κ and provenance.
+
+Each record gives the object's type, size, piece list, `refs` (what points to it) and `holders`. A holder is one of: the hub, a Hugging Face byte range at a pinned commit, a URL, the raw CID (objects of at most 1 MiB), each piece's raw CID, or a layout.
+
+The canonical model κ is now a held object: its bytes, the sorted `dtype|shape|tensor κ` lines, name every tensor κ.
+
+Where records appear:
+- `/v2/models/<repo>/records[/<κ>]` and `/v2/kappa/<κ>` on the mirror.
+- Sealed into the day root, carried by the CAR, and required by the audit.
+
+`check-dialects.mjs` calls every answer the mirror gives for every model, and fails on any sha256 that has no record. It also re-hashes every held record. SmolLM2-135M plus -Instruct, 2026-09-28: 2,988 digests in 60 answers, 0 failures.
+
+**The edge.** `edge.mjs` is a verifying gateway on the user's machine:
+
+```
+node edge.mjs --hub https://gethologram.ai --port 8095 [--ipfs http://127.0.0.1:8080]
+HF_ENDPOINT=http://127.0.0.1:8095 hf download HuggingFaceTB/SmolLM2-135M-Instruct
+crane pull --insecure 127.0.0.1:8095/huggingfacetb/smollm2-135m-instruct:safetensors out.tar
+```
+
+It speaks the Hugging Face dialect (model info, `tree`, `treesize`, `refs`, `resolve` with `Range`), OCI, and Ollama (a 307 to the other loopback name).
+
+It trusts one thing: which index κ a name points to. Everything below is checked:
+- manifests and layouts against their κ;
+- weight files rebuilt through `get(κ)` piece by piece;
+- other files hashed while streaming, with the last 64 KiB held back and a mismatch cutting the connection.
+
+Measured, 2026-09-28:
+- **huggingface_hub 2.0 through the edge:** `model.safetensors` exact, all 415 pieces checked, plus an ONNX file. `hf cache verify` checked 13 files.
+- **With Hugging Face lying:** exact, all 269 MB from IPFS.
+- **`crane`:** 16/16 layers hash to their names.
+- **Ollama path:** the blob hop is a 307 to the other loopback name, and the bytes hash to the digest.
+
 ## Decentralised: Filebase
 
 Tensors pass through a small Kubo node on their way to Filebase, a few GB at a time, so any number of models fit

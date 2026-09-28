@@ -43,6 +43,12 @@ for (const [repo, r] of Object.entries(root.models)) {
   const idx = JSON.parse(ref(r.index, `${repo} index`));
   if (r.provenance) for (const row of JSON.parse(ref(r.provenance, `${repo} provenance`)).rows) { if (!K.test(row[0]) || !K.test(row[3])) out.notKappa.push(`${repo} provenance row ${row[0]}`); }
   if (r.canonical && !K.test(r.canonical)) out.notKappa.push(`${repo} canonical: ${r.canonical}`);
+  if (r.canonical) ref(r.canonical, `${repo} model κ`);
+  // records: every one a κ, and every held one present and hashing to its κ
+  if (r.records) for (const rec of JSON.parse(ref(r.records, `${repo} records`)).records) {
+    if (!K.test(rec.kappa)) out.notKappa.push(`${repo} record ${rec.kappa}`);
+    if (rec.holders.some((h) => h.kind === "hub")) ref(rec.kappa, `${repo} record ${rec.type}`);
+  }
   for (const m of idx.manifests) {
     const man = JSON.parse(ref(m.digest, `${repo} manifest ${m.annotations?.["org.hologram.format"]}`));
     const table = JSON.parse(ref(man.config.digest, `${repo} tensor table`));

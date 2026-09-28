@@ -1,0 +1,13 @@
+{
+  "name": "@hologram/tensor-index",
+  "private": true,
+  "type": "module",
+  "description": "Every open model as a tiny OCI manifest over κ-addressed tensors: index, gate, seal, CAR, pull.",
+  "scripts": { "nightly": "node pipeline.mjs nightly", "status": "node pipeline.mjs status" },
+  "dependencies": {
+    "@ipld/car": "5.4.7",
+    "@ipld/dag-pb": "4.2.0",
+    "ipfs-unixfs": "13.1.1",
+    "multiformats": "14.0.5"
+  }
+}

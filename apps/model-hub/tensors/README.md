@@ -34,6 +34,102 @@ IPFS_API=http://127.0.0.1:5001 node pipeline.mjs pin <repo>   # optional: payloa
 
 One runner at a time (a lock file); every stage is idempotent and resumes where it stopped.
 
+## Provenance sample
+
+Computed in the same single pass from the canonical bytes `hashpass.mjs` emits (`lib/sample.mjs`), and kept out of
+the tensor table so the table stays small. One object per model, `application/vnd.hologram.provenance.v1+json`,
+reachable from the day root (so it travels in the CAR) and served at `/v2/models/<owner>/<name>/provenance`:
+
+    { v, repo, revision, method, rows: [[κ, shape, narrowDtype, narrow, signB64, blocks], ...] }   one row per distinct (κ, shape)
+
+| Field | What it is |
+|---|---|
+| `narrowDtype`, `narrow` | the narrowest of BF16, F16, F32 that holds every value exactly, and sha256 of the payload in it. Equals κ when the tensor is already stored narrowest (the common case); an f32 file of bf16 values gets the bf16 tensor's digest. An equivalence key only, never a replacement for κ (and not `canonical`, the model κ) |
+| `signB64` | the sign bits at element indices floor(k·n/4096), k < 4096, MSB-first: agreement between same-name, same-shape tensors measures lineage (independent training 49.9 %, fine-tunes, merges and edits 95.6-100 %, ten measured pairs) |
+| `blocks` | [sha256, bytes] per 1024 rows of axis 0 of the narrow payload: a vocabulary resize keeps every earlier block. Rows cut along the shape, so a row is keyed by κ and shape (a reshape alias gets its own row) |
+
+Float tensors only (BF16, F16, F32); GGUF quantised types and integers carry no sample. About 0.8 KB per distinct
+tensor. `test/sample.test.mjs` holds the rules to vectors from the Python reference (`tensorhash.py`).
+
+## Pieces: every byte checked, from any holder
+
+**The piece list.** For every tensor or storage over 1 MiB, the hash pass also records the sha256 of each 1 MiB of it, aligned to its start.
+- It is computed from the same read that computes the κ, so there is no second pass.
+- The lists live in one object, `application/vnd.hologram.pieces.v1+json` (`{v, piece, of: {κ: [hex…]}}`), named by the tensor table.
+- So the model's one address reaches every piece hash.
+- The CAR carries it, and the audit checks that every payload over 1 MiB has a list of the right length.
+
+**`deploy/kappa-get.mjs`** is the one primitive, `get(κ, range)`:
+- It yields any byte range of a κ object, fetching only the pieces the range covers and checking each before release.
+- It reads neighbouring pieces in one range request (up to 8 MiB).
+- A piece's sha256 is its IPFS raw CID, so any gateway is a holder with no second index. A tensor of at most 1 MiB is its own piece: its κ is its CID.
+- A holder that lies is blamed for one piece of one κ, and its other pieces are kept.
+- One lie, or a read slower than 1 MB/s plus 10 s, sends a holder to the back of the line for the process.
+
+**`deploy/tensor-assemble.mjs`** routes every pieced payload through `get`:
+- A `Range` inside a large tensor no longer fetches the whole tensor.
+- Nothing is released before it checks. The old path, streaming tensors over 256 MB and aborting on a mismatch after release, is used only for indexes without pieces.
+- `pull.mjs --ipfs <gateway>`, the mirror's `TENSOR_IPFS_GATEWAYS` and the gate's `TENSOR_IPFS_GATEWAYS` add IPFS as a holder.
+
+**Measured on SmolLM2-135M-Instruct `model.safetensors`** (269 MB), 2026-09-28:
+- 272 tensors; 91 over 1 MiB, with a 22.6 KB pieces object.
+- The piece lists equal an independent implementation (`HOLOGRAM/spikes/kappa-piece-verify`) for 91 of 91 tensors.
+
+Through the mirror, `/v2/tensors/…/blobs/<sha256>`, IPFS on the same machine:
+
+| Holders | Time | Result |
+|---|---|---|
+| Honest Hugging Face | 27–38 s | exact |
+| Hugging Face down, IPFS only | 1.6–2.1 s | exact |
+| Hugging Face lying on every answer and slow (8 MiB in 84 s) | 21.6 s | exact; before the slow-holder deadline it took 695 s, and every byte released was still correct |
+| A 1 MB range, Hugging Face lying | 1.4 s | exact |
+
+A direct download from Hugging Face took 8.7–25 s on the same link. The honest run is slower than direct because tensors are fetched one range per tensor; see Open.
+
+**Open:**
+- Honest-run speed: coalesce neighbouring pieced tensors into one range, as groups already do.
+- A read that misses its deadline keeps downloading in the background; add an abort.
+- Pieces for literals and small files.
+- IPFS here was on the same machine; a remote gateway is not yet measured.
+
+## Registry records, and the edge on your own machine
+
+**Registry records.** `deploy/kappa-records.mjs` walks a model from its index κ and records every object it reaches:
+- index, manifests, tensor table and pieces;
+- files, layouts, literals, tensors and storages;
+- the model κ and provenance.
+
+Each record gives the object's type, size, piece list, `refs` (what points to it) and `holders`. A holder is one of: the hub, a Hugging Face byte range at a pinned commit, a URL, the raw CID (objects of at most 1 MiB), each piece's raw CID, or a layout.
+
+The canonical model κ is now a held object: its bytes, the sorted `dtype|shape|tensor κ` lines, name every tensor κ.
+
+Where records appear:
+- `/v2/models/<repo>/records[/<κ>]` and `/v2/kappa/<κ>` on the mirror.
+- Sealed into the day root, carried by the CAR, and required by the audit.
+
+`check-dialects.mjs` calls every answer the mirror gives for every model, and fails on any sha256 that has no record. It also re-hashes every held record. SmolLM2-135M plus -Instruct, 2026-09-28: 2,988 digests in 60 answers, 0 failures.
+
+**The edge.** `edge.mjs` is a verifying gateway on the user's machine:
+
+```
+node edge.mjs --hub https://gethologram.ai --port 8095 [--ipfs http://127.0.0.1:8080]
+HF_ENDPOINT=http://127.0.0.1:8095 hf download HuggingFaceTB/SmolLM2-135M-Instruct
+crane pull --insecure 127.0.0.1:8095/huggingfacetb/smollm2-135m-instruct:safetensors out.tar
+```
+
+It speaks the Hugging Face dialect (model info, `tree`, `treesize`, `refs`, `resolve` with `Range`), OCI, and Ollama (a 307 to the other loopback name).
+
+It trusts one thing: which index κ a name points to. Everything below is checked:
+- manifests and layouts against their κ;
+- weight files rebuilt through `get(κ)` piece by piece;
+- other files hashed while streaming, with the last 64 KiB held back and a mismatch cutting the connection.
+
+Measured, 2026-09-28:
+- **huggingface_hub 2.0 through the edge:** `model.safetensors` exact, all 415 pieces checked, plus an ONNX file. `hf cache verify` checked 13 files.
+- **With Hugging Face lying:** exact, all 269 MB from IPFS.
+- **`crane`:** 16/16 layers hash to their names.
+- **Ollama path:** the blob hop is a 307 to the other loopback name, and the bytes hash to the digest.
+
 ## Decentralised: Filebase
 
 Tensors pass through a small Kubo node on their way to Filebase, a few GB at a time, so any number of models fit

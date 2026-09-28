@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import { Store } from "./lib/store.mjs";
 import { indexModel, T } from "./lib/model.mjs";
 import { assemble } from "../deploy/tensor-assemble.mjs";
+import { recordsOf } from "../deploy/kappa-records.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STATE = process.env.TENSOR_STATE || join(HERE, "state");
@@ -191,7 +192,9 @@ async function pin(repos) {
 async function rebuild(m, blob, idx, prefer) {
   const layout = store.json(m.blobs[blob].layout);
   const h = createHash("sha256"); let n = 0; const from = new Map(); let bad = 0;
-  const ctx = { repo: m.repo, rev: m.rev, literal: (d) => store.get(d), alternatives: (k) => idx.get(k) || [], prefer,
+  const T = m.table && store.json(m.table), P = T?.pieces && store.json(T.pieces);
+  const ctx = { repo: m.repo, rev: m.rev, literal: (d) => store.get(d), alternatives: (k) => idx.get(k) || [], prefer, pieces: (k) => P?.of?.[k],
+    ipfs: (process.env.TENSOR_IPFS_GATEWAYS || "").split(",").filter(Boolean),
     report: (e) => { if (e.ok) { const r = e.from.replace(/@\d+$/, ""); from.set(r, (from.get(r) || 0) + e.len); } else bad++; } };
   for await (const c of assemble(layout, ctx)) { h.update(c); n += c.length; }
   const digest = `sha256:${h.digest("hex")}`;
@@ -219,9 +222,14 @@ async function gate(repos) {
 // ---------------------------------------------------------------- seal
 // The day's root: every gated model's index digest, plus the derived relations. Stored as a κ object;
 // roots/<day>.json and latest.json name it. Tables and manifests are shared across days by digest.
-function seal() {
+async function seal() {
   const models = read("models.json", {}), idx = alternativesIndex();
-  const pub = Object.fromEntries(Object.entries(models).filter(([, m]) => m.gated).map(([r, m]) => [r, { rev: m.rev, index: m.index, canonical: m.canonical, tensors: m.tensors, weightBytes: m.weightBytes, license: m.license }]));
+  const pub = Object.fromEntries(Object.entries(models).filter(([, m]) => m.gated).map(([r, m]) => [r, { rev: m.rev, index: m.index, canonical: m.canonical, tensors: m.tensors, weightBytes: m.weightBytes, license: m.license, ...(m.provenance ? { provenance: m.provenance } : {}) }]));
+  // the Registry's records of every κ each model reaches (deploy/kappa-records.mjs), sealed with the day
+  for (const [r, p] of Object.entries(pub)) {
+    const recs = await recordsOf(r, models[r], { json: async (d) => store.json(d), alts: (k) => (idx.get(k) || []).filter((x) => x.repo !== r || x.rev !== models[r].rev) });
+    p.records = store.putJson({ v: 1, repo: r, revision: models[r].rev, index: models[r].index, records: [...recs.values()].sort((a, b) => (a.kappa < b.kappa ? -1 : 1)) }).digest;
+  }
   // relations: same weights (canonical κ equal), and tensors shared across repos (bytes)
   const byCanon = new Map(); for (const [r, m] of Object.entries(pub)) if (m.canonical) (byCanon.get(m.canonical) || byCanon.set(m.canonical, []).get(m.canonical)).push(r);
   const sameWeights = [...byCanon.values()].filter((l) => l.length > 1);
@@ -271,12 +279,12 @@ if (["run", "gate", "seal", "nightly", "discover", "car", "pin"].includes(cmd)) 
 if (cmd === "discover") await discover();
 else if (cmd === "run") await run(repos);
 else if (cmd === "gate") await gate(repos);
-else if (cmd === "seal") seal();
+else if (cmd === "seal") await seal();
 else if (cmd === "car") await car();
 else if (cmd === "pin") await pin(repos);
 else if (cmd === "status") status();
 else if (cmd === "nightly") {
-  await discover(); await run([]); await gate([]); seal();
+  await discover(); await run([]); await gate([]); await seal();
   try { await car(); } catch (e) { log(`car skipped: ${e.message}`); }   // the CAR is published separately; never blocks promotion
 }
 else console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 12).join("\n"));

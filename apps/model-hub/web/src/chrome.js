@@ -10,6 +10,9 @@ const $ = (s, el = document) => el.querySelector(s);
 
 // Everything the header does, for whatever part of the header this page has.
 export function mountChrome() {
+  // The hub's worker (zip-sw.js) checks every fetch whose bytes have a name (a sha256 in the URL, a file in a model's
+  // tree) before the page gets them. Registered on every page, so a model file fetched anywhere on the hub is checked.
+  if ("serviceWorker" in navigator && base) navigator.serviceWorker.register(`${base}zip-sw.js`).catch(() => {});
   foldingMenu();
   themeSwitch();
   sectionTag();

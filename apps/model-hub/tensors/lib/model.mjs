@@ -4,11 +4,15 @@
 //   tensors     the manifest's config: every tensor's name, dtype, shape, κ, and the canonical model κ
 //   manifest    one per format (original, safetensors, safetensors-sharded), layers = files by digest
 //   index       an OCI image index over the formats: the model's address
+//   pieces      per payload over 1 MiB: the sha256 of each 1 MiB, named by the table (deploy/kappa-get.mjs)
+//   provenance  per distinct κ: narrowest-dtype digest, sign sample, row-block digests (sample.mjs); not in the table
 import { createHash } from "node:crypto";
 import { info, tree, cdnUrl, whole } from "./src.mjs";
 import { plan as planFile, isWeightPath } from "./containers.mjs";
 import { hashFile, emissionOrder } from "./hashpass.mjs";
 import { planFormat, RenderHasher, RENDERABLE } from "./render.mjs";
+import { TensorSample, SAMPLED } from "./sample.mjs";
+import { PIECE } from "../../deploy/kappa-get.mjs";
 
 export const T = {
   manifest: "application/vnd.oci.image.manifest.v1+json",
@@ -16,6 +20,8 @@ export const T = {
   model: "application/vnd.hologram.model.v1",
   tensors: "application/vnd.hologram.tensors.v1+json",
   layout: "application/vnd.hologram.layout.v1+json",
+  provenance: "application/vnd.hologram.provenance.v1+json",
+  pieces: "application/vnd.hologram.pieces.v1+json",
   file: "application/octet-stream",
 };
 export const FORMATS = ["safetensors", "safetensors-sharded"];
@@ -23,9 +29,13 @@ const SMALL = 16 << 20;
 // Weights of other frameworks travel with the original format only; renders carry configs and tokenizers.
 const FOREIGN = /\.(safetensors|gguf|bin|pt|pth|ckpt|h5|msgpack|onnx|onnx_data|ot|tflite|mlmodel|pb|npz|keras)$|^(onnx|openvino|coreml|tf|flax)\//i;
 
+// The canonical model κ is the sha256 of these bytes, and the bytes are held: the model's identity is itself an
+// object anyone can fetch and check (its lines name every tensor κ, so it is the root of the weights alone).
+export function canonicalBytes(tensors) {
+  return Buffer.from([...new Set(tensors.map((t) => `${t.dtype}|${JSON.stringify(t.shape)}|${t.kappa}`))].sort().join("\n"));
+}
 export function canonicalKappa(tensors) {
-  const lines = [...new Set(tensors.map((t) => `${t.dtype}|${JSON.stringify(t.shape)}|${t.kappa}`))].sort();
-  return `sha256:${createHash("sha256").update(lines.join("\n")).digest("hex")}`;
+  return `sha256:${createHash("sha256").update(canonicalBytes(tensors)).digest("hex")}`;
 }
 
 export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log = () => {}, headersOnly = false } = {}) {
@@ -63,9 +73,20 @@ export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log
   const rh = renderable ? new RenderHasher(fmts) : null;
   const order = [...src, ...planned.filter((f) => !src.includes(f))];
   let bytes = 0;
+  // Every float tensor's canonical bytes also feed a provenance sample (sample.mjs) in the same read.
+  const samples = new Map();
   for (const f of order) {
     const feeds = rh && src.includes(f);
-    const r = await hashFile({ getUrl: getUrl(f.path), size: f.size, plan: f.plan, emit: feeds ? (i, c) => rh.feed(`${f.path}#${i}`, c) : null });
+    const sampled = f.plan.tensors.some((t) => SAMPLED(t.dtype));
+    const emit = (i, c) => {
+      if (feeds) rh.feed(`${f.path}#${i}`, c);
+      const t = f.plan.tensors[i];
+      if (!SAMPLED(t.dtype)) return;
+      const key = `${f.path}#${i}`;
+      if (!samples.has(key)) samples.set(key, new TensorSample(t.dtype, t.shape));
+      samples.get(key).update(c);
+    };
+    const r = await hashFile({ getUrl: getUrl(f.path), size: f.size, plan: f.plan, emit: feeds || sampled ? emit : null });
     if (r.digest !== `sha256:${f.oid}`) throw new Error(`${f.path}: sha256 ${r.digest} differs from Hugging Face's ${f.oid}; refused`);
     for (const [d, b] of r.literals) store.put(b);
     f.result = r; bytes += f.size;
@@ -98,9 +119,27 @@ export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log
       segments: f.result.segments.map((s) => [s.kind, s.digest, s.len, s.off]) };
     f.layout = store.putJson(layout);
   }
+  // Provenance: one row per distinct (κ, shape): [κ, shape, narrowDtype, narrow, signB64, blocks]. Shape is part of the
+  // key because row blocks cut along axis 0: the same bytes under two shapes (a reshape alias) have different blocks.
+  const provRows = new Map();
+  for (const [key, s] of samples) {
+    const kappa = kappaOf.get(key), shape = s.shape, id = `${kappa}|${JSON.stringify(shape)}`;
+    if (provRows.has(id)) continue;
+    const r = s.result();
+    provRows.set(id, [kappa, shape, r.narrowDtype, r.narrow, Buffer.from(r.sign, "hex").toString("base64"), r.blocks || []]);
+  }
+  const provenance = provRows.size ? store.putJson({ v: 1, repo, revision: rev,
+    method: "hologram.provenance/v1: narrowest exact dtype of BF16, F16, F32; sign bits at floor(k*n/4096), k<4096, MSB-first; sha256 per 1024 rows of the narrow payload",
+    rows: [...provRows.values()] }) : null;
   const canonSet = src.length ? tensors.filter((t) => src.some((f) => f.path === t.file)) : tensors;
-  const canonical = canonSet.length ? canonicalKappa(canonSet) : null;
-  const table = store.putJson({ v: 1, repo, revision: rev, canonical, files: planned.map((f) => f.path), tensors: rows });
+  const canonical = canonSet.length ? store.put(canonicalBytes(canonSet)).digest : null;
+  // Pieces: for every payload over 1 MiB, the sha256 of each 1 MiB of it, so any range of it can be fetched from any
+  // holder and checked piece by piece (deploy/kappa-get.mjs). Named by the table, so the model's one address reaches
+  // every piece hash.
+  const of = {};
+  for (const f of planned) for (const sg of f.result.segments) if (sg.pieces && !of[sg.digest]) of[sg.digest] = sg.pieces;
+  const pieces = Object.keys(of).length ? store.putJson({ v: 1, piece: PIECE, of: Object.fromEntries(Object.keys(of).sort().map((k) => [k, of[k]])) }) : null;
+  const table = store.putJson({ v: 1, repo, revision: rev, canonical, files: planned.map((f) => f.path), tensors: rows, ...(pieces ? { pieces: pieces.digest } : {}) });
 
   const annot = (format) => ({ "org.hologram.format": format, "org.hologram.repo": repo, "org.hologram.revision": rev,
     ...(canonical ? { "org.hologram.canonical": canonical } : {}), "org.opencontainers.image.source": `https://huggingface.co/${repo}/tree/${rev}` });
@@ -155,7 +194,7 @@ export async function indexModel(repo, { store, rev: pin, formats = FORMATS, log
   for (const f of planned) f.result.segments.forEach((s) => { if (s.kind !== "l") sources.push([s.digest, repo, rev, f.path, s.off, s.len]); });
 
   return {
-    repo, rev, index: index.digest, table: table.digest, canonical, manifests: Object.fromEntries(Object.entries(manifests).map(([k, v]) => [k, v.digest])),
+    repo, rev, index: index.digest, table: table.digest, canonical, provenance: provenance?.digest || null, pieces: pieces?.digest || null, manifests: Object.fromEntries(Object.entries(manifests).map(([k, v]) => [k, v.digest])),
     blobs, sources, tensors: nT, weightBytes: bytes, seconds: Math.round((Date.now() - t0) / 1000),
     files: planned.map((f) => ({ path: f.path, digest: `sha256:${f.oid}`, size: f.size, container: f.plan.container, layout: f.layout.digest })),
     renders: rendered, license: meta.cardData?.license || meta.tags?.find((t) => t.startsWith("license:"))?.slice(8) || null,

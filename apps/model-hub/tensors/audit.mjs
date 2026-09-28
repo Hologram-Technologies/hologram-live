@@ -41,11 +41,21 @@ const models = JSON.parse(readFileSync(join(STATE, "models.json"), "utf8"));
 for (const [repo, r] of Object.entries(root.models)) {
   out.models++;
   const idx = JSON.parse(ref(r.index, `${repo} index`));
+  if (r.provenance) for (const row of JSON.parse(ref(r.provenance, `${repo} provenance`)).rows) { if (!K.test(row[0]) || !K.test(row[3])) out.notKappa.push(`${repo} provenance row ${row[0]}`); }
   if (r.canonical && !K.test(r.canonical)) out.notKappa.push(`${repo} canonical: ${r.canonical}`);
+  if (r.canonical) ref(r.canonical, `${repo} model κ`);
+  // records: every one a κ, and every held one present and hashing to its κ
+  if (r.records) for (const rec of JSON.parse(ref(r.records, `${repo} records`)).records) {
+    if (!K.test(rec.kappa)) out.notKappa.push(`${repo} record ${rec.kappa}`);
+    if (rec.holders.some((h) => h.kind === "hub")) ref(rec.kappa, `${repo} record ${rec.type}`);
+  }
   for (const m of idx.manifests) {
     const man = JSON.parse(ref(m.digest, `${repo} manifest ${m.annotations?.["org.hologram.format"]}`));
     const table = JSON.parse(ref(man.config.digest, `${repo} tensor table`));
     for (const row of table.tensors) { out.tensors++; if (!K.test(row[4])) out.tensorsBad++; }
+    // every payload over one piece has a piece list of the right length, each entry a sha256
+    const P = table.pieces ? JSON.parse(ref(table.pieces, `${repo} pieces`)) : null;
+    if (P && (P.piece !== 1 << 20 || Object.entries(P.of).some(([k, l]) => !K.test(k) || !l.every((h) => /^[0-9a-f]{64}$/.test(h))))) out.notKappa.push(`${repo} pieces ${table.pieces}`);
     for (const l of man.layers) {
       const blob = models[repo].blobs[l.digest];
       if (!K.test(l.digest)) out.notKappa.push(`${repo} layer ${l.digest}`);
@@ -57,6 +67,7 @@ for (const [repo, r] of Object.entries(root.models)) {
       for (const s of L.segments) {
         out.segments++; total += s[2];
         if (!K.test(s[1])) out.notKappa.push(`${repo} ${L.file} segment ${s[1]}`);
+        if ((s[0] === "t" || s[0] === "s") && s[2] > 1 << 20 && P && P.of[s[1]]?.length !== Math.ceil(s[2] / (1 << 20))) out.notKappa.push(`${repo} ${L.file} segment ${s[1]}: no piece list`);
         if (s[0] === "l") ref(s[1], `${repo} ${L.file} literal`);
         if (s[0] === "v" && !K.test(s[3].s)) out.notKappa.push(`${repo} ${L.file} storage ${s[3].s}`);
       }

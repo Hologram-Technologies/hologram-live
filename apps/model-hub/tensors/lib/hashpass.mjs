@@ -2,10 +2,12 @@
 //   the file's sha256 (must equal the HF LFS oid, or the file is refused),
 //   a digest per segment (literals are kept, payloads are not),
 //   a κ per tensor (payload segments directly; views and strided tensors by slicing or gathering their storage),
+//   the piece list of every payload or storage segment over one piece (1 MiB): what get(κ) checks a range against,
 //   and, when `emit` is given, each tensor's canonical bytes in emissionOrder(plan), so format renders are
 //   hashed in the same pass. Only storages and multiply-named payloads are buffered.
 import { createHash } from "node:crypto";
 import { stream } from "./src.mjs";
+import { PieceHasher, PIECE } from "../../deploy/kappa-get.mjs";
 
 export const EMPTY = `sha256:${createHash("sha256").digest("hex")}`;
 const CAP = 2 ** 31;
@@ -46,14 +48,15 @@ export async function hashFile({ getUrl, size, plan, emit }) {
   const whole = createHash("sha256");
   // Buffer literals, storages, and payloads read by more than one name; stream the rest.
   const buffered = (k) => segs[k].kind !== "t" || (emit && byseg[k].length > 1);
-  let k = 0, pos = 0, h, parts;
+  let k = 0, pos = 0, h, parts, ph;
   const begin = () => {
     h = createHash("sha256"); parts = [];
+    ph = segs[k].kind !== "l" && segs[k].len > PIECE ? new PieceHasher() : null;
     if (buffered(k) && segs[k].len > CAP) throw new Error(`segment of ${segs[k].len} bytes is too large to buffer`);
   };
   const end = () => {
     const s = segs[k], digest = `sha256:${h.digest("hex")}`;
-    out.segments.push({ kind: s.kind, digest, len: s.len, off: s.off });
+    out.segments.push({ kind: s.kind, digest, len: s.len, off: s.off, ...(ph ? { pieces: ph.finish() } : {}) });
     const ids = [...byseg[k]].sort((a, b) => order.indexOf(a) - order.indexOf(b));
     if (s.kind === "l") out.literals.set(digest, Buffer.concat(parts));
     else if (s.kind === "t") {
@@ -71,6 +74,7 @@ export async function hashFile({ getUrl, size, plan, emit }) {
     while (c.length) {
       const s = segs[k], take = Math.min(c.length, s.off + s.len - pos), piece = c.subarray(0, take);
       h.update(piece);
+      if (ph) ph.update(piece);
       if (buffered(k)) parts.push(piece);
       else if (emit && byseg[k].length === 1) emit(byseg[k][0], piece);
       pos += take; c = c.subarray(take);

@@ -32,10 +32,15 @@ export async function buildCar() {
   for (const [repo, r] of Object.entries(root.models)) {
     const m = models[repo];
     need.add(r.index);
+    if (r.provenance) need.add(r.provenance);        // per-κ provenance sample (sample.mjs)
+    if (r.records) need.add(r.records);              // the Registry's records of every κ the model reaches
+    if (r.canonical) need.add(r.canonical);          // the model κ: its held bytes name every tensor κ
     for (const md of Object.values(m.manifests)) {
       need.add(md);
       const man = json(md);
       need.add(man.config.digest);
+      const pieces = json(man.config.digest).pieces;
+      if (pieces) need.add(pieces);                    // per-payload piece hashes (deploy/kappa-get.mjs)
       for (const l of man.layers) {
         if (m.blobs[l.digest]?.held) need.add(l.digest);
         const lay = l.annotations?.["org.hologram.layout"];

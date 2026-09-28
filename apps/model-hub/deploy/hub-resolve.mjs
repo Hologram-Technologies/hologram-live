@@ -57,12 +57,43 @@ function refresh() {
   byLower = map;
 }
 async function model(id) {
+  return withRecords(id, await fromIndex(id));
+}
+async function fromIndex(id) {
   refresh();
   const path = byLower.get(id.toLowerCase());
   if (!path) return (await indexed(id)) || (await fromHub(id));
   const doc = JSON.parse(await readFile(path, "utf8"));
   doc.id = path.slice(join(DATA, "files").length + 1, -5).replace(/\\/g, "/");
   return doc;
+}
+
+// ---- the Registry's records, when the tensor index has the model: then they, not the address index, are the one
+// source of every digest, size and revision these dialects answer (deploy/kappa-records.mjs). A digest the index
+// disagrees on is logged and the record's is used. Without records (TENSOR_RECORDS unset, or the model not in the
+// tensor index), the address index as before.
+const RECORDS = (process.env.TENSOR_RECORDS || "").replace(/\/$/, "");
+const recordsCache = new Map();
+async function withRecords(id, doc) {
+  if (!RECORDS) return doc;
+  const key = id.toLowerCase(), hit = recordsCache.get(key);
+  let recs = hit && Date.now() - hit.at < 300_000 ? hit.recs : undefined;
+  if (recs === undefined) {
+    try { const r = await fetch(`${RECORDS}/v2/models/${key}/records`, { signal: AbortSignal.timeout(8000) }); recs = r.ok ? await r.json() : null; } catch { recs = null; }
+    if (recordsCache.size > 500) recordsCache.clear();
+    recordsCache.set(key, { at: Date.now(), recs });
+  }
+  if (!recs?.records) return doc;
+  const files = recs.records.filter((r) => r.type === "file").sort((a, b) => (a.path < b.path ? -1 : 1));
+  const hf = (r) => r.holders.find((h) => h.kind === "hf" && h.at === 0)?.url;
+  const was = new Map((doc?.files || []).map((f) => [f[0], f[2]]));
+  for (const r of files) if (was.has(r.path) && was.get(r.path) !== r.kappa) console.log(JSON.stringify({ t: new Date().toISOString(), model: recs.repo, file: r.path, index: was.get(r.path), record: r.kappa, used: "record" }));
+  return {
+    ...(doc || { sources: [{ kind: "huggingface.co", resolve: null, missing: [] }] }),
+    id: recs.repo, revision: recs.revision, digests: "records", manifest: doc?.manifest || recs.index,
+    records: { index: recs.index, url: `${RECORDS}/v2/models/${key}/records` },
+    files: files.map((r) => [r.path, r.size, r.kappa, r.holders.some((h) => h.kind === "hub") ? 0 : 1, hf(r) || `https://huggingface.co/${recs.repo}/resolve/${recs.revision}/${encodePath(r.path)}`]),
+  };
 }
 
 // ---- the hub's own catalog, as the last word on what this hub has
@@ -616,6 +647,7 @@ async function lfsBatch(req, res, id) {
 // (the sorted file list: path, size, sha256) is named by its own BLAKE3 and published in the public address index,
 // commit history and all. Fetch it, hash it, compare it with the tree: a gateway that swapped a digest is caught.
 function trust(doc) {
+  if (doc.records) return { index: doc.records.index, records_url: doc.records.url, check: "every digest here is a record reached from index; fetch records_url and compare" };
   const m = /^blake3:([0-9a-f]{64})$/.exec(doc.manifest || "");
   return m ? { manifest: doc.manifest, manifest_url: `${API}/v1/manifests/${m[1]}.json`, check: "blake3 of manifest_url's bytes equals manifest; its files equal this model's tree" } : { manifest: doc.manifest || null };
 }

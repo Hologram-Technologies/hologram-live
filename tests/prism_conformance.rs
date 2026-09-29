@@ -79,13 +79,149 @@ fn test_hologram_ai_uor_cost_model_optimal() {
     assert_eq!(v["status"], "optimal");
 }
 
+fn find_latest_build_dir() -> std::path::PathBuf {
+    let build_dir = std::path::Path::new(".prism/build");
+    let mut entries: Vec<_> = std::fs::read_dir(build_dir)
+        .expect("Read .prism/build")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    entries.last().expect("At least one build directory").path()
+}
+
 #[test]
 fn test_hologram_v4_container_oracle() {
-    let holo_path = std::path::Path::new(".prism/build/236ff75a002b49ca0a1ee6090c91ebacedb4d07affb9649d33809ea67ceb88fe/Hologram Live.holo");
+    let build_dir = find_latest_build_dir();
+    let holo_path = build_dir.join("Hologram Live.holo");
     let bytes = std::fs::read(holo_path).expect("Read Hologram Live.holo");
     assert!(bytes.len() >= 16);
     assert_eq!(&bytes[0..4], b"HOLO");
     assert_eq!(&bytes[4..6], b"\x04\x00");
     hologram_live::holo_format::require_current(&bytes).expect("Holo v4 validation succeeds");
+}
+
+#[test]
+fn test_prism_system_projections_coverage() {
+    let build_dir = find_latest_build_dir();
+    let proj_dir = build_dir.join("projections");
+    assert!(proj_dir.exists(), "projections directory must exist in build output");
+
+    let required_projections = [
+        "asyncapi.json",
+        "capability-coverage.json",
+        "cloudevents.schema.json",
+        "compose.json",
+        "history.sql",
+        "kubernetes.json",
+        "openapi.json",
+        "opentelemetry-collector.json",
+        "runtime-contract.json",
+        "spdx.json",
+        "system-validation-certificate.json",
+    ];
+
+    for name in required_projections {
+        let path = proj_dir.join(name);
+        assert!(path.exists(), "Projection {name} must exist in build output");
+        let content = std::fs::read_to_string(&path).expect("Read projection content");
+        assert!(!content.trim().is_empty(), "Projection {name} must not be empty");
+
+        if name.ends_with(".json") {
+            let _: serde_json::Value = serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("Projection {name} must be valid JSON: {e}"));
+        }
+    }
+}
+
+#[test]
+fn test_prism_system_validation_certificate() {
+    let build_dir = find_latest_build_dir();
+    let cert_path = build_dir.join("projections/system-validation-certificate.json");
+    let cert_str = std::fs::read_to_string(&cert_path).expect("Read certificate");
+    let cert: serde_json::Value = serde_json::from_str(&cert_str).expect("Parse certificate");
+
+    assert_eq!(
+        cert["schema"], "prismpm/system-validation-certificate/1",
+        "Certificate must match system validation schema"
+    );
+
+    let required_relations = [
+        "capability_satisfaction",
+        "closure",
+        "compatibility",
+        "deployment_order",
+        "evidence_closure",
+        "license_closure",
+        "migration_order",
+        "referential_integrity",
+        "release_completeness",
+        "rollback_safety",
+        "secret_flow",
+        "uniqueness",
+    ];
+
+    for relation in required_relations {
+        let rel_obj = &cert[relation];
+        assert!(
+            rel_obj.is_object(),
+            "Relation {relation} must be an object in validation certificate"
+        );
+        let bound = rel_obj["bound"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("Relation {relation} bound must be a non-negative integer"));
+        assert!(
+            bound > 0,
+            "Relation {relation} bound must be strictly positive"
+        );
+        let values = rel_obj["values"]
+            .as_array()
+            .unwrap_or_else(|| panic!("Relation {relation} values must be an array"));
+        assert!(
+            !values.is_empty(),
+            "Relation {relation} values array must not be empty"
+        );
+        for val in values {
+            let v = val.as_u64().expect("Relation value must be an integer");
+            assert!(
+                v < bound,
+                "Relation value {v} must be strictly below bound {bound}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_prism_stakeholder_viewpoints_and_architecture() {
+    let build_dir = find_latest_build_dir();
+    let system_path = build_dir.join("system.prism.json");
+    let system_str = std::fs::read_to_string(&system_path).expect("Read system.prism.json");
+    let system: serde_json::Value = serde_json::from_str(&system_str).expect("Parse system.prism.json");
+
+    assert_eq!(system["schema"], "prismpm/system-model/1");
+
+    // Check components: 5 core components modeled without arbitrary plumbing
+    let components = system["components"].as_array().expect("components array");
+    let comp_ids: Vec<&str> = components.iter().filter_map(|c| c["id"].as_str()).collect();
+    assert!(comp_ids.contains(&"server"));
+    assert!(comp_ids.contains(&"inference-engine"));
+    assert!(comp_ids.contains(&"cas-store"));
+    assert!(comp_ids.contains(&"migrate"));
+    assert!(comp_ids.contains(&"telemetry"));
+
+    // Check architecture viewpoints for modeled stakeholders
+    let architecture = system["architecture"].as_array().expect("architecture array");
+    let arch_ids: Vec<&str> = architecture.iter().filter_map(|a| a["id"].as_str()).collect();
+    assert!(arch_ids.contains(&"arch-stakeholder-operator"), "Must model Edge AI Operator");
+    assert!(arch_ids.contains(&"arch-stakeholder-developer"), "Must model Model Developer");
+    assert!(arch_ids.contains(&"arch-stakeholder-security"), "Must model Security Auditor");
+    assert!(arch_ids.contains(&"arch-decision-holo-v4"), "Must model Holo v4 decision");
+    assert!(arch_ids.contains(&"arch-decision-uor-cost-model"), "Must model UOR cost-model decision");
+
+    // Check target bindings
+    let targets = system["targets"].as_array().expect("targets array");
+    let target_ids: Vec<&str> = targets.iter().filter_map(|t| t["id"].as_str()).collect();
+    assert!(target_ids.contains(&"target-compose"));
+    assert!(target_ids.contains(&"target-kubernetes"));
 }
 

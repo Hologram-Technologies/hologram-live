@@ -101,6 +101,42 @@ async function getIt() {
     if (hashBtn) { hashBtn.dataset.sha = s.index; hashBtn.dataset.cid = s.ipfs || ""; drawHash("sha"); }
   }
   $("#hero-sub").insertAdjacentHTML("beforeend", ` · ${R.count(s.tensors)} tensors`);
+  // IPFS holds the tensor bytes when every tensor is its own IPFS object, named by its κ. If the whole files are
+  // pinned too, the IPFS line is already here; otherwise it is added, and Verify fetches one tensor from IPFS and
+  // checks it against its κ in this tab.
+  const cov = s.ipfsTensors, held = $(".rows .sources ul");
+  if (held && cov && cov.total && cov.pinned === cov.total && cov.sample) {
+    const note = `Every tensor (${R.count(cov.total)}) is its own IPFS object, named by its κ`;
+    let li = held.querySelector('li[data-source="ipfs"]');
+    if (li) li.title = `${note}; the whole files are pinned too.`;
+    else {
+      li = document.createElement("li");
+      li.dataset.source = "ipfs-tensors";
+      li.title = `${note}. Verify checks one against its κ.`;
+      li.innerHTML = `<span class="state"></span><a href="${esc(cov.gateway)}/ipfs/${esc(cov.sample.cid)}" target="_blank" rel="noopener">IPFS</a>`;
+      held.append(li);
+      $("[data-verify]")?.addEventListener("click", async () => {
+        // Any IPFS gateway will do: the bytes must hash to the κ whoever serves them. Several, so one blocked
+        // gateway (some networks reset IPFS gateways) does not read as missing bytes.
+        li.dataset.state = "busy";
+        let state = "bad";
+        for (const gw of [cov.gateway, "https://gateway.pinata.cloud", "https://dweb.link"]) {
+          try {
+            const r = await fetch(`${gw}/ipfs/${cov.sample.cid}`, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) continue;
+            const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await r.arrayBuffer()));
+            const got = `sha256:${[...digest].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+            if (got === cov.sample.kappa) { state = "ok"; li.title = `${li.title.split(" Checked")[0]} Checked through ${new URL(gw).host}.`; break; }
+          } catch { /* next gateway */ }
+        }
+        li.dataset.state = state;
+        // The verdict above names the file holders; say what the tensor check found once it is written.
+        const out = $("#verdict");
+        for (let i = 0; i < 40 && out && !/^Verified|could not|No source|different bytes/.test(out.textContent); i++) await new Promise((ok) => setTimeout(ok, 250));
+        if (out && !out.hidden) out.textContent += state === "ok" ? " A tensor from IPFS matched its κ." : " IPFS could not be reached from this network.";
+      });
+    }
+  }
   // Relations: one quiet row, only when there is one.
   const link = (r) => `<a href="${base}models/${esc(r)}/">${esc(r)}</a>`, same = $("#same"), row = $("#same-row");
   if (same && s.sameWeights.length) { same.innerHTML = `${R.icon.nodes}Same weights as ${s.sameWeights.map(link).join(", ")}`; row.hidden = false; }

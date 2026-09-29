@@ -83,7 +83,7 @@ fn find_latest_build_dir() -> std::path::PathBuf {
     let build_dir = std::path::Path::new(".prism/build");
     let mut entries: Vec<_> = std::fs::read_dir(build_dir)
         .expect("Read .prism/build")
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_dir())
         .collect();
     entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
@@ -127,7 +127,7 @@ fn test_prism_system_projections_coverage() {
         let content = std::fs::read_to_string(&path).expect("Read projection content");
         assert!(!content.trim().is_empty(), "Projection {name} must not be empty");
 
-        if name.ends_with(".json") {
+        if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("json")) {
             let _: serde_json::Value = serde_json::from_str(&content)
                 .unwrap_or_else(|e| panic!("Projection {name} must be valid JSON: {e}"));
         }
@@ -223,5 +223,27 @@ fn test_prism_stakeholder_viewpoints_and_architecture() {
     let target_ids: Vec<&str> = targets.iter().filter_map(|t| t["id"].as_str()).collect();
     assert!(target_ids.contains(&"target-compose"));
     assert!(target_ids.contains(&"target-kubernetes"));
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn test_prism_router_throughput_and_latency() {
+    let iterations = 100_000;
+    let commands = ["run", "serve", "ai", "status", "doctor", "unknown"];
+    let start = std::time::Instant::now();
+    for _ in 0..iterations {
+        for cmd in &commands {
+            let parsed = parseCliCommand((*cmd).to_string());
+            std::hint::black_box(parsed);
+        }
+    }
+    let elapsed = start.elapsed();
+    let total_ops = iterations * commands.len();
+    let nanos_per_op = elapsed.as_nanos() as f64 / total_ops as f64;
+    let ops_per_sec = total_ops as f64 / elapsed.as_secs_f64();
+    println!(
+        "PrismPM router: {total_ops} dispatches in {elapsed:?} ({nanos_per_op:.1} ns/op, {ops_per_sec:.0} ops/sec)"
+    );
+    assert!(nanos_per_op < 1_000.0, "Prism router dispatch must be sub-microsecond");
 }
 

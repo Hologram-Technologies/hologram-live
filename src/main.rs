@@ -8,26 +8,40 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    let raw_args: Vec<String> = std::env::args().collect();
-    if raw_args.iter().any(|arg| arg == "--prism") || std::env::var("HOLOGRAM_ENGINE").as_deref() == Ok("prismpm") {
-        let cmd_name = raw_args.get(1).map(|s| s.as_str()).unwrap_or("help");
-        let cmd_to_run = if cmd_name == "--prism" {
-            raw_args.get(2).map(|s| s.as_str()).unwrap_or("help")
-        } else {
-            cmd_name
-        };
-        let response = hologram_live::dispatchString(cmd_to_run.to_string());
-        println!("{response}");
-        return;
+    let mut raw_args: Vec<String> = std::env::args().collect();
+    let is_prism = raw_args.iter().any(|arg| arg == "--prism")
+        || std::env::var("HOLOGRAM_ENGINE").as_deref() == Ok("prismpm");
+
+    let is_json = raw_args.iter().any(|arg| arg == "--json");
+
+    if is_prism {
+        std::env::set_var("HOLOGRAM_ENGINE", "prismpm");
+        raw_args.retain(|arg| arg != "--prism");
+
+        // Validate command route against PrismPM declarative model
+        let subcmd = raw_args
+            .iter()
+            .skip(1)
+            .find(|arg| !arg.starts_with('-'))
+            .map_or("help", std::string::String::as_str);
+
+        let prism_cmd = hologram_live::parseCliCommand(subcmd.to_string());
+        if prism_cmd == hologram_live::CliCommand::Unknown {
+            let error = LiveError::Capability(format!(
+                "command '{subcmd}' is not modeled or permitted by the PrismPM system architecture"
+            ));
+            exit(&error, is_json);
+        }
     }
+
+    let raw_os_args: Vec<std::ffi::OsString> = raw_args.into_iter().map(std::ffi::OsString::from).collect();
 
     #[cfg(feature = "oci")]
     let cli = {
         // The reference image's command names, when this binary is linked as
         // `registry` or `entrypoint.sh`.
-        let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
-        match cli::registry_argv::rewrite(&args) {
-            None => cli::Cli::parse(),
+        match cli::registry_argv::rewrite(&raw_os_args) {
+            None => cli::Cli::parse_from(&raw_os_args),
             Some(cli::registry_argv::Rewritten::Args(rewritten)) => cli::Cli::parse_from(rewritten),
             Some(cli::registry_argv::Rewritten::Print(text)) => {
                 println!("{text}");
@@ -40,7 +54,7 @@ async fn main() {
         }
     };
     #[cfg(not(feature = "oci"))]
-    let cli = cli::Cli::parse();
+    let cli = cli::Cli::parse_from(&raw_os_args);
     let json = cli.json;
     let (tracing_config, telemetry_config) = cli.observability_config();
     let tracing_handle =

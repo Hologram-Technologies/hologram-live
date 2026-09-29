@@ -3,6 +3,7 @@ use clap::{Args, Subcommand};
 use hologram::space::address_bytes;
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::inspect_bytes;
+use hologram_live::{InferenceCostProfile, MatrixDimension};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,20 @@ pub struct AiArgs {
 enum AiCommand {
     /// Inspect inference-model services without initializing an engine.
     Inspect { path: PathBuf },
+    /// Evaluate the UOR/Prism formal inference cost-model for model dimensions.
+    #[command(name = "cost-model")]
+    CostModel {
+        #[arg(long, default_value = "1")]
+        m: u64,
+        #[arg(long, default_value = "4096")]
+        k: u64,
+        #[arg(long, default_value = "4096")]
+        n: u64,
+        #[arg(long, default_value = "512")]
+        total_tokens: u64,
+        #[arg(long, default_value = "256")]
+        prefix_tokens: u64,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -26,6 +41,8 @@ struct AiInspection {
     archive_fingerprint: String,
     application_kappa: String,
     models: Vec<AiModel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cost_model: Option<InferenceCostProfile>,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,6 +61,20 @@ pub async fn run(cli: Cli, args: AiArgs) -> Result<()> {
                 .await
                 .map_err(|error| LiveError::io(&path, error))?;
             helpers::print(&cli, &inspect_model_archive(&path, &bytes)?)
+        }
+        AiCommand::CostModel {
+            m,
+            k,
+            n,
+            total_tokens,
+            prefix_tokens,
+        } => {
+            let profile = InferenceCostProfile::evaluate(
+                MatrixDimension::new(m, k, n),
+                total_tokens,
+                prefix_tokens,
+            );
+            helpers::print(&cli, &profile)
         }
     }
 }
@@ -87,6 +118,11 @@ fn inspect_model_archive(path: &Path, bytes: &[u8]) -> Result<AiInspection> {
             LiveError::InvalidHolo(format!("{} has no application identity", path.display()))
         })?,
         models,
+        cost_model: Some(InferenceCostProfile::evaluate(
+            MatrixDimension::new(1, 4096, 4096),
+            512,
+            256,
+        )),
     })
 }
 

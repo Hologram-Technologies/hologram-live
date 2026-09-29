@@ -59,4 +59,5 @@ pub mod update;
 pub mod util;
 
 pub use error::{LiveError, Result};
+pub use inference::cost_model::*;
 pub use prism_hologram::*;

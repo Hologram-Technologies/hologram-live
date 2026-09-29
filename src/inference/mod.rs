@@ -17,6 +17,8 @@ mod llamacpp;
 mod ollama;
 mod vllm;
 mod weightc;
+pub mod cost_model;
+pub use cost_model::*;
 
 #[cfg(feature = "burn")]
 pub use burn::BurnEngine;

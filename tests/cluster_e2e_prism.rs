@@ -53,14 +53,18 @@ fn test_compose_spec_oracle_validation() {
         std::fs::write(&secret_file, "verified-e2e-cluster-jwt-secret-token")
             .expect("write dummy secret");
 
-        let release_dir = compose_path
-            .parent()
-            .expect("projections dir")
-            .join("release");
-        let _ = std::fs::create_dir_all(&release_dir);
+        let release_dir = temp_dir.path().join("release");
+        std::fs::create_dir_all(&release_dir).expect("create dummy release dir");
 
         let output = Command::new("docker")
-            .args(["compose", "-f", compose_path.to_str().unwrap(), "config"])
+            .args([
+                "compose",
+                "--project-directory",
+                temp_dir.path().to_str().unwrap(),
+                "-f",
+                compose_path.to_str().unwrap(),
+                "config",
+            ])
             .env("PRISMPM_SECRET_DIR", temp_dir.path().to_str().unwrap())
             .output()
             .expect("Execute docker compose config");

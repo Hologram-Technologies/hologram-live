@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 mod ai;
 mod app;
+mod cas;
 mod chat;
 mod compile;
 mod config;
@@ -15,12 +16,14 @@ mod helpers;
 mod history;
 mod holo;
 mod init;
+mod inspect;
 mod models;
 mod modules;
 mod nodes;
 #[cfg(feature = "oci")]
 mod oci;
 mod openapi;
+mod plan;
 mod plugins;
 mod pull;
 mod push;
@@ -36,6 +39,7 @@ mod status;
 mod stop;
 mod tracing;
 mod update;
+mod verify;
 
 #[derive(Debug, Clone, Parser)]
 #[command(
@@ -119,6 +123,16 @@ enum Command {
     Update(update::UpdateArgs),
     /// Validate configuration, module resolution, and local health.
     Doctor,
+    /// Content-addressed storage daemon, `SQLite` check probe, and schema migration.
+    Cas(cas::CasArgs),
+    /// Inspect .holo container archives, layouts, and manifests.
+    Inspect(inspect::InspectArgs),
+    /// Formally verify the local or cluster system against the `PrismPM` validation certificate and authoritative oracles.
+    Verify(verify::VerifyArgs),
+    /// Display the deterministic system reconciliation plan and component DAG from the `PrismPM` declarative architecture.
+    Plan(plan::PlanArgs),
+    /// Run the module host in the foreground (canonical alias for serve).
+    Server(serve::ServeArgs),
 }
 
 impl Cli {
@@ -129,7 +143,7 @@ impl Cli {
     )]
     fn registry_config(&self) -> Option<PathBuf> {
         #[cfg(feature = "oci")]
-        if let Command::Serve(args) = &self.command {
+        if let Command::Serve(args) | Command::Server(args) = &self.command {
             return args.registry_config.clone();
         }
         None
@@ -194,6 +208,11 @@ impl Cli {
             Command::Openapi(args) => openapi::run(self, args).await,
             Command::Update(args) => update::run(self, args).await,
             Command::Doctor => doctor::run(self).await,
+            Command::Cas(args) => cas::run(self, args).await,
+            Command::Inspect(args) => inspect::run(self, args).await,
+            Command::Verify(args) => verify::run(self, args).await,
+            Command::Plan(args) => plan::run(self, args).await,
+            Command::Server(args) => serve::run(self, args, tracing_handle).await,
         }
     }
 }

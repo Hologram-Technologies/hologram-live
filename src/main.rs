@@ -25,7 +25,23 @@ async fn main() {
             .find(|arg| !arg.starts_with('-'))
             .map_or("help", std::string::String::as_str);
 
-        let prism_cmd = hologram_live::parseCliCommand(subcmd.to_string());
+        // Canonicalize CLI subcommands to their formal PrismPM capability routes:
+        // - `start` is the daemonized lifecycle variant of `serve`
+        // - `modules` is the plugin/component inventory capability (`plugins`)
+        // - `registry` is the OCI distribution storage capability (`oci`)
+        // - `holo` is the container inspection and execution capability (`inspect`)
+        // - `server` is the API gateway server capability (`serve`)
+        // - `cas` is the content-addressed storage capability (`files`)
+        let canonical_cmd = match subcmd {
+            "start" | "server" => "serve",
+            "modules" => "plugins",
+            "registry" => "oci",
+            "holo" => "inspect",
+            "cas" => "files",
+            other => other,
+        };
+
+        let prism_cmd = hologram_live::parseCliCommand(canonical_cmd.to_string());
         if prism_cmd == hologram_live::CliCommand::Unknown {
             let error = LiveError::Capability(format!(
                 "command '{subcmd}' is not modeled or permitted by the PrismPM system architecture"

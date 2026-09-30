@@ -433,3 +433,62 @@ fn test_uor_prism_cost_model_oracle() {
     assert_eq!(eval.effective_tokens, 20);
     assert!(eval.is_optimal);
 }
+
+// ============================================================================
+// 5. Live Execution of Verification, Planning, CAS, and Worker Probes
+// ============================================================================
+
+#[test]
+fn test_live_cli_extended_prism_commands() {
+    let binary_path = env!("CARGO_BIN_EXE_hologram");
+
+    // 1. hologram verify --json
+    let verify_output = Command::new(binary_path)
+        .args(["--prism", "verify", "--json"])
+        .output()
+        .expect("Execute verify");
+    assert_eq!(verify_output.status.code(), Some(0));
+    let verify_val: serde_json::Value =
+        serde_json::from_slice(&verify_output.stdout).expect("Valid JSON from verify");
+    assert_eq!(verify_val["status"], "verified");
+    assert_eq!(verify_val["engine"], "prismpm");
+
+    // 2. hologram plan --json
+    let plan_output = Command::new(binary_path)
+        .args(["--prism", "plan", "--json"])
+        .output()
+        .expect("Execute plan");
+    assert_eq!(plan_output.status.code(), Some(0));
+    let plan_val: serde_json::Value =
+        serde_json::from_slice(&plan_output.stdout).expect("Valid JSON from plan");
+    assert_eq!(plan_val["status"], "ready");
+    assert_eq!(plan_val["system"], "hologram-live");
+
+    // 3. hologram cas check
+    let cas_check = Command::new(binary_path)
+        .args(["--prism", "cas", "check"])
+        .output()
+        .expect("Execute cas check");
+    assert_eq!(cas_check.status.code(), Some(0));
+
+    // 4. hologram cas migrate
+    let cas_migrate = Command::new(binary_path)
+        .args(["--prism", "cas", "migrate"])
+        .output()
+        .expect("Execute cas migrate");
+    assert_eq!(cas_migrate.status.code(), Some(0));
+
+    // 5. hologram ai ping
+    let ai_ping = Command::new(binary_path)
+        .args(["--prism", "ai", "ping"])
+        .output()
+        .expect("Execute ai ping");
+    assert_eq!(ai_ping.status.code(), Some(0));
+
+    // 6. hologram ai worker
+    let ai_worker = Command::new(binary_path)
+        .args(["--prism", "ai", "worker"])
+        .output()
+        .expect("Execute ai worker");
+    assert_eq!(ai_worker.status.code(), Some(0));
+}

@@ -164,7 +164,7 @@ async fn info(cli: &Cli, request: RpcRequest) -> Result<()> {
     }
 }
 
-async fn inspect(cli: &Cli, reference: String, verify: bool) -> Result<()> {
+pub(crate) async fn inspect(cli: &Cli, reference: String, verify: bool) -> Result<()> {
     if reference.starts_with("blake3:") {
         let request = if verify {
             RpcRequest::HoloVerify { kappa: reference }

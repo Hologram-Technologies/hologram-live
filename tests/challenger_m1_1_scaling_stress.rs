@@ -1,5 +1,14 @@
 #![forbid(unsafe_code)]
-#![allow(clippy::float_cmp, clippy::unreadable_literal, clippy::cast_lossless)]
+#![allow(
+    clippy::float_cmp,
+    clippy::unreadable_literal,
+    clippy::cast_lossless,
+    clippy::similar_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::manual_div_ceil
+)]
 
 use hologram_live::{
     evaluate_ai_operations_comparison, kv_effective_tokens, ModelSpec,

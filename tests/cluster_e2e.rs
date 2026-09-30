@@ -370,8 +370,7 @@ fn the_joiner_comes_to_admit_the_seed() {
                 owner_endpoint(first.port, resource).as_deref() == Some(first_endpoint.as_str())
             })
             .is_some_and(|resource| {
-                owner_endpoint(second.port, &resource).as_deref()
-                    == Some(first_endpoint.as_str())
+                owner_endpoint(second.port, &resource).as_deref() == Some(first_endpoint.as_str())
             });
         if agreed {
             return;

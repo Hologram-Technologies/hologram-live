@@ -14,6 +14,11 @@ Measures:
 
 import json
 import os
+
+try:
+    import resource
+except ImportError:  # Windows
+    resource = None
 import statistics
 import subprocess
 import sys
@@ -33,9 +38,8 @@ def measure_command(args: list[str], iterations: int = NUM_ITERATIONS) -> dict:
 
     for _ in range(iterations):
         start = time.perf_counter()
-        # Use /usr/bin/time to capture peak RSS
         proc = subprocess.run(
-            ["/usr/bin/time", "-v", str(BINARY_PATH)] + args,
+            [str(BINARY_PATH)] + args,
             capture_output=True,
             text=True,
         )
@@ -45,16 +49,12 @@ def measure_command(args: list[str], iterations: int = NUM_ITERATIONS) -> dict:
             continue
         durations.append((end - start) * 1000.0)  # ms
 
-        # Parse Maximum resident set size
-        for line in proc.stderr.splitlines():
-            if "Maximum resident set size" in line:
-                parts = line.split(":")
-                if len(parts) == 2:
-                    try:
-                        max_rss_kb.append(int(parts[1].strip()))
-                    except ValueError:
-                        pass
-                break
+        # Peak RSS of the children so far, without GNU time: /usr/bin/time -v
+        # exists on neither macOS nor a stock CI runner. ru_maxrss is KiB on
+        # Linux and bytes on macOS.
+        if resource is not None:
+            rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+            max_rss_kb.append(rss if sys.platform.startswith("linux") else rss / 1024.0)
 
     if not durations:
         return {"error": "All executions failed"}
@@ -137,6 +137,11 @@ def benchmark_uor_cost_model() -> dict:
 def benchmark_cluster_projections() -> dict:
     """Benchmark Docker Compose and Kubernetes projection reconciliation."""
     build_dir = Path(".prism/build")
+    if not build_dir.is_dir() or not any(build_dir.iterdir()):
+        # Nothing has been planned yet (a fresh checkout, CI): there are no
+        # projections to reconcile, so this section reports empty rather than
+        # failing the whole benchmark.
+        return {"cases": [], "skipped": "no .prism/build projections"}
     latest = sorted([p for p in build_dir.iterdir() if p.is_dir()], key=os.path.getmtime)[-1]
     compose_path = latest / "projections/compose.json"
     k8s_path = latest / "projections/kubernetes.json"

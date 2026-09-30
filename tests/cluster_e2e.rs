@@ -359,38 +359,34 @@ fn the_joiner_comes_to_admit_the_seed() {
             .and_then(|node| node["endpoint"].as_str().map(str::to_owned))
     };
 
-    // Find a resource key the seed assigns to *itself* — guaranteed to turn
-    // up quickly among a handful of samples, since a node always trusts its
-    // own identity for at least some share of the rendezvous-hash space.
+    // The joiner must come to answer a placement question the same way the
+    // seed does: for a key the seed assigns to itself, the joiner names the
+    // seed too, once bidirectional admission has had time to converge.
+    //
+    // The key is re-sampled on every poll rather than fixed up front. With
+    // the harness's three-second TTL a key's ownership legitimately churns
+    // under load — a record can expire between the two queries — and the
+    // property this test pins is that the two sides agree, not that one
+    // particular key's owner is stable for a minute. Fixing the key turned
+    // ordinary TTL churn into a hard failure (the reproducible Linux CI
+    // flake), with no admission defect anywhere in it.
     let deadline = Instant::now() + CONVERGENCE_DEADLINE;
-    let resource = loop {
-        if let Some(found) = (0..64)
+    loop {
+        let agreed = (0..64)
             .map(|index| format!("bidirectional-admission-check:{index}"))
             .find(|resource| {
                 owner_endpoint(first.port, resource).as_deref() == Some(first_endpoint.as_str())
             })
-        {
-            break found;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the seed never named itself owner of any sampled key"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    };
-
-    // The joiner must answer the identical question about the identical key
-    // with the seed's endpoint too, once bidirectional admission has had time
-    // to converge.
-    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
-    loop {
-        if owner_endpoint(second.port, &resource).as_deref() == Some(first_endpoint.as_str()) {
+            .is_some_and(|resource| {
+                owner_endpoint(second.port, &resource).as_deref() == Some(first_endpoint.as_str())
+            });
+        if agreed {
             return;
         }
         assert!(
             Instant::now() < deadline,
-            "the joiner never came to admit the seed: querying the joiner for a key the seed \
-             assigns to itself did not return the seed's endpoint"
+            "the joiner never came to admit the seed: for no key the seed assigns to itself \
+             did the joiner return the seed's endpoint"
         );
         std::thread::sleep(Duration::from_millis(100));
     }

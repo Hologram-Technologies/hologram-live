@@ -102,6 +102,11 @@ pub trait ClusterNetwork: Send + Sync {
     fn local_address(&self) -> Option<String>;
     /// Whether this network can reach the given address.
     fn accepts(&self, address: &str) -> bool;
+    /// The recipient a proof for `address` must name, derived from the address
+    /// this network is about to dial — never from a peer's claim about a third
+    /// party. HTTP names the normalized origin; a key-addressed network names
+    /// the bare node id, because there the address *is* the identity.
+    fn recipient_for(&self, address: &str) -> String;
     /// One request/response exchange with a peer.
     ///
     /// An implementation **must** stop reading as soon as the accumulated body
@@ -159,6 +164,10 @@ impl ClusterNetwork for HttpNetwork {
 
     fn accepts(&self, address: &str) -> bool {
         address.starts_with("https://") || address.starts_with("http://")
+    }
+
+    fn recipient_for(&self, address: &str) -> String {
+        crate::cluster::recipient_for(address)
     }
 
     async fn send(&self, peer: &str, request: ClusterRequest) -> Result<ClusterResponse> {
@@ -252,6 +261,14 @@ impl NetworkRegistry {
             .find(|network| network.accepts(address))
     }
 
+    /// The recipient a proof for `address` must name, according to the network
+    /// that will dial it. `None` when no network accepts the address — the same
+    /// condition under which `send` would fail, so a caller can fail early.
+    pub fn recipient_for(&self, address: &str) -> Option<String> {
+        self.route(address)
+            .map(|network| network.recipient_for(address))
+    }
+
     pub async fn send(&self, address: &str, request: ClusterRequest) -> Result<ClusterResponse> {
         let network = self.route(address).ok_or_else(|| {
             LiveError::Transport(format!("no cluster network can reach {address}"))
@@ -286,6 +303,9 @@ mod tests {
         }
         fn accepts(&self, address: &str) -> bool {
             address.starts_with(self.scheme)
+        }
+        fn recipient_for(&self, address: &str) -> String {
+            address.to_owned()
         }
         async fn send(&self, peer: &str, _request: ClusterRequest) -> Result<ClusterResponse> {
             Ok(ClusterResponse {

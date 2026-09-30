@@ -1,7 +1,7 @@
 //! Immutable object reconciliation against a cluster peer.
 
 use super::network::{ClusterResponse, NetworkRegistry};
-use super::{proof, recipient_for, signed_request, OBJECTS_PATH};
+use super::{proof, signed_request, SignedTarget, OBJECTS_PATH};
 use crate::app::AppState;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ObjectPage, ObjectQuery};
@@ -55,26 +55,34 @@ pub(super) async fn replicate_peer(
     endpoint: &str,
     token: &str,
 ) -> Result<()> {
-    let recipient = recipient_for(endpoint);
+    // The recipient comes from the network that will dial this endpoint: an
+    // HTTP origin for `https:` peers, the bare node id for key-addressed ones
+    // (see `ClusterNetwork::recipient_for`).
+    let recipient = networks
+        .recipient_for(endpoint)
+        .ok_or_else(|| LiveError::Config(format!("no cluster network can reach {endpoint}")))?;
     let max_objects = state.config().cluster.replication_max_objects_per_round;
     let max_bytes = state.config().cluster.replication_max_object_bytes;
     let mut cursor = None;
     let mut transferred = 0_usize;
     let mut outcome = RoundOutcome::default();
     loop {
-        let mut inventory_url = cluster_url(endpoint, OBJECTS_PATH)?;
         let remaining = max_objects.saturating_sub(transferred);
         if remaining == 0 {
             break;
         }
         let limit = remaining.min(ObjectQuery::MAX_LIMIT as usize);
-        {
-            let mut query = inventory_url.query_pairs_mut();
-            query.append_pair("limit", &limit.to_string());
+        // The query is form-encoded directly, without a base URL: a
+        // key-addressed endpoint (`iroh:ed25519:…`) has no origin to parse one
+        // from, and the proof binds this exact string.
+        let query = {
+            let mut pairs = url::form_urlencoded::Serializer::new(String::new());
+            pairs.append_pair("limit", &limit.to_string());
             if let Some(cursor) = cursor.as_deref() {
-                query.append_pair("cursor", cursor);
+                pairs.append_pair("cursor", cursor);
             }
-        }
+            pairs.finish()
+        };
         // No ceiling: the inventory has never carried one (it used to be read
         // by `Response::json`, which is unbounded too), and inventing a byte
         // figure here would be a new refusal rather than a preserved bound.
@@ -84,9 +92,12 @@ pub(super) async fn replicate_peer(
             state,
             networks,
             endpoint,
-            &inventory_url,
+            SignedTarget {
+                path: OBJECTS_PATH,
+                query: Some(&query),
+                recipient: &recipient,
+            },
             token,
-            &recipient,
             None,
         )
         .await?;
@@ -128,15 +139,18 @@ pub(super) async fn replicate_peer(
                 if present {
                     return Ok(false);
                 }
-                let url = cluster_url(endpoint, &format!("{OBJECTS_PATH}/{}", metadata.id))?;
+                let path = format!("{OBJECTS_PATH}/{}", metadata.id);
                 // The transfer bound, enforced while the object is read.
                 let response = signed_get(
                     state,
                     networks,
                     endpoint,
-                    &url,
+                    SignedTarget {
+                        path: &path,
+                        query: None,
+                        recipient: &recipient,
+                    },
                     token,
-                    &recipient,
                     Some(max_bytes),
                 )
                 .await?;
@@ -234,16 +248,10 @@ fn fetch_failure(status: u16, message: String) -> LiveError {
     }
 }
 
-pub(super) fn cluster_url(endpoint: &str, path: &str) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(endpoint)
-        .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
-    url.set_path(path);
-    Ok(url)
-}
-
-/// `url` is built from `endpoint` by [`cluster_url`], so the path and query the
-/// proof binds are exactly the ones the request carries; `endpoint` is what the
-/// registry routes on, and `recipient` is the origin the proof was minted for.
+/// The proof binds exactly the `path` and `query` the request carries;
+/// `endpoint` is what the registry routes on, and `recipient` is what the
+/// network dialling `endpoint` derived for the proof (an HTTP origin, or the
+/// bare node id for a key-addressed peer).
 ///
 /// `max_response_bytes` is the caller's ceiling on the answer, enforced by the
 /// network while it reads (see [`super::network::ClusterNetwork::send`]).
@@ -251,18 +259,17 @@ pub(super) async fn signed_get(
     state: &AppState,
     networks: &NetworkRegistry,
     endpoint: &str,
-    url: &reqwest::Url,
+    target: SignedTarget<'_>,
     token: &str,
-    recipient: &str,
     max_response_bytes: Option<u64>,
 ) -> Result<ClusterResponse> {
-    proof::reject_separators("GET", url.path(), url.query(), recipient)?;
+    proof::reject_separators("GET", target.path, target.query, target.recipient)?;
     let request_proof = proof::sign_request(
         state.identity(),
-        recipient,
+        target.recipient,
         "GET",
-        url.path(),
-        url.query(),
+        target.path,
+        target.query,
         &[],
     );
     networks
@@ -270,9 +277,8 @@ pub(super) async fn signed_get(
             endpoint,
             signed_request(
                 "GET",
-                url,
+                target,
                 Vec::new(),
-                recipient,
                 &request_proof,
                 token,
                 max_response_bytes,
@@ -361,17 +367,18 @@ mod tests {
 
     #[test]
     fn peer_object_paths_do_not_replace_the_advertised_origin() {
-        let url = cluster_url("https://node.example:11435", OBJECTS_PATH).expect("inventory URL");
+        // The path a peer is asked for is built from the route constant alone,
+        // so nothing in the endpoint — an origin's path, or a key-addressed
+        // endpoint's opaque `iroh:` form — can steer it.
         assert_eq!(
-            url.as_str(),
-            "https://node.example:11435/api/v1/cluster/objects"
+            format!("{OBJECTS_PATH}/blake3:abc"),
+            "/api/v1/cluster/objects/blake3:abc"
         );
-        let object = cluster_url(
-            "https://node.example:11435",
-            "/api/v1/cluster/objects/blake3:abc",
-        )
-        .expect("object URL");
-        assert_eq!(object.path(), "/api/v1/cluster/objects/blake3:abc");
+        // And the query the proof binds is form-encoded exactly once.
+        let mut pairs = url::form_urlencoded::Serializer::new(String::new());
+        pairs.append_pair("limit", "10");
+        pairs.append_pair("cursor", "blake3:ab/c?d e");
+        assert_eq!(pairs.finish(), "limit=10&cursor=blake3%3Aab%2Fc%3Fd+e");
     }
 
     // Fix round 1, finding 4: nothing previously drove `replicate_peer`

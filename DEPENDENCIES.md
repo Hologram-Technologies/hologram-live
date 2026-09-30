@@ -84,3 +84,23 @@ The Kappa Registry provider (ADR 021) still speaks to an external `kappa-server`
 of these crates. With `oci` on, the build gains two bundled C libraries (`lzma-sys`, `bzip2-sys`) through `kappa-core`.
 `kappa-core` needs `dcbor`, vendored in `third_party/dcbor` (BSD-2-Clause-Patent). `aws-lc` stays out: the copy
 carries a patch that turns the store's encryption backend off, and `scripts/check-kappa-pin.sh` fails if it returns.
+
+## Optional: the iroh cluster transport (`--features p2p`)
+
+Off by default (ADRs 033/034); a stock build resolves none of these. Phase 2a of #179: a second
+`ClusterNetwork` dialled by public key, so a node behind NAT joins without a routable address. The
+design is `docs/superpowers/specs/2026-09-25-iroh-transport-design.md`.
+
+| Dependency | Purpose |
+| --- | --- |
+| `iroh` (`default-features = false`, `tls-ring`) | QUIC connections dialled by public key; hole punching and optional relays. ring only: aws-lc and openssl stay out of the graph, and `scripts/check-kappa-pin.sh` runs its forbidden-crate tree check over `--features oci,p2p` |
+| `hyper` | HTTP/1 over the iroh duplex, server and client; already in the graph through axum |
+| `http-body-util` | request/response bodies over the iroh duplex; already locked through axum |
+
+`uor-prism-crypto` is patched to `Hologram-Technologies/prism` branch `relax-blake3-pin`: the
+published 0.4.0 pins blake3 to `>=1.5, <1.6` for its own MSRV, iroh needs `^1.8.3`, and Cargo will
+not hold two semver-compatible blake3 versions. The patch changes the requirement only, no code.
+Offered upstream as UOR-Foundation/prism#3; drop the patch when that lands in a release.
+
+`dlopen2` appears in the lockfile through this tree and is never compiled — it is not on a normal
+build edge, and the daemon still has no dynamic native plugin loader.

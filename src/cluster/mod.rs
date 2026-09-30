@@ -6,6 +6,8 @@
 
 pub(crate) mod admission;
 pub(crate) mod identity;
+#[cfg(feature = "p2p")]
+pub(crate) mod iroh;
 mod membership;
 pub(crate) mod network;
 pub(crate) mod proof;
@@ -109,39 +111,100 @@ fn secure_token_file(_path: &Path) -> Result<()> {
 }
 
 pub fn spawn(state: AppState) -> Option<JoinHandle<()>> {
-    state.config().cluster.advertise_endpoint.as_ref()?;
+    let cluster = &state.config().cluster;
+    let serves_http = cluster.transport != "iroh" && cluster.advertise_endpoint.is_some();
+    let serves_iroh =
+        cfg!(feature = "p2p") && matches!(cluster.transport.as_str(), "iroh" | "both");
+    if !serves_http && !serves_iroh {
+        return None;
+    }
     Some(tokio::spawn(run(state)))
 }
 
 async fn run(state: AppState) {
     let config = state.config().cluster.clone();
-    let self_endpoint = config
-        .advertise_endpoint
-        .as_deref()
-        .map(normalize_endpoint)
-        .expect("cluster task requires an advertised endpoint");
+    // Before any TLS client or endpoint is built: reqwest panics without a
+    // rustls provider, and the iroh endpoint's TLS stack needs it too.
+    crate::util::install_crypto_provider();
+    let mut networks_vec: Vec<Arc<dyn network::ClusterNetwork>> = Vec::new();
+    let mut http_endpoint = None;
+    if config.transport != "iroh" {
+        let endpoint = config
+            .advertise_endpoint
+            .as_deref()
+            .map(normalize_endpoint)
+            .expect("cluster task requires an advertised endpoint");
+        http_endpoint = Some(endpoint);
+    }
+    #[cfg(feature = "p2p")]
+    let mut iroh_address = None;
+    #[cfg(feature = "p2p")]
+    if matches!(config.transport.as_str(), "iroh" | "both") {
+        match iroh::IrohNetwork::bind(state.identity(), &config.relays, &config.discovery).await {
+            Ok(network) => {
+                let address = network.local_node_address();
+                let serve_endpoint = network.endpoint().clone();
+                let serve_state = state.clone();
+                tokio::spawn(async move {
+                    iroh::serve(serve_endpoint, serve_state).await;
+                });
+                networks_vec.push(Arc::new(network));
+                iroh_address = Some(address);
+                if config.discovery == "none"
+                    && config.relays.is_empty()
+                    && !config
+                        .seeds
+                        .iter()
+                        .any(|seed| seed.starts_with(iroh::SCHEME))
+                {
+                    // A detectable dead end: no discovery, no relays and no
+                    // key-addressed seed means this node can be dialled by
+                    // nobody it has not already met. Say what to enable.
+                    tracing::warn!(
+                        "cluster transport includes iroh but discovery is \"none\", no relays are configured and no seed is key-addressed; set cluster.discovery = \"dns\" or cluster.relays for internet-wide reach"
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to bind the iroh cluster transport");
+            }
+        }
+    }
+    if let Some(endpoint) = &http_endpoint {
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(config.request_timeout_secs))
+            .build()
+        {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::error!(%error, "failed to build cluster membership client");
+                return;
+            }
+        };
+        networks_vec.push(Arc::new(
+            HttpNetwork::new(client).with_advertised(Some(endpoint.clone())),
+        ));
+    }
+    // The record's endpoint stays the HTTP origin when there is one, so a
+    // mixed cluster keeps one spelling for the node through migration; an
+    // iroh-only node records its key-addressed form.
+    #[cfg(feature = "p2p")]
+    let self_endpoint = http_endpoint.or(iroh_address);
+    #[cfg(not(feature = "p2p"))]
+    let self_endpoint = http_endpoint;
+    let Some(self_endpoint) = self_endpoint else {
+        tracing::error!("cluster task has no transport to run on");
+        return;
+    };
     let self_node = state.local_node_record(self_endpoint.clone());
     let Some(token) = state.cluster_token().map(str::to_owned) else {
         tracing::error!("cluster token disappeared after configuration validation");
         return;
     };
-    crate::util::install_crypto_provider();
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(config.request_timeout_secs))
-        .build()
-    {
-        Ok(client) => client,
-        Err(error) => {
-            tracing::error!(%error, "failed to build cluster membership client");
-            return;
-        }
-    };
-    // One network today, and the call sites below name none of them: every
-    // request goes out through the registry, which routes on the address's own
-    // scheme. Phase 2 pushes an iroh network into this same vector.
-    let networks = Arc::new(NetworkRegistry::new(vec![Arc::new(
-        HttpNetwork::new(client).with_advertised(Some(self_endpoint.clone())),
-    )]));
+    // Every request goes out through the registry, which routes on the
+    // address's own scheme: `https:` to the HTTP network, `iroh:` to the
+    // key-addressed one when the p2p feature built it.
+    let networks = Arc::new(NetworkRegistry::new(networks_vec));
     tracing::debug!(
         addresses = ?networks.local_addresses(),
         "cluster networks are ready"
@@ -351,20 +414,16 @@ async fn contact_peer(
     token: &str,
     node: NodeRecord,
 ) -> Result<ClusterJoinResponse> {
-    let mut url = reqwest::Url::parse(endpoint)
-        .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
-    url.set_path(JOIN_PATH);
     let body = serde_json::to_vec(&ClusterJoinRequest { node })?;
-    let recipient = recipient_for(endpoint);
-    proof::reject_separators("POST", url.path(), url.query(), &recipient)?;
-    let request_proof = proof::sign_request(
-        state.identity(),
-        &recipient,
-        "POST",
-        url.path(),
-        url.query(),
-        &body,
-    );
+    // The recipient comes from the network that will dial this endpoint: an
+    // HTTP origin for `https:` peers, the bare node id for key-addressed ones.
+    // Derived here, never trusted from the peer (see `recipient_for`).
+    let recipient = networks
+        .recipient_for(endpoint)
+        .ok_or_else(|| LiveError::Config(format!("no cluster network can reach {endpoint}")))?;
+    proof::reject_separators("POST", JOIN_PATH, None, &recipient)?;
+    let request_proof =
+        proof::sign_request(state.identity(), &recipient, "POST", JOIN_PATH, None, &body);
     // Reports this node's membership epoch on the wire (see
     // `proof::EPOCH_HEADER`). The receiver does not currently refuse on a
     // mismatch. `run` re-seeds the peer table from the node directory every
@@ -383,9 +442,12 @@ async fn contact_peer(
     // below still stands as the backstop for a network that does not honour it.
     let mut request = signed_request(
         "POST",
-        &url,
+        SignedTarget {
+            path: JOIN_PATH,
+            query: None,
+            recipient: &recipient,
+        },
         body,
-        &recipient,
         &request_proof,
         token,
         Some(MAX_JOIN_BYTES as u64),
@@ -472,6 +534,14 @@ fn origin_parts(endpoint: &str) -> Option<(String, String, u16)> {
 /// The ticket is derived from the shared token and our node id, so it admits
 /// this node and no other even if it is captured in flight.
 ///
+/// The wire-level target of a signed cluster request: the path and query the
+/// proof binds, and the recipient the dialled network derived for it.
+pub(super) struct SignedTarget<'a> {
+    path: &'a str,
+    query: Option<&'a str>,
+    recipient: &'a str,
+}
+
 /// This is the whole of what used to be a set of HTTP headers, now data on a
 /// [`ClusterRequest`]: a network decides how to put it on the wire and never
 /// what it says. `recipient` in particular arrives already bound into
@@ -480,19 +550,18 @@ fn origin_parts(endpoint: &str) -> Option<(String, String, u16)> {
 /// a larger answer than the caller asked for.
 fn signed_request(
     method: &'static str,
-    url: &reqwest::Url,
+    target: SignedTarget<'_>,
     body: Vec<u8>,
-    recipient: &str,
     request_proof: &proof::RequestProof,
     token: &str,
     max_response_bytes: Option<u64>,
 ) -> ClusterRequest {
     ClusterRequest {
         method,
-        path: url.path().to_owned(),
-        query: url.query().map(str::to_owned),
+        path: target.path.to_owned(),
+        query: target.query.map(str::to_owned),
         body,
-        recipient: recipient.to_owned(),
+        recipient: target.recipient.to_owned(),
         proof: request_proof.clone(),
         ticket: Some(admission::ticket(token, &request_proof.node_id)),
         // Informational, and set by the one caller that reports it; the

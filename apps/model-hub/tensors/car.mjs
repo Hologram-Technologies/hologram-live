@@ -28,6 +28,7 @@ export async function buildCar() {
   const root = json(latest.digest);
   // walk: root -> model index -> manifests -> config + held layers + layouts -> literals
   const need = new Set([latest.digest]);
+  if (root.names) for (const d of [root.names.log, root.names.head]) if (d) need.add(d);   // the names log and its signed head
   const models = JSON.parse(readFileSync(join(STATE, "models.json"), "utf8"));
   for (const [repo, r] of Object.entries(root.models)) {
     const m = models[repo];

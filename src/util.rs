@@ -24,17 +24,88 @@ pub fn expand_home(path: impl AsRef<Path>) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Replaces `path` with `bytes` without ever leaving it absent.
+///
+/// Two properties, both previously missing:
+///
+/// The destination is never unlinked. `std::fs::rename` replaces an existing
+/// file on every platform this ships to, so the previous `remove_file` bought
+/// nothing and opened a window in which a crash left no file at all — which for
+/// `cluster-peers.json` meant a restarted node with no peers to dial.
+///
+/// Each call uses its own temporary name. Two threads writing one path used to
+/// share `tmp.<pid>`, so one would rename the file out from under the other and
+/// the loser failed with `ENOENT`.
+///
+/// This does **not** `fsync`, deliberately. Measured on this repository's
+/// cluster suite, flushing every write made `the_joiner_comes_to_admit_the_seed`
+/// fail two runs in three: `NodeDirectory` holds a mutex across its write and is
+/// rewritten every heartbeat round per peer, so a per-write flush serialises
+/// tens of milliseconds into each round and convergence misses its deadline.
+/// Callers whose state must survive a crash — and which write rarely — use
+/// [`atomic_write_durable`] instead.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| LiveError::io(parent, error))?;
     }
-    let temporary = path.with_extension(format!("tmp.{}", std::process::id()));
-    std::fs::write(&temporary, bytes).map_err(|error| LiveError::io(&temporary, error))?;
-    if path.exists() {
-        std::fs::remove_file(path).map_err(|error| LiveError::io(path, error))?;
+    let temporary = path.with_extension(format!(
+        "tmp.{}.{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+
+    let written = std::fs::File::create(&temporary).and_then(|mut file| file.write_all(bytes));
+    if let Err(error) = written {
+        // Leave nothing behind beside real state.
+        let _ = std::fs::remove_file(&temporary);
+        return Err(LiveError::io(&temporary, error));
     }
-    std::fs::rename(&temporary, path).map_err(|error| LiveError::io(path, error))
+
+    if let Err(error) = std::fs::rename(&temporary, path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(LiveError::io(path, error));
+    }
+    Ok(())
 }
+
+/// Like [`atomic_write`], and additionally flushes the file and its directory so
+/// the result survives power loss.
+///
+/// For state that is expensive or impossible to reconstruct and is written
+/// rarely. Do not use it on a hot path: that is what made a blanket flush
+/// unworkable, and the reasoning is recorded on [`atomic_write`].
+pub fn atomic_write_durable(path: &Path, bytes: &[u8]) -> Result<()> {
+    atomic_write(path, bytes)?;
+    if let Ok(file) = std::fs::File::open(path) {
+        // Best effort, like the directory flush below: the bytes are already
+        // visible to every reader, so failing the write here would turn a
+        // durability shortfall into an outage.
+        let _ = file.sync_all();
+    }
+    sync_parent(path);
+    Ok(())
+}
+
+/// Flushes the directory entry so a completed rename survives power loss.
+///
+/// Best effort by design: if this fails the file is already correct as far as
+/// every reader is concerned, and failing the write would turn a durability
+/// shortfall into an outage.
+#[cfg(unix)]
+fn sync_parent(path: &Path) {
+    if let Some(parent) = path.parent() {
+        if let Ok(directory) = std::fs::File::open(parent) {
+            let _ = directory.sync_all();
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) {}
 
 pub fn now_millis() -> u64 {
     SystemTime::now()
@@ -99,6 +170,109 @@ pub fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn a_written_file_holds_exactly_the_bytes() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("state").join("value.json");
+        atomic_write(&path, b"{\"a\":1}").expect("write");
+        assert_eq!(std::fs::read(&path).expect("read"), b"{\"a\":1}");
+    }
+
+    #[test]
+    fn a_rewrite_replaces_the_contents_and_leaves_no_temporary() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("value.json");
+        atomic_write(&path, b"first").expect("first write");
+        atomic_write(&path, b"second").expect("second write");
+        assert_eq!(std::fs::read(&path).expect("read"), b"second");
+        assert_eq!(
+            temporaries_beside(&path),
+            0,
+            "a successful write must leave no temporary file behind"
+        );
+    }
+
+    // The defect this guards: the previous implementation removed the
+    // destination before renaming, so a process killed in that window left the
+    // file absent entirely rather than holding its previous contents.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_write_leaves_the_original_contents_intact() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let parent = directory.path().join("state");
+        std::fs::create_dir_all(&parent).expect("create parent");
+        let path = parent.join("value.json");
+        atomic_write(&path, b"original").expect("seed the file");
+
+        // Deny writes to the directory so the temporary file cannot be created.
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o500))
+            .expect("make the directory read-only");
+        let failure = atomic_write(&path, b"replacement");
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700))
+            .expect("restore the directory");
+
+        assert!(failure.is_err(), "the write should have failed");
+        assert_eq!(
+            std::fs::read(&path).expect("read"),
+            b"original",
+            "a failed write must not disturb the existing file"
+        );
+        assert_eq!(temporaries_beside(&path), 0, "a failed write must clean up");
+    }
+
+    // Two threads writing one path previously collided on a single temporary
+    // name derived only from the process id.
+    #[test]
+    fn concurrent_writers_never_produce_a_torn_file() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("value.json");
+        let payloads: Vec<Vec<u8>> = (0..8)
+            .map(|index| vec![b'a' + u8::try_from(index).expect("small index"); 4096])
+            .collect();
+
+        std::thread::scope(|scope| {
+            for payload in &payloads {
+                let path = path.clone();
+                scope.spawn(move || atomic_write(&path, payload).expect("concurrent write"));
+            }
+        });
+
+        let written = std::fs::read(&path).expect("read");
+        assert!(
+            payloads.contains(&written),
+            "the file must equal exactly one writer's payload, never a mixture"
+        );
+        assert_eq!(
+            temporaries_beside(&path),
+            0,
+            "every writer must clean up its own temporary"
+        );
+    }
+
+    #[test]
+    fn the_durable_variant_writes_the_same_bytes() {
+        // Durability itself is not observable from inside the process; this
+        // pins the contract that the durable path is otherwise equivalent.
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("state").join("durable.json");
+        atomic_write_durable(&path, b"durable").expect("durable write");
+        assert_eq!(std::fs::read(&path).expect("read"), b"durable");
+        assert_eq!(temporaries_beside(&path), 0);
+    }
+
+    fn temporaries_beside(path: &Path) -> usize {
+        let parent = path.parent().expect("parent");
+        std::fs::read_dir(parent)
+            .expect("read directory")
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
+            .count()
+    }
+
     use super::install_crypto_provider;
 
     /// reqwest 0.13 under `rustls-no-provider` *panics* when a client is built

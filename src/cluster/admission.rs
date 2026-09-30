@@ -9,7 +9,7 @@
 
 use crate::cluster::identity::parse_node_id;
 use crate::error::{LiveError, Result};
-use crate::util::{atomic_write, constant_time_eq, hex};
+use crate::util::{atomic_write_durable, constant_time_eq, hex};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -128,7 +128,7 @@ impl Admission for TokenAdmission {
         // removed from `cluster.trusted_keys` cannot survive in this file.
         match serde_json::to_vec_pretty(&*pinned)
             .map_err(LiveError::from)
-            .and_then(|bytes| atomic_write(&self.path, &bytes))
+            .and_then(|bytes| atomic_write_durable(&self.path, &bytes))
         {
             Ok(()) => {}
             Err(error) => tracing::warn!(%error, "failed to persist pinned cluster identity"),

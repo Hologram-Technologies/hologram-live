@@ -8,13 +8,57 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
+    let mut raw_args: Vec<String> = std::env::args().collect();
+    let is_prism = raw_args.iter().any(|arg| arg == "--prism")
+        || std::env::var("HOLOGRAM_ENGINE").as_deref() == Ok("prismpm");
+
+    let is_json = raw_args.iter().any(|arg| arg == "--json");
+
+    if is_prism {
+        std::env::set_var("HOLOGRAM_ENGINE", "prismpm");
+        raw_args.retain(|arg| arg != "--prism");
+
+        // Validate command route against PrismPM declarative model
+        let subcmd = raw_args
+            .iter()
+            .skip(1)
+            .find(|arg| !arg.starts_with('-'))
+            .map_or("help", std::string::String::as_str);
+
+        // Canonicalize CLI subcommands to their formal PrismPM capability routes:
+        // - `start` is the daemonized lifecycle variant of `serve`
+        // - `modules` is the plugin/component inventory capability (`plugins`)
+        // - `registry` is the OCI distribution storage capability (`oci`)
+        // - `holo` is the container inspection and execution capability (`inspect`)
+        // - `server` is the API gateway server capability (`serve`)
+        // - `cas` is the content-addressed storage capability (`files`)
+        let canonical_cmd = match subcmd {
+            "start" | "server" => "serve",
+            "modules" => "plugins",
+            "registry" => "oci",
+            "holo" => "inspect",
+            "cas" => "files",
+            other => other,
+        };
+
+        let prism_cmd = hologram_live::parseCliCommand(canonical_cmd.to_string());
+        if prism_cmd == hologram_live::CliCommand::Unknown {
+            let error = LiveError::Capability(format!(
+                "command '{subcmd}' is not modeled or permitted by the PrismPM system architecture"
+            ));
+            exit(&error, is_json);
+        }
+    }
+
+    let raw_os_args: Vec<std::ffi::OsString> =
+        raw_args.into_iter().map(std::ffi::OsString::from).collect();
+
     #[cfg(feature = "oci")]
     let cli = {
         // The reference image's command names, when this binary is linked as
         // `registry` or `entrypoint.sh`.
-        let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
-        match cli::registry_argv::rewrite(&args) {
-            None => cli::Cli::parse(),
+        match cli::registry_argv::rewrite(&raw_os_args) {
+            None => cli::Cli::parse_from(&raw_os_args),
             Some(cli::registry_argv::Rewritten::Args(rewritten)) => cli::Cli::parse_from(rewritten),
             Some(cli::registry_argv::Rewritten::Print(text)) => {
                 println!("{text}");
@@ -27,7 +71,7 @@ async fn main() {
         }
     };
     #[cfg(not(feature = "oci"))]
-    let cli = cli::Cli::parse();
+    let cli = cli::Cli::parse_from(&raw_os_args);
     let json = cli.json;
     let (tracing_config, telemetry_config) = cli.observability_config();
     let tracing_handle =

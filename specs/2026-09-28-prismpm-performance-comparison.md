@@ -1,0 +1,1 @@
+../docs/superpowers/specs/2026-09-28-prismpm-performance-comparison.md

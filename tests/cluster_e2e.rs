@@ -338,6 +338,14 @@ fn the_joiner_comes_to_admit_the_seed() {
     let client = reqwest::blocking::Client::new();
     let first_endpoint = format!("http://127.0.0.1:{}", first.port);
 
+    // Do not choose the rendezvous-hash sample while the seed still sees
+    // only itself. Adding the joiner changes the candidate set and can move
+    // ownership of that sample even when admission is working correctly.
+    // Waiting for both directories to contain both records makes the
+    // placement comparison below observe one stable membership snapshot.
+    await_peer_count(&client, first.port, 2);
+    await_peer_count(&client, second.port, 2);
+
     let owner_endpoint = |queried_port: u16, resource: &str| {
         client
             .get(format!(

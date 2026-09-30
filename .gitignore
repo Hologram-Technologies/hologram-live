@@ -1,4 +1,6 @@
 /target/
+/.lexlean/
+/.prism/
 /node_modules/
 /apps/docs/node_modules/
 /apps/docs/dist/
@@ -23,3 +25,4 @@ __pycache__/
 
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
+.agents/

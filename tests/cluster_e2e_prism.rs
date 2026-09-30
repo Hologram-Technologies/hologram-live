@@ -27,7 +27,7 @@ fn find_latest_build_dir() -> Option<PathBuf> {
         .filter(|e| e.path().is_dir())
         .collect();
     entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
-    entries.last().map(|e| e.path())
+    entries.last().map(std::fs::DirEntry::path)
 }
 
 // ============================================================================

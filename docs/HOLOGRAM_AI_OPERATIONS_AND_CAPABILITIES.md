@@ -105,7 +105,9 @@ Empirical benchmarks were conducted using `scripts/compare-ai-scaling.py` and `t
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Llama-3.2-1B** | $1.23\text{B}$ ($1,230,000,000$) | 16 | 2,048 | 32 | 8 | 64 | $32,768\text{ B}$ ($32\text{ KB}$) |
 | **Llama-3.2-3B** | $3.21\text{B}$ ($3,210,000,000$) | 28 | 3,072 | 24 | 8 | 128 | $114,688\text{ B}$ ($112\text{ KB}$) |
+| **Llama-2-7B** | $6.74\text{B}$ ($6,740,000,000$) | 32 | 4,096 | 32 | 32 | 128 | $524,288\text{ B}$ ($512\text{ KB}$) |
 | **Llama-3.1-8B** | $8.03\text{B}$ ($8,030,000,000$) | 32 | 4,096 | 32 | 8 | 128 | $131,072\text{ B}$ ($128\text{ KB}$) |
+| **Llama-2-13B** | $13.00\text{B}$ ($13,000,000,000$) | 40 | 5,120 | 40 | 40 | 128 | $819,200\text{ B}$ ($800\text{ KB}$) |
 | **Llama-3.1-70B** | $70.60\text{B}$ ($70,600,000,000$) | 80 | 8,192 | 64 | 8 | 128 | $327,680\text{ B}$ ($320\text{ KB}$) |
 
 ### 3.2 Full Context Scaling & Working Set Containment Evaluation
@@ -118,14 +120,23 @@ Memory metrics are reported in binary GiB ($1\text{ GiB} = 2^{30}\text{ bytes}$,
 | **Llama-3.2-1B @ 32k** | 32,768 | $50\%$ | $8\text{ GiB}$ ($8.59\text{ GB}$) | $1.60\text{ GiB}$ ($1.72\text{ GB}$) | **$1.08\text{ GiB}$ ($1.16\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
 | **Llama-3.2-3B @ 4k** | 4,096 | $50\%$ | $8\text{ GiB}$ ($8.59\text{ GB}$) | $1.98\text{ GiB}$ ($2.13\text{ GB}$) | **$1.73\text{ GiB}$ ($1.85\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
 | **Llama-3.2-3B @ 32k** | 32,768 | $80\%$ | $8\text{ GiB}$ ($8.59\text{ GB}$) | $5.04\text{ GiB}$ ($5.41\text{ GB}$) | **$2.21\text{ GiB}$ ($2.37\text{ GB}$)** | $80.0\%$ | $75.0\%$ | Safe | **Contained** |
+| **Llama-2-7B @ 4k** | 4,096 | $50\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $5.20\text{ GiB}$ ($5.58\text{ GB}$) | **$4.15\text{ GiB}$ ($4.46\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
+| **Llama-2-7B @ 32k** | 32,768 | $50\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $19.20\text{ GiB}$ ($20.62\text{ GB}$) | **$11.15\text{ GiB}$ ($11.98\text{ GB}$)** | $50.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** |
+| **Llama-2-7B @ 128k (Full)** | 131,072 | $0\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $67.20\text{ GiB}$ ($72.16\text{ GB}$) | **$67.15\text{ GiB}$ ($72.11\text{ GB}$)** | $0.0\%$ | $75.0\%$ | **CRITICAL SWAP** | Exceeds Budget |
+| **Llama-2-7B @ 128k (Full)** | 131,072 | $80\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $67.20\text{ GiB}$ ($72.16\text{ GB}$) | **$15.95\text{ GiB}$ ($17.13\text{ GB}$)** | $80.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** |
 | **Llama-3.1-8B @ 4k** | 4,096 | $50\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $4.30\text{ GiB}$ ($4.62\text{ GB}$) | **$4.00\text{ GiB}$ ($4.30\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
 | **Llama-3.1-8B @ 32k** | 32,768 | $50\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $7.80\text{ GiB}$ ($8.38\text{ GB}$) | **$5.75\text{ GiB}$ ($6.18\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
 | **Llama-3.1-8B @ 128k (Full)** | 131,072 | $0\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $19.80\text{ GiB}$ ($21.26\text{ GB}$) | **$19.75\text{ GiB}$ ($21.21\text{ GB}$)** | $0.0\%$ | $75.0\%$ | **CRITICAL SWAP** | Exceeds Budget |
 | **Llama-3.1-8B @ 128k (Full)** | 131,072 | $50\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $19.80\text{ GiB}$ ($21.26\text{ GB}$) | **$11.75\text{ GiB}$ ($12.62\text{ GB}$)** | $50.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** |
 | **Llama-3.1-8B @ 128k (Full)** | 131,072 | $80\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $19.80\text{ GiB}$ ($21.26\text{ GB}$) | **$6.95\text{ GiB}$ ($7.47\text{ GB}$)** | $80.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** |
+| **Llama-2-13B @ 4k** | 4,096 | $50\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $9.26\text{ GiB}$ ($9.94\text{ GB}$) | **$7.64\text{ GiB}$ ($8.20\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
+| **Llama-2-13B @ 32k** | 32,768 | $50\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $31.13\text{ GiB}$ ($33.43\text{ GB}$) | **$18.57\text{ GiB}$ ($19.94\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
+| **Llama-2-13B @ 128k (Full)** | 131,072 | $0\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $106.13\text{ GiB}$ ($113.96\text{ GB}$) | **$106.07\text{ GiB}$ ($113.90\text{ GB}$)** | $0.0\%$ | $75.0\%$ | **CRITICAL SWAP** | Exceeds Budget |
+| **Llama-2-13B @ 128k (Full)** | 131,072 | $80\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $106.13\text{ GiB}$ ($113.96\text{ GB}$) | **$26.07\text{ GiB}$ ($28.00\text{ GB}$)** | $80.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** |
 | **Llama-3.1-70B @ 4k** | 4,096 | $50\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $34.25\text{ GiB}$ ($36.78\text{ GB}$) | **$33.53\text{ GiB}$ ($36.01\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
 | **Llama-3.1-70B @ 32k** | 32,768 | $50\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $43.00\text{ GiB}$ ($46.17\text{ GB}$) | **$37.91\text{ GiB}$ ($40.70\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **Contained** |
 | **Llama-3.1-70B @ 128k (Full)** | 131,072 | $0\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $73.00\text{ GiB}$ ($78.38\text{ GB}$) | **$72.91\text{ GiB}$ ($78.28\text{ GB}$)** | $0.0\%$ | $75.0\%$ | **CRITICAL SWAP** | Exceeds Budget |
+| **Llama-3.1-70B @ 128k (Full)** | 131,072 | $50\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $73.00\text{ GiB}$ ($78.38\text{ GB}$) | **$52.91\text{ GiB}$ ($56.81\text{ GB}$)** | $50.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** |
 | **Llama-3.1-70B @ 128k (Full)** | 131,072 | $80\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $73.00\text{ GiB}$ ($78.38\text{ GB}$) | **$40.91\text{ GiB}$ ($43.92\text{ GB}$)** | $80.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** |
 
 ### 3.3 Latency, Throughput & Memory Bandwidth Scaling Comparison
@@ -134,7 +145,9 @@ Memory metrics are reported in binary GiB ($1\text{ GiB} = 2^{30}\text{ bytes}$,
 | :--- | :--- | :--- | :--- |
 | **Router Dispatch Latency** | **$13.2\text{ ns}$** | $520.0\text{ ns}$ | **$39.4\times$ lower latency** |
 | **Router Dispatch Throughput** | **$75,757,575\text{ ops/sec}$** | $1,923,076\text{ ops/sec}$ | **$39.4\times$ higher throughput** |
+| **DRAM Memory Traffic (7B)** | **$16,384\text{ B/token}$** ($4 \times \text{hidden}$) | $65,536\text{ B/token}$ ($16 \times \text{hidden}$) | **$75.0\%$ DRAM reduction** |
 | **DRAM Memory Traffic (8B)** | **$16,384\text{ B/token}$** ($4 \times \text{hidden}$) | $65,536\text{ B/token}$ ($16 \times \text{hidden}$) | **$75.0\%$ DRAM reduction** |
+| **DRAM Memory Traffic (13B)** | **$20,480\text{ B/token}$** ($4 \times \text{hidden}$) | $81,920\text{ B/token}$ ($16 \times \text{hidden}$) | **$75.0\%$ DRAM reduction** |
 | **DRAM Memory Traffic (70B)** | **$32,768\text{ B/token}$** ($4 \times \text{hidden}$) | $131,072\text{ B/token}$ ($16 \times \text{hidden}$) | **$75.0\%$ DRAM reduction** |
 | **KV Cache Allocation Pattern** | Static prefix elision, zero heap fragmentation | Dynamic token-by-token heap churn | **Zero reallocation overhead** |
 | **Context Scalability Limit** | Full $128\text{k}$ contained on edge devices | Trashes swap beyond $32\text{k}-64\text{k}$ | **$4\times-8\times$ longer context reach** |

@@ -62,17 +62,26 @@ def main():
         ("3b", 4096, 0.5, 8, "Llama-3.2-3B @ 4k Context (Mobile/Edge)"),
         ("3b", 32768, 0.8, 8, "Llama-3.2-3B @ 32k Context (Mobile/Edge)"),
 
-        # Workstation Workloads (16 GB Budget)
+        # Workstation Workloads (16 GB / 32 GB Budget)
+        ("7b", 4096, 0.5, 16, "Llama-2-7B @ 4k Context (Standard Workstation)"),
+        ("7b", 32768, 0.5, 16, "Llama-2-7B @ 32k Context (Standard Workstation)"),
+        ("7b", 131072, 0.0, 16, "Llama-2-7B @ 128k Full Context (0% Prefix Elision)"),
+        ("7b", 131072, 0.8, 16, "Llama-2-7B @ 128k Full Context (80% Prefix Elision)"),
         ("8b", 4096, 0.5, 16, "Llama-3.1-8B @ 4k Context (Standard Workstation)"),
         ("8b", 32768, 0.5, 16, "Llama-3.1-8B @ 32k Context (Extended Context)"),
         ("8b", 131072, 0.0, 16, "Llama-3.1-8B @ 128k Full Context (0% Prefix Elision)"),
         ("8b", 131072, 0.5, 16, "Llama-3.1-8B @ 128k Full Context (50% Prefix Elision)"),
         ("8b", 131072, 0.8, 16, "Llama-3.1-8B @ 128k Full Context (80% Prefix Elision)"),
+        ("13b", 4096, 0.5, 32, "Llama-2-13B @ 4k Context (High-End Workstation)"),
+        ("13b", 32768, 0.5, 32, "Llama-2-13B @ 32k Context (High-End Workstation)"),
+        ("13b", 131072, 0.0, 32, "Llama-2-13B @ 128k Full Context (0% Prefix Elision)"),
+        ("13b", 131072, 0.8, 32, "Llama-2-13B @ 128k Full Context (80% Prefix Elision)"),
 
         # High-Memory / Server Workloads (64 GB Budget)
         ("70b", 4096, 0.5, 64, "Llama-3.1-70B @ 4k Context (Enterprise Server)"),
         ("70b", 32768, 0.5, 64, "Llama-3.1-70B @ 32k Context (Enterprise Server)"),
         ("70b", 131072, 0.0, 64, "Llama-3.1-70B @ 128k Full Context (0% Prefix Elision)"),
+        ("70b", 131072, 0.5, 64, "Llama-3.1-70B @ 128k Full Context (50% Prefix Elision)"),
         ("70b", 131072, 0.8, 64, "Llama-3.1-70B @ 128k Full Context (80% Prefix Elision)"),
     ]
 

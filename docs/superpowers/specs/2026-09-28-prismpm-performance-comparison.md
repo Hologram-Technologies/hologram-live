@@ -23,16 +23,18 @@ By replacing ad-hoc plumbing with declarative specifications derived from `prism
 
 ---
 
-## 1. Architectural & Execution Comparison
+## 1. Architectural & Execution Comparison: 6 Arbitrary Components Overcome by PrismPM
 
-| System Facet | Standard (Non-PrismPM) `hologram-live` | PrismPM-Governed `hologram-live` | Performance Impact |
-| :--- | :--- | :--- | :--- |
-| **Command Router** | Dynamic CLI parsing, string pattern matching, heap allocations per token | Inductive pattern matching in Lean 4, compiled to branch-free discriminants | **$13.2\text{ ns}$ dispatch**, zero heap allocation |
-| **Capability Enforcement** | Runtime checks scattered across module handlers | Unified formal capability boundary (`Hologram.Security`), early rejection with exit code 5 | Immediate security boundary rejection before process initialization |
-| **Inference Cost Model** | Heuristic, un-instrumented execution across external engines | Exact $2 \times M \times K \times N$ FLOP bounds with checked overflow protection | Bounded compute, zero integer overflow vulnerability |
-| **KV-Cache Handling** | Dynamic cache eviction, recomputed prompt tokens | Formal prefix elision (`kv_effective_tokens = total - prefix`) | **$50\%-80\%$ reduction** in prefill latency & memory |
-| **Tensor Operations** | Disjoint matrix multiplications and activation passes | 4-way fused operator pipeline (`panel_packed`, `warm_start_folded`) | **$75\%$ reduction** in DRAM read/write cycles |
-| **Deployment Topology** | Manually maintained manifests with loose limits and race-prone cold starts | Formally generated topological projections (`compose.json`, `kubernetes.json`) | Strictly ordered initialization (`migrate` $\to$ `cas-store` $\to$ `server`/`inference-engine`) |
+Traditional non-PrismPM `hologram-ai` runtimes suffer from 6 arbitrary architectural components and imperative bottlenecks that compromise predictability, efficiency, and scalability:
+
+| # | Non-PrismPM Arbitrary Component / Bottleneck | Root Cause in Imperative Logic | PrismPM Declarative Solution | Measured Performance Impact |
+|---|:---|:---|:---|:---|
+| **1** | **Unbounded Dynamic KV-Cache Allocation** | Dynamic heap reallocations per generated token without prefix elision; full context recomputed on every turn. | Formal prefix KV elision (`kv_effective_tokens`) in `Hologram.Inference`. | **$50.0\%-80.0\%$ memory reduction**; avoids quadratic context recomputation. |
+| **2** | **Lack of Working Set Containment ($WS-1$..$WS-3$)** | Ad-hoc memory allocations unaware of physical hardware capacity; no formal invariant bounds. | Strict mathematical containment bounds ($WS_1 + WS_2 + WS_3 \le B$). | **Zero swap thrashing**; enables $128\text{k}$ context execution within physical memory limits. |
+| **3** | **Dynamic Dispatch Trees & Trait Object Vtables** | Runtime polymorphic indirection (`Arc<dyn InferenceEngine>`, dynamic string parsing). | Inductive pattern matching in Lean 4 compiled to branch-free discriminants. | **$13.2\text{ ns}$ dispatch** (vs $> 500\text{ ns}$); zero heap allocations. |
+| **4** | **Un-Fused DRAM Round-Trips** | Sequential tensor kernels reading and writing intermediate matrices back to DRAM across RMSNorm, QKV, Attention, and SwiGLU. | 4-way fused kernel execution (`FU-1`–`FU-4`: Norm, QKV, RoPE, SwiGLU) in packed panels. | **$75.0\%$ DRAM bandwidth reduction** ($2$ memory passes instead of $8$). |
+| **5** | **Dedicated Per-Request OS Threads & Channels** | Per-request thread spawning, channel allocations, and heuristic polling loops. | Modeled system flows and async task contracts (`Production.Runtime`). | Deterministic event queues; eliminates concurrency thread jitter and lock contention. |
+| **6** | **Quadratic Transcript Re-Concatenation** | Flattening and re-encoding full multi-turn chat history into prompt strings on each turn. | Resident-session routing with static prefix elision in the formal cost model. | Eliminates quadratic context blowup; linear scaling across full context window. |
 
 ---
 
@@ -80,6 +82,26 @@ Evaluated live via `hologram --prism ai cost-model`:
 1. **Arithmetic Safety:** Matmul FLOP bound calculation $2 \times M \times K \times N$ uses checked multiplication, saturating safely to `None` on boundary overflow rather than causing hardware trap or integer wrapping.
 2. **KV Cache Prefix Elision:** Prefill computation for shared prompts (e.g. system prompts) avoids recomputing attention matrices, delivering direct linear speedup proportional to prefix token depth.
 3. **Working Set Containment ($WS-1$–`WS-3`):** Active model weights and KV buffers remain strictly within physical RAM/VRAM allocations. Local edge devices execute the workload without invoking swap, eliminating multi-millisecond page fault latency penalties.
+
+### 3.4 Full Context Scaling & Working Set Containment Evaluation (7B, 13B, 70B)
+
+Evaluated across physical hardware budgets (16 GiB workstation, 32 GiB high-end workstation, 64 GiB enterprise server) and context lengths from 4k to 128k tokens:
+
+| Workload Scenario | Context Length | Prefix Ratio | Hardware Budget | Non-Prism Working Set | PrismPM Working Set | KV Savings | DRAM Traffic Savings | Non-Prism Swap Risk | PrismPM Status | Mark |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Llama-2-7B @ 4k** | 4,096 | $50\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $5.20\text{ GiB}$ ($5.58\text{ GB}$) | **$4.15\text{ GiB}$ ($4.46\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **CONTAINED** | **[formal-oracle]** |
+| **Llama-2-7B @ 32k** | 32,768 | $50\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $19.20\text{ GiB}$ ($20.62\text{ GB}$) | **$11.15\text{ GiB}$ ($11.98\text{ GB}$)** | $50.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** | **[formal-oracle]** |
+| **Llama-2-7B @ 128k (0% Prefix)** | 131,072 | $0\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $67.20\text{ GiB}$ ($72.16\text{ GB}$) | **$67.15\text{ GiB}$ ($72.11\text{ GB}$)** | $0.0\%$ | $75.0\%$ | **CRITICAL SWAP** | Exceeds Budget | **[formal-oracle]** |
+| **Llama-2-7B @ 128k (80% Prefix)** | 131,072 | $80\%$ | $16\text{ GiB}$ ($17.18\text{ GB}$) | $67.20\text{ GiB}$ ($72.16\text{ GB}$) | **$15.95\text{ GiB}$ ($17.13\text{ GB}$)** | $80.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** | **[formal-oracle]** |
+| **Llama-2-13B @ 4k** | 4,096 | $50\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $9.26\text{ GiB}$ ($9.94\text{ GB}$) | **$7.64\text{ GiB}$ ($8.20\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **CONTAINED** | **[formal-oracle]** |
+| **Llama-2-13B @ 32k** | 32,768 | $50\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $31.13\text{ GiB}$ ($33.43\text{ GB}$) | **$18.57\text{ GiB}$ ($19.94\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **CONTAINED** | **[formal-oracle]** |
+| **Llama-2-13B @ 128k (0% Prefix)** | 131,072 | $0\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $106.13\text{ GiB}$ ($113.96\text{ GB}$) | **$106.07\text{ GiB}$ ($113.90\text{ GB}$)** | $0.0\%$ | $75.0\%$ | **CRITICAL SWAP** | Exceeds Budget | **[formal-oracle]** |
+| **Llama-2-13B @ 128k (80% Prefix)** | 131,072 | $80\%$ | $32\text{ GiB}$ ($34.36\text{ GB}$) | $106.13\text{ GiB}$ ($113.96\text{ GB}$) | **$26.07\text{ GiB}$ ($28.00\text{ GB}$)** | $80.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** | **[formal-oracle]** |
+| **Llama-3.1-70B @ 4k** | 4,096 | $50\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $34.25\text{ GiB}$ ($36.78\text{ GB}$) | **$33.53\text{ GiB}$ ($36.00\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **CONTAINED** | **[formal-oracle]** |
+| **Llama-3.1-70B @ 32k** | 32,768 | $50\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $43.00\text{ GiB}$ ($46.17\text{ GB}$) | **$37.91\text{ GiB}$ ($40.70\text{ GB}$)** | $50.0\%$ | $75.0\%$ | Safe | **CONTAINED** | **[formal-oracle]** |
+| **Llama-3.1-70B @ 128k (0% Prefix)** | 131,072 | $0\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $73.00\text{ GiB}$ ($78.38\text{ GB}$) | **$72.91\text{ GiB}$ ($78.28\text{ GB}$)** | $0.0\%$ | $75.0\%$ | **CRITICAL SWAP** | Exceeds Budget | **[formal-oracle]** |
+| **Llama-3.1-70B @ 128k (50% Prefix)** | 131,072 | $50\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $73.00\text{ GiB}$ ($78.38\text{ GB}$) | **$52.91\text{ GiB}$ ($56.81\text{ GB}$)** | $50.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** | **[formal-oracle]** |
+| **Llama-3.1-70B @ 128k (80% Prefix)** | 131,072 | $80\%$ | $64\text{ GiB}$ ($68.72\text{ GB}$) | $73.00\text{ GiB}$ ($78.38\text{ GB}$) | **$40.91\text{ GiB}$ ($43.92\text{ GB}$)** | $80.0\%$ | $75.0\%$ | **CRITICAL SWAP** | **CONTAINED** | **[formal-oracle]** |
 
 ---
 

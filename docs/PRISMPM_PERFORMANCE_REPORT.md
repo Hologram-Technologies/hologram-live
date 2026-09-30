@@ -1,8 +1,9 @@
 # PrismPM Performance Comparison Report: Hologram Live
 
-This document links to the authoritative performance comparison report:
+This document links to the authoritative performance and capabilities comparison reports:
 
-See [docs/superpowers/specs/2026-09-28-prismpm-performance-comparison.md](superpowers/specs/2026-09-28-prismpm-performance-comparison.md) for the complete benchmark suite, empirical measurements, UOR inference cost model analysis, and cluster deployment verification.
+- [docs/HOLOGRAM_AI_OPERATIONS_AND_CAPABILITIES.md](HOLOGRAM_AI_OPERATIONS_AND_CAPABILITIES.md): Comprehensive operations, capabilities, and scaling report for `hologram-ai` under PrismPM vs non-PrismPM, demonstrating working set containment ($WS-1$..$WS-3$), $75\%$ DRAM traffic reduction (`FU-1`–`FU-4`), and full $128\text{k}$ context window scaling.
+- [docs/superpowers/specs/2026-09-28-prismpm-performance-comparison.md](superpowers/specs/2026-09-28-prismpm-performance-comparison.md): Complete system-wide benchmark suite, empirical CLI latency measurements, UOR inference cost model analysis, and cluster deployment verification.
 
 ## Quick Summary
 

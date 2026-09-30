@@ -3,7 +3,9 @@ use clap::{Args, Subcommand};
 use hologram::space::address_bytes;
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::inspect_bytes;
-use hologram_live::{InferenceCostProfile, MatrixDimension};
+use hologram_live::{
+    evaluate_ai_operations_comparison, InferenceCostProfile, MatrixDimension, ModelSpec,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -30,6 +32,17 @@ enum AiCommand {
         total_tokens: u64,
         #[arg(long, default_value = "256")]
         prefix_tokens: u64,
+    },
+    /// Compare `hologram-ai` `PrismPM` vs non-PrismPM operations and capabilities across scaling dimensions.
+    Compare {
+        #[arg(long, default_value = "8b")]
+        model: String,
+        #[arg(long, default_value = "131072")]
+        context_length: u64,
+        #[arg(long, default_value = "65536")]
+        prefix_tokens: u64,
+        #[arg(long, default_value = "16")]
+        memory_budget_gb: u64,
     },
 }
 
@@ -75,6 +88,25 @@ pub async fn run(cli: Cli, args: AiArgs) -> Result<()> {
                 prefix_tokens,
             );
             helpers::print(&cli, &profile)
+        }
+        AiCommand::Compare {
+            model,
+            context_length,
+            prefix_tokens,
+            memory_budget_gb,
+        } => {
+            let spec = ModelSpec::from_name(&model).ok_or_else(|| {
+                LiveError::Config(format!(
+                    "unknown model preset '{model}'; supported presets: 1b, 3b, 8b, 70b (e.g. llama-3.1-8b)"
+                ))
+            })?;
+            let comparison = evaluate_ai_operations_comparison(
+                spec,
+                context_length,
+                prefix_tokens,
+                memory_budget_gb,
+            );
+            helpers::print(&cli, &comparison)
         }
     }
 }

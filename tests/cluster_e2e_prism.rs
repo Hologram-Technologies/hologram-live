@@ -344,7 +344,45 @@ fn test_live_cli_execution_under_prismpm_engine() {
     assert_eq!(val["kernel_profile"]["warm_start_folded"], true);
     assert_eq!(val["kernel_profile"]["kv_prefix_elided"], true);
 
-    // 3. Test unmodeled command rejection with --prism
+    // 3. Test live AI operations comparison evaluation with --prism
+    let compare_output = Command::new(target_bin)
+        .args([
+            "--prism",
+            "ai",
+            "compare",
+            "--model",
+            "8b",
+            "--context-length",
+            "131072",
+            "--prefix-tokens",
+            "65536",
+            "--memory-budget-gb",
+            "16",
+            "--json",
+        ])
+        .output()
+        .expect("run hologram --prism ai compare");
+
+    assert!(compare_output.status.success());
+    let comp_stdout = String::from_utf8_lossy(&compare_output.stdout);
+    let comp_val: serde_json::Value =
+        serde_json::from_str(&comp_stdout).expect("Parse AI compare JSON");
+
+    assert_eq!(comp_val["model"], "Llama-3.1-8B");
+    assert_eq!(comp_val["parameter_count"], 8_030_000_000u64);
+    assert_eq!(comp_val["context_length"], 131_072);
+    assert_eq!(comp_val["prefix_tokens"], 65_536);
+    assert_eq!(comp_val["effective_tokens"], 65_536);
+    assert_eq!(comp_val["kv_cache_savings_pct"], 50.0);
+    assert_eq!(comp_val["dram_traffic_reduction_pct"], 75.0);
+    assert_eq!(comp_val["working_set"]["prism_contained"], true);
+    assert_eq!(comp_val["working_set"]["non_prism_swap_thrashing_risk"], true);
+    assert_eq!(
+        comp_val["scalability_verdict"],
+        "PrismPM scales to full context window within budget; Non-PrismPM collapses from OS swap thrashing"
+    );
+
+    // 4. Test unmodeled command rejection with --prism
     let rej_output = Command::new(target_bin)
         .args(["--prism", "unauthorized_unmodeled_command"])
         .output()

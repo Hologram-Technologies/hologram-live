@@ -51,6 +51,12 @@ if found=$(grep -iE '^(topcoat|veilid|openssl-sys|aws-lc|rekindle)' <<<"${tree}"
   printf 'kappa pin: forbidden crates are in the registry graph:\n%s\n' "${found}" >&2
   fail=1
 fi
+# The p2p feature pulls iroh's tree; the same forbidden crates must stay out of it.
+tree=$(RUSTC_WRAPPER= cargo tree --manifest-path "${root}/Cargo.toml" --package hologram-live --features oci,p2p --edges normal --prefix none --locked)
+if found=$(grep -iE '^(topcoat|veilid|openssl-sys|aws-lc|rekindle)' <<<"${tree}" | sort -u); then
+  printf 'kappa pin: forbidden crates are in the p2p graph:\n%s\n' "${found}" >&2
+  fail=1
+fi
 if grep -E '^source = "git\+' Cargo.lock | grep -vqE '#[0-9a-f]{40}"$'; then
   printf 'kappa pin: a git dependency is not locked to a revision\n' >&2
   fail=1

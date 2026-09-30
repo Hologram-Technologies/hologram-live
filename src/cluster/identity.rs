@@ -60,15 +60,14 @@ impl NodeIdentity {
         hex(&self.signing.sign(message).to_bytes())
     }
 
-    /// The raw secret. Phase 2 constructs the iroh `SecretKey` from these bytes
-    /// so a peer dials exactly the identity it already admitted.
-    ///
-    /// `expect` rather than `allow`: when that transport lands, the lint stops
-    /// firing and this annotation becomes a compile error rather than a
-    /// silently stale allow.
-    #[expect(
-        dead_code,
-        reason = "phase 2 builds the iroh SecretKey from these bytes"
+    /// The raw secret. Phase 2a constructs the iroh `SecretKey` from these
+    /// bytes so a peer dials exactly the identity it already admitted.
+    #[cfg_attr(
+        not(feature = "p2p"),
+        expect(
+            dead_code,
+            reason = "the p2p feature builds the iroh SecretKey from these bytes"
+        )
     )]
     pub fn secret_bytes(&self) -> [u8; 32] {
         self.signing.to_bytes()

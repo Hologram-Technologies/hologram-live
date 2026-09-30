@@ -55,6 +55,10 @@ clap = { version = "4.5", features = ["derive", "env"] }
 # dyn-dispatched async for the ClusterNetwork trait. Already in the graph
 # through tonic and opentelemetry, so a direct declaration adds no crate.
 async-trait = "0.1"
+# Form-encoding for cluster query strings, built without a base URL so
+# key-addressed (`iroh:`) endpoints need no origin. Already locked through
+# reqwest, so a direct declaration adds no crate.
+url = "2"
 # Per-node cluster identity. The public key is the node_id, and in Phase 2 the
 # same 32 secret bytes construct the iroh SecretKey, so identity is continuous
 # across the transport change. BSD-3-Clause; already in Cargo.lock as a
@@ -65,6 +69,15 @@ async-trait = "0.1"
 # `zeroize` is already in Cargo.lock (891 packages before and after), so this
 # adds two dependency edges and no crate.
 ed25519-dalek = { version = "3", default-features = false, features = ["zeroize"] }
+# Phase 2a (#179): QUIC connections dialled by public key, so a node behind NAT
+# joins without a routable address. Off by default (ADRs 033/034); ring only,
+# aws-lc and openssl stay out of the graph.
+iroh = { version = "1.3", optional = true, default-features = false, features = ["tls-ring"] }
+# Serving and dialling HTTP/1 over an iroh stream: one protocol implementation
+# for both directions, already in the graph through axum.
+hyper = { version = "1", optional = true, features = ["server", "http1", "client"] }
+# Request/response bodies over the iroh duplex; already locked through axum.
+http-body-util = { version = "0.1", optional = true }
 fs4 = "1.1"
 hyper-util = { version = "0.1", features = ["tokio"] }
 kameo = "0.22"
@@ -134,6 +147,13 @@ cucumber = "0.23"
 # checks with --edges normal.
 hologram-client = { path = "crates/hologram-client" }
 
+# uor-prism-crypto 0.4.0 pins blake3 to >=1.5,<1.6 (its own MSRV 1.83); iroh
+# needs ^1.8.3 and Cargo will not hold two semver-compatible blake3 versions.
+# The fork relaxes the requirement without changing code; drop this patch when
+# UOR-Foundation/prism publishes the relaxation.
+[patch.crates-io]
+uor-prism-crypto = { git = "https://github.com/Hologram-Technologies/prism", branch = "relax-blake3-pin" }
+
 [features]
 bdd = []
 # In-process GGUF execution. Off by default because it compiles llama.cpp and
@@ -152,6 +172,9 @@ candle-metal = ["candle", "candle-core/metal", "candle-transformers/metal"]
 burn = ["dep:burn", "dep:burn-lm-inference", "dep:burn-lm-llama"]
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
 oci = ["dep:jsonwebtoken", "dep:ring", "dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
+# Phase 2a (#179): the iroh cluster transport. Off by default; a stock build is
+# unchanged for anyone who does not opt in.
+p2p = ["dep:iroh", "dep:hyper", "dep:http-body-util", "dep:bytes"]
 ring = ["dep:ring"]
 
 [[test]]

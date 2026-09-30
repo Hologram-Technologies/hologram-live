@@ -166,6 +166,16 @@ pub struct ClusterConfig {
     /// no error and no local signal that the two views disagree. Keep every
     /// member's `trusted_keys` identical.
     pub admission: String,
+    /// Which cluster transports this node speaks: `http` (the default),
+    /// `iroh`, or `both`. The iroh forms require the `p2p` build feature.
+    pub transport: String,
+    /// Peer discovery for the iroh transport: `none` (the default), `mdns`,
+    /// or `dns`. Publication is a separate decision from enabling the
+    /// transport, so the operator-cluster default publishes nothing.
+    pub discovery: String,
+    /// Relay URLs for the iroh transport. Empty (the default) disables
+    /// relaying; self-hosted relays belong here.
+    pub relays: Vec<String>,
 }
 
 impl Default for ClusterConfig {
@@ -184,6 +194,9 @@ impl Default for ClusterConfig {
             replication_interval_secs: 60,
             trusted_keys: Vec::new(),
             admission: "token".to_owned(),
+            transport: "http".to_owned(),
+            discovery: "none".to_owned(),
+            relays: Vec::new(),
         }
     }
 }
@@ -863,7 +876,46 @@ impl AppConfig {
                 "cluster.token_env must not be empty".to_owned(),
             ));
         }
-        if !self.cluster.seeds.is_empty() && self.cluster.advertise_endpoint.is_none() {
+        match self.cluster.transport.as_str() {
+            "http" => {}
+            "iroh" | "both" if cfg!(feature = "p2p") => {}
+            "iroh" | "both" => {
+                return Err(LiveError::Config(
+                    "cluster.transport = \"iroh\" requires a build with the `p2p` feature"
+                        .to_owned(),
+                ));
+            }
+            other => {
+                return Err(LiveError::Config(format!(
+                    "cluster.transport must be \"http\", \"iroh\" or \"both\", not {other:?}"
+                )));
+            }
+        }
+        match self.cluster.discovery.as_str() {
+            "none" => {}
+            "mdns" | "dns" if cfg!(feature = "p2p") => {}
+            "mdns" | "dns" => {
+                return Err(LiveError::Config(
+                    "cluster.discovery requires a build with the `p2p` feature".to_owned(),
+                ));
+            }
+            other => {
+                return Err(LiveError::Config(format!(
+                    "cluster.discovery must be \"none\", \"mdns\" or \"dns\", not {other:?}"
+                )));
+            }
+        }
+        if !self.cluster.relays.is_empty() && !cfg!(feature = "p2p") {
+            return Err(LiveError::Config(
+                "cluster.relays requires a build with the `p2p` feature".to_owned(),
+            ));
+        }
+        // An HTTP-speaking node must still advertise an endpoint to join
+        // anything; an iroh-only node is dialled by key and needs none.
+        if !self.cluster.seeds.is_empty()
+            && self.cluster.transport != "iroh"
+            && self.cluster.advertise_endpoint.is_none()
+        {
             return Err(LiveError::Config(
                 "cluster.advertise_endpoint is required when cluster.seeds is not empty".to_owned(),
             ));
@@ -1138,6 +1190,20 @@ fn validate_endpoint(endpoint: &str, local: bool) -> Result<()> {
 }
 
 pub(crate) fn validate_cluster_endpoint(endpoint: &str) -> Result<()> {
+    if let Some(rest) = endpoint.strip_prefix("iroh:") {
+        // Key-addressed: the address is the identity, so it is exactly the
+        // node id — `ed25519:<64 lowercase hex>`, nothing else.
+        if !cfg!(feature = "p2p") {
+            return Err(LiveError::Config(format!(
+                "cluster endpoint {endpoint} is key-addressed (iroh) and requires a build with the `p2p` feature"
+            )));
+        }
+        return crate::cluster::identity::parse_node_id(rest)
+            .map(|_| ())
+            .map_err(|error| {
+                LiveError::Config(format!("invalid iroh cluster endpoint {endpoint}: {error}"))
+            });
+    }
     let parsed = reqwest::Url::parse(endpoint)
         .map_err(|error| LiveError::Config(format!("invalid cluster endpoint: {error}")))?;
     let host = parsed
@@ -1949,5 +2015,56 @@ path = "/usr/local/bin/plugin"
         let mut config = AppConfig::default();
         config.cluster.admission = "anyone".to_owned();
         assert!(config.validate().is_err());
+    }
+
+    // Phase 2a (#179): a key-addressed seed is a configuration error with a
+    // name in it, never a silently ignored value — a node that quietly skipped
+    // the `iroh:` seed would not join the cluster its configuration says it
+    // should.
+    #[cfg(not(feature = "p2p"))]
+    #[test]
+    fn an_iroh_seed_without_the_p2p_feature_is_a_clear_error() {
+        let mut config = AppConfig::default();
+        config.cluster.seeds = vec![format!("iroh:ed25519:{}", "a".repeat(64))];
+        let error = config.validate().expect_err("an iroh seed must fail");
+        match error {
+            LiveError::Config(message) => assert!(
+                message.contains("p2p"),
+                "the error must name the missing feature, got {message:?}"
+            ),
+            other => panic!("expected a config error, got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "p2p")]
+    #[test]
+    fn an_iroh_only_node_needs_no_advertised_endpoint() {
+        let mut config = AppConfig::default();
+        config.cluster.transport = "iroh".to_owned();
+        config.cluster.advertise_endpoint = None;
+        config.cluster.seeds = vec![format!("iroh:ed25519:{}", "a".repeat(64))];
+        config
+            .validate()
+            .expect("a key-addressed node is dialled by key and advertises nothing");
+    }
+
+    #[cfg(not(feature = "p2p"))]
+    #[test]
+    fn the_iroh_transport_without_the_feature_is_a_clear_error() {
+        let mut config = AppConfig::default();
+        config.cluster.transport = "iroh".to_owned();
+        let error = config.validate().expect_err("the iroh transport must fail");
+        assert!(
+            error.to_string().contains("p2p"),
+            "the error must name the missing feature, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn the_stock_cluster_transport_and_discovery_defaults_publish_nothing() {
+        let config = AppConfig::default();
+        assert_eq!(config.cluster.transport, "http");
+        assert_eq!(config.cluster.discovery, "none");
+        assert!(config.cluster.relays.is_empty());
     }
 }

@@ -50,7 +50,8 @@ async fn main() {
         }
     }
 
-    let raw_os_args: Vec<std::ffi::OsString> = raw_args.into_iter().map(std::ffi::OsString::from).collect();
+    let raw_os_args: Vec<std::ffi::OsString> =
+        raw_args.into_iter().map(std::ffi::OsString::from).collect();
 
     #[cfg(feature = "oci")]
     let cli = {

@@ -38,7 +38,10 @@ fn find_latest_build_dir() -> PathBuf {
 fn test_compose_spec_oracle_validation() {
     let build_dir = find_latest_build_dir();
     let compose_path = build_dir.join("projections/compose.json");
-    assert!(compose_path.exists(), "compose.json must exist in build projections");
+    assert!(
+        compose_path.exists(),
+        "compose.json must exist in build projections"
+    );
 
     let compose_str = std::fs::read_to_string(&compose_path).expect("Read compose.json");
     let compose: serde_json::Value =
@@ -82,7 +85,13 @@ fn test_compose_spec_oracle_validation() {
         .expect("services object in compose.json");
     let service_keys: HashSet<&str> = services.keys().map(std::string::String::as_str).collect();
 
-    let expected_services = ["cas-store", "inference-engine", "migrate", "server", "telemetry"];
+    let expected_services = [
+        "cas-store",
+        "inference-engine",
+        "migrate",
+        "server",
+        "telemetry",
+    ];
     for expected in expected_services {
         assert!(
             service_keys.contains(expected),
@@ -94,8 +103,7 @@ fn test_compose_spec_oracle_validation() {
     // 1. cas-store depends on migrate (service_completed_successfully)
     let cas_deps = &services["cas-store"]["depends_on"];
     assert_eq!(
-        cas_deps["migrate"]["condition"],
-        "service_completed_successfully",
+        cas_deps["migrate"]["condition"], "service_completed_successfully",
         "cas-store must depend on migrate completion"
     );
 
@@ -117,7 +125,10 @@ fn test_compose_spec_oracle_validation() {
         ("telemetry", "validate"),
     ] {
         let health = &services[svc_name]["healthcheck"];
-        assert!(health.is_object(), "Service {svc_name} must have a healthcheck");
+        assert!(
+            health.is_object(),
+            "Service {svc_name} must have a healthcheck"
+        );
         let test_cmd = health["test"].as_array().expect("healthcheck test array");
         let cmd_joined = test_cmd
             .iter()
@@ -141,18 +152,31 @@ fn test_compose_spec_oracle_validation() {
             cap_drop.iter().any(|c| c.as_str() == Some("ALL")),
             "All services must drop ALL capabilities"
         );
-        assert_eq!(svc["read_only"], true, "All services must have read_only root filesystem");
+        assert_eq!(
+            svc["read_only"], true,
+            "All services must have read_only root filesystem"
+        );
         let sec_opts = svc["security_opt"].as_array().expect("security_opt array");
         assert!(
-            sec_opts.iter().any(|o| o.as_str() == Some("no-new-privileges:true")),
+            sec_opts
+                .iter()
+                .any(|o| o.as_str() == Some("no-new-privileges:true")),
             "All services must enforce no-new-privileges"
         );
     }
 
     // Validate Volume Bindings & Storage
-    let volumes = compose["volumes"].as_object().expect("volumes object in compose.json");
-    assert!(volumes.contains_key("cas-volume"), "compose must declare cas-volume");
-    assert!(volumes.contains_key("model-cache-volume"), "compose must declare model-cache-volume");
+    let volumes = compose["volumes"]
+        .as_object()
+        .expect("volumes object in compose.json");
+    assert!(
+        volumes.contains_key("cas-volume"),
+        "compose must declare cas-volume"
+    );
+    assert!(
+        volumes.contains_key("model-cache-volume"),
+        "compose must declare model-cache-volume"
+    );
 
     // Validate Resource Limits
     let server_res = &services["server"]["deploy"]["resources"];
@@ -172,14 +196,19 @@ fn test_compose_spec_oracle_validation() {
 fn test_kubernetes_projection_oracle_validation() {
     let build_dir = find_latest_build_dir();
     let k8s_path = build_dir.join("projections/kubernetes.json");
-    assert!(k8s_path.exists(), "kubernetes.json must exist in build projections");
+    assert!(
+        k8s_path.exists(),
+        "kubernetes.json must exist in build projections"
+    );
 
     let k8s_str = std::fs::read_to_string(&k8s_path).expect("Read kubernetes.json");
     let k8s: serde_json::Value =
         serde_json::from_str(&k8s_str).expect("Valid JSON kubernetes.json");
 
     assert_eq!(k8s["apiVersion"], "v1");
-    let items = k8s["items"].as_array().expect("items array in kubernetes.json");
+    let items = k8s["items"]
+        .as_array()
+        .expect("items array in kubernetes.json");
     assert_eq!(
         items.len(),
         47,
@@ -197,7 +226,9 @@ fn test_kubernetes_projection_oracle_validation() {
         let kind = item["kind"].as_str().expect("kind string");
         assert!(!kind.is_empty(), "kind must not be empty");
 
-        let name = item["metadata"]["name"].as_str().expect("metadata.name string");
+        let name = item["metadata"]["name"]
+            .as_str()
+            .expect("metadata.name string");
         assert!(!name.is_empty(), "metadata.name must not be empty");
 
         if kind == "Namespace" {
@@ -209,8 +240,14 @@ fn test_kubernetes_projection_oracle_validation() {
     }
 
     // Check Namespaces
-    assert!(namespaces.contains("hologram-live"), "Must define hologram-live namespace");
-    assert!(namespaces.contains("ingress-nginx"), "Must define ingress-nginx namespace");
+    assert!(
+        namespaces.contains("hologram-live"),
+        "Must define hologram-live namespace"
+    );
+    assert!(
+        namespaces.contains("ingress-nginx"),
+        "Must define ingress-nginx namespace"
+    );
 
     // Check Hologram Core Workloads
     assert!(resources_by_kind_name.contains_key("StatefulSet/cas-store"));
@@ -226,13 +263,21 @@ fn test_kubernetes_projection_oracle_validation() {
 
     // Validate Server Service Ports
     let server_svc = resources_by_kind_name["Service/server"];
-    let server_ports = server_svc["spec"]["ports"].as_array().expect("server ports");
+    let server_ports = server_svc["spec"]["ports"]
+        .as_array()
+        .expect("server ports");
     let port_nums: HashSet<u64> = server_ports
         .iter()
         .filter_map(|p| p["port"].as_u64())
         .collect();
-    assert!(port_nums.contains(&8080), "Server service must expose port 8080 (HTTP)");
-    assert!(port_nums.contains(&50051), "Server service must expose port 50051 (gRPC)");
+    assert!(
+        port_nums.contains(&8080),
+        "Server service must expose port 8080 (HTTP)"
+    );
+    assert!(
+        port_nums.contains(&50051),
+        "Server service must expose port 50051 (gRPC)"
+    );
 
     // Check NetworkPolicies
     let required_netpols = [
@@ -256,7 +301,9 @@ fn test_kubernetes_projection_oracle_validation() {
 
     // Check Storage
     assert!(resources_by_kind_name.contains_key("PersistentVolume/hologram-live-cas-volume"));
-    assert!(resources_by_kind_name.contains_key("PersistentVolume/hologram-live-model-cache-volume"));
+    assert!(
+        resources_by_kind_name.contains_key("PersistentVolume/hologram-live-model-cache-volume")
+    );
     assert!(resources_by_kind_name.contains_key("PersistentVolumeClaim/cas-volume"));
     assert!(resources_by_kind_name.contains_key("PersistentVolumeClaim/model-cache-volume"));
     assert!(resources_by_kind_name.contains_key("StorageClass/local-cas-storage"));
@@ -376,7 +423,10 @@ fn test_live_cli_execution_under_prismpm_engine() {
     assert_eq!(comp_val["kv_cache_savings_pct"], 50.0);
     assert_eq!(comp_val["dram_traffic_reduction_pct"], 75.0);
     assert_eq!(comp_val["working_set"]["prism_contained"], true);
-    assert_eq!(comp_val["working_set"]["non_prism_swap_thrashing_risk"], true);
+    assert_eq!(
+        comp_val["working_set"]["non_prism_swap_thrashing_risk"],
+        true
+    );
     assert_eq!(
         comp_val["scalability_verdict"],
         "PrismPM scales to full context window within budget; Non-PrismPM collapses from OS swap thrashing"
@@ -408,7 +458,10 @@ fn test_live_cli_execution_under_prismpm_engine() {
 fn test_uor_prism_cost_model_oracle() {
     // Matmul FLOP bound: 2 * M * K * N
     assert_eq!(matmul_flops(MatrixDimension::new(1, 4, 4)), Some(32));
-    assert_eq!(matmul_flops(MatrixDimension::new(1, 4096, 4096)), Some(33_554_432));
+    assert_eq!(
+        matmul_flops(MatrixDimension::new(1, 4096, 4096)),
+        Some(33_554_432)
+    );
     // Overflow protection
     assert_eq!(matmul_flops(MatrixDimension::new(u64::MAX, 2, 2)), None);
 

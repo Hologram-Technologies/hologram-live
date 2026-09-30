@@ -38,10 +38,7 @@ fn forbidden_tokens() -> Vec<String> {
     let p1 = "uor";
     let p2 = "foundry";
     let p3 = "web";
-    vec![
-        format!("{p1}-{p2}"),
-        format!("{p2}-{p3}"),
-    ]
+    vec![format!("{p1}-{p2}"), format!("{p2}-{p3}")]
 }
 
 fn hologram_bin() -> PathBuf {
@@ -159,9 +156,10 @@ mod tier1_feature_coverage {
     #[test]
     fn test_tier1_f2_03_audit_os_swap_thrashing_item() {
         let comp = evaluate_ai_operations_comparison(ModelSpec::llama3_8b(), 4096, 2048, 16);
-        assert!(comp.arbitrary_components_eliminated.iter().any(|item| {
-            item.contains("OS swap thrashing") && item.contains("WS-1..WS-3")
-        }));
+        assert!(comp
+            .arbitrary_components_eliminated
+            .iter()
+            .any(|item| { item.contains("OS swap thrashing") && item.contains("WS-1..WS-3") }));
     }
 
     #[test]
@@ -178,7 +176,10 @@ mod tier1_feature_coverage {
         let doc1 = Path::new("docs/PRISMPM_PERFORMANCE_REPORT.md");
         let doc2 = Path::new("docs/HOLOGRAM_AI_OPERATIONS_AND_CAPABILITIES.md");
         assert!(doc1.exists(), "PRISMPM_PERFORMANCE_REPORT.md must exist");
-        assert!(doc2.exists(), "HOLOGRAM_AI_OPERATIONS_AND_CAPABILITIES.md must exist");
+        assert!(
+            doc2.exists(),
+            "HOLOGRAM_AI_OPERATIONS_AND_CAPABILITIES.md must exist"
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -189,7 +190,21 @@ mod tier1_feature_coverage {
         let bin = hologram_bin();
         if bin.exists() {
             let output = Command::new(&bin)
-                .args(["--json", "ai", "cost-model", "--m", "1", "--k", "4096", "--n", "4096", "--total-tokens", "512", "--prefix-tokens", "256"])
+                .args([
+                    "--json",
+                    "ai",
+                    "cost-model",
+                    "--m",
+                    "1",
+                    "--k",
+                    "4096",
+                    "--n",
+                    "4096",
+                    "--total-tokens",
+                    "512",
+                    "--prefix-tokens",
+                    "256",
+                ])
                 .output()
                 .expect("Run hologram ai cost-model");
             assert!(output.status.success());
@@ -204,7 +219,19 @@ mod tier1_feature_coverage {
         let bin = hologram_bin();
         if bin.exists() {
             let output = Command::new(&bin)
-                .args(["--json", "ai", "compare", "--model", "8b", "--context-length", "131072", "--prefix-tokens", "65536", "--memory-budget-gb", "16"])
+                .args([
+                    "--json",
+                    "ai",
+                    "compare",
+                    "--model",
+                    "8b",
+                    "--context-length",
+                    "131072",
+                    "--prefix-tokens",
+                    "65536",
+                    "--memory-budget-gb",
+                    "16",
+                ])
                 .output()
                 .expect("Run hologram ai compare");
             assert!(output.status.success());
@@ -240,7 +267,12 @@ mod tier1_feature_coverage {
                 .expect("Run hologram ai inspect");
             assert!(!output.status.success());
             let err_str = String::from_utf8_lossy(&output.stderr);
-            assert!(err_str.contains("No such file") || err_str.contains("os error 2") || err_str.contains("io error") || !output.stdout.is_empty());
+            assert!(
+                err_str.contains("No such file")
+                    || err_str.contains("os error 2")
+                    || err_str.contains("io error")
+                    || !output.stdout.is_empty()
+            );
         }
     }
 
@@ -516,8 +548,8 @@ mod tier1_feature_coverage {
 
     #[test]
     fn test_tier1_f10_03_lean_inference_theorems() {
-        let content = fs::read_to_string("src/Hologram/Inference.lex.tex")
-            .expect("Read Inference.lex.tex");
+        let content =
+            fs::read_to_string("src/Hologram/Inference.lex.tex").expect("Read Inference.lex.tex");
         assert!(content.contains("matmulFlops"));
         assert!(content.contains("kvEffectiveTokens"));
         assert!(content.contains("isOptimalFusedKernel"));
@@ -525,8 +557,8 @@ mod tier1_feature_coverage {
 
     #[test]
     fn test_tier1_f10_04_lean_system_theorems() {
-        let content = fs::read_to_string("src/HologramSystem.lex.tex")
-            .expect("Read HologramSystem.lex.tex");
+        let content =
+            fs::read_to_string("src/HologramSystem.lex.tex").expect("Read HologramSystem.lex.tex");
         assert!(content.contains("HologramSystem") && content.contains("inference-engine"));
         assert!(content.contains("executeSystemUsesHologram"));
     }
@@ -622,7 +654,9 @@ mod tier2_boundary_and_corner_cases {
     #[test]
     fn test_tier2_f2_05_audit_items_reference_fu_kernels() {
         let comp = evaluate_ai_operations_comparison(ModelSpec::llama3_8b(), 4096, 2048, 16);
-        assert!(comp.arbitrary_components_eliminated[3].contains("RMSNorm, QKV, Attention, and SwiGLU"));
+        assert!(
+            comp.arbitrary_components_eliminated[3].contains("RMSNorm, QKV, Attention, and SwiGLU")
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -818,7 +852,10 @@ mod tier2_boundary_and_corner_cases {
 
     #[test]
     fn test_tier2_f7_04_matmul_flops_u64_max_overflow() {
-        assert_eq!(matmul_flops(MatrixDimension::new(u64::MAX / 2 + 1, 2, 1)), None);
+        assert_eq!(
+            matmul_flops(MatrixDimension::new(u64::MAX / 2 + 1, 2, 1)),
+            None
+        );
     }
 
     #[test]
@@ -944,7 +981,9 @@ mod tier2_boundary_and_corner_cases {
         let content = fs::read_to_string("Cargo.toml").expect("Read Cargo.toml");
         for line in content.lines() {
             if line.starts_with("version = \"") {
-                let v = line.trim_start_matches("version = \"").trim_end_matches('"');
+                let v = line
+                    .trim_start_matches("version = \"")
+                    .trim_end_matches('"');
                 let parts: Vec<&str> = v.split('.').collect();
                 assert_eq!(parts.len(), 3);
                 assert_eq!(v, "1.0.0");
@@ -973,7 +1012,8 @@ mod tier2_boundary_and_corner_cases {
 
     #[test]
     fn test_tier2_f10_05_attestation_hex_length() {
-        let doc = fs::read_to_string("docs/HOLOGRAM_AI_OPERATIONS_AND_CAPABILITIES.md").expect("Read");
+        let doc =
+            fs::read_to_string("docs/HOLOGRAM_AI_OPERATIONS_AND_CAPABILITIES.md").expect("Read");
         let needle = "fe85f4108ed5a6c758323ab2acce6ef9105ea03d1f16f0ae044f9565c0ddd88e";
         assert_eq!(needle.len(), 64);
         assert!(doc.contains(needle));
@@ -1006,7 +1046,11 @@ mod tier3_pairwise_cross_feature {
         let comp = evaluate_ai_operations_comparison(spec, 4096, 2048, 16);
         assert!(comp.working_set.prism_contained);
 
-        let flops = matmul_flops(MatrixDimension::new(1, spec.hidden_dim as u64, spec.hidden_dim as u64));
+        let flops = matmul_flops(MatrixDimension::new(
+            1,
+            spec.hidden_dim as u64,
+            spec.hidden_dim as u64,
+        ));
         assert!(flops.is_some());
     }
 
@@ -1077,7 +1121,11 @@ mod tier3_pairwise_cross_feature {
         // F4 (128k context) + F7 (checked FLOPs) + F2 (6 bottlenecks)
         let spec = ModelSpec::llama3_8b();
         let comp = evaluate_ai_operations_comparison(spec, 131072, 65536, 16);
-        let flops = matmul_flops(MatrixDimension::new(1, spec.hidden_dim as u64, spec.hidden_dim as u64));
+        let flops = matmul_flops(MatrixDimension::new(
+            1,
+            spec.hidden_dim as u64,
+            spec.hidden_dim as u64,
+        ));
         assert_eq!(flops, Some(33554432));
         assert_eq!(comp.arbitrary_components_eliminated.len(), 6);
     }
@@ -1099,7 +1147,11 @@ mod tier3_pairwise_cross_feature {
         let comp = evaluate_ai_operations_comparison(spec, 131072, 104857, 64);
         assert!(comp.working_set.prism_contained);
         assert_eq!(comp.dram_traffic_reduction_pct, 75.0);
-        let flops = matmul_flops(MatrixDimension::new(1, spec.hidden_dim as u64, spec.hidden_dim as u64));
+        let flops = matmul_flops(MatrixDimension::new(
+            1,
+            spec.hidden_dim as u64,
+            spec.hidden_dim as u64,
+        ));
         assert_eq!(flops, Some(134217728));
     }
 }
@@ -1120,7 +1172,8 @@ mod tier4_real_world_application_scenarios {
         let prefix_tokens = 65_536u64; // 50% shared conversation history
         let edge_budget_gb = 16u64;
 
-        let comp = evaluate_ai_operations_comparison(spec, full_context, prefix_tokens, edge_budget_gb);
+        let comp =
+            evaluate_ai_operations_comparison(spec, full_context, prefix_tokens, edge_budget_gb);
 
         // 1. Working set containment: PrismPM fits in 16GB, non-PrismPM exceeds 16GB
         assert!(comp.working_set.prism_contained);
@@ -1187,8 +1240,18 @@ mod tier4_real_world_application_scenarios {
         assert!(comp_13b_32k.working_set.non_prism_swap_thrashing_risk);
 
         // Checked FLOPs
-        assert!(matmul_flops(MatrixDimension::new(1, m7.hidden_dim as u64, m7.hidden_dim as u64)).is_some());
-        assert!(matmul_flops(MatrixDimension::new(1, m13.hidden_dim as u64, m13.hidden_dim as u64)).is_some());
+        assert!(matmul_flops(MatrixDimension::new(
+            1,
+            m7.hidden_dim as u64,
+            m7.hidden_dim as u64
+        ))
+        .is_some());
+        assert!(matmul_flops(MatrixDimension::new(
+            1,
+            m13.hidden_dim as u64,
+            m13.hidden_dim as u64
+        ))
+        .is_some());
     }
 
     #[test]

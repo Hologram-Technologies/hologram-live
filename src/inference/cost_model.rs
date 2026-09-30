@@ -186,15 +186,11 @@ impl ModelSpec {
             "3b" | "llama-3b" | "llama3-3b" | "llama3.2-3b" | "llama-3.2-3b" => {
                 Some(Self::llama3_3b())
             }
-            "7b" | "llama2-7b" | "llama-2-7b" | "llama-7b" | "llama3-7b" => {
-                Some(Self::llama2_7b())
-            }
+            "7b" | "llama2-7b" | "llama-2-7b" | "llama-7b" | "llama3-7b" => Some(Self::llama2_7b()),
             "8b" | "llama-8b" | "llama3-8b" | "llama3.1-8b" | "llama-3.1-8b" => {
                 Some(Self::llama3_8b())
             }
-            "13b" | "llama2-13b" | "llama-2-13b" | "llama-13b" => {
-                Some(Self::llama2_13b())
-            }
+            "13b" | "llama2-13b" | "llama-2-13b" | "llama-13b" => Some(Self::llama2_13b()),
             "70b" | "llama-70b" | "llama3-70b" | "llama3.1-70b" | "llama-3.1-70b" => {
                 Some(Self::llama3_70b())
             }
@@ -287,7 +283,9 @@ pub fn evaluate_ai_operations_comparison(
 
     // WS-3: Activations
     // PrismPM fused FU-1..FU-4 uses 1 packed panel buffer
-    let ws3_activation_bytes = u64::from(spec.hidden_dim).saturating_mul(4).saturating_mul(1024);
+    let ws3_activation_bytes = u64::from(spec.hidden_dim)
+        .saturating_mul(4)
+        .saturating_mul(1024);
     // Non-PrismPM un-fused allocates 4 separate buffers
     let ws3_unfused_activation_bytes = ws3_activation_bytes.saturating_mul(4);
 
@@ -478,16 +476,46 @@ mod tests {
 
     #[test]
     fn test_model_spec_aliases_and_safety() {
-        assert_eq!(ModelSpec::from_name("llama-1b"), Some(ModelSpec::llama3_1b()));
-        assert_eq!(ModelSpec::from_name("llama-3b"), Some(ModelSpec::llama3_3b()));
-        assert_eq!(ModelSpec::from_name("llama-7b"), Some(ModelSpec::llama2_7b()));
-        assert_eq!(ModelSpec::from_name("llama2-7b"), Some(ModelSpec::llama2_7b()));
-        assert_eq!(ModelSpec::from_name("llama-8b"), Some(ModelSpec::llama3_8b()));
-        assert_eq!(ModelSpec::from_name("llama-13b"), Some(ModelSpec::llama2_13b()));
-        assert_eq!(ModelSpec::from_name("llama2-13b"), Some(ModelSpec::llama2_13b()));
-        assert_eq!(ModelSpec::from_name("llama-70b"), Some(ModelSpec::llama3_70b()));
-        assert_eq!(ModelSpec::from_name("llama3.1-8b"), Some(ModelSpec::llama3_8b()));
-        assert_eq!(ModelSpec::from_name("llama3.2-3b"), Some(ModelSpec::llama3_3b()));
+        assert_eq!(
+            ModelSpec::from_name("llama-1b"),
+            Some(ModelSpec::llama3_1b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama-3b"),
+            Some(ModelSpec::llama3_3b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama-7b"),
+            Some(ModelSpec::llama2_7b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama2-7b"),
+            Some(ModelSpec::llama2_7b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama-8b"),
+            Some(ModelSpec::llama3_8b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama-13b"),
+            Some(ModelSpec::llama2_13b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama2-13b"),
+            Some(ModelSpec::llama2_13b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama-70b"),
+            Some(ModelSpec::llama3_70b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama3.1-8b"),
+            Some(ModelSpec::llama3_8b())
+        );
+        assert_eq!(
+            ModelSpec::from_name("llama3.2-3b"),
+            Some(ModelSpec::llama3_3b())
+        );
         assert_eq!(ModelSpec::from_name("unknown-model"), None);
 
         // Checked KV bytes arithmetic
@@ -692,12 +720,18 @@ mod tests {
 
         // Invariant 3: warm_start_folded
         p.warm_start_folded = false;
-        assert!(!p.is_optimal(), "warm_start_folded = false must not be optimal");
+        assert!(
+            !p.is_optimal(),
+            "warm_start_folded = false must not be optimal"
+        );
         p.warm_start_folded = true;
 
         // Invariant 4: kv_prefix_elided
         p.kv_prefix_elided = false;
-        assert!(!p.is_optimal(), "kv_prefix_elided = false must not be optimal");
+        assert!(
+            !p.is_optimal(),
+            "kv_prefix_elided = false must not be optimal"
+        );
         p.kv_prefix_elided = true;
 
         assert!(p.is_optimal());

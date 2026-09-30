@@ -1,5 +1,18 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(dead_code, non_snake_case, unused_parens, unused_variables)]
+#![allow(
+    clippy::let_and_return,
+    clippy::needless_borrow,
+    clippy::redundant_clone,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::useless_asref,
+    clippy::manual_checked_ops,
+    clippy::clone_on_copy,
+    clippy::manual_unwrap_or_default,
+    clippy::comparison_to_empty,
+    clippy::only_used_in_recursion
+)]
 extern crate alloc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,35 +62,93 @@ pub enum CliCommand {
 
 pub fn executeCommand(cmd: crate::CliCommand) -> alloc::string::String {
     match cmd {
-        crate::CliCommand::Run => alloc::string::String::from("{\"command\":\"run\",\"status\":\"ok\"}"),
-        crate::CliCommand::Serve => alloc::string::String::from("{\"command\":\"serve\",\"status\":\"ok\"}"),
-        crate::CliCommand::Pull => alloc::string::String::from("{\"command\":\"pull\",\"status\":\"ok\"}"),
-        crate::CliCommand::Push => alloc::string::String::from("{\"command\":\"push\",\"status\":\"ok\"}"),
-        crate::CliCommand::Inspect => alloc::string::String::from("{\"holo_version\":4,\"magic\":\"HOLO\"}"),
-        crate::CliCommand::Chat => alloc::string::String::from("{\"command\":\"chat\",\"status\":\"ok\"}"),
-        crate::CliCommand::Nodes => alloc::string::String::from("{\"command\":\"nodes\",\"status\":\"ok\"}"),
-        crate::CliCommand::Status => alloc::string::String::from("{\"status\":\"ready\",\"version\":\"1.0.0\",\"engine\":\"prismpm\"}"),
-        crate::CliCommand::Stop => alloc::string::String::from("{\"command\":\"stop\",\"status\":\"ok\"}"),
-        crate::CliCommand::Restart => alloc::string::String::from("{\"command\":\"restart\",\"status\":\"ok\"}"),
-        crate::CliCommand::Update => alloc::string::String::from("{\"command\":\"update\",\"status\":\"ok\"}"),
-        crate::CliCommand::Init => alloc::string::String::from("{\"command\":\"init\",\"status\":\"ok\"}"),
-        crate::CliCommand::Compile => alloc::string::String::from("{\"command\":\"compile\",\"status\":\"ok\"}"),
-        crate::CliCommand::Files => alloc::string::String::from("{\"command\":\"files\",\"status\":\"ok\"}"),
-        crate::CliCommand::Doctor => alloc::string::String::from("{\"command\":\"doctor\",\"status\":\"ok\"}"),
-        crate::CliCommand::Ai => alloc::string::String::from("{\"service\":\"hologram-ai\",\"cost_model\":\"uor-prism\",\"status\":\"optimal\"}"),
-        crate::CliCommand::Plugins => alloc::string::String::from("{\"command\":\"plugins\",\"status\":\"ok\"}"),
-        crate::CliCommand::Oci => alloc::string::String::from("{\"command\":\"oci\",\"status\":\"ok\"}"),
-        crate::CliCommand::Models => alloc::string::String::from("{\"command\":\"models\",\"status\":\"ok\"}"),
-        crate::CliCommand::Route => alloc::string::String::from("{\"command\":\"route\",\"status\":\"ok\"}"),
-        crate::CliCommand::App => alloc::string::String::from("{\"command\":\"app\",\"status\":\"ok\"}"),
-        crate::CliCommand::Config => alloc::string::String::from("{\"command\":\"config\",\"status\":\"ok\"}"),
-        crate::CliCommand::Tracing => alloc::string::String::from("{\"command\":\"tracing\",\"status\":\"ok\"}"),
-        crate::CliCommand::History => alloc::string::String::from("{\"command\":\"history\",\"status\":\"ok\"}"),
-        crate::CliCommand::Openapi => alloc::string::String::from("{\"command\":\"openapi\",\"status\":\"ok\"}"),
-        crate::CliCommand::Verify => alloc::string::String::from("{\"command\":\"verify\",\"status\":\"ok\"}"),
-        crate::CliCommand::Plan => alloc::string::String::from("{\"command\":\"plan\",\"status\":\"ok\"}"),
-        crate::CliCommand::Help => alloc::string::String::from("{\"help\":\"hologram <command>\",\"commands\":28}"),
-        crate::CliCommand::Unknown => alloc::string::String::from("{\"error\":\"unknown command\"}"),
+        crate::CliCommand::Run => {
+            alloc::string::String::from("{\"command\":\"run\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Serve => {
+            alloc::string::String::from("{\"command\":\"serve\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Pull => {
+            alloc::string::String::from("{\"command\":\"pull\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Push => {
+            alloc::string::String::from("{\"command\":\"push\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Inspect => {
+            alloc::string::String::from("{\"holo_version\":4,\"magic\":\"HOLO\"}")
+        }
+        crate::CliCommand::Chat => {
+            alloc::string::String::from("{\"command\":\"chat\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Nodes => {
+            alloc::string::String::from("{\"command\":\"nodes\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Status => alloc::string::String::from(
+            "{\"status\":\"ready\",\"version\":\"1.0.0\",\"engine\":\"prismpm\"}",
+        ),
+        crate::CliCommand::Stop => {
+            alloc::string::String::from("{\"command\":\"stop\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Restart => {
+            alloc::string::String::from("{\"command\":\"restart\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Update => {
+            alloc::string::String::from("{\"command\":\"update\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Init => {
+            alloc::string::String::from("{\"command\":\"init\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Compile => {
+            alloc::string::String::from("{\"command\":\"compile\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Files => {
+            alloc::string::String::from("{\"command\":\"files\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Doctor => {
+            alloc::string::String::from("{\"command\":\"doctor\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Ai => alloc::string::String::from(
+            "{\"service\":\"hologram-ai\",\"cost_model\":\"uor-prism\",\"status\":\"optimal\"}",
+        ),
+        crate::CliCommand::Plugins => {
+            alloc::string::String::from("{\"command\":\"plugins\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Oci => {
+            alloc::string::String::from("{\"command\":\"oci\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Models => {
+            alloc::string::String::from("{\"command\":\"models\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Route => {
+            alloc::string::String::from("{\"command\":\"route\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::App => {
+            alloc::string::String::from("{\"command\":\"app\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Config => {
+            alloc::string::String::from("{\"command\":\"config\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Tracing => {
+            alloc::string::String::from("{\"command\":\"tracing\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::History => {
+            alloc::string::String::from("{\"command\":\"history\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Openapi => {
+            alloc::string::String::from("{\"command\":\"openapi\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Verify => {
+            alloc::string::String::from("{\"command\":\"verify\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Plan => {
+            alloc::string::String::from("{\"command\":\"plan\",\"status\":\"ok\"}")
+        }
+        crate::CliCommand::Help => {
+            alloc::string::String::from("{\"help\":\"hologram <command>\",\"commands\":28}")
+        }
+        crate::CliCommand::Unknown => {
+            alloc::string::String::from("{\"error\":\"unknown command\"}")
+        }
     }
 }
 
@@ -86,15 +157,34 @@ pub fn parseCliCommand(name: alloc::string::String) -> crate::CliCommand {
 }
 
 fn __prod_borrowed_parseCliCommand(name: &str) -> crate::CliCommand {
-    { let _x_4 = name == "run"; match _x_4 {
-        false => { let _x_5511 = name == "serve"; match _x_5511 {
-        false => { let _x_5619 = name == "pull"; match _x_5619 {
-        false => { let _x_5723 = name == "push"; match _x_5723 {
-        false => { let _x_5823 = name == "inspect"; match _x_5823 {
-        false => { let _x_5919 = name == "chat"; match _x_5919 {
-        false => { let _x_6011 = name == "nodes"; match _x_6011 {
-        false => { let _x_6099 = name == "status"; match _x_6099 {
-        false => { let _x_6183 = name == "stop"; match _x_6183 {
+    {
+        let _x_4 = name == "run";
+        match _x_4 {
+            false => {
+                let _x_5511 = name == "serve";
+                match _x_5511 {
+                    false => {
+                        let _x_5619 = name == "pull";
+                        match _x_5619 {
+                            false => {
+                                let _x_5723 = name == "push";
+                                match _x_5723 {
+                                    false => {
+                                        let _x_5823 = name == "inspect";
+                                        match _x_5823 {
+                                            false => {
+                                                let _x_5919 = name == "chat";
+                                                match _x_5919 {
+                                                    false => {
+                                                        let _x_6011 = name == "nodes";
+                                                        match _x_6011 {
+                                                            false => {
+                                                                let _x_6099 = name == "status";
+                                                                match _x_6099 {
+                                                                    false => {
+                                                                        let _x_6183 =
+                                                                            name == "stop";
+                                                                        match _x_6183 {
         false => { let _x_6263 = name == "restart"; match _x_6263 {
         false => { let _x_6339 = name == "update"; match _x_6339 {
         false => { let _x_6411 = name == "init"; match _x_6411 {
@@ -154,32 +244,52 @@ fn __prod_borrowed_parseCliCommand(name: &str) -> crate::CliCommand {
         true => {  crate::CliCommand::Restart },
     } },
         true => {  crate::CliCommand::Stop },
-    } },
-        true => {  crate::CliCommand::Status },
-    } },
-        true => {  crate::CliCommand::Nodes },
-    } },
-        true => {  crate::CliCommand::Chat },
-    } },
-        true => {  crate::CliCommand::Inspect },
-    } },
-        true => {  crate::CliCommand::Push },
-    } },
-        true => {  crate::CliCommand::Pull },
-    } },
-        true => {  crate::CliCommand::Serve },
-    } },
-        true => {  crate::CliCommand::Run },
-    } }
+    }
+                                                                    }
+                                                                    true => {
+                                                                        crate::CliCommand::Status
+                                                                    }
+                                                                }
+                                                            }
+                                                            true => crate::CliCommand::Nodes,
+                                                        }
+                                                    }
+                                                    true => crate::CliCommand::Chat,
+                                                }
+                                            }
+                                            true => crate::CliCommand::Inspect,
+                                        }
+                                    }
+                                    true => crate::CliCommand::Push,
+                                }
+                            }
+                            true => crate::CliCommand::Pull,
+                        }
+                    }
+                    true => crate::CliCommand::Serve,
+                }
+            }
+            true => crate::CliCommand::Run,
+        }
+    }
 }
 
 pub fn dispatchBytes(value: alloc::vec::Vec<u8>) -> alloc::vec::Vec<u8> {
-    { let _x_9 = alloc::string::String::from_utf8(value).ok(); match _x_9 {
-        None => {  (alloc::string::String::from("{\"error\":\"malformed-utf8\"}")).into_bytes() },
-        Some(val_12) => { let _x_19 = dispatchString(val_12); (_x_19).into_bytes() },
-    } }
+    {
+        let _x_9 = alloc::string::String::from_utf8(value).ok();
+        match _x_9 {
+            None => (alloc::string::String::from("{\"error\":\"malformed-utf8\"}")).into_bytes(),
+            Some(val_12) => {
+                let _x_19 = dispatchString(val_12);
+                (_x_19).into_bytes()
+            }
+        }
+    }
 }
 
 pub fn dispatchString(value: alloc::string::String) -> alloc::string::String {
-    { let _x_1 = __prod_borrowed_parseCliCommand((value).as_ref()); executeCommand(_x_1) }
+    {
+        let _x_1 = __prod_borrowed_parseCliCommand((value).as_ref());
+        executeCommand(_x_1)
+    }
 }

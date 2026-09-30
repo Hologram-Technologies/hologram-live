@@ -10,9 +10,7 @@
     clippy::manual_div_ceil
 )]
 
-use hologram_live::{
-    evaluate_ai_operations_comparison, kv_effective_tokens, ModelSpec,
-};
+use hologram_live::{evaluate_ai_operations_comparison, kv_effective_tokens, ModelSpec};
 
 const CONTEXT_LENGTHS: [u64; 7] = [0, 1, 4096, 32768, 65536, 131072, 262144];
 const PREFIX_RATIOS: [f64; 5] = [0.0, 0.50, 0.80, 1.00, 1.50];
@@ -37,7 +35,10 @@ fn test_exhaustive_scaling_matrix_210_combinations() {
     for (spec, name) in &models {
         // Verify from_name matches preset
         let resolved = ModelSpec::from_name(name).expect("from_name must resolve");
-        assert_eq!(*spec, resolved, "Resolved model must match preset for {name}");
+        assert_eq!(
+            *spec, resolved,
+            "Resolved model must match preset for {name}"
+        );
 
         let bytes_per_elem = 2u64;
         let bytes_per_token = spec.kv_bytes_per_token(bytes_per_elem);
@@ -70,12 +71,7 @@ fn test_exhaustive_scaling_matrix_210_combinations() {
                 }
 
                 // Arbitrary budget of 128 GB to inspect raw values
-                let comp = evaluate_ai_operations_comparison(
-                    *spec,
-                    ctx_len,
-                    prefix_tokens,
-                    128,
-                );
+                let comp = evaluate_ai_operations_comparison(*spec, ctx_len, prefix_tokens, 128);
 
                 total_evaluated += 1;
 
@@ -219,12 +215,8 @@ fn test_exact_memory_budget_threshold_flip() {
 
                 // 3. At budget above non_prism_bytes ceiling, thrashing risk flips to false
                 let safe_gb = (non_prism_bytes + GIB_BYTES - 1) / GIB_BYTES + 1;
-                let comp_safe = evaluate_ai_operations_comparison(
-                    *spec,
-                    ctx_len,
-                    prefix_tokens,
-                    safe_gb,
-                );
+                let comp_safe =
+                    evaluate_ai_operations_comparison(*spec, ctx_len, prefix_tokens, safe_gb);
                 assert!(
                     comp_safe.working_set.prism_contained,
                     "Prism must be contained at safe budget {safe_gb} GB"

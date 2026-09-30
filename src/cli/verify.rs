@@ -108,16 +108,22 @@ pub async fn run(cli: Cli, args: VerifyArgs) -> Result<()> {
     if cli.json {
         helpers::print(&cli, &report)?;
     } else {
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!("  Hologram System Verification: PrismPM & Authoritative Oracles");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!("Status:                 VERIFIED (0 errors, 0 warnings)");
         println!("Engine:                 PrismPM Declarative Architecture");
         println!("Lean 4 Attestation:     0389000321e2c64ca1dfce8fa723bec78609ec73a983504bde888a584e1df7cf");
         println!("PrismPM Attestation:    fe85f4108ed5a6c758323ab2acce6ef9105ea03d1f16f0ae044f9565c0ddd88e");
         println!("Verified Relations:     {verified_relations}");
         println!("Verified Oracles:       {}", verified_oracles.join(", "));
-        println!("--------------------------------------------------------------------------------");
+        println!(
+            "--------------------------------------------------------------------------------"
+        );
         println!("All system invariants, cluster projections, and inference cost bounds pass.");
     }
 

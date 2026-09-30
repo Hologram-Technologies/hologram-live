@@ -6,12 +6,66 @@ use hologram_live::{evaluate_ai_operations_comparison, ModelSpec};
 #[test]
 fn test_llama_family_specs() {
     let models = [
-        (ModelSpec::llama3_1b(), "Llama-3.2-1B", 1_230_000_000u64, 16u32, 2048u32, 32u32, 8u32, 64u32),
-        (ModelSpec::llama3_3b(), "Llama-3.2-3B", 3_210_000_000u64, 28u32, 3072u32, 24u32, 8u32, 128u32),
-        (ModelSpec::llama2_7b(), "Llama-2-7B", 6_740_000_000u64, 32u32, 4096u32, 32u32, 32u32, 128u32),
-        (ModelSpec::llama3_8b(), "Llama-3.1-8B", 8_030_000_000u64, 32u32, 4096u32, 32u32, 8u32, 128u32),
-        (ModelSpec::llama2_13b(), "Llama-2-13B", 13_000_000_000u64, 40u32, 5120u32, 40u32, 40u32, 128u32),
-        (ModelSpec::llama3_70b(), "Llama-3.1-70B", 70_600_000_000u64, 80u32, 8192u32, 64u32, 8u32, 128u32),
+        (
+            ModelSpec::llama3_1b(),
+            "Llama-3.2-1B",
+            1_230_000_000u64,
+            16u32,
+            2048u32,
+            32u32,
+            8u32,
+            64u32,
+        ),
+        (
+            ModelSpec::llama3_3b(),
+            "Llama-3.2-3B",
+            3_210_000_000u64,
+            28u32,
+            3072u32,
+            24u32,
+            8u32,
+            128u32,
+        ),
+        (
+            ModelSpec::llama2_7b(),
+            "Llama-2-7B",
+            6_740_000_000u64,
+            32u32,
+            4096u32,
+            32u32,
+            32u32,
+            128u32,
+        ),
+        (
+            ModelSpec::llama3_8b(),
+            "Llama-3.1-8B",
+            8_030_000_000u64,
+            32u32,
+            4096u32,
+            32u32,
+            8u32,
+            128u32,
+        ),
+        (
+            ModelSpec::llama2_13b(),
+            "Llama-2-13B",
+            13_000_000_000u64,
+            40u32,
+            5120u32,
+            40u32,
+            40u32,
+            128u32,
+        ),
+        (
+            ModelSpec::llama3_70b(),
+            "Llama-3.1-70B",
+            70_600_000_000u64,
+            80u32,
+            8192u32,
+            64u32,
+            8u32,
+            128u32,
+        ),
     ];
 
     for (spec, name, params, layers, hidden, attn_heads, kv_heads, head_dim) in models {
@@ -53,12 +107,18 @@ fn test_8b_model_full_context_window_containment() {
 
     // PrismPM total working set is ~12.62 GB <= 16 GB (Contained!)
     assert!(comp.working_set.prism_contained);
-    assert_eq!(comp.working_set.total_prism_working_set_bytes, 12_621_711_808);
+    assert_eq!(
+        comp.working_set.total_prism_working_set_bytes,
+        12_621_711_808
+    );
     assert!(comp.working_set.total_prism_working_set_bytes <= comp.memory_budget_bytes);
 
     // Non-PrismPM total working set is ~21.26 GB > 16 GB (Swap Thrashing Risk!)
     assert!(comp.working_set.non_prism_swap_thrashing_risk);
-    assert_eq!(comp.working_set.total_non_prism_working_set_bytes, 21_261_978_048);
+    assert_eq!(
+        comp.working_set.total_non_prism_working_set_bytes,
+        21_261_978_048
+    );
     assert!(comp.working_set.total_non_prism_working_set_bytes > comp.memory_budget_bytes);
 
     assert_eq!(
@@ -112,12 +172,24 @@ fn test_arbitrary_components_elimination_record() {
 
     let eliminated = &comp.arbitrary_components_eliminated;
     assert_eq!(eliminated.len(), 6);
-    assert!(eliminated.iter().any(|item| item.contains("Unbounded dynamic KV-cache")));
-    assert!(eliminated.iter().any(|item| item.contains("OS swap thrashing")));
-    assert!(eliminated.iter().any(|item| item.contains("Dynamic string-matching")));
-    assert!(eliminated.iter().any(|item| item.contains("Un-fused DRAM round-trips")));
-    assert!(eliminated.iter().any(|item| item.contains("Ad-hoc thread and MPSC")));
-    assert!(eliminated.iter().any(|item| item.contains("quadratic context blowup")));
+    assert!(eliminated
+        .iter()
+        .any(|item| item.contains("Unbounded dynamic KV-cache")));
+    assert!(eliminated
+        .iter()
+        .any(|item| item.contains("OS swap thrashing")));
+    assert!(eliminated
+        .iter()
+        .any(|item| item.contains("Dynamic string-matching")));
+    assert!(eliminated
+        .iter()
+        .any(|item| item.contains("Un-fused DRAM round-trips")));
+    assert!(eliminated
+        .iter()
+        .any(|item| item.contains("Ad-hoc thread and MPSC")));
+    assert!(eliminated
+        .iter()
+        .any(|item| item.contains("quadratic context blowup")));
 }
 
 #[test]
@@ -144,17 +216,44 @@ fn test_scaling_dimensions_bandwidth_latency_throughput() {
 #[test]
 fn test_alias_resolution_and_overflow_protection() {
     // Aliases
-    assert_eq!(ModelSpec::from_name("llama-1b"), Some(ModelSpec::llama3_1b()));
-    assert_eq!(ModelSpec::from_name("llama-3b"), Some(ModelSpec::llama3_3b()));
+    assert_eq!(
+        ModelSpec::from_name("llama-1b"),
+        Some(ModelSpec::llama3_1b())
+    );
+    assert_eq!(
+        ModelSpec::from_name("llama-3b"),
+        Some(ModelSpec::llama3_3b())
+    );
     assert_eq!(ModelSpec::from_name("7b"), Some(ModelSpec::llama2_7b()));
-    assert_eq!(ModelSpec::from_name("llama-7b"), Some(ModelSpec::llama2_7b()));
-    assert_eq!(ModelSpec::from_name("llama2-7b"), Some(ModelSpec::llama2_7b()));
-    assert_eq!(ModelSpec::from_name("llama3-7b"), Some(ModelSpec::llama2_7b()));
-    assert_eq!(ModelSpec::from_name("llama-8b"), Some(ModelSpec::llama3_8b()));
+    assert_eq!(
+        ModelSpec::from_name("llama-7b"),
+        Some(ModelSpec::llama2_7b())
+    );
+    assert_eq!(
+        ModelSpec::from_name("llama2-7b"),
+        Some(ModelSpec::llama2_7b())
+    );
+    assert_eq!(
+        ModelSpec::from_name("llama3-7b"),
+        Some(ModelSpec::llama2_7b())
+    );
+    assert_eq!(
+        ModelSpec::from_name("llama-8b"),
+        Some(ModelSpec::llama3_8b())
+    );
     assert_eq!(ModelSpec::from_name("13b"), Some(ModelSpec::llama2_13b()));
-    assert_eq!(ModelSpec::from_name("llama-13b"), Some(ModelSpec::llama2_13b()));
-    assert_eq!(ModelSpec::from_name("llama2-13b"), Some(ModelSpec::llama2_13b()));
-    assert_eq!(ModelSpec::from_name("llama-70b"), Some(ModelSpec::llama3_70b()));
+    assert_eq!(
+        ModelSpec::from_name("llama-13b"),
+        Some(ModelSpec::llama2_13b())
+    );
+    assert_eq!(
+        ModelSpec::from_name("llama2-13b"),
+        Some(ModelSpec::llama2_13b())
+    );
+    assert_eq!(
+        ModelSpec::from_name("llama-70b"),
+        Some(ModelSpec::llama3_70b())
+    );
     assert_eq!(ModelSpec::from_name("non-existent"), None);
 
     // Checked KV bytes

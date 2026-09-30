@@ -11,13 +11,13 @@
 mod burn;
 #[cfg(feature = "candle")]
 mod candle;
+pub mod cost_model;
 mod echo;
 #[cfg(feature = "llamacpp")]
 mod llamacpp;
 mod ollama;
 mod vllm;
 mod weightc;
-pub mod cost_model;
 pub use cost_model::*;
 
 #[cfg(feature = "burn")]

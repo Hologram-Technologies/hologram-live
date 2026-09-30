@@ -9,8 +9,8 @@
 )]
 
 use hologram_live::{
-    dispatchBytes, dispatchString, evaluate_ai_operations_comparison, executeCommand,
-    matmul_flops, parseCliCommand, CliCommand, FusedKernelProfile, MatrixDimension, ModelSpec,
+    dispatchBytes, dispatchString, evaluate_ai_operations_comparison, executeCommand, matmul_flops,
+    parseCliCommand, CliCommand, FusedKernelProfile, MatrixDimension, ModelSpec,
 };
 use std::process::Command;
 
@@ -404,7 +404,10 @@ const ALL_CANONICAL_COMMANDS: [(&str, CliCommand, u8); 28] = [
 fn test_adversarial_all_28_canonical_commands_exhaustive() {
     for (name, expected_cmd, expected_discriminant) in ALL_CANONICAL_COMMANDS {
         let parsed = parseCliCommand(name.to_string());
-        assert_eq!(parsed, expected_cmd, "Command '{name}' must parse correctly");
+        assert_eq!(
+            parsed, expected_cmd,
+            "Command '{name}' must parse correctly"
+        );
         assert_eq!(
             parsed as u8, expected_discriminant,
             "Discriminant for '{name}' must be {expected_discriminant}"
@@ -435,19 +438,58 @@ fn test_adversarial_all_28_canonical_commands_exhaustive() {
 fn test_adversarial_malformed_and_boundary_command_routing() {
     let invalid_inputs = [
         // Case sensitivity violations
-        "AI", "Ai", "aI", "RUN", "Run", "STATUS", "Status", "HELP", "Help",
+        "AI",
+        "Ai",
+        "aI",
+        "RUN",
+        "Run",
+        "STATUS",
+        "Status",
+        "HELP",
+        "Help",
         // Substrings / prefixes
-        "serv", "pul", "pus", "inspec", "cha", "node", "statu",
+        "serv",
+        "pul",
+        "pus",
+        "inspec",
+        "cha",
+        "node",
+        "statu",
         // Extended suffixes
-        "run1", "runner", "serve_all", "push--force", "ai-status",
+        "run1",
+        "runner",
+        "serve_all",
+        "push--force",
+        "ai-status",
         // Whitespace padding
-        " ai", "ai ", " ai ", "\tai\n", "  status", "status\0",
+        " ai",
+        "ai ",
+        " ai ",
+        "\tai\n",
+        "  status",
+        "status\0",
         // Shell & SQL injection attacks
-        "; rm -rf /", "`id`", "$(whoami)", "ai; ls", "status' OR '1'='1",
+        "; rm -rf /",
+        "`id`",
+        "$(whoami)",
+        "ai; ls",
+        "status' OR '1'='1",
         // Control characters & Unicode
-        "", "\0", "\n", "\t", "🤖", "λ", "🔥",
+        "",
+        "\0",
+        "\n",
+        "\t",
+        "🤖",
+        "λ",
+        "🔥",
         // Non-modeled commands
-        "sudo", "exec", "kill", "format", "reboot", "debug", "benchmark",
+        "sudo",
+        "exec",
+        "kill",
+        "format",
+        "reboot",
+        "debug",
+        "benchmark",
     ];
 
     for &inv in &invalid_inputs {
@@ -460,8 +502,7 @@ fn test_adversarial_malformed_and_boundary_command_routing() {
 
         let disp = dispatchString(inv.to_string());
         assert_eq!(
-            disp,
-            r#"{"error":"unknown command"}"#,
+            disp, r#"{"error":"unknown command"}"#,
             "Input '{inv}' must produce unknown command error response"
         );
     }
@@ -470,10 +511,7 @@ fn test_adversarial_malformed_and_boundary_command_routing() {
     let huge_str = "a".repeat(65536);
     let parsed_huge = parseCliCommand(huge_str.clone());
     assert_eq!(parsed_huge, CliCommand::Unknown);
-    assert_eq!(
-        dispatchString(huge_str),
-        r#"{"error":"unknown command"}"#
-    );
+    assert_eq!(dispatchString(huge_str), r#"{"error":"unknown command"}"#);
 
     // Malformed UTF-8 bytes to dispatchBytes
     let malformed_byte_vectors: Vec<Vec<u8>> = vec![
@@ -538,7 +576,10 @@ fn test_adversarial_cli_exit_code_5_live_capability_missing() {
                 "JSON code must be LIVE_CAPABILITY_MISSING"
             );
             assert!(
-                val["message"].as_str().unwrap().contains("not modeled or permitted by the PrismPM system architecture"),
+                val["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("not modeled or permitted by the PrismPM system architecture"),
                 "Message must cite PrismPM declarative architecture"
             );
         } else {
@@ -605,8 +646,8 @@ fn test_adversarial_cli_valid_commands_do_not_exit_code_5() {
 fn test_adversarial_zero_allocation_source_and_throughput_proof() {
     // 1. Code inspection of __prod_borrowed_parseCliCommand in crates/prism-hologram/src/lib.rs
     let source_path = "crates/prism-hologram/src/lib.rs";
-    let source_content = std::fs::read_to_string(source_path)
-        .expect("crates/prism-hologram/src/lib.rs must exist");
+    let source_content =
+        std::fs::read_to_string(source_path).expect("crates/prism-hologram/src/lib.rs must exist");
 
     let fn_start = source_content
         .find("fn __prod_borrowed_parseCliCommand(name: &str) -> crate::CliCommand {")
@@ -723,4 +764,3 @@ fn test_adversarial_cli_injection_and_path_traversal_matrix() {
         "Standalone unknown flag without positional command must be handled by clap with code 2"
     );
 }
-

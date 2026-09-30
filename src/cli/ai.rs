@@ -4,7 +4,8 @@ use hologram::space::address_bytes;
 use hologram_live::error::{LiveError, Result};
 use hologram_live::holo::inspect_bytes;
 use hologram_live::{
-    evaluate_ai_operations_comparison, FusedKernelProfile, InferenceCostProfile, MatrixDimension, ModelSpec,
+    evaluate_ai_operations_comparison, FusedKernelProfile, InferenceCostProfile, MatrixDimension,
+    ModelSpec,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};

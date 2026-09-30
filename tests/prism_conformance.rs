@@ -1,52 +1,160 @@
 #![forbid(unsafe_code)]
 
-use hologram_live::{
-    dispatchBytes, dispatchString, executeCommand, parseCliCommand, CliCommand,
-};
+use hologram_live::{dispatchBytes, dispatchString, executeCommand, parseCliCommand, CliCommand};
 
 #[test]
 fn test_prism_cli_commands_coverage() {
     let commands = [
         ("run", CliCommand::Run, r#"{"command":"run","status":"ok"}"#),
-        ("serve", CliCommand::Serve, r#"{"command":"serve","status":"ok"}"#),
-        ("pull", CliCommand::Pull, r#"{"command":"pull","status":"ok"}"#),
-        ("push", CliCommand::Push, r#"{"command":"push","status":"ok"}"#),
-        ("inspect", CliCommand::Inspect, r#"{"holo_version":4,"magic":"HOLO"}"#),
-        ("chat", CliCommand::Chat, r#"{"command":"chat","status":"ok"}"#),
-        ("nodes", CliCommand::Nodes, r#"{"command":"nodes","status":"ok"}"#),
-        ("status", CliCommand::Status, r#"{"status":"ready","version":"1.0.0","engine":"prismpm"}"#),
-        ("stop", CliCommand::Stop, r#"{"command":"stop","status":"ok"}"#),
-        ("restart", CliCommand::Restart, r#"{"command":"restart","status":"ok"}"#),
-        ("update", CliCommand::Update, r#"{"command":"update","status":"ok"}"#),
-        ("init", CliCommand::Init, r#"{"command":"init","status":"ok"}"#),
-        ("compile", CliCommand::Compile, r#"{"command":"compile","status":"ok"}"#),
-        ("files", CliCommand::Files, r#"{"command":"files","status":"ok"}"#),
-        ("doctor", CliCommand::Doctor, r#"{"command":"doctor","status":"ok"}"#),
-        ("ai", CliCommand::Ai, r#"{"service":"hologram-ai","cost_model":"uor-prism","status":"optimal"}"#),
-        ("plugins", CliCommand::Plugins, r#"{"command":"plugins","status":"ok"}"#),
+        (
+            "serve",
+            CliCommand::Serve,
+            r#"{"command":"serve","status":"ok"}"#,
+        ),
+        (
+            "pull",
+            CliCommand::Pull,
+            r#"{"command":"pull","status":"ok"}"#,
+        ),
+        (
+            "push",
+            CliCommand::Push,
+            r#"{"command":"push","status":"ok"}"#,
+        ),
+        (
+            "inspect",
+            CliCommand::Inspect,
+            r#"{"holo_version":4,"magic":"HOLO"}"#,
+        ),
+        (
+            "chat",
+            CliCommand::Chat,
+            r#"{"command":"chat","status":"ok"}"#,
+        ),
+        (
+            "nodes",
+            CliCommand::Nodes,
+            r#"{"command":"nodes","status":"ok"}"#,
+        ),
+        (
+            "status",
+            CliCommand::Status,
+            r#"{"status":"ready","version":"1.0.0","engine":"prismpm"}"#,
+        ),
+        (
+            "stop",
+            CliCommand::Stop,
+            r#"{"command":"stop","status":"ok"}"#,
+        ),
+        (
+            "restart",
+            CliCommand::Restart,
+            r#"{"command":"restart","status":"ok"}"#,
+        ),
+        (
+            "update",
+            CliCommand::Update,
+            r#"{"command":"update","status":"ok"}"#,
+        ),
+        (
+            "init",
+            CliCommand::Init,
+            r#"{"command":"init","status":"ok"}"#,
+        ),
+        (
+            "compile",
+            CliCommand::Compile,
+            r#"{"command":"compile","status":"ok"}"#,
+        ),
+        (
+            "files",
+            CliCommand::Files,
+            r#"{"command":"files","status":"ok"}"#,
+        ),
+        (
+            "doctor",
+            CliCommand::Doctor,
+            r#"{"command":"doctor","status":"ok"}"#,
+        ),
+        (
+            "ai",
+            CliCommand::Ai,
+            r#"{"service":"hologram-ai","cost_model":"uor-prism","status":"optimal"}"#,
+        ),
+        (
+            "plugins",
+            CliCommand::Plugins,
+            r#"{"command":"plugins","status":"ok"}"#,
+        ),
         ("oci", CliCommand::Oci, r#"{"command":"oci","status":"ok"}"#),
-        ("models", CliCommand::Models, r#"{"command":"models","status":"ok"}"#),
-        ("route", CliCommand::Route, r#"{"command":"route","status":"ok"}"#),
+        (
+            "models",
+            CliCommand::Models,
+            r#"{"command":"models","status":"ok"}"#,
+        ),
+        (
+            "route",
+            CliCommand::Route,
+            r#"{"command":"route","status":"ok"}"#,
+        ),
         ("app", CliCommand::App, r#"{"command":"app","status":"ok"}"#),
-        ("config", CliCommand::Config, r#"{"command":"config","status":"ok"}"#),
-        ("tracing", CliCommand::Tracing, r#"{"command":"tracing","status":"ok"}"#),
-        ("history", CliCommand::History, r#"{"command":"history","status":"ok"}"#),
-        ("openapi", CliCommand::Openapi, r#"{"command":"openapi","status":"ok"}"#),
-        ("verify", CliCommand::Verify, r#"{"command":"verify","status":"ok"}"#),
-        ("plan", CliCommand::Plan, r#"{"command":"plan","status":"ok"}"#),
-        ("help", CliCommand::Help, r#"{"help":"hologram <command>","commands":28}"#),
+        (
+            "config",
+            CliCommand::Config,
+            r#"{"command":"config","status":"ok"}"#,
+        ),
+        (
+            "tracing",
+            CliCommand::Tracing,
+            r#"{"command":"tracing","status":"ok"}"#,
+        ),
+        (
+            "history",
+            CliCommand::History,
+            r#"{"command":"history","status":"ok"}"#,
+        ),
+        (
+            "openapi",
+            CliCommand::Openapi,
+            r#"{"command":"openapi","status":"ok"}"#,
+        ),
+        (
+            "verify",
+            CliCommand::Verify,
+            r#"{"command":"verify","status":"ok"}"#,
+        ),
+        (
+            "plan",
+            CliCommand::Plan,
+            r#"{"command":"plan","status":"ok"}"#,
+        ),
+        (
+            "help",
+            CliCommand::Help,
+            r#"{"help":"hologram <command>","commands":28}"#,
+        ),
     ];
 
-    assert_eq!(commands.len(), 28, "Must test exactly all 28 modeled CLI commands");
+    assert_eq!(
+        commands.len(),
+        28,
+        "Must test exactly all 28 modeled CLI commands"
+    );
 
     for (name, expected_cmd, expected_response) in commands {
         let parsed = parseCliCommand(name.to_string());
         assert_eq!(parsed, expected_cmd, "Command '{name}' failed to parse");
         let result = executeCommand(parsed);
-        assert_eq!(result, expected_response, "Command '{name}' produced unexpected execution response");
+        assert_eq!(
+            result, expected_response,
+            "Command '{name}' produced unexpected execution response"
+        );
 
         let dispatched_str = dispatchString(name.to_string());
-        assert_eq!(dispatched_str, expected_response, "dispatchString('{name}') failed");
+        assert_eq!(
+            dispatched_str, expected_response,
+            "dispatchString('{name}') failed"
+        );
 
         let dispatched_bytes = dispatchBytes(name.as_bytes().to_vec());
         assert_eq!(
@@ -105,7 +213,10 @@ fn test_hologram_v4_container_oracle() {
 fn test_prism_system_projections_coverage() {
     let build_dir = find_latest_build_dir();
     let proj_dir = build_dir.join("projections");
-    assert!(proj_dir.exists(), "projections directory must exist in build output");
+    assert!(
+        proj_dir.exists(),
+        "projections directory must exist in build output"
+    );
 
     let required_projections = [
         "asyncapi.json",
@@ -123,11 +234,20 @@ fn test_prism_system_projections_coverage() {
 
     for name in required_projections {
         let path = proj_dir.join(name);
-        assert!(path.exists(), "Projection {name} must exist in build output");
+        assert!(
+            path.exists(),
+            "Projection {name} must exist in build output"
+        );
         let content = std::fs::read_to_string(&path).expect("Read projection content");
-        assert!(!content.trim().is_empty(), "Projection {name} must not be empty");
+        assert!(
+            !content.trim().is_empty(),
+            "Projection {name} must not be empty"
+        );
 
-        if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("json")) {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
             let _: serde_json::Value = serde_json::from_str(&content)
                 .unwrap_or_else(|e| panic!("Projection {name} must be valid JSON: {e}"));
         }
@@ -196,7 +316,8 @@ fn test_prism_stakeholder_viewpoints_and_architecture() {
     let build_dir = find_latest_build_dir();
     let system_path = build_dir.join("system.prism.json");
     let system_str = std::fs::read_to_string(&system_path).expect("Read system.prism.json");
-    let system: serde_json::Value = serde_json::from_str(&system_str).expect("Parse system.prism.json");
+    let system: serde_json::Value =
+        serde_json::from_str(&system_str).expect("Parse system.prism.json");
 
     assert_eq!(system["schema"], "prismpm/system-model/1");
 
@@ -210,13 +331,33 @@ fn test_prism_stakeholder_viewpoints_and_architecture() {
     assert!(comp_ids.contains(&"telemetry"));
 
     // Check architecture viewpoints for modeled stakeholders
-    let architecture = system["architecture"].as_array().expect("architecture array");
-    let arch_ids: Vec<&str> = architecture.iter().filter_map(|a| a["id"].as_str()).collect();
-    assert!(arch_ids.contains(&"arch-stakeholder-operator"), "Must model Edge AI Operator");
-    assert!(arch_ids.contains(&"arch-stakeholder-developer"), "Must model Model Developer");
-    assert!(arch_ids.contains(&"arch-stakeholder-security"), "Must model Security Auditor");
-    assert!(arch_ids.contains(&"arch-decision-holo-v4"), "Must model Holo v4 decision");
-    assert!(arch_ids.contains(&"arch-decision-uor-cost-model"), "Must model UOR cost-model decision");
+    let architecture = system["architecture"]
+        .as_array()
+        .expect("architecture array");
+    let arch_ids: Vec<&str> = architecture
+        .iter()
+        .filter_map(|a| a["id"].as_str())
+        .collect();
+    assert!(
+        arch_ids.contains(&"arch-stakeholder-operator"),
+        "Must model Edge AI Operator"
+    );
+    assert!(
+        arch_ids.contains(&"arch-stakeholder-developer"),
+        "Must model Model Developer"
+    );
+    assert!(
+        arch_ids.contains(&"arch-stakeholder-security"),
+        "Must model Security Auditor"
+    );
+    assert!(
+        arch_ids.contains(&"arch-decision-holo-v4"),
+        "Must model Holo v4 decision"
+    );
+    assert!(
+        arch_ids.contains(&"arch-decision-uor-cost-model"),
+        "Must model UOR cost-model decision"
+    );
 
     // Check target bindings
     let targets = system["targets"].as_array().expect("targets array");
@@ -244,6 +385,8 @@ fn test_prism_router_throughput_and_latency() {
     println!(
         "PrismPM router: {total_ops} dispatches in {elapsed:?} ({nanos_per_op:.1} ns/op, {ops_per_sec:.0} ops/sec)"
     );
-    assert!(nanos_per_op < 1_000.0, "Prism router dispatch must be sub-microsecond");
+    assert!(
+        nanos_per_op < 1_000.0,
+        "Prism router dispatch must be sub-microsecond"
+    );
 }
-

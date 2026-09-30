@@ -93,26 +93,38 @@ pub async fn run(cli: Cli, args: PlanArgs) -> Result<()> {
     if cli.json {
         helpers::print(&cli, &plan_data)?;
     } else {
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!("  Hologram System Architecture & Reconciliation Plan (PrismPM)");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!("Product:        hologram-live v1.0.0");
         println!("Engine:         PrismPM Declarative Topology");
         println!("Target Filter:  {}", args.target);
-        println!("--------------------------------------------------------------------------------");
+        println!(
+            "--------------------------------------------------------------------------------"
+        );
         println!("Reconciliation Execution DAG:");
         println!("  Phase 1: [migrate]");
-        println!("           -> One-shot database schema migration (fail-closed, must complete first)");
+        println!(
+            "           -> One-shot database schema migration (fail-closed, must complete first)"
+        );
         println!("  Phase 2: [cas-store] (port 9000, cas-volume), [telemetry] (port 4317)");
         println!("           -> Depends on: migrate");
         println!("  Phase 3: [server] (ports 8080/50051), [inference-engine] (1..4 workers)");
         println!("           -> Depends on: cas-store, telemetry");
-        println!("--------------------------------------------------------------------------------");
+        println!(
+            "--------------------------------------------------------------------------------"
+        );
         println!("Modeled Stakeholder Viewpoints (ISO 42010):");
         println!("  - Edge AI Operator: Working Set Containment (WS-1..WS-3) prevents OS swap");
         println!("  - Model Developer:  4-way fused kernels (FU-1..FU-4) cut DRAM traffic by 75%");
         println!("  - Security Auditor: Blake3 CAS immutability & Lean 4 mathematical proof");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
     }
 
     Ok(())

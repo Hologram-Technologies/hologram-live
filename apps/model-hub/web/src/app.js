@@ -4,16 +4,152 @@ import { mountChrome } from "./chrome.js";
 
 const base = document.documentElement.dataset.base;
 const $ = (s, el = document) => el.querySelector(s);
+// Registry reads shared by the registry section and the provenance rows: one artifact lookup, one fetch per blob.
+// Declared here, above the calls below, so nothing reads them before they exist.
+const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
+const OCI_NAMESPACES = ["", "probe/"];
+const blobs = new Map();
+let artifactLookup = null;
 
 mountChrome();
 B.play();
 let view = null; // set by browse(): lets the archive swap the catalog under the same interface
 if ($("#browse")) browse();
 if ($("[data-verify]")) model();
+if ($("#oci")) registryArtifact();
+if ($("[data-prov-id]")) provenanceRows();
 copyButtons();
 if ($("#archive")) archive();
 if ($("#gh-stars")) stars();
 if ($(".land-track")) strip();
+if ($("#get")) getIt();
+heroStats();
+
+// Get it: one control, every way to take this model. Pick a tool, pick a format, copy one command. When the tensor
+// index holds the model, OCI joins the tools and the page's one address becomes the model's OCI index digest.
+// The counts beside the name: the build's daily numbers, refreshed from Hugging Face's own API when it answers.
+async function heroStats() {
+  const el = $("#hero-stats"); if (!el) return;
+  try {
+    const r = await fetch(`https://huggingface.co/api/models/${el.dataset.repo}?expand[]=downloads&expand[]=likes`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (Number.isFinite(j.downloads)) {
+      $("#stat-downloads").textContent = R.count(j.downloads);
+      const dd = [...document.querySelectorAll("#facts dt")].find((d) => d.textContent.startsWith("Downloads"))?.nextElementSibling;
+      if (dd) dd.textContent = R.count(j.downloads);
+    }
+    if (Number.isFinite(j.likes)) $("#stat-likes").textContent = R.count(j.likes);
+  } catch {}
+}
+
+async function getIt() {
+  const data = JSON.parse($("#get-data").textContent), repo = data.repo, host = location.host, esc = R.esc;
+  // The address, as it is used: this host, the model's name, the short digest. Upgraded below when indexed.
+  const addrText = $("#addr-text"), hashBtn = $("#hash");
+  if (addrText) addrText.textContent = `${host}/${repo.toLowerCase()}`;
+  const tools = new Map([
+    ...(data.ollama.length ? [["ollama", { name: "Ollama", formats: data.ollama, cmd: (f) => `ollama run ${host}/${repo}:${f}`,
+      note: "The GGUF file, checked against its address as it arrives." }]] : []),
+    ["hf", { name: "Hugging Face", formats: [], cmd: () => `HF_ENDPOINT=${location.origin} hf download ${repo}`,
+      note: "Your transformers, vLLM and llama.cpp code, unchanged: point it here once." }],
+    ["browser", { name: "Browser", formats: [], note: "Assembled in this tab from the holder you pick." }],
+  ]);
+  let tool = [...tools.keys()][0], fmt = null;
+  const toolsEl = $("#get-tools"), fmtEl = $("#get-formats");
+  const draw = () => {
+    const t = tools.get(tool);
+    if (!t.formats.includes(fmt)) fmt = t.formats[0] || null;
+    toolsEl.innerHTML = [...tools].map(([k, v]) => `<button type="button" role="tab" data-tool="${k}" aria-selected="${k === tool}">${esc(v.name)}</button>`).join("");
+    fmtEl.innerHTML = t.formats.length ? `<button type="button" class="fmt-btn" aria-haspopup="menu" aria-expanded="false">${esc(fmt)}${R.icon.chevron}</button><div class="fmt-menu" role="menu" hidden>${t.formats.map((f) => `<button type="button" role="menuitemradio" data-fmt="${esc(f)}" aria-checked="${f === fmt}">${esc(f)}</button>`).join("")}</div>` : "";
+    fmtEl.hidden = !t.formats.length;
+    const browser = tool === "browser";
+    $("#get-line").hidden = browser; $("#get-browser").hidden = !browser;
+    if (!browser) { const c = t.cmd(fmt); $("#get-cmd").textContent = c; $("#get-copy").dataset.copy = c; }
+    $("#get-line").title = t.note; $("#get-browser").title = t.note;
+  };
+  toolsEl.addEventListener("click", (e) => { const b = e.target.closest("[data-tool]"); if (b) { tool = b.dataset.tool; draw(); } });
+  fmtEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const b = e.target.closest("[data-fmt]"); if (b) { fmt = b.dataset.fmt; draw(); return; }
+    const open = e.target.closest(".fmt-btn"); if (open) { const m = fmtEl.querySelector(".fmt-menu"); m.hidden = !m.hidden; open.setAttribute("aria-expanded", String(!m.hidden)); }
+  });
+  document.addEventListener("click", () => { const m = fmtEl.querySelector(".fmt-menu"); if (m) m.hidden = true; });
+  // The one hash, in either spelling: sha256 (what OCI clients pull by) or the IPFS CID of the same bytes.
+  const drawHash = (which) => {
+    if (!hashBtn) return;
+    const cid = hashBtn.dataset.cid, useCid = which === "cid" && cid;
+    const [algo, hex] = hashBtn.dataset.sha.split(":");
+    hashBtn.dataset.show = useCid ? "cid" : "sha";
+    hashBtn.querySelector(".kind").textContent = useCid ? "ipfs" : algo;
+    $("#hash-text").textContent = useCid ? `${cid.slice(0, 7)}…${cid.slice(-4)}` : `${hex.slice(0, 8)}…${hex.slice(-6)}`;
+    hashBtn.title = useCid ? `ipfs://${cid}` : hashBtn.dataset.sha;
+    hashBtn.style.cursor = cid ? "pointer" : "default";
+  };
+  hashBtn?.addEventListener("click", () => drawHash(hashBtn.dataset.show === "cid" ? "sha" : "cid"));
+  draw();
+
+  let s = null;
+  try { const r = await fetch(`/v2/models/${repo.toLowerCase()}/summary`); if (r.ok) s = await r.json(); } catch {}
+  if (!s) return;
+  // OCI: the same model in every format, each file rebuilt from its tensors. Bare format tags; the name alone is the default.
+  const label = (f) => (f === "safetensors-sharded" ? "sharded" : f);
+  const formats = ["safetensors", "safetensors-sharded", "original"].filter((f) => s.formats[f]).map(label);
+  const entries = [...tools];
+  entries.splice(entries.findIndex(([k]) => k === "hf"), 0, ["oci", { name: "OCI", formats, cmd: (f) => `oras pull ${host}/${s.reference}${f === formats[0] ? "" : `:${f}`}`,
+    note: "Any OCI client, VM or Kubernetes image volume. Every file is rebuilt from its tensors and checked." }]);
+  tools.clear(); for (const [k, v] of entries) tools.set(k, v);
+  tool = [...tools.keys()][0];
+  draw();
+  // The one address: the model's OCI index, the digest every client pulls by.
+  if (addrText) {
+    addrText.textContent = `${host}/${s.reference.replace(/^models\//, "")}`;
+    $("#addr").dataset.copy = `${host}/${s.reference}@${s.index}`;
+    $(".signature").title = `${host}/${s.reference}@${s.index}`;
+    if (hashBtn) { hashBtn.dataset.sha = s.index; hashBtn.dataset.cid = s.ipfs || ""; drawHash("sha"); }
+  }
+  $("#hero-sub").insertAdjacentHTML("beforeend", ` · ${R.count(s.tensors)} tensors`);
+  // IPFS holds the tensor bytes when every tensor is its own IPFS object, named by its κ. If the whole files are
+  // pinned too, the IPFS line is already here; otherwise it is added, and Verify fetches one tensor from IPFS and
+  // checks it against its κ in this tab.
+  const cov = s.ipfsTensors, held = $(".rows .sources ul");
+  if (held && cov && cov.total && cov.pinned === cov.total && cov.sample) {
+    const note = `Every tensor (${R.count(cov.total)}) is its own IPFS object, named by its κ`;
+    let li = held.querySelector('li[data-source="ipfs"]');
+    if (li) li.title = `${note}; the whole files are pinned too.`;
+    else {
+      li = document.createElement("li");
+      li.dataset.source = "ipfs-tensors";
+      li.title = `${note}. Verify checks one against its κ.`;
+      li.innerHTML = `<span class="state"></span><a href="${esc(cov.gateway)}/ipfs/${esc(cov.sample.cid)}" target="_blank" rel="noopener">IPFS</a>`;
+      held.append(li);
+      $("[data-verify]")?.addEventListener("click", async () => {
+        // Any IPFS gateway will do: the bytes must hash to the κ whoever serves them. Several, so one blocked
+        // gateway (some networks reset IPFS gateways) does not read as missing bytes.
+        li.dataset.state = "busy";
+        let state = "bad";
+        for (const gw of [cov.gateway, "https://gateway.pinata.cloud", "https://dweb.link"]) {
+          try {
+            const r = await fetch(`${gw}/ipfs/${cov.sample.cid}`, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) continue;
+            const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await r.arrayBuffer()));
+            const got = `sha256:${[...digest].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+            if (got === cov.sample.kappa) { state = "ok"; li.title = `${li.title.split(" Checked")[0]} Checked through ${new URL(gw).host}.`; break; }
+          } catch { /* next gateway */ }
+        }
+        li.dataset.state = state;
+        // The verdict above names the file holders; say what the tensor check found once it is written.
+        const out = $("#verdict");
+        for (let i = 0; i < 40 && out && !/^Verified|could not|No source|different bytes/.test(out.textContent); i++) await new Promise((ok) => setTimeout(ok, 250));
+        if (out && !out.hidden) out.textContent += state === "ok" ? " A tensor from IPFS matched its κ." : " IPFS could not be reached from this network.";
+      });
+    }
+  }
+  // Relations: one quiet row, only when there is one.
+  const link = (r) => `<a href="${base}models/${esc(r)}/">${esc(r)}</a>`, same = $("#same"), row = $("#same-row");
+  if (same && s.sameWeights.length) { same.innerHTML = `${R.icon.nodes}Same weights as ${s.sameWeights.map(link).join(", ")}`; row.hidden = false; }
+  else if (same && s.shares.length) { const e = s.shares[0]; same.innerHTML = `${R.icon.nodes}Shares ${formatBytes(e.bytes)} of tensors with ${link(e.repo)}`; row.hidden = false; }
+}
 
 // The strip's slide is a CSS animation, and on some phones it never advances: a compositor that will not run a
 // transform loop on a fixed, masked element, or a device that turns animations off below the page. A reader on
@@ -768,6 +904,207 @@ function downloads({ onOpen } = {}) {
     if (act) act.textContent = "Download zip";
     for (const o of others) { o.title = o.dataset.title; o.removeAttribute("aria-disabled"); }
   });
+}
+
+// ---- the model in this host's registry
+//
+// The registry is the source; the page only reads it, and checks everything it reads: a manifest's sha256 is
+// recomputed rather than taken from the header, and every blob is checked against the digest that names it.
+
+function hexOf(buf) {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Of(bytes) {
+  return `sha256:${hexOf(await crypto.subtle.digest("SHA-256", bytes))}`;
+}
+
+// JSON at `url`, checked against `digest` when one is given; null when the registry does not have it. Blobs are
+// content-addressed, so each digest is fetched once per page.
+async function verifiedJson(url, digest, accept) {
+  if (digest && blobs.has(digest)) return blobs.get(digest);
+  const r = await fetch(url, accept ? { headers: { Accept: accept } } : {});
+  if (!r.ok) return null;
+  const bytes = await r.arrayBuffer();
+  const got = await sha256Of(bytes);
+  if (digest && got !== digest) throw Object.assign(new Error(`${url} did not match ${digest}`), { code: "ADDRESS_MISMATCH" });
+  const out = { digest: got, json: JSON.parse(new TextDecoder().decode(bytes)) };
+  blobs.set(got, out);
+  return out;
+}
+
+// The model's artifact: { repo, digest, manifest, referrers }, or null when no namespace holds it.
+function artifactFor(id) {
+  artifactLookup ??= (async () => {
+    const lower = id.toLowerCase();
+    for (const ns of OCI_NAMESPACES) {
+      const m = await verifiedJson(`/v2/${ns}${lower}/manifests/latest`, null, OCI_MANIFEST).catch(() => null);
+      if (m?.json?.artifactType !== "application/vnd.hologram.model.v1") continue;
+      const repo = ns + lower;
+      const index = await verifiedJson(`/v2/${repo}/referrers/${m.digest}`).catch(() => null);
+      return { repo, digest: m.digest, manifest: m.json, referrers: index?.json?.manifests || [] };
+    }
+    return null;
+  })();
+  return artifactLookup;
+}
+
+const hasTable = (art) => art.referrers.some((r) => r.artifactType === "application/vnd.hologram.tensors.v2");
+
+// Every lineage claim attached to the artifact, each scored in the browser from the two canonical tensor tables it
+// names. A claim whose base could not be indexed comes back with its reason and no scores.
+async function scoredClaims(art) {
+  const P = await import("./provenance.mjs");
+  const out = [];
+  for (const c of art.referrers.filter((r) => r.artifactType === "application/vnd.hologram.lineage.v1")) {
+    try {
+      const m = await verifiedJson(`/v2/${art.repo}/manifests/${c.digest}`, c.digest, OCI_MANIFEST);
+      const claim = (await verifiedJson(`/v2/${art.repo}/blobs/${m.json.config.digest}`, m.json.config.digest)).json;
+      if (!claim.base.tensors) { out.push({ claim, unindexed: claim.base.unindexed || "not indexed" }); continue; }
+      const baseRepo = claim.base.artifact.split("@")[0];
+      const [childTable, baseTable] = await Promise.all([
+        verifiedJson(`/v2/${art.repo}/blobs/${claim.child.tensors}`, claim.child.tensors),
+        verifiedJson(`/v2/${baseRepo}/blobs/${claim.base.tensors}`, claim.base.tensors),
+      ]);
+      const s = P.score(childTable.json, baseTable.json);
+      const agrees = s.bytesShared === claim.bytes_shared_pct && s.lineage === claim.lineage_pct && s.coverage === claim.coverage_pct;
+      out.push({ claim, s, agrees, verdict: P.verdict(s), kinship: P.kinship(s) });
+    } catch (e) {
+      out.push({ error: e.message });
+    }
+  }
+  return out;
+}
+
+// The facts table's three provenance rows, on every model page. The primary base is the declared one when it was
+// scored, otherwise the closest by lineage. Each row says plainly when there is nothing to show yet, and why.
+async function provenanceRows() {
+  const id = $("[data-prov-id]").dataset.provId;
+  const cell = (k) => $(`[data-prov="${k}"]`);
+  const put = (k, html, cls = "") => { const el = cell(k); el.className = cls; el.innerHTML = html; };
+  const dash = () => { put("lineage", "—", "dim"); put("unchanged", "—", "dim"); };
+  const hf = (bid) => `<a href="https://huggingface.co/${R.esc(bid)}" target="_blank" rel="noopener">${R.esc(bid)}</a>`;
+  try {
+    const art = await artifactFor(id);
+    if (!art || !hasTable(art)) { put("base", "Not indexed yet", "dim"); dash(); return; }
+    const all = await scoredClaims(art);
+    const scored = all.filter((x) => x.s && x.s.lineage !== undefined);
+    const declared = scored.filter((x) => x.claim.base.declared);
+    const pick = (list) => [...list].sort((a, b) => (b.s.lineage ?? -1) - (a.s.lineage ?? -1) || b.s.bytesShared - a.s.bytesShared)[0];
+    const primary = pick(declared) || pick(scored);
+    if (!primary) {
+      const u = all.find((x) => x.unindexed);
+      if (u) { put("base", `${hf(u.claim.base.id)} <span class="dim">(declared; ${R.esc(u.unindexed)})</span>`); dash(); return; }
+      const bad = all.find((x) => x.error);
+      if (bad) { put("base", "A provenance record did not check out", "bad"); dash(); return; }
+      put("base", "None found in the index", "dim"); dash(); return;
+    }
+    const { claim, s, agrees } = primary;
+    const others = scored.length - 1;
+    put("base", `${hf(claim.base.id)} <span class="dim">(${claim.base.declared ? "declared" : "found by κ"}${others > 0 ? `, +${others} more` : ""})</span>`);
+    put("lineage", s.lineage === null ? `— <span class="dim">no comparable tensors</span>` : `${primary.kinship.toFixed(1)} <span class="dim">${R.esc(primary.verdict.toLowerCase())}</span>`);
+    const pct = s.bytesShared, shown = pct === 0 || pct === 100 ? `${pct}%` : pct < 1 || pct > 99 ? `${pct.toFixed(4)}%` : `${pct.toFixed(2)}%`;
+    put("unchanged", shown);
+    if (!agrees) {
+      for (const k of ["lineage", "unchanged"]) {
+        const el = cell(k); el.classList.add("bad");
+        el.title = `Computed in your browser. The registry's claim says ${claim.bytes_shared_pct}% unchanged and ${claim.lineage_pct}% sign agreement.`;
+      }
+    }
+  } catch (e) {
+    put("base", e.code === "ADDRESS_MISMATCH" ? "The registry served bytes that do not match their digest" : "Could not read the registry", "bad");
+    dash();
+  }
+}
+
+// The model as an OCI artifact, in its own section below the header: what the registry holds, how it matches this
+// page's own file index, and every provenance claim in full. Hidden when the registry has no artifact.
+async function registryArtifact() {
+  const REFERRER_LABEL = {
+    "application/vnd.hologram.tensors.v1": "Tensor table",
+    "application/vnd.hologram.tensors.v2": "Canonical tensor table",
+    "application/vnd.hologram.provenance.v1": "Provenance",
+    "application/vnd.hologram.lineage.v1": "Lineage",
+    "application/vnd.hologram.recipe.v1": "Recipe",
+  };
+  const section = $("#oci");
+  try {
+    const art = await artifactFor(section.dataset.repo);
+    if (!art) return;
+    const { repo, digest, manifest: man, referrers } = art;
+
+    let tensors = null;
+    const t = referrers.find((r) => r.artifactType === "application/vnd.hologram.tensors.v2") || referrers.find((r) => r.artifactType === "application/vnd.hologram.tensors.v1");
+    if (t) {
+      const tm = await verifiedJson(`/v2/${repo}/manifests/${t.digest}`, t.digest, OCI_MANIFEST);
+      const table = tm && (await verifiedJson(`/v2/${repo}/blobs/${tm.json.config.digest}`, tm.json.config.digest));
+      if (table) {
+        const files = table.json.files || table.json;
+        const all = Object.values(files).flatMap((f) => f.tensors || []);
+        tensors = { count: all.length, distinct: new Set(all.map((x) => x.kappa || x.blake3)).size, files: Object.keys(files).length };
+      }
+    }
+
+    const layers = man.layers || [];
+    const title = (l) => l.annotations?.["org.opencontainers.image.title"] || "";
+    const pageAddress = new Map([...document.querySelectorAll("#files tbody tr")].map((tr) => [tr.dataset.path, tr.dataset.address]));
+    const matched = layers.filter((l) => pageAddress.get(title(l)) === l.digest).length;
+    const foreign = layers.filter((l) => l.urls?.length).length;
+    const homes = [...new Set(layers.flatMap((l) => (l.urls || []).map((u) => {
+      const host = new URL(u).hostname;
+      return host.endsWith("huggingface.co") ? "Hugging Face" : u.includes("/ipfs/") ? "IPFS" : host;
+    })))];
+    const bytes = layers.reduce((sum, l) => sum + (l.size || 0), 0);
+    const ref = `${location.host}/${repo}@${digest}`;
+    const copy = (text, shown) => `<button type="button" class="copy" data-copy="${R.esc(text)}" aria-label="Copy ${R.esc(text)}">${R.esc(shown)}${R.icon.copy}</button>`;
+    const fact = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+
+    section.innerHTML = `<div class="oci-head">
+        <h2 id="oci-title">Registry artifact</h2>
+        <span class="pill">OCI</span>
+      </div>
+      <p class="note">This model is an artifact in the registry at <code>/v2/${R.esc(repo)}</code>. Every file is a layer named by the sha256 of its bytes; the registry holds the names, and the bytes stay at their homes.</p>
+      <dl class="facts">
+        ${fact("Reference", copy(ref, `${repo}@${R.shortAddress(digest)}`))}
+        ${fact("Files", `${layers.length}, ${R.bytes(bytes)}`)}
+        ${fact("Matches this page", `<span class="${matched === layers.length ? "ok" : "bad"}">${matched} of ${layers.length} file addresses</span>`)}
+        ${tensors ? fact("Tensors", `${R.count(tensors.count)}${tensors.distinct < tensors.count ? `, ${R.count(tensors.distinct)} distinct` : ""} in ${tensors.files} ${tensors.files === 1 ? "file" : "files"}`) : ""}
+        ${fact("Bytes held here", foreign === layers.length ? "none" : `${layers.length - foreign} of ${layers.length} files`)}
+        ${fact("Homes", R.esc(homes.join(", ") || "this registry"))}
+        ${referrers.length ? fact("Attached", referrers.map((r) => R.esc(REFERRER_LABEL[r.artifactType] || r.artifactType)).join(", ")) : ""}
+      </dl>
+      <div class="oci-run">
+        ${copy(`crane pull ${ref} model.tar`, "crane pull")}
+        ${copy(`oras discover ${location.host}/${repo}:latest`, "oras discover")}
+      </div>
+      <div id="lineage"></div>`;
+    section.hidden = false;
+    $("#lineage").innerHTML = lineageBlocks(await scoredClaims(art));
+  } catch (e) {
+    if (e.code !== "ADDRESS_MISMATCH") return;
+    section.innerHTML = `<h2 id="oci-title">Registry artifact</h2><p class="verdict bad">The registry served bytes that do not match their digest. Do not use this artifact.</p>`;
+    section.hidden = false;
+  }
+}
+
+// Every claim in full: the evidence behind the facts table's rows.
+function lineageBlocks(claims) {
+  const fact = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+  return claims.map((x) => {
+    if (x.error) return `<p class="verdict bad">A provenance record did not check out: ${R.esc(x.error)}</p>`;
+    const { claim } = x;
+    const head = `<h3>Provenance: <a href="https://huggingface.co/${R.esc(claim.base.id)}" target="_blank" rel="noopener">${R.esc(claim.base.id)}</a>${claim.base.declared ? ` <span class="pill">declared base</span>` : ` <span class="pill">found by κ</span>`}</h3>`;
+    if (x.unindexed) return `<div class="lineage">${head}<p class="note">Not scored: the base is ${R.esc(x.unindexed)}.</p></div>`;
+    const { s } = x;
+    return `<div class="lineage">${head}
+      <dl class="facts">
+        ${fact("Verdict", `<span class="${s.lineage !== null && s.lineage <= 60 ? "dim" : "ok"}">${R.esc(x.verdict)}</span>`)}
+        ${fact("Lineage", s.lineage === null ? "no comparable tensors" : `${x.kinship.toFixed(1)} (${s.lineage.toFixed(2)}% sign agreement on ${s.coverage}% of weights; independent training ${claim.null.lineage_pct}%)`)}
+        ${fact("Unchanged from base", `${s.bytesShared.toFixed(4)}%${s.wholeTensor !== s.bytesShared ? `, ${s.wholeTensor.toFixed(4)}% as whole tensors` : ""}`)}
+      </dl>
+      <p class="note">${x.agrees ? "Recomputed in your browser from both canonical tensor tables; the registry's claim agrees." : `<span class="bad">The registry claims ${claim.bytes_shared_pct}% unchanged and ${claim.lineage_pct}% sign agreement; your browser computed the numbers above.</span>`} Unchanged counts tensors whose canonical κ (values, shape, narrowest exact number type) the base holds, whatever their names, files or format. Lineage compares sign bits at fixed positions: 0 is independent training, 100 the same weights.</p>
+    </div>`;
+  }).join("");
 }
 
 function formatBytes(n) {

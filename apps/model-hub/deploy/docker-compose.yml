@@ -70,12 +70,19 @@ services:
     environment:
       HUB_DATA: /data
       HUB_STATE: /state
+      # The tensor mirror (tensor-mirror.mjs): state in /state/tensors (tensor-sync.sh), pinned tensors read from
+      # Filebase when every whole-file holder is down, and small buffers so one rebuild never crowds the shim.
+      IPFS_GATEWAY: https://ipfs.filebase.io
+      TENSOR_MAX_BUFFER_MB: "16"
+      TENSOR_WINDOW: "2"
     volumes:
       - ./bin/hub-resolve.mjs:/app/hub-resolve.mjs:ro
       - ./bin/kappa-mirror.mjs:/app/kappa-mirror.mjs:ro
+      - ./bin/tensor-mirror.mjs:/app/tensor-mirror.mjs:ro
+      - ./bin/tensor-assemble.mjs:/app/tensor-assemble.mjs:ro
       - ./site/data:/data:ro
       - ./state/resolve:/state
-    mem_limit: 96m
+    mem_limit: 320m
     cpus: 0.5
     logging:
       driver: json-file

@@ -65,4 +65,16 @@ for repo, rev in (("nobody/not-a-model", None), ("$MODEL", "00000000000000000000
     try: hf_hub_download(repo, "config.json", revision=rev); print("  unexpected success")
     except Exception as e: print("  ", type(e).__name__, "|", str(e).replace("\n", " ")[:170])
 PY
+echo "7. hf cache verify: every downloaded file checked against the listing's oids (git sha1 for small files, sha256 for LFS)"
+if command -v hf >/dev/null 2>&1 && hf cache verify --help >/dev/null 2>&1; then
+  hf cache verify "$MODEL" 2>&1 | grep -E "checked|Error|expected" | head -3
+else echo "  (this huggingface_hub has no cache verify)"; fi
+
+echo "8. text-generation-webui's paging: a next page must be empty, or its download loop never ends"
+python - <<PY
+import json, os, urllib.request
+base = os.environ["HF_ENDPOINT"] + "/api/models/$MODEL/tree/main"
+first = json.load(urllib.request.urlopen(base + "?recursive=true")); nxt = json.load(urllib.request.urlopen(base + "?recursive=true&cursor=next"))
+print("  first page", len(first), "entries | next page", len(nxt), "entries:", "ok" if first and not nxt else "LOOPS")
+PY
 echo "matrix done"

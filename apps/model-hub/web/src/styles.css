@@ -386,6 +386,12 @@
 .hero .who { display: grid; gap: var(--space-2); min-width: 0; }
 .hero .org { font-size: var(--text-sm); color: var(--hh-text-dim); }
 .hero h1 { overflow-wrap: anywhere; }
+.title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-5); min-width: 0; }
+.stats { display: inline-flex; align-items: center; gap: var(--space-3); font-size: var(--hh-ui); color: var(--hh-text-dim); white-space: nowrap; }
+.stats > span:not(.dot) { display: inline-flex; align-items: center; gap: var(--space-1); }
+.stats b { font-weight: inherit; font-variant-numeric: tabular-nums; color: var(--hh-text); }
+.stats .i { width: 1em; height: 1em; color: var(--hh-text-dim); }
+.stats .dot { width: calc(var(--space-1) - 1px); height: calc(var(--space-1) - 1px); border-radius: 50%; background: currentColor; opacity: .7; color: transparent; overflow: hidden; }
 .hero .tags { height: auto; gap: var(--space-2); }
 .actions { display: flex; gap: var(--space-3); }
 @media (max-width: 720px) { .hero { grid-template-columns: auto minmax(0, 1fr); } .actions { grid-column: 1 / -1; } }
@@ -615,3 +621,25 @@ a.ov-chip:hover { border-color: var(--hh-line-focus); }
 #tags td.path { max-width: 18rem; }
 #tags td .tag { margin-left: var(--space-2); }
 #tags td.dl .dl-yes .i { width: var(--hh-icon-small); height: var(--hh-icon-small); }
+
+@media (max-width: 760px) {
+  .row { grid-template-columns: 1fr; gap: var(--space-2); }
+  .rows .get-cmd { min-width: 0; flex-basis: 100%; }
+  .rows .get .seg { width: 100%; max-width: 100%; overflow-x: auto; }
+  .rows .get .seg button { flex: 1; padding: 0 var(--space-2); font-size: var(--text-sm); }
+  .rows .get-cmd code { white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* The model as an OCI artifact in this host's registry (app.js registryArtifact). Hidden until the registry answers. */
+.oci { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
+.oci-head { display: flex; align-items: center; gap: var(--space-3); }
+.oci-head h2 { font-size: var(--text-lg); font-weight: var(--weight-medium); }
+.oci .note code { font-family: var(--font-mono); }
+.oci-run { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.oci-run .copy { font-family: var(--font-mono); }
+.oci .lineage { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--hh-line); }
+.oci .lineage h3 { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-base); font-weight: var(--weight-medium); }
+.oci .lineage h3 a { text-decoration: underline; text-underline-offset: var(--space-1); text-decoration-color: var(--hh-line-focus); }
+.oci .lineage .bad { color: var(--hh-bad); }
+.facts .prov dd a { text-decoration: underline; text-underline-offset: var(--space-1); text-decoration-color: var(--hh-line-focus); }
+.facts .prov dd .dim, .facts .prov dd.dim { color: var(--hh-text-dim); }

@@ -1,6 +1,7 @@
-// Service worker: answers only <scope>zip/… with a zip assembled while it streams, so the browser's own download
-// manager saves any size with a real progress bar and nothing is held in memory. Nothing outside zip/ is ever
-// intercepted, so this worker cannot serve a stale page. build.mjs prepends zip.mjs (ZipWriter) to this file.
+// Service worker: answers <scope>zip/… with a zip assembled while it streams, so the browser's own download
+// manager saves any size with a real progress bar and nothing is held in memory; and checks every same-origin fetch
+// whose bytes have a name (a sha256 in the URL, or a file the hub's tree lists) against that name (κ, below). Pages
+// are never intercepted, so this worker cannot serve a stale page. build.mjs prepends zip.mjs (ZipWriter) to this file.
 //
 //   zip/<org>/<name>/auto.zip              every file, each from the first source that answers
 //   zip/<org>/<name>/<source kind>.zip     only that source (files it lacks are left out)
@@ -24,9 +25,62 @@ self.addEventListener("message", (event) => { if (event.data?.cancel) running.ge
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url), prefix = `${SCOPE.pathname}zip/`;
+  if (url.origin === SCOPE.origin && !url.pathname.startsWith(prefix)) { const k = kappaCheck(event.request, url); if (k) event.respondWith(k); return; }
   if (url.origin !== SCOPE.origin || !url.pathname.startsWith(prefix)) return;
   event.respondWith(answer(decodeURIComponent(url.pathname.slice(prefix.length)), url, event.request).catch((error) => new Response(String(error.message || error), { status: 502 })));
 });
+
+// ---- κ: every same-origin fetch whose bytes have a name is checked against that name before the page gets it.
+//
+//   …/blobs/sha256:<hex>, …/objects/sha256:<hex>   the URL names its content
+//   /<org>/<name>/resolve/<rev>/<path>             the hub's own file list names it (/api/models/<id>/tree/<rev>)
+//
+// The bytes stream through, hashed as they pass; the last 64 KiB are held back until the whole equals the name, and a
+// mismatch errors the stream, so a page (and the browser's download manager) never completes a wrong file. Pages,
+// data and everything else pass through untouched. Range requests pass through too: a part cannot be checked
+// against a whole-file hash (pieces, deploy/kappa-get.mjs, lift that).
+const HOLD = 64 * 1024;
+const NAMED = /\/(?:blobs|objects)\/sha256:([0-9a-f]{64})$/;
+const RESOLVE = /^\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+)$/;
+const trees = new Map();
+
+async function expectedFor(url) {
+  const named = NAMED.exec(url.pathname);
+  if (named) return named[1];
+  const r = RESOLVE.exec(url.pathname.slice(SCOPE.pathname.length - 1));
+  if (!r || r[1] === "api/models") return null;
+  const key = `${r[1]}@${r[2]}`;
+  if (!trees.has(key)) trees.set(key, fetch(`${SCOPE.origin}/api/models/${r[1]}/tree/${r[2]}`).then((t) => (t.ok ? t.json() : [])).then((list) => new Map(list.filter((e) => e.type === "file").map((e) => [e.path, e.oid]))).catch(() => new Map()));
+  const oid = (await trees.get(key)).get(decodeURIComponent(r[3]));
+  return /^[0-9a-f]{64}$/.test(oid || "") ? oid : null;
+}
+
+function kappaCheck(request, url) {
+  if (request.method !== "GET" || request.headers.has("range")) return null;
+  if (!NAMED.test(url.pathname) && !RESOLVE.test(url.pathname.slice(SCOPE.pathname.length - 1))) return null;
+  return (async () => {
+    const want = await expectedFor(url);
+    const res = await fetch(request, { redirect: "follow" });
+    if (!want || !res.ok || !res.body) return res;                              // nothing names these bytes: as they came
+    const hasher = await hashwasm.createSHA256();
+    let held = new Uint8Array(0);
+    const body = res.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) {
+        hasher.update(chunk);
+        const all = new Uint8Array(held.length + chunk.length); all.set(held); all.set(chunk, held.length);
+        if (all.length > HOLD) { controller.enqueue(all.subarray(0, all.length - HOLD)); held = all.slice(all.length - HOLD); } else held = all;
+      },
+      flush(controller) {
+        const got = hasher.digest("hex");
+        if (got !== want) { channel.postMessage({ kappa: "refused", url: url.href, want, got }); controller.error(new Error(`${url.pathname}: bytes hash to ${got.slice(0, 12)}…, not ${want.slice(0, 12)}…`)); return; }
+        controller.enqueue(held);
+      },
+    }));
+    const headers = new Headers(res.headers);
+    headers.set("x-hologram-verified", `sha256:${want}`);
+    return new Response(body, { status: res.status, statusText: res.statusText, headers });
+  })().catch((error) => new Response(String(error.message || error), { status: 502 }));
+}
 
 // A byte stream the consumer paces: write() resolves only when the download wants more, so a slow disk slows the
 // producer instead of filling memory.

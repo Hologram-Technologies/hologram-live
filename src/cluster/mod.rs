@@ -562,7 +562,7 @@ fn load_dialled(path: &Path, self_endpoint: &str) -> Vec<String> {
 fn store_dialled(path: &Path, endpoints: &BTreeSet<String>) {
     match serde_json::to_vec_pretty(endpoints)
         .map_err(LiveError::from)
-        .and_then(|bytes| crate::util::atomic_write(path, &bytes))
+        .and_then(|bytes| crate::util::atomic_write_durable(path, &bytes))
     {
         Ok(()) => {}
         Err(error) => tracing::warn!(%error, "failed to persist the cluster dial list"),

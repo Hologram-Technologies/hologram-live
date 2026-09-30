@@ -1,7 +1,7 @@
 gethologram.ai, gethologram.ai {
 	# The Hugging Face dialect (HF_ENDPOINT=https://gethologram.ai). Clients send the user's Hugging Face token to
 	# whatever HF_ENDPOINT names: it is removed here, before anything of ours can see or log it.
-	@hf path_regexp hf ^(/via/[a-z.]+)?(/api/models(/|$)|/api/hub/health$|/mcp$|/[^/]+/[^/]+/resolve/)
+	@hf path_regexp hf ^(/via/[a-z.]+)?(/api/models(/|$)|/api/hub/health$|/mcp$|/[^/]+/[^/]+/resolve/|/[^/]+/[^/]+?(\.git)?/info/lfs/objects/batch$|/api/v1/models/[^/]+/[^/]+(/repo|/repo/files|/revisions)?$|/api/v1/repos/internalAccelerationInfo$)
 	# Ollama's registry dialect: `ollama pull gethologram.ai/<org>/<name>:<quant>`. The hub's own OCI registry keeps
 	# its namespace, model-hub; every other /v2/<org>/<name>/ is a model answered by hub-resolve.
 	@ollama {
@@ -17,6 +17,24 @@ gethologram.ai, gethologram.ai {
 	@kappa path_regexp kappa ^/v2/[a-z0-9-]+(\.[a-z0-9-]+)+/.+/(manifests|blobs|tags|referrers)/
 	handle @kappa {
 		request_header -Authorization
+		reverse_proxy hub-resolve:8090
+	}
+	# The tensor index: every indexed model as an OCI artifact rebuilt from κ-addressed tensors. The plain name
+	# /v2/<org>/<name>/ is already routed above (@ollama); these are the explicit spaces, /v2/models/… (redirects
+	# while Hugging Face serves) and /v2/tensors/… (always rebuilt), plus the catalogue and per-model summary.
+	@tensors path_regexp tensors ^/v2/(models|tensors|kappa)/
+	handle @tensors {
+		request_header -Authorization
+		reverse_proxy hub-resolve:8090
+	}
+	# The address is also a link: a browser opening <host>/<org>/<name> lands on that model's page (hub-resolve
+	# knows its real capitalisation; an unknown name opens the search). The site's own sections are never matched.
+	@modelpage {
+		path_regexp modelpage ^/[^/]+/[^/]+/?$
+		header Accept *text/html*
+		not path /models/* /registry/* /spaces/* /buckets/* /docs/* /at/* /data/* /kit/* /fonts/* /logos/* /vendor/* /wallpapers/* /auth/* /avatars/* /lib/* /archive/* /benches/* /.well-known/* /api/* /v1/* /v2/* /via/*
+	}
+	handle @modelpage {
 		reverse_proxy hub-resolve:8090
 	}
 

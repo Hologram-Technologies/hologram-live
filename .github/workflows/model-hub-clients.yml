@@ -1,0 +1,113 @@
+name: model-hub-clients
+
+# The coverage gate: no change to the hub's dialects may break a client that works (HOLOGRAM brief G14).
+#
+#   contracts  on every change: hub-resolve against real published data (shim-contract.mjs), and the verifying edge
+#              against a holder that flips a byte (verify-edge.mjs)
+#   clients    on every change: real huggingface_hub releases, old and current, against hub-resolve on loopback:
+#              download, then `hf cache verify` where the release has it (every file checked by its sha256)
+#   live       daily and on demand: the client matrix against the live endpoint
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/model-hub/deploy/**", "apps/model-hub/web/qa/hf-dialect/**", ".github/workflows/model-hub-clients.yml"]
+  pull_request:
+    paths: ["apps/model-hub/deploy/**", "apps/model-hub/web/qa/hf-dialect/**", ".github/workflows/model-hub-clients.yml"]
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-hub-clients-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/model-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: hub-resolve keeps its contracts (real published data, Hugging Face's own tree as the reference)
+        run: node deploy/qa/shim-contract.mjs
+      - name: The verifying edge never hands over a lying holder's bytes
+        run: node deploy/qa/verify-edge.mjs
+
+  clients:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        hub: ["==0.36.*", "==1.17.*", ">=1.22,<2", ">=2"]
+    defaults:
+      run:
+        working-directory: apps/model-hub
+    env:
+      HF_ENDPOINT: http://127.0.0.1:8390
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      MODEL: sentence-transformers/all-MiniLM-L6-v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q "huggingface_hub${{ matrix.hub }}"
+      - name: Fixtures and hub-resolve on loopback
+        run: |
+          mkdir -p fx/files/sentence-transformers fx/state
+          curl -sf https://gethologram.ai/data/files/$MODEL.json -o fx/files/$MODEL.json
+          HUB_DATA=$PWD/fx HUB_STATE=$PWD/fx/state PORT=8390 node deploy/hub-resolve.mjs > resolve.log 2>&1 &
+          for i in $(seq 30); do curl -sf "$HF_ENDPOINT/api/models/$MODEL" >/dev/null && break; sleep 1; done
+      - name: snapshot_download (the tree route every current release walks), every file checked by sha256
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, urllib.request
+          from huggingface_hub import snapshot_download, __version__
+          m = os.environ["MODEL"]
+          p = snapshot_download(m, allow_patterns=["*.json", "*.txt", "1_Pooling/*", "model.safetensors"])
+          tree = json.load(urllib.request.urlopen(f"{os.environ['HF_ENDPOINT']}/api/models/{m}/tree/main"))
+          got = bad = 0
+          for e in tree:
+              f = os.path.join(p, e["path"])
+              if not os.path.exists(f): continue
+              got += 1
+              if hashlib.sha256(open(f, "rb").read()).hexdigest() != e["oid"]: bad += 1; print("MISMATCH", e["path"])
+          print(f"huggingface_hub {__version__}: {got} files, {bad} mismatches")
+          raise SystemExit(1 if bad or got < 5 else 0)
+          PY
+      - name: hf cache verify, where the release has it
+        run: |
+          if hf cache verify --help >/dev/null 2>&1; then hf cache verify "$MODEL"; else echo "no hf cache verify in this release"; fi
+      - if: failure()
+        run: tail -50 resolve.log
+
+  live:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        hub: ["<1.0", ">=1.0"]
+    env:
+      HF_ENDPOINT: ${{ vars.HUB_LIVE || 'https://gethologram.ai' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The client matrix against the live endpoint
+        run: sh apps/model-hub/web/qa/hf-dialect/matrix.sh "${{ matrix.hub }}"

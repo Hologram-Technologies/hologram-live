@@ -35,30 +35,124 @@ impl ObjectStore {
             .map_err(|_| LiveError::Conflict("object store lock poisoned".to_owned()))?;
         let digest = blake3::hash(bytes);
         let digest_hex = digest.to_hex().to_string();
-        let id = format!("blake3:{digest_hex}");
         let blob = self.blob_path(&digest_hex);
         if !blob.exists() {
             atomic_write(&blob, bytes)?;
         }
-        // Content addressing makes an object immutable, so its creation time is
-        // a property of the content's first appearance. Re-putting the same
-        // bytes must not move it: duplicate metadata records are resolved by
-        // greatest creation time, so a drifting timestamp would silently change
-        // which record wins.
-        let created_at_millis = match self.read_metadata(&digest_hex) {
-            Some(existing) => existing.created_at_millis,
-            None => now_millis(),
+        self.finish_put(
+            &digest_hex,
+            bytes.len().try_into().unwrap_or(u64::MAX),
+            kind,
+            media_type,
+            filename,
+        )
+    }
+
+    /// The streaming half of [`ObjectStore::put`]: hashes while writing, so an
+    /// object of any size lands without ever being held whole in memory. Phase
+    /// 2b's cluster replication imports fetched blobs through it; everything
+    /// else keeps the whole-bytes entry point.
+    ///
+    /// The id is only known at EOF, so the stream first lands in a randomly
+    /// named temporary beside the blobs and is then renamed to the digest
+    /// path. That is the durability discipline of `util::atomic_write` — the
+    /// destination is never unlinked and is never observed partially written —
+    /// with the temporary named per call rather than from the destination,
+    /// which does not exist yet. Like `atomic_write` it does not fsync: the
+    /// blob path has never needed crash durability (a missing blob is a cache
+    /// miss, not corruption), and the reasoning is recorded on that function.
+    pub fn put_reader(
+        &self,
+        kind: impl Into<String>,
+        media_type: impl Into<String>,
+        filename: Option<String>,
+        mut reader: impl std::io::Read,
+    ) -> Result<ObjectMetadata> {
+        use std::io::Write as _;
+
+        let _guard = self
+            .write_lock
+            .lock()
+            .map_err(|_| LiveError::Conflict("object store lock poisoned".to_owned()))?;
+        let temporary = self.temporary_blob_path();
+        let streamed = (|| -> Result<(String, u64)> {
+            let mut file = std::fs::File::create(&temporary)
+                .map_err(|error| LiveError::io(&temporary, error))?;
+            let mut hasher = blake3::Hasher::new();
+            let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
+            let mut size = 0_u64;
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(read) => {
+                        file.write_all(&buffer[..read])
+                            .map_err(|error| LiveError::io(&temporary, error))?;
+                        hasher.update(&buffer[..read]);
+                        size = size.saturating_add(read as u64);
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(error) => return Err(LiveError::io(&temporary, error)),
+                }
+            }
+            Ok((hasher.finalize().to_hex().to_string(), size))
+        })();
+        let (digest_hex, size) = match streamed {
+            Ok(result) => result,
+            // Leave nothing behind beside real state, as `atomic_write` does.
+            Err(error) => {
+                let _ = std::fs::remove_file(&temporary);
+                return Err(error);
+            }
         };
+        let blob = self.blob_path(&digest_hex);
+        if blob.exists() {
+            let _ = std::fs::remove_file(&temporary);
+        } else if let Err(error) = std::fs::rename(&temporary, &blob) {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(LiveError::io(&blob, error));
+        }
+        self.finish_put(&digest_hex, size, kind, media_type, filename)
+    }
+
+    /// A unique temporary name inside the blob directory, so the rename to the
+    /// digest path stays on one filesystem. Mirrors `atomic_write`'s
+    /// process-id-plus-sequence convention: two threads streaming at once must
+    /// not rename each other's file away.
+    fn temporary_blob_path(&self) -> PathBuf {
+        static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        self.root.join("blobs/blake3").join(format!(
+            "tmp.{}.{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ))
+    }
+
+    /// The metadata half every put shares. Content addressing makes an object
+    /// immutable, so its creation time is a property of the content's first
+    /// appearance. Re-putting the same bytes must not move it: duplicate
+    /// metadata records are resolved by greatest creation time, so a drifting
+    /// timestamp would silently change which record wins.
+    fn finish_put(
+        &self,
+        digest_hex: &str,
+        size: u64,
+        kind: impl Into<String>,
+        media_type: impl Into<String>,
+        filename: Option<String>,
+    ) -> Result<ObjectMetadata> {
         let metadata = ObjectMetadata {
-            id,
+            id: format!("blake3:{digest_hex}"),
             kind: kind.into(),
             media_type: media_type.into(),
             filename,
-            size: bytes.len().try_into().unwrap_or(u64::MAX),
-            created_at_millis,
+            size,
+            created_at_millis: match self.read_metadata(digest_hex) {
+                Some(existing) => existing.created_at_millis,
+                None => now_millis(),
+            },
         };
         let encoded = serde_json::to_vec_pretty(&metadata)?;
-        atomic_write(&self.metadata_path(&digest_hex), &encoded)?;
+        atomic_write(&self.metadata_path(digest_hex), &encoded)?;
         Ok(metadata)
     }
 
@@ -207,7 +301,10 @@ impl ObjectStore {
         Ok(format!("blake3:{}", hex(digest.as_bytes())) == id)
     }
 
-    fn blob_path(&self, digest: &str) -> PathBuf {
+    /// The content-addressed file for a digest: `blobs/blake3/<digest>`.
+    /// `pub(crate)` for Phase 2b's blob mirror, which imports these files into
+    /// the iroh-blobs store by reference rather than copying them.
+    pub(crate) fn blob_path(&self, digest: &str) -> PathBuf {
         self.root.join("blobs/blake3").join(digest)
     }
 
@@ -360,6 +457,103 @@ mod tests {
         assert_eq!(store.get_cached(&id).expect("get"), Some(b"layer".to_vec()));
         assert!(store.metadata(&id).is_err());
         assert!(store.cache_addressed(&id, b"forged").is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // Phase 2b: the streaming put must be indistinguishable from the
+    // whole-bytes put on the id it assigns — the cluster's replication path
+    // stores through it while every other caller uses `put`, and both must
+    // agree on what an object is.
+    #[test]
+    fn a_streamed_put_addresses_content_identically_to_a_whole_bytes_put() {
+        let root = std::env::temp_dir().join(format!("hologram-store-stream-{}", now_millis()));
+        let store = ObjectStore::open(&root).expect("open");
+        let bytes: Vec<u8> = (0..100_000_u32).flat_map(u32::to_le_bytes).collect();
+
+        let whole = store
+            .put("file", "application/octet-stream", None, &bytes)
+            .expect("whole-bytes put");
+        let streamed = store
+            .put_reader(
+                "file",
+                "application/octet-stream",
+                None,
+                std::io::Cursor::new(&bytes),
+            )
+            .expect("streamed put");
+
+        assert_eq!(whole.id, streamed.id);
+        assert_eq!(streamed.size, bytes.len() as u64);
+        assert_eq!(store.get(&streamed.id).expect("get"), bytes);
+        // The temporary file was renamed to the digest: nothing is left beside it.
+        let temporaries = std::fs::read_dir(root.join("blobs/blake3"))
+            .expect("read blob directory")
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("tmp."))
+            .count();
+        assert_eq!(temporaries, 0, "a streamed put must clean up its temporary");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // The empty input is the edge a streaming writer most easily gets wrong:
+    // zero read calls with content still has to produce the empty hash's file.
+    #[test]
+    fn a_streamed_put_of_nothing_lands_under_the_empty_hash() {
+        let root = std::env::temp_dir().join(format!("hologram-store-empty-{}", now_millis()));
+        let store = ObjectStore::open(&root).expect("open");
+
+        let streamed = store
+            .put_reader("file", "application/octet-stream", None, std::io::empty())
+            .expect("streamed put of empty input");
+
+        assert_eq!(
+            streamed.id,
+            format!("blake3:{}", blake3::hash(b"").to_hex())
+        );
+        assert_eq!(streamed.size, 0);
+        assert_eq!(store.get(&streamed.id).expect("get"), Vec::<u8>::new());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // A reader is free to yield content in arbitrary chunks; the digest must
+    // not depend on where the chunk boundaries fell.
+    #[test]
+    fn a_streamed_put_digests_bytes_not_chunk_boundaries() {
+        struct Chunked {
+            remaining: std::collections::VecDeque<u8>,
+            chunk: usize,
+        }
+        impl std::io::Read for Chunked {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let take = self.chunk.min(buffer.len()).min(self.remaining.len());
+                for slot in buffer.iter_mut().take(take) {
+                    *slot = self.remaining.pop_front().expect("within length");
+                }
+                Ok(take)
+            }
+        }
+
+        let root = std::env::temp_dir().join(format!("hologram-store-chunks-{}", now_millis()));
+        let store = ObjectStore::open(&root).expect("open");
+        let bytes: Vec<u8> = (0..255_u8).cycle().take(10_000).collect();
+
+        let streamed = store
+            .put_reader(
+                "file",
+                "application/octet-stream",
+                None,
+                Chunked {
+                    remaining: bytes.iter().copied().collect(),
+                    chunk: 3,
+                },
+            )
+            .expect("streamed put over odd-sized chunks");
+
+        assert_eq!(
+            streamed.id,
+            format!("blake3:{}", blake3::hash(&bytes).to_hex())
+        );
+        assert_eq!(store.get(&streamed.id).expect("get"), bytes);
         let _ = std::fs::remove_dir_all(root);
     }
 }

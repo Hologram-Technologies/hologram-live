@@ -104,3 +104,23 @@ Offered upstream as UOR-Foundation/prism#3; drop the patch when that lands in a 
 
 `dlopen2` appears in the lockfile through this tree and is never compiled — it is not on a normal
 build edge, and the daemon still has no dynamic native plugin loader.
+
+Phase 2b of #179 adds object replication over `iroh-blobs` (design:
+`docs/superpowers/specs/2026-10-01-iroh-blobs-replication-design.md`): BLAKE3/bao verified,
+resumable streaming between key-addressed peers, with the registry's `blake3:` ids doubling as
+blob hashes, so no translation table sits between them.
+
+| Dependency | Purpose |
+| --- | --- |
+| `iroh-blobs` (`default-features = false`, `fs-store`) | verified, resumable object transfer, the per-node staging store, and its provider protocol; excluding the default `rpc` feature keeps the `noq` endpoint-setup subtree out of the graph |
+| `tokio-util` | `SyncIoBridge` drives the store's async reader from the registry's synchronous streaming put; already locked through the `oci` feature, so it adds no crate |
+
+Measured from the real graph, as the design requires: name+version pairs in `Cargo.lock` after
+resolving `--features p2p` versus `git show main:Cargo.lock` — 22 net-new packages (985 → 1007),
+the whole cost of this phase, since Phase 2a's tree was already merged. `redb` comes in through
+`fs-store` but was already locked for the `oci` feature and adds no package. `redb` and
+`reflink-copy` are pure Rust; their licenses were read from the resolved crates (`redb` 4.1.0 is
+`MIT OR Apache-2.0`, `reflink-copy` 0.1.30 is `MIT/Apache-2.0`), as the design recorded.
+`scripts/check-kappa-pin.sh` runs its forbidden-crate tree check over `--features oci,p2p`, and
+with the new store stack in that tree it still finds no aws-lc, openssl, veilid, topcoat or
+rekindle.

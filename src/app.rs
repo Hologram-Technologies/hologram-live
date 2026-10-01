@@ -29,6 +29,12 @@ struct AppInner {
     modules: ModuleRegistry,
     store: Arc<ObjectStore>,
     registry: Arc<dyn RegistryProvider>,
+    /// The registry provider when it is the local one, kept beside the
+    /// type-erased `registry` so Phase 2b's blob replication can reach the
+    /// streaming put without a downcast: the trait stays object-safe and
+    /// unchanged, and `None` (a kappa provider) is what tells that path to
+    /// fall back to whole bytes.
+    local_registry: Option<Arc<crate::registry::LocalRegistryProvider>>,
     #[cfg(feature = "oci")]
     oci_store: Option<Arc<crate::oci_store::OciStore>>,
     holo_catalog: Arc<HoloCatalog>,
@@ -74,7 +80,7 @@ impl AppState {
         }
         let modules = ModuleRegistry::build(&config.modules.enabled)?;
         let store = Arc::new(ObjectStore::open(config.paths.data_dir.join("registry"))?);
-        let registry = build_registry(&config, store.clone()).await?;
+        let (registry, local_registry) = build_registry(&config, store.clone()).await?;
         #[cfg(feature = "oci")]
         let oci_store = open_oci_store(&config).await?;
         #[cfg(feature = "oci")]
@@ -166,6 +172,7 @@ impl AppState {
                 modules,
                 store,
                 registry,
+                local_registry,
                 #[cfg(feature = "oci")]
                 oci_store,
                 holo_catalog,
@@ -201,6 +208,18 @@ impl AppState {
 
     pub fn registry(&self) -> &Arc<dyn RegistryProvider> {
         &self.inner.registry
+    }
+
+    /// The local registry provider when that is what is configured. Phase
+    /// 2b's blob replication imports through its streaming put; any other
+    /// provider answers `None` here and replication falls back to the trait's
+    /// whole-bytes put, exactly as the HTTP path already does.
+    #[cfg_attr(
+        not(feature = "p2p"),
+        expect(dead_code, reason = "read by the p2p feature's blob replication only")
+    )]
+    pub(crate) fn local_registry(&self) -> Option<&Arc<crate::registry::LocalRegistryProvider>> {
+        self.inner.local_registry.as_ref()
     }
 
     /// The registry volume. `None` unless `dev.hologram.live.oci` is enabled.
@@ -694,9 +713,27 @@ impl AppState {
 async fn build_registry(
     config: &AppConfig,
     store: Arc<ObjectStore>,
-) -> Result<Arc<dyn RegistryProvider>> {
+) -> Result<(
+    Arc<dyn RegistryProvider>,
+    Option<Arc<crate::registry::LocalRegistryProvider>>,
+)> {
     let config = config.clone();
-    blocking(move || crate::registry::provider_from_config(&config, store)).await
+    blocking(move || {
+        // The local provider is constructed here rather than inside
+        // `provider_from_config` so the concrete value can be kept next to
+        // the type-erased one; any other provider has no streaming put and
+        // answers no local provider. `AppConfig::validate` has already
+        // rejected an unknown provider name, so non-kappa is local, matching
+        // `provider_from_config`.
+        if config.registry.provider == "kappa" {
+            Ok((crate::registry::provider_from_config(&config, store)?, None))
+        } else {
+            let local = Arc::new(crate::registry::LocalRegistryProvider::new(store));
+            let registry: Arc<dyn RegistryProvider> = local.clone();
+            Ok((registry, Some(local)))
+        }
+    })
+    .await
 }
 
 /// `storage.maintenance.uploadpurging` from the registry settings, or the
@@ -840,7 +877,7 @@ mod tests {
         config.registry.provider = "kappa".to_owned();
         config.registry.endpoint = "http://127.0.0.1:1".to_owned();
 
-        build_registry(&config, store)
+        let (_registry, _local) = build_registry(&config, store)
             .await
             .expect("the provider builds without touching the network");
         let _ = std::fs::remove_dir_all(root);

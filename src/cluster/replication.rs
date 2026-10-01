@@ -63,6 +63,13 @@ pub(super) async fn replicate_peer(
         .ok_or_else(|| LiveError::Config(format!("no cluster network can reach {endpoint}")))?;
     let max_objects = state.config().cluster.replication_max_objects_per_round;
     let max_bytes = state.config().cluster.replication_max_object_bytes;
+    // The network that would dial this endpoint answers whether bulk bytes
+    // move over its own protocol: an iroh peer's missing objects are fetched
+    // as verified, resumable blobs; a network with no channel (`None`) keeps
+    // the per-object GET below. Asked once per round, by capability — never
+    // by matching on the address string.
+    #[cfg(feature = "p2p")]
+    let blob_channel = networks.blob_channel(endpoint);
     let mut cursor = None;
     let mut transferred = 0_usize;
     let mut outcome = RoundOutcome::default();
@@ -138,6 +145,19 @@ pub(super) async fn replicate_peer(
                     })?;
                 if present {
                     return Ok(false);
+                }
+                // The blob channel does the whole transfer its own way:
+                // verified ranges into the store, streaming import into the
+                // registry, the same digest backstop. The size skip above and
+                // the outcome classification below apply unchanged, and a
+                // network with no channel never reaches this branch.
+                #[cfg(feature = "p2p")]
+                if let Some(channel) = &blob_channel {
+                    super::blobs::fetch_and_import_object(
+                        state, channel, endpoint, &metadata, max_bytes,
+                    )
+                    .await?;
+                    return Ok(true);
                 }
                 let path = format!("{OBJECTS_PATH}/{}", metadata.id);
                 // The transfer bound, enforced while the object is read.

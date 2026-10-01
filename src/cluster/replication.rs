@@ -6,6 +6,25 @@ use crate::app::AppState;
 use crate::error::{LiveError, Result};
 use crate::protocol::{ObjectPage, ObjectQuery};
 
+/// The inventory GET's response ceiling (issue #189, item 2). Until this
+/// bound the inventory was the one unbounded read left on the cluster path:
+/// object fetches and join replies carry a ceiling the networks enforce
+/// while reading, and this call passed `None`.
+///
+/// The figure is derived, not invented. A page holds at most
+/// `ObjectQuery::MAX_LIMIT` entries (1000). Per entry the bounded fields
+/// cost little — the id is at most 71 bytes, a validated filename at most
+/// 255, two timestamps of at most 20 digits, JSON overhead around a hundred
+/// bytes — while `kind` and `media_type` carry no length validation, so the
+/// per-entry budget for them is policy: 4 KiB an entry is far above anything
+/// a realistic store produces (a 2 KiB media type is pathological) and far
+/// below what used to be buffered without limit. The framing allowance
+/// covers the cursor and page structure. A peer whose page legitimately
+/// exceeds this fails its round loudly — the same `Capability`
+/// classification an oversize object gets — rather than being truncated or
+/// read without bound.
+const INVENTORY_MAX_RESPONSE_BYTES: u64 = ObjectQuery::MAX_LIMIT as u64 * 4 * 1024 + 64 * 1024;
+
 /// Per-object outcomes for one replication round. Data-error object
 /// failures are counted and logged; the round itself ends early only on an
 /// inventory-level failure or a transport/authorization failure fetching one
@@ -83,11 +102,8 @@ pub(super) async fn replicate_peer(
             }
             pairs.finish()
         };
-        // No ceiling: the inventory has never carried one (it used to be read
-        // by `Response::json`, which is unbounded too), and inventing a byte
-        // figure here would be a new refusal rather than a preserved bound.
-        // `ObjectQuery::MAX_LIMIT` bounds the entries, not the bytes; see the
-        // note in the fix report.
+        // The inventory now carries a ceiling like every other cluster read,
+        // derived from the page's own bounds — see the constant above.
         let response = signed_get(
             state,
             networks,
@@ -98,7 +114,7 @@ pub(super) async fn replicate_peer(
                 recipient: &recipient,
             },
             token,
-            None,
+            Some(INVENTORY_MAX_RESPONSE_BYTES),
         )
         .await?;
         let inventory: ObjectPage = serde_json::from_slice(&response.body).map_err(|error| {
@@ -662,5 +678,122 @@ mod tests {
                 "object {id} is past replication_max_objects_per_round and must not be fetched"
             );
         }
+    }
+
+    /// Builds a real `AppState` against a stub peer, the pattern the
+    /// digest-mismatch and round-cap tests above already use: the stub serves
+    /// whatever inventory it is given and ignores every header.
+    async fn state_and_stub(inventory_body: Vec<u8>) -> (AppState, String, tempfile::TempDir) {
+        use axum::response::IntoResponse;
+        use axum::routing::get;
+        use axum::Router;
+
+        crate::util::install_crypto_provider();
+        let objects_router = Router::new().route(
+            OBJECTS_PATH,
+            get(move || {
+                let body = inventory_body.clone();
+                async move { (axum::http::StatusCode::OK, body).into_response() }
+            }),
+        );
+        // Every object the inventory names is answered with the same small
+        // body, which never hashes to the id it was asked for: a per-object
+        // digest mismatch that the round records and continues past, keeping
+        // these tests about the inventory read rather than the fetch path.
+        let router = objects_router.route(
+            crate::cluster::OBJECT_PATH,
+            get(|| async { (axum::http::StatusCode::OK, b"stub".to_vec()).into_response() }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port for the stub peer");
+        let address = listener.local_addr().expect("read the bound address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+
+        let temp = tempfile::tempdir().expect("temp dir for the calling node's state");
+        let mut config = crate::config::AppConfig::default();
+        config.paths.config_dir = temp.path().join("config");
+        config.paths.data_dir = temp.path().join("data");
+        config.paths.state_dir = temp.path().join("state");
+        config.paths.cache_dir = temp.path().join("cache");
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build a real AppState backed by a temp dir");
+        (state, format!("http://{address}"), temp)
+    }
+
+    // Issue #189, item 2, the claim the ceiling's derivation makes: a page at
+    // the protocol's own limits — `MAX_LIMIT` entries with maximally long
+    // validated fields and generous unvalidated ones — fits under the
+    // ceiling, so no legitimate store ever trips it. If someone shrinks the
+    // constant below what a maximal page needs, this fails first.
+    #[tokio::test]
+    async fn a_maximal_legitimate_inventory_page_fits_under_the_ceiling() {
+        let entry = |index: usize| crate::protocol::ObjectMetadata {
+            id: format!("blake3:{index:064x}"),
+            kind: "k".repeat(128),
+            media_type: "m".repeat(128),
+            filename: Some("f".repeat(255)),
+            size: u64::MAX,
+            created_at_millis: u64::MAX,
+        };
+        let page = ObjectPage {
+            objects: (0..ObjectQuery::MAX_LIMIT as usize).map(entry).collect(),
+            next_cursor: Some("c".repeat(71)),
+            truncated: false,
+        };
+        let body = serde_json::to_vec(&page).expect("encode the maximal page");
+        assert!(
+            body.len() as u64 <= INVENTORY_MAX_RESPONSE_BYTES,
+            "a maximal legitimate page ({} bytes) must fit the {} byte ceiling",
+            body.len(),
+            INVENTORY_MAX_RESPONSE_BYTES
+        );
+
+        let (state, endpoint, _temp) = state_and_stub(body).await;
+        let networks = NetworkRegistry::new(vec![std::sync::Arc::new(
+            crate::cluster::network::HttpNetwork::new(reqwest::Client::new()),
+        )]);
+        // The page decodes and the round runs: every object id is
+        // well-formed, so each is fetched (and 404s against this stub, a
+        // per-object failure that does not end the round).
+        replicate_peer(
+            &state,
+            &networks,
+            &endpoint,
+            "a token the stub never checks",
+        )
+        .await
+        .expect("a maximal legitimate page must not trip the ceiling");
+    }
+
+    // And the other half: a body past the ceiling is refused while it is
+    // read, ending the round with `Capability` — the classification the
+    // per-object path relies on for oversize answers — never buffered whole.
+    #[tokio::test]
+    async fn an_inventory_past_the_ceiling_is_refused_not_buffered() {
+        let body = vec![
+            b'x';
+            usize::try_from(INVENTORY_MAX_RESPONSE_BYTES)
+                .expect("the ceiling fits usize")
+                + 1024
+        ];
+        let (state, endpoint, _temp) = state_and_stub(body).await;
+        let networks = NetworkRegistry::new(vec![std::sync::Arc::new(
+            crate::cluster::network::HttpNetwork::new(reqwest::Client::new()),
+        )]);
+        let error = replicate_peer(
+            &state,
+            &networks,
+            &endpoint,
+            "a token the stub never checks",
+        )
+        .await
+        .expect_err("an inventory over the ceiling must fail the round");
+        assert!(matches!(error, LiveError::Capability(_)), "got {error:?}");
     }
 }

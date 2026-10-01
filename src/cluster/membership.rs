@@ -19,6 +19,15 @@ struct PeerState {
     is_seed: bool,
     failures: u32,
     next_attempt_millis: u64,
+    /// When this endpoint entered the table, as the table's caller sees the
+    /// clock. The never-joined eviction (#189) ages out an endpoint that has
+    /// sat in the table a long time without producing an authenticated
+    /// directory record: until a peer dials this node inbound, its endpoint
+    /// is only an untrusted routing hint, and a hint that never matures must
+    /// not hold a `max_peers` slot forever. Seeds never carry the clock
+    /// meaningfully — they are exempt from that eviction — so `PeerTable::new`
+    /// inserts them with `0`.
+    inserted_millis: u64,
     /// When this peer's immutable-object inventory was last reconciled. `0`
     /// (its initial value) means "never". `replication_due` treats that as
     /// due once `now_millis >= interval_millis` — under a real wall clock
@@ -67,6 +76,7 @@ impl PeerTable {
                     is_seed: true,
                     failures: 0,
                     next_attempt_millis: 0,
+                    inserted_millis: 0,
                     last_replicated_millis: 0,
                 },
             );
@@ -104,12 +114,13 @@ impl PeerTable {
         nodes: &[NodeRecord],
         self_endpoint: &str,
         max_peers: usize,
+        now_millis: u64,
     ) {
         for node in nodes {
             if node.endpoint.is_empty() {
                 continue;
             }
-            if !self.seed_one(&node.endpoint, self_endpoint, max_peers) {
+            if !self.seed_one(&node.endpoint, self_endpoint, max_peers, now_millis) {
                 break;
             }
         }
@@ -143,9 +154,10 @@ impl PeerTable {
         endpoints: &[String],
         self_endpoint: &str,
         max_peers: usize,
+        now_millis: u64,
     ) {
         for endpoint in endpoints {
-            if !self.seed_one(endpoint, self_endpoint, max_peers) {
+            if !self.seed_one(endpoint, self_endpoint, max_peers, now_millis) {
                 break;
             }
         }
@@ -154,22 +166,29 @@ impl PeerTable {
     /// Inserts one normalized endpoint unless it is this node's own or the
     /// table is already at `max_peers`. Reports `false` once the table is full,
     /// so a caller stops walking its source.
-    fn seed_one(&mut self, endpoint: &str, self_endpoint: &str, max_peers: usize) -> bool {
+    fn seed_one(
+        &mut self,
+        endpoint: &str,
+        self_endpoint: &str,
+        max_peers: usize,
+        now_millis: u64,
+    ) -> bool {
         if self.len() >= max_peers {
             return false;
         }
         let endpoint = normalize_endpoint(endpoint);
         if endpoint != self_endpoint {
-            self.insert(endpoint);
+            self.insert(endpoint, now_millis);
         }
         true
     }
 
-    pub fn insert(&mut self, endpoint: String) {
+    pub fn insert(&mut self, endpoint: String, now_millis: u64) {
         self.peers.entry(endpoint).or_insert(PeerState {
             is_seed: false,
             failures: 0,
             next_attempt_millis: 0,
+            inserted_millis: now_millis,
             last_replicated_millis: 0,
         });
     }
@@ -256,6 +275,53 @@ impl PeerTable {
             self.peers.remove(endpoint);
         }
     }
+
+    /// Drops every non-seed peer that has been in the table at least
+    /// `ttl_millis` without producing an authenticated directory record —
+    /// #189's answer to an origin that answers joins but never completes an
+    /// inbound one, which otherwise survives restarts forever through the
+    /// dial list and permanently holds a `max_peers` slot. `joined` is the
+    /// set of normalized endpoints the directory currently names: a peer in
+    /// it has proved itself by an authenticated inbound join and is no
+    /// longer a mere hint, whatever its age.
+    ///
+    /// The TTL is deliberately a multiple of the directory's own staleness
+    /// bound, not the bound itself. Convergence is not instant: after this
+    /// node dials a peer, the peer must notice this node in its directory
+    /// and dial back before this node's directory gains the record, and that
+    /// return dial waits on the peer's own rotation — up to ⌈n / fanout⌉
+    /// heartbeat rounds at the far end. One `node_ttl_secs` can elapse
+    /// inside that window under load, so one TTL would evict peers that are
+    /// converging normally. A premature eviction is also self-healing —
+    /// the peer's inbound dial lands its record in the directory and the
+    /// next round's `seed_from_directory` re-inserts it — so the cost of a
+    /// too-short TTL is churn, never isolation, while the cost of none is
+    /// the permanent slot the issue records.
+    ///
+    /// Returns the evicted endpoints so the caller can drop them from the
+    /// dial list too: leaving one there would re-seed it on the next
+    /// restart, which is exactly the cycle this eviction exists to break.
+    pub fn evict_never_joined(
+        &mut self,
+        now_millis: u64,
+        ttl_millis: u64,
+        joined: &std::collections::BTreeSet<String>,
+    ) -> Vec<String> {
+        let stale: Vec<String> = self
+            .peers
+            .iter()
+            .filter(|(endpoint, state)| {
+                !state.is_seed
+                    && now_millis.saturating_sub(state.inserted_millis) >= ttl_millis
+                    && !joined.contains(*endpoint)
+            })
+            .map(|(endpoint, _)| endpoint.clone())
+            .collect();
+        for endpoint in &stale {
+            self.peers.remove(endpoint);
+        }
+        stale
+    }
 }
 
 #[cfg(test)]
@@ -273,7 +339,7 @@ mod tests {
     fn the_cursor_reaches_every_peer() {
         let mut table = PeerTable::new(Vec::new());
         for endpoint in endpoints(20) {
-            table.insert(endpoint);
+            table.insert(endpoint, 0);
         }
         let mut seen = std::collections::BTreeSet::new();
         let mut now = 0;
@@ -307,7 +373,7 @@ mod tests {
     fn due_never_exceeds_the_requested_fanout() {
         let mut table = PeerTable::new(Vec::new());
         for endpoint in endpoints(10) {
-            table.insert(endpoint);
+            table.insert(endpoint, 0);
         }
         assert_eq!(
             table.due(0, 3).len(),
@@ -319,7 +385,7 @@ mod tests {
     #[test]
     fn a_failing_peer_backs_off_and_is_capped() {
         let mut table = PeerTable::new(Vec::new());
-        table.insert("https://dead.example".to_owned());
+        table.insert("https://dead.example".to_owned(), 0);
         assert_eq!(table.due(0, 8).len(), 1);
         table.record_failure("https://dead.example", 0, 60_000);
         assert!(table.due(1_000, 8).is_empty(), "a failed peer waits");
@@ -346,6 +412,7 @@ mod tests {
             }],
             "https://self.example",
             8,
+            0,
         );
         assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
     }
@@ -377,6 +444,7 @@ mod tests {
             ],
             "https://self.example",
             8,
+            0,
         );
         assert_eq!(table.due(0, 8), vec!["https://known.example".to_owned()]);
     }
@@ -401,6 +469,7 @@ mod tests {
             }],
             "https://self.example",
             8,
+            0,
         );
         // The unnormalized key would never match this call, and the peer
         // would remain forever.
@@ -428,7 +497,7 @@ mod tests {
                 last_seen_millis: 0,
             })
             .collect();
-        table.seed_from_directory(&nodes, "https://self.example", 3);
+        table.seed_from_directory(&nodes, "https://self.example", 3, 0);
         assert_eq!(
             table.len(),
             3,
@@ -445,7 +514,7 @@ mod tests {
     #[test]
     fn reseeding_from_the_directory_does_not_reset_an_in_progress_backoff() {
         let mut table = PeerTable::new(Vec::new());
-        table.insert("https://flaky.example".to_owned());
+        table.insert("https://flaky.example".to_owned(), 0);
         table.record_failure("https://flaky.example", 0, 60_000);
         assert!(
             table.due(1_000, 8).is_empty(),
@@ -464,6 +533,7 @@ mod tests {
             }],
             "https://self.example",
             8,
+            0,
         );
 
         assert!(
@@ -475,7 +545,7 @@ mod tests {
     #[test]
     fn a_configured_seed_is_never_evicted() {
         let mut table = PeerTable::new(vec!["https://seed.example".to_owned()]);
-        table.insert("https://learned.example".to_owned());
+        table.insert("https://learned.example".to_owned(), 0);
         table.evict("https://seed.example");
         table.evict("https://learned.example");
         assert_eq!(table.due(0, 8), vec!["https://seed.example".to_owned()]);
@@ -507,7 +577,7 @@ mod tests {
     fn every_peer_is_eventually_due_for_replication_despite_rotation() {
         let mut table = PeerTable::new(Vec::new());
         for endpoint in endpoints(64) {
-            table.insert(endpoint);
+            table.insert(endpoint, 0);
         }
         let fanout = 8;
         let heartbeat_millis = 15_000_u64;
@@ -533,6 +603,63 @@ mod tests {
             64,
             "every peer must eventually replicate; a global gate would phase-lock to 16 of 64 \
              under these exact numbers"
+        );
+    }
+
+    // Issue #189, item 1: an origin that answers joins but never completes an
+    // authenticated inbound join holds a table slot forever without this
+    // eviction. Age alone is not enough (a converging peer is briefly
+    // record-less), and a directory record alone is enough (it proves an
+    // authenticated join, whatever the age).
+    #[test]
+    fn a_never_joined_peer_ages_out_but_a_joined_one_does_not() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://hint.example".to_owned(), 0);
+        table.insert("https://joined.example".to_owned(), 0);
+        table.insert("https://fresh.example".to_owned(), 90_000);
+        let joined: std::collections::BTreeSet<String> =
+            ["https://joined.example".to_owned()].into_iter().collect();
+
+        let evicted = table.evict_never_joined(100_000, 60_000, &joined);
+
+        assert_eq!(evicted, vec!["https://hint.example".to_owned()]);
+        let remaining = table.due(100_000, 8);
+        assert_eq!(
+            remaining,
+            vec![
+                "https://fresh.example".to_owned(),
+                "https://joined.example".to_owned()
+            ],
+            "the young hint and the aged-but-joined peer must both stay"
+        );
+    }
+
+    // The return-dial window the TTL comment describes: a peer inserted one
+    // round ago has not had time to be noticed and dialled back, so even a
+    // TTL of one millisecond more than its age must not evict it early.
+    #[test]
+    fn a_peer_younger_than_the_ttl_is_kept_without_a_record() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://converging.example".to_owned(), 10_000);
+        let evicted = table.evict_never_joined(10_001, 60_000, &std::collections::BTreeSet::new());
+        assert!(evicted.is_empty());
+        assert_eq!(
+            table.due(10_001, 8),
+            vec!["https://converging.example".to_owned()]
+        );
+    }
+
+    // Seeds are the recovery path: never aged out, with no directory record,
+    // at any age, exactly as `evict` already treats them.
+    #[test]
+    fn a_seed_is_never_evicted_as_never_joined() {
+        let mut table = PeerTable::new(vec!["https://seed.example".to_owned()]);
+        let evicted =
+            table.evict_never_joined(u64::MAX, 60_000, &std::collections::BTreeSet::new());
+        assert!(evicted.is_empty());
+        assert_eq!(
+            table.due(u64::MAX, 8),
+            vec!["https://seed.example".to_owned()]
         );
     }
 }

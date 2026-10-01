@@ -220,6 +220,7 @@ async fn run(state: AppState) {
         &state.nodes().list().unwrap_or_default(),
         &self_endpoint,
         config.max_peers,
+        now_millis(),
     );
     // The dial list, recovered once. Without it a node restarted with no
     // configured seeds has nowhere to knock: its directory is written only by
@@ -238,6 +239,7 @@ async fn run(state: AppState) {
         &dialled.iter().cloned().collect::<Vec<String>>(),
         &self_endpoint,
         config.max_peers,
+        now_millis(),
     );
     let backoff_ceiling_millis = config.node_ttl_secs.saturating_mul(1000);
     // Anti-entropy is decoupled from the heartbeat cadence and tracked per
@@ -288,9 +290,9 @@ async fn run(state: AppState) {
                 // `insert` is also a no-op for an endpoint already in the
                 // table, so a stable membership costs one cheap directory
                 // read and no table churn.
-                table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint, config.max_peers);
-
                 let round_started_millis = now_millis();
+                table.seed_from_directory(&state.nodes().list().unwrap_or_default(), &self_endpoint, config.max_peers, round_started_millis);
+
                 let mut joins = JoinSet::new();
                 for endpoint in table.due(round_started_millis, config.fanout) {
                     let state = state.clone();
@@ -376,7 +378,7 @@ async fn run(state: AppState) {
                                 if validate_cluster_endpoint(&peer.endpoint).is_ok() {
                                     let endpoint = normalize_endpoint(&peer.endpoint);
                                     if endpoint != self_endpoint {
-                                        table.insert(endpoint);
+                                        table.insert(endpoint, round_started_millis);
                                     }
                                 }
                             }
@@ -400,6 +402,23 @@ async fn run(state: AppState) {
                     }
                     Ok(_) => {}
                     Err(error) => tracing::warn!(%error, "failed to prune stale cluster members"),
+                }
+
+                // Issue #189, item 1: alongside directory pruning, age out
+                // endpoints that have never produced an authenticated
+                // directory record at all. The TTL is two directory-staleness
+                // bounds, not one: a freshly dialled peer needs its own
+                // rotation to notice and dial this node back before its
+                // record lands here, and one TTL can elapse inside that
+                // window under load (see `PeerTable::evict_never_joined`).
+                if evict_never_joined(
+                    &mut table,
+                    &mut dialled,
+                    &state.nodes().list().unwrap_or_default(),
+                    now_millis(),
+                    backoff_ceiling_millis.saturating_mul(2),
+                ) {
+                    store_dialled(&dialled_path, &dialled);
                 }
             }
             () = state.wait_shutdown() => break,
@@ -687,7 +706,61 @@ fn evict_pruned(
     dialled_changed
 }
 
+/// Issue #189, item 1's wiring: the endpoints `PeerTable::evict_never_joined`
+/// aged out leave the dial list too, or the next restart would re-seed them
+/// and the eviction would never stick — the cycle the issue records. The
+/// joined set the table's check consults is built here, from the same
+/// directory read `run` already makes, normalized exactly as
+/// `prune_evictions` normalizes. Reports whether the dial list changed,
+/// which is when it needs rewriting.
+fn evict_never_joined(
+    table: &mut PeerTable,
+    dialled: &mut BTreeSet<String>,
+    nodes: &[NodeRecord],
+    now_millis: u64,
+    ttl_millis: u64,
+) -> bool {
+    let joined: BTreeSet<String> = nodes
+        .iter()
+        .map(|node| normalize_endpoint(&node.endpoint))
+        .collect();
+    let mut dialled_changed = false;
+    for endpoint in table.evict_never_joined(now_millis, ttl_millis, &joined) {
+        tracing::info!(peer = %endpoint, "evicting a cluster peer that never joined");
+        if dialled.remove(&endpoint) {
+            dialled_changed = true;
+        }
+    }
+    dialled_changed
+}
+
 pub fn validate_node_record(node: &NodeRecord) -> Result<()> {
+    validate_node_record_shape(node)?;
+    validate_cluster_endpoint(&node.endpoint)
+}
+
+/// Issue #189, item 3: the shape checks the operator-authenticated RPC write
+/// path (`RpcRequest::NodeHeartbeat`) applies before persisting a record.
+///
+/// What this channel cannot do is `record_matches_signer`: there is no
+/// signer. The admin socket's author is the operator, who needs no proof —
+/// they can rewrite `nodes.json` with a text editor — and the CLI's own
+/// heartbeat deliberately carries an empty endpoint, which the network
+/// path's `validate_cluster_endpoint` would refuse. What the channel can do,
+/// and now does, is hold the record to exactly the network path's shape, so
+/// a malformed record enters the directory from no write path; an endpoint,
+/// when one is carried, is held to the same rule as a join's. Ownership is
+/// unaffected either way: `cluster_owner` intersects the directory with the
+/// admitted set, which an operator-injected record cannot join.
+pub fn validate_operator_node_record(node: &NodeRecord) -> Result<()> {
+    validate_node_record_shape(node)?;
+    if node.endpoint.is_empty() {
+        return Ok(());
+    }
+    validate_cluster_endpoint(&node.endpoint)
+}
+
+fn validate_node_record_shape(node: &NodeRecord) -> Result<()> {
     if node.node_id.is_empty() || node.node_id.len() > 256 {
         return Err(LiveError::Protocol(
             "cluster node_id must contain 1 to 256 bytes".to_owned(),
@@ -708,7 +781,7 @@ pub fn validate_node_record(node: &NodeRecord) -> Result<()> {
             "cluster node advertises invalid operations".to_owned(),
         ));
     }
-    validate_cluster_endpoint(&node.endpoint)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -876,8 +949,8 @@ mod tests {
     #[test]
     fn pruning_the_directory_drops_the_peer_from_the_table_and_the_dial_list() {
         let mut table = PeerTable::new(Vec::new());
-        table.insert("https://gone.example".to_owned());
-        table.insert("https://live.example".to_owned());
+        table.insert("https://gone.example".to_owned(), 0);
+        table.insert("https://live.example".to_owned(), 0);
         let mut dialled: BTreeSet<String> = ["https://gone.example", "https://live.example"]
             .into_iter()
             .map(str::to_owned)
@@ -915,7 +988,7 @@ mod tests {
     #[test]
     fn pruning_an_identity_rotation_evicts_nothing() {
         let mut table = PeerTable::new(Vec::new());
-        table.insert("https://rotated.example".to_owned());
+        table.insert("https://rotated.example".to_owned(), 0);
         let mut dialled: BTreeSet<String> =
             ["https://rotated.example".to_owned()].into_iter().collect();
 
@@ -925,6 +998,61 @@ mod tests {
         assert!(!evict_pruned(&mut table, &mut dialled, &before, &after));
         assert_eq!(table.due(0, 8), vec!["https://rotated.example".to_owned()]);
         assert_eq!(dialled.len(), 1);
+    }
+
+    // Issue #189, item 1: `PeerTable::evict_never_joined` is covered on its
+    // own, but if the dial-list half of this wiring were dropped, the evicted
+    // origin would be re-seeded from `cluster-peers.json` on the next restart
+    // and the eviction would never stick — the cycle the issue records. The
+    // joined peer (it has a directory record) must survive at any age.
+    #[test]
+    fn a_never_joined_peer_leaves_the_table_and_the_dial_list_together() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://hint.example".to_owned(), 0);
+        table.insert("https://joined.example".to_owned(), 0);
+        let mut dialled: BTreeSet<String> = ["https://hint.example", "https://joined.example"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+
+        let nodes = vec![
+            node("ed25519:self", "https://self.example"),
+            node("ed25519:joined", "https://joined.example"),
+        ];
+
+        assert!(
+            evict_never_joined(&mut table, &mut dialled, &nodes, 200_000, 120_000),
+            "dropping an endpoint from the dial list must ask for a rewrite"
+        );
+        assert_eq!(
+            table.due(200_000, 8),
+            vec!["https://joined.example".to_owned()],
+            "the never-joined hint is gone; the peer with a record stays at any age"
+        );
+        assert_eq!(
+            dialled,
+            ["https://joined.example".to_owned()].into_iter().collect(),
+            "and the hint is no longer worth a restart's first knock"
+        );
+
+        // A young hint and a record-holding peer both survive a pass that
+        // changes nothing: no eviction, no rewrite requested.
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://fresh.example".to_owned(), 199_000);
+        table.insert("https://joined.example".to_owned(), 0);
+        let mut dialled: BTreeSet<String> = ["https://fresh.example", "https://joined.example"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        assert!(!evict_never_joined(
+            &mut table,
+            &mut dialled,
+            &nodes,
+            200_000,
+            120_000
+        ));
+        assert_eq!(table.len(), 2);
+        assert_eq!(dialled.len(), 2);
     }
 
     // Final review, FIX 1: the dial list is endpoints and nothing else, and a
@@ -984,5 +1112,38 @@ mod tests {
                 "https://b.example".to_owned()
             ]
         );
+    }
+
+    // Issue #189, item 3: the operator write path holds a record to the
+    // network path's shape. The CLI's own heartbeat carries no endpoint and
+    // must keep working; a carried endpoint is held to the join path's rule.
+    #[test]
+    fn the_operator_record_check_holds_shape_without_refusing_an_empty_endpoint() {
+        let mut record = node("ed25519:aa", "");
+        assert!(validate_operator_node_record(&record).is_ok());
+
+        record.endpoint = "https://node.example:11435".to_owned();
+        assert!(validate_operator_node_record(&record).is_ok());
+
+        record.endpoint = "http://public.example".to_owned();
+        assert!(
+            validate_operator_node_record(&record).is_err(),
+            "a carried endpoint is held to the same rule as a join's"
+        );
+
+        let malformed = NodeRecord {
+            node_id: String::new(),
+            ..node("ed25519:aa", "")
+        };
+        assert!(validate_operator_node_record(&malformed).is_err());
+        let overlong = NodeRecord {
+            version: "v".repeat(129),
+            ..node("ed25519:aa", "")
+        };
+        assert!(validate_operator_node_record(&overlong).is_err());
+
+        // The network path itself is unchanged: it still refuses the empty
+        // endpoint the operator path accepts.
+        assert!(validate_node_record(&node("ed25519:aa", "")).is_err());
     }
 }

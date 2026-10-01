@@ -665,7 +665,17 @@ impl AppState {
             }
             RpcRequest::NodeHeartbeat { node } => {
                 let nodes = self.inner.nodes.clone();
-                match blocking(move || nodes.heartbeat(node)).await {
+                match blocking(move || {
+                    // The second write path into the directory gets the same
+                    // shape checks as the network join (#189, item 3).
+                    // `record_matches_signer` cannot apply here — the author
+                    // is the operator, not the record's subject; see
+                    // `validate_operator_node_record` for what can.
+                    crate::cluster::validate_operator_node_record(&node)?;
+                    nodes.heartbeat(node)
+                })
+                .await
+                {
                     Ok(()) => RpcResponse::Accepted,
                     Err(error) => RpcResponse::Error(ApiError::from(&error)),
                 }

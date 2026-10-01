@@ -119,6 +119,20 @@ pub trait ClusterNetwork: Send + Sync {
     /// `Capability` because a caller iterating many objects treats an oversize
     /// one as a fact about that object, not about the peer.
     async fn send(&self, peer: &str, request: ClusterRequest) -> Result<ClusterResponse>;
+    /// The bulk-transfer channel this network offers, when it has one.
+    ///
+    /// `None` means "this network has no blob channel; use the per-object
+    /// GET": the HTTP network has no second protocol, and Phase 2b's
+    /// replication keeps the existing object route for it verbatim.
+    /// `IrohNetwork` answers a channel that fetches verified blobs over the
+    /// same endpoint the inventory exchange already dials. Chosen by
+    /// capability, like [`ClusterNetwork::recipient_for`]: `replicate_peer`
+    /// asks the network that would dial the peer and never branches on the
+    /// address itself.
+    #[cfg(feature = "p2p")]
+    fn blob_channel(&self) -> Option<Arc<dyn super::blobs::BlobChannel>> {
+        None
+    }
     /// Addresses learned without configuration. An empty list is a valid answer.
     ///
     /// Nothing calls this yet: HTTP learns peers from the signed join response
@@ -274,6 +288,15 @@ impl NetworkRegistry {
             LiveError::Transport(format!("no cluster network can reach {address}"))
         })?;
         network.send(address, request).await
+    }
+
+    /// The blob channel of the network that would dial `address`, when it
+    /// offers one. Routed exactly as [`NetworkRegistry::send`] routes, so the
+    /// answer can never come from a network that cannot reach the peer.
+    #[cfg(feature = "p2p")]
+    pub fn blob_channel(&self, address: &str) -> Option<Arc<dyn super::blobs::BlobChannel>> {
+        self.route(address)
+            .and_then(|network| network.blob_channel())
     }
 
     /// Every address this node can be reached at, across all networks.

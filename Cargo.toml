@@ -76,6 +76,13 @@ ed25519-dalek = { version = "3", default-features = false, features = ["zeroize"
 # joins without a routable address. Off by default (ADRs 033/034); ring only,
 # aws-lc and openssl stay out of the graph.
 iroh = { version = "1.3", optional = true, default-features = false, features = ["tls-ring"] }
+# Phase 2b (#179): object replication between key-addressed peers moves to
+# BLAKE3/bao verified streaming — resumable across rounds and never buffered
+# whole in memory. The registry's `blake3:` ids are the blob hashes, so no
+# translation table sits between them. `fs-store` only (redb + reflink-copy,
+# pure Rust, MIT/Apache-2.0-family): the default `rpc` feature's noq subtree
+# stays out of the graph.
+iroh-blobs = { version = "0.103", optional = true, default-features = false, features = ["fs-store"] }
 # Serving and dialling HTTP/1 over an iroh stream: one protocol implementation
 # for both directions, already in the graph through axum.
 hyper = { version = "1", optional = true, features = ["server", "http1", "client"] }
@@ -175,9 +182,11 @@ candle-metal = ["candle", "candle-core/metal", "candle-transformers/metal"]
 burn = ["dep:burn", "dep:burn-lm-inference", "dep:burn-lm-llama"]
 # Hologram Registry (apps/registry). Off by default: a stock build pulls no Kappa crate.
 oci = ["dep:jsonwebtoken", "dep:ring", "dep:kappa-core", "dep:kappa-store-redb", "dep:redb", "dep:bytes", "dep:tokio-util", "dep:yaml-rust2", "dep:bcrypt", "dep:base64", "dep:tokio-rustls", "hyper-util/server-auto", "hyper-util/server-graceful", "hyper-util/service", "hyper-util/http1", "hyper-util/http2"]
-# Phase 2a (#179): the iroh cluster transport. Off by default; a stock build is
-# unchanged for anyone who does not opt in.
-p2p = ["dep:iroh", "dep:hyper", "dep:http-body-util", "dep:bytes"]
+# Phase 2 (#179): the iroh cluster transport and iroh-blobs object replication.
+# Off by default; a stock build is unchanged for anyone who does not opt in.
+# tokio-util bridges the blob store's async reader into the registry's
+# synchronous streaming put, and is already locked through the oci feature.
+p2p = ["dep:iroh", "dep:iroh-blobs", "dep:hyper", "dep:http-body-util", "dep:bytes", "dep:tokio-util"]
 ring = ["dep:ring"]
 
 [[test]]

@@ -15,6 +15,30 @@ impl LocalRegistryProvider {
     pub fn new(store: Arc<ObjectStore>) -> Self {
         Self { store }
     }
+
+    /// The streaming put Phase 2b's cluster replication imports fetched blobs
+    /// through, so a replicated object never sits whole in memory. Not on the
+    /// trait: `RegistryProvider`'s object-safe surface is unchanged, and the
+    /// kappa provider keeps the whole-bytes path because its put crosses the
+    /// network to the registry service regardless. Callers reach this through
+    /// `AppState::local_registry`, which is `Some` exactly when the configured
+    /// provider is this one.
+    #[cfg_attr(
+        not(feature = "p2p"),
+        expect(
+            dead_code,
+            reason = "only the p2p feature's blob replication imports through a reader"
+        )
+    )]
+    pub(crate) fn put_object_reader(
+        &self,
+        kind: String,
+        media_type: String,
+        filename: Option<String>,
+        reader: impl std::io::Read,
+    ) -> Result<ObjectMetadata> {
+        self.store.put_reader(kind, media_type, filename, reader)
+    }
 }
 
 impl RegistryProvider for LocalRegistryProvider {

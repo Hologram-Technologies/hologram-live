@@ -5,6 +5,8 @@
 //! against another authority.
 
 pub(crate) mod admission;
+#[cfg(feature = "p2p")]
+pub(crate) mod blobs;
 pub(crate) mod identity;
 #[cfg(feature = "p2p")]
 pub(crate) mod iroh;
@@ -139,15 +141,31 @@ async fn run(state: AppState) {
     #[cfg(feature = "p2p")]
     let mut iroh_address = None;
     #[cfg(feature = "p2p")]
+    let mut iroh_blob_store = None;
+    #[cfg(feature = "p2p")]
     if matches!(config.transport.as_str(), "iroh" | "both") {
-        match iroh::IrohNetwork::bind(state.identity(), &config.relays, &config.discovery).await {
+        let blobs_dir = state.config().paths.data_dir.join("cluster-blobs");
+        match iroh::IrohNetwork::bind(
+            state.identity(),
+            &config.relays,
+            &config.discovery,
+            &blobs_dir,
+        )
+        .await
+        {
             Ok(network) => {
                 let address = network.local_node_address();
                 let serve_endpoint = network.endpoint().clone();
+                let serve_blobs = network.blobs().clone();
                 let serve_state = state.clone();
                 tokio::spawn(async move {
-                    iroh::serve(serve_endpoint, serve_state).await;
+                    iroh::serve(serve_endpoint, serve_state, serve_blobs).await;
                 });
+                // One store serves both directions: the provider side of the
+                // serve loop above, the dial side's fetches inside the
+                // network, and the mirror pass below that keeps its tags a
+                // cache of the registry.
+                iroh_blob_store = Some(network.blobs().clone());
                 networks_vec.push(Arc::new(network));
                 iroh_address = Some(address);
                 if config.discovery == "none"
@@ -249,6 +267,13 @@ async fn run(state: AppState) {
     // delaying them (see the comment on `PeerState::last_replicated_millis`
     // in `membership.rs`).
     let replication_interval_millis = config.replication_interval_secs.saturating_mul(1000);
+    // The blob mirror runs on the same cadence as anti-entropy, tracked
+    // separately from any peer's `replication_due`: it mirrors the local
+    // registry, not a peer's, so it owes no per-peer bookkeeping. Zero makes
+    // the first tick reconcile immediately, which is what imports a
+    // pre-existing inventory on a fresh start.
+    #[cfg(feature = "p2p")]
+    let mut last_mirror_millis = 0_u64;
     let mut ticker = tokio::time::interval(Duration::from_secs(config.heartbeat_interval_secs));
     // Replication now runs inline in this loop, so one slow peer can make a
     // round overrun `heartbeat_interval_secs`. The default `Burst` behaviour
@@ -384,6 +409,23 @@ async fn run(state: AppState) {
                         Err(error) => {
                             tracing::debug!(%error, peer = %endpoint, "cluster peer is unavailable");
                             table.record_failure(&endpoint, now_millis(), backoff_ceiling_millis);
+                        }
+                    }
+                }
+
+                // The blob mirror: diff the registry's inventory against the
+                // store's named tags on the replication cadence, so the
+                // iroh-blobs provider side serves exactly what the registry
+                // holds. A failed pass is logged and retried next interval —
+                // a store that lags the registry is a colder cache, not an
+                // error worth losing the round's bookkeeping over.
+                #[cfg(feature = "p2p")]
+                if let Some(blob_store) = &iroh_blob_store {
+                    let now = now_millis();
+                    if now.saturating_sub(last_mirror_millis) >= replication_interval_millis {
+                        last_mirror_millis = now;
+                        if let Err(error) = blobs::reconcile(&state, blob_store).await {
+                            tracing::warn!(%error, "cluster blob mirror reconcile failed");
                         }
                     }
                 }

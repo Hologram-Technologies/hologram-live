@@ -538,6 +538,15 @@ fn a_restarted_node_rejoins_without_any_configured_seed() {
 ///
 /// Both nodes are observed over several heartbeat rounds rather than sampled
 /// once, so a join that is merely slow to be accepted would still fail this.
+///
+/// The assertion is shaped as the must-never it tests (#205). `None` from
+/// `directory` — a poll the daemon could not answer this instant — is not a
+/// violation, and neither is a transiently empty directory before the first
+/// heartbeat lands; failing on either was the flake, because under load both
+/// happen without the intruder ever appearing. What fails is a directory
+/// ever listing *two* records — with only these two nodes, that is exactly
+/// the other node appearing — and a window with too few successful looks, so
+/// the test cannot pass by never having asked.
 #[test]
 fn a_node_without_the_admission_secret_is_refused() {
     hologram_live::util::install_crypto_provider();
@@ -556,19 +565,34 @@ fn a_node_without_the_admission_secret_is_refused() {
     // `heartbeat_interval_secs` is 1 in this harness, so this observes on the
     // order of five join attempts.
     let deadline = Instant::now() + Duration::from_secs(5);
+    let mut observed_first = 0_usize;
+    let mut observed_intruder = 0_usize;
     while Instant::now() < deadline {
-        assert_eq!(
-            peer_count(&client, first.port),
-            Some(1),
-            "the intruder must never appear in the seed's directory"
-        );
-        assert_eq!(
-            peer_count(&client, intruder.port),
-            Some(1),
-            "a refused joiner learns nothing about the node that refused it"
-        );
+        if let Some(records) = directory(&client, first.port) {
+            assert!(
+                records.len() <= 1,
+                "the intruder must never appear in the seed's directory: {records:?}"
+            );
+            if records.len() == 1 {
+                observed_first += 1;
+            }
+        }
+        if let Some(records) = directory(&client, intruder.port) {
+            assert!(
+                records.len() <= 1,
+                "a refused joiner learns nothing about the node that refused it: {records:?}"
+            );
+            if records.len() == 1 {
+                observed_intruder += 1;
+            }
+        }
         std::thread::sleep(Duration::from_millis(200));
     }
+    assert!(
+        observed_first >= 3 && observed_intruder >= 3,
+        "too few successful directory reads (seed: {observed_first}, intruder: \
+         {observed_intruder}) — the test never actually watched several heartbeat rounds"
+    );
 }
 
 /// The records `port`'s node directory currently lists, as `(node_id,

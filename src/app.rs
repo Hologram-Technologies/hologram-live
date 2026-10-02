@@ -299,15 +299,38 @@ impl AppState {
     /// of 64 sampled resource keys from its own vantage point, only ever
     /// deferring to the peer it had admitted. Self-trust needs no external
     /// admission, so it is added here rather than in `Admission` itself,
-    /// which stays about authenticating *others*.
-    ///
-    /// Shared with `cluster::contact_peer`'s outbound `ownership::epoch`
-    /// header so the value it reports actually digests the set ownership
-    /// decisions use, rather than silently omitting self.
+    /// which stays about authenticating *others*. The epoch's candidate set
+    /// (`cluster_epoch`, #184) intersects the directory with this set.
     pub(crate) fn admitted_with_self(&self) -> std::collections::BTreeSet<String> {
         let mut admitted = self.admission().admitted();
         admitted.insert(self.identity().node_id());
         admitted
+    }
+
+    /// The membership epoch this node reports and enforces (#184): a digest of
+    /// the **ownership candidate set** — the directory records whose identity
+    /// is admitted, plus this node itself — which is exactly the input
+    /// `cluster_owner` reads. An epoch mismatch between two peers therefore
+    /// means "our ownership answers may differ right now", which an
+    /// admitted-set digest could not say: two nodes can trust the same keys,
+    /// hold different directories, and name different owners while agreeing
+    /// on that digest.
+    ///
+    /// Only ids are digested: a heartbeat refresh changes no answer, so it
+    /// changes no epoch; a pruned or newly joined record does. Self is
+    /// inserted explicitly, so the value is correct even in the window before
+    /// this node's first heartbeat has landed its record in the directory.
+    pub(crate) fn cluster_epoch(&self) -> Result<String> {
+        let admitted = self.admitted_with_self();
+        let mut candidates: std::collections::BTreeSet<String> = self
+            .nodes()
+            .list()?
+            .into_iter()
+            .map(|node| node.node_id)
+            .filter(|node_id| admitted.contains(node_id))
+            .collect();
+        candidates.insert(self.identity().node_id());
+        Ok(crate::ownership::epoch(&candidates))
     }
 
     pub(crate) fn cluster_token(&self) -> Option<&str> {
@@ -898,7 +921,7 @@ mod tests {
     /// `node_id` every cluster record, proof and admission decision is keyed
     /// on. Nothing asserted that it is the cluster identity.
     ///
-    /// It used to be `blake3(server.listen   paths.data_dir   role)`, which
+    /// It used to be `blake3(server.listen ‖ paths.data_dir ‖ role)`, which
     /// gave two default installs the same id. Both halves of this fail against
     /// that: a digest of configuration is not `identity.node_id()`, and it
     /// carries a `blake3:` prefix rather than `ed25519:`.
@@ -939,6 +962,96 @@ mod tests {
                 .local_node_record("https://node.example".to_owned())
                 .node_id,
             manifest.server_id
+        );
+    }
+
+    // #184, decision 1: the epoch digests the ownership *candidate set* —
+    // directory ∩ admitted, plus self — so it moves exactly when ownership's
+    // input moves. An unadmitted record in the directory changes nothing;
+    // admitting it does; a heartbeat refresh does not; a prune does.
+    #[tokio::test]
+    async fn the_epoch_tracks_the_ownership_candidate_set() {
+        use crate::cluster::admission::{ticket, Decision};
+        use crate::cluster::identity::{NodeIdentity, KEY_FILE};
+
+        crate::util::install_crypto_provider();
+        let directory = tempfile::tempdir().expect("state directory");
+        let mut config = AppConfig::default();
+        config.paths.config_dir = directory.path().join("config");
+        config.paths.data_dir = directory.path().join("data");
+        config.paths.state_dir = directory.path().join("state");
+        config.paths.cache_dir = directory.path().join("cache");
+        config.cluster.advertise_endpoint = Some("http://127.0.0.1:11435".to_owned());
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build a real AppState backed by a temp dir");
+
+        let epoch_alone = state.cluster_epoch().expect("the epoch computes");
+
+        // A record for an identity nobody has admitted is in the directory
+        // but not in the candidate set: the epoch must not move.
+        let caller_dir = tempfile::tempdir().expect("caller state directory");
+        let caller = NodeIdentity::load_or_create(&caller_dir.path().join(KEY_FILE))
+            .expect("caller identity");
+        let record = crate::protocol::NodeRecord {
+            node_id: caller.node_id(),
+            version: "test".to_owned(),
+            operations: Vec::new(),
+            endpoint: "http://127.0.0.1:29999".to_owned(),
+            last_seen_millis: 0,
+        };
+        state
+            .nodes()
+            .heartbeat(record.clone())
+            .expect("heartbeat the unadmitted record");
+        assert_eq!(
+            state.cluster_epoch().expect("the epoch computes"),
+            epoch_alone,
+            "an unadmitted directory record is not an ownership candidate"
+        );
+
+        // Admitting it puts it in the candidate set: the epoch moves.
+        let token = state.cluster_token().expect("cluster token").to_owned();
+        assert!(matches!(
+            state
+                .admission()
+                .authorize(&caller.node_id(), Some(&ticket(&token, &caller.node_id()))),
+            Decision::Admit
+        ));
+        let epoch_pair = state.cluster_epoch().expect("the epoch computes");
+        assert_ne!(
+            epoch_pair, epoch_alone,
+            "admission changed the candidate set"
+        );
+
+        // A heartbeat refresh rewrites the record's last_seen but not the
+        // set: the epoch holds.
+        state
+            .nodes()
+            .heartbeat(record.clone())
+            .expect("refresh the record");
+        assert_eq!(
+            state.cluster_epoch().expect("the epoch computes"),
+            epoch_pair,
+            "a heartbeat refresh changes no ownership answer"
+        );
+
+        // Pruning the member out of the directory removes it from the
+        // candidate set: the epoch moves back.
+        let removed = state
+            .nodes()
+            .prune_older_than(
+                crate::util::now_millis() + 60_000,
+                &state.identity().node_id(),
+            )
+            .expect("prune");
+        assert_eq!(removed, 1);
+        assert_eq!(
+            state.cluster_epoch().expect("the epoch computes"),
+            epoch_alone,
+            "a pruned candidate leaves the set"
         );
     }
 }

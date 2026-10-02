@@ -26,17 +26,18 @@ pub const TICKET_HEADER: &str = "x-hologram-cluster-ticket";
 /// own: the signature must verify over this exact value, and it must then be
 /// shown to name the receiving node.
 pub const RECIPIENT_HEADER: &str = "x-hologram-cluster-recipient";
-/// The sender's membership epoch (see [`crate::ownership::epoch`]), carried so
-/// a receiver could in principle detect that its admitted set differs from the
-/// sender's. Not part of the signed preimage: it is informational rather than
+/// The sender's membership epoch (see [`crate::ownership::epoch`]): a digest
+/// of the sender's ownership candidate set — directory ∩ admitted ∪ self —
+/// so agreement means the two sides would name the same owners right now.
+/// Not part of the signed preimage: it is informational rather than
 /// authenticating.
 ///
-/// Attached on outbound cluster-join requests (`cluster::contact_peer`) but
-/// **not currently enforced on receipt** — see the note in that function for
-/// why admitted sets converge but not atomically, so an equality check would
-/// still see transient mismatches during that window (issue #184 tracks safe
-/// enforcement, which needs sender-side refresh-and-retry). The header is
-/// still sent so the wire carries this information for a corrected consumer.
+/// Carried on every cluster request. Enforced on receipt (#184) on the
+/// object routes only: a receiver answers a mismatch with `409` and its own
+/// epoch in this same header, and the sender defers replication to the next
+/// heartbeat round. The join route is never enforced — joins are the
+/// mechanism by which two epochs converge, so refusing them on a mismatch
+/// would refuse convergence itself.
 pub const EPOCH_HEADER: &str = "x-hologram-cluster-epoch";
 const SIGNING_CONTEXT: &str = "dev.hologram.live.cluster.v2";
 const MAX_CLOCK_SKEW_MILLIS: u64 = 30_000;

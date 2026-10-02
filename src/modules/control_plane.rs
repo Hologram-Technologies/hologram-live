@@ -1,11 +1,12 @@
 use crate::app::AppState;
 use crate::module::{LiveModule, ModuleDescriptor, OperationDescriptor};
 use crate::modules::HttpError;
-use crate::protocol::{operation, NodeRecord, ObjectPage, ObjectQuery, OperationKind};
+use crate::protocol::{operation, NodeRecord, ObjectQuery, OperationKind};
 use crate::protocol::{ClusterJoinRequest, ClusterJoinResponse};
 use axum::body::Bytes;
 use axum::extract::{OriginalUri, Path, Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 
@@ -86,13 +87,14 @@ pub struct OwnerQuery {
 pub async fn get_mutable_owner(
     State(state): State<AppState>,
     Query(query): Query<OwnerQuery>,
-) -> Result<Json<NodeRecord>, HttpError> {
+) -> Result<Response, HttpError> {
     if query.resource.is_empty() || query.resource.len() > 4_096 {
         return Err(HttpError(crate::error::LiveError::Protocol(
             "resource must be between 1 and 4096 bytes".to_owned(),
         )));
     }
-    let owner = tokio::task::spawn_blocking(move || state.mutable_owner(&query.resource))
+    let owner_state = state.clone();
+    let owner = tokio::task::spawn_blocking(move || owner_state.mutable_owner(&query.resource))
         .await
         .map_err(|error| {
             crate::error::LiveError::Conflict(format!("select mutable owner: {error}"))
@@ -102,7 +104,15 @@ pub async fn get_mutable_owner(
                 "no reachable cluster owner".to_owned(),
             ))
         })?;
-    Ok(Json(owner))
+    // #184: the answer carries the epoch of the candidate set it was computed
+    // from, so a caller comparing two nodes' answers can tell "same owner
+    // because converged" from "same owner by coincidence of two views".
+    let epoch = state.cluster_epoch().map_err(HttpError)?;
+    Ok((
+        [(crate::cluster::proof::EPOCH_HEADER, epoch)],
+        Json(owner),
+    )
+        .into_response())
 }
 
 #[derive(serde::Deserialize)]
@@ -123,7 +133,7 @@ pub struct PlacementQuery {
 pub async fn get_capable_owner(
     State(state): State<AppState>,
     Query(query): Query<PlacementQuery>,
-) -> Result<Json<NodeRecord>, HttpError> {
+) -> Result<Response, HttpError> {
     if query.resource.is_empty()
         || query.resource.len() > 4_096
         || query.operation.is_empty()
@@ -133,8 +143,9 @@ pub async fn get_capable_owner(
             "resource and operation must be non-empty and within their size bounds".to_owned(),
         )));
     }
+    let owner_state = state.clone();
     let owner = tokio::task::spawn_blocking(move || {
-        state.capable_owner(&query.resource, &query.operation)
+        owner_state.capable_owner(&query.resource, &query.operation)
     })
     .await
     .map_err(|error| crate::error::LiveError::Conflict(format!("select placement: {error}")))??
@@ -143,7 +154,12 @@ pub async fn get_capable_owner(
             "no reachable node advertises the required operation".to_owned(),
         ))
     })?;
-    Ok(Json(owner))
+    let epoch = state.cluster_epoch().map_err(HttpError)?;
+    Ok((
+        [(crate::cluster::proof::EPOCH_HEADER, epoch)],
+        Json(owner),
+    )
+        .into_response())
 }
 
 #[utoipa::path(
@@ -181,6 +197,26 @@ pub async fn join_cluster(
         None,
         &body,
     )?;
+    // #184: the join path is never refused on an epoch mismatch — it is the
+    // mechanism by which two epochs converge, so refusing it would refuse
+    // convergence itself. The header is logged so a forming cluster's
+    // divergence is visible while it converges.
+    if let Some(claimed) = headers
+        .get(crate::cluster::proof::EPOCH_HEADER)
+        .and_then(|value| value.to_str().ok())
+    {
+        let claimed = claimed.to_owned();
+        let this = state.clone();
+        let own = tokio::task::spawn_blocking(move || this.cluster_epoch())
+            .await
+            .map_err(|error| {
+                crate::error::LiveError::Conflict(format!("join epoch computation: {error}"))
+            })?
+            .map_err(HttpError)?;
+        if claimed != own {
+            tracing::debug!(signer = %signer, claimed, own, "a join carried a differing membership epoch");
+        }
+    }
     let request: ClusterJoinRequest = serde_json::from_slice(&body)
         .map_err(crate::error::LiveError::from)
         .map_err(HttpError)?;
@@ -214,13 +250,16 @@ pub async fn list_cluster_objects(
     headers: HeaderMap,
     OriginalUri(uri): OriginalUri,
     Query(query): Query<ObjectQuery>,
-) -> Result<Json<ObjectPage>, HttpError> {
+) -> Result<Response, HttpError> {
     authorize_cluster_request(&state, &headers, "GET", uri.path(), uri.query(), &[])?;
+    if let Some(conflict) = epoch_conflict(&state, &headers).await? {
+        return Ok(conflict);
+    }
     let registry = state.registry().clone();
     let objects = tokio::task::spawn_blocking(move || registry.search(&query))
         .await
         .map_err(|error| crate::error::LiveError::Conflict(format!("join cluster inventory: {error}")))??;
-    Ok(Json(objects))
+    Ok(Json(objects).into_response())
 }
 
 pub async fn get_cluster_object(
@@ -230,6 +269,9 @@ pub async fn get_cluster_object(
     Path(id): Path<String>,
 ) -> Result<axum::response::Response, HttpError> {
     authorize_cluster_request(&state, &headers, "GET", uri.path(), uri.query(), &[])?;
+    if let Some(conflict) = epoch_conflict(&state, &headers).await? {
+        return Ok(conflict);
+    }
     let registry = state.registry().clone();
     let object = tokio::task::spawn_blocking(move || registry.get_object(&id))
         .await
@@ -408,6 +450,52 @@ fn authorize_cluster_request(
     authorize_proof(&authority, headers, method, path, query, body)
 }
 
+/// #184: the epoch check, applied only *after* a cluster request has proved
+/// itself and passed admission — a requester that has not done both learns
+/// nothing here, not even this node's epoch. Returns the `409` to send back,
+/// or `None` when the request may be served.
+///
+/// A request with no epoch header is served: pre-enforcement senders do not
+/// carry one on these routes, and a cluster migrates one node at a time. A
+/// request *with* one claims a membership view, and a mismatch means the two
+/// sides' ownership answers may differ right now — the candidate-set digest
+/// (directory ∩ admitted ∪ self) is exactly what ownership reads. The
+/// refusal carries this node's epoch in the same header, so the dialler can
+/// log the two digests side by side instead of guessing which way they
+/// diverged.
+///
+/// The join route never calls this: joins are the mechanism by which two
+/// epochs converge, and refusing them on a mismatch refuses convergence
+/// itself (the Phase 1 revert the #184 design records).
+async fn epoch_conflict(state: &AppState, headers: &HeaderMap) -> Result<Option<Response>, HttpError> {
+    let Some(claimed) = headers
+        .get(crate::cluster::proof::EPOCH_HEADER)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return Ok(None);
+    };
+    let claimed = claimed.to_owned();
+    let this = state.clone();
+    let own = tokio::task::spawn_blocking(move || this.cluster_epoch())
+        .await
+        .map_err(|error| crate::error::LiveError::Conflict(format!("join epoch computation: {error}")))?
+        .map_err(HttpError)?;
+    if claimed == own {
+        return Ok(None);
+    }
+    tracing::debug!(claimed, own, "refusing a cluster object request on an epoch mismatch");
+    Ok(Some(
+        (
+            StatusCode::CONFLICT,
+            [(crate::cluster::proof::EPOCH_HEADER, own.clone())],
+            Json(crate::error::ApiError::from(&crate::error::LiveError::Conflict(
+                format!("membership epoch mismatch: this node's view is {own}"),
+            ))),
+        )
+            .into_response(),
+    ))
+}
+
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, HttpError> {
     headers
         .get(name)
@@ -421,6 +509,7 @@ fn header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, HttpError> 
 
 #[cfg(test)]
 mod tests {
+    use crate::app::AppState;
     use crate::cluster::admission::{ticket, Admission, AllowlistAdmission, TokenAdmission};
     use crate::cluster::identity::{NodeIdentity, KEY_FILE};
     use crate::cluster::proof::sign_request;
@@ -429,7 +518,11 @@ mod tests {
         RequestProof, NODE_HEADER, RECIPIENT_HEADER, SIGNATURE_HEADER, TICKET_HEADER,
         TIMESTAMP_HEADER,
     };
-    use axum::http::HeaderMap;
+    use crate::protocol::{ClusterJoinRequest, NodeRecord, ObjectQuery};
+    use axum::body::Bytes;
+    use axum::extract::{OriginalUri, Query, State};
+    use axum::http::{HeaderMap, StatusCode};
+    use axum::response::IntoResponse;
 
     const ORIGIN: &str = "https://node.example:11435";
     const ROGUE: &str = "https://rogue.example:11435";
@@ -767,5 +860,229 @@ mod tests {
             caller.node_id()
         );
         assert!(admission.admitted().contains(&caller.node_id()));
+    }
+
+    // ---- #184: epoch enforcement on the object routes ----
+
+    /// A real `AppState` with an advertised loopback endpoint (so cluster
+    /// admission is live and a token exists) plus the token, so a test caller
+    /// can mint a valid admission ticket.
+    async fn epoch_state(directory: &std::path::Path) -> (AppState, String) {
+        let mut config = crate::config::AppConfig::default();
+        config.paths.config_dir = directory.join("config");
+        config.paths.data_dir = directory.join("data");
+        config.paths.state_dir = directory.join("state");
+        config.paths.cache_dir = directory.join("cache");
+        config.cluster.advertise_endpoint = Some("http://127.0.0.1:11435".to_owned());
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build a real AppState backed by a temp dir");
+        let token = state
+            .cluster_token()
+            .expect("an advertised endpoint means a cluster token")
+            .to_owned();
+        (state, token)
+    }
+
+    /// A fully proved, ticket-bearing GET of the cluster object route from a
+    /// fresh caller identity, with the epoch header set to `claimed`.
+    fn signed_objects_headers(
+        state: &AppState,
+        token: &str,
+        caller: &NodeIdentity,
+        claimed: Option<&str>,
+    ) -> HeaderMap {
+        let recipient = state.identity().node_id();
+        let proof = sign_request(caller, &recipient, "GET", OBJECTS, None, &[]);
+        let mut headers = headers_for(&proof, &recipient);
+        headers.insert(
+            TICKET_HEADER,
+            ticket(token, &caller.node_id())
+                .parse()
+                .expect("ticket header value"),
+        );
+        if let Some(claimed) = claimed {
+            headers.insert(
+                crate::cluster::proof::EPOCH_HEADER,
+                claimed.parse().expect("epoch header value"),
+            );
+        }
+        headers
+    }
+
+    /// The epoch the state computes, plus one value guaranteed to differ
+    /// from it, so the test does not rely on a digest never colliding.
+    fn mismatched_epoch(state: &AppState) -> String {
+        let real = state.cluster_epoch().expect("compute the epoch");
+        if real == "0000000000000000" {
+            "1111111111111111".to_owned()
+        } else {
+            "0000000000000000".to_owned()
+        }
+    }
+
+    #[tokio::test]
+    async fn an_object_request_with_a_mismatched_epoch_is_refused_with_ours() {
+        crate::util::install_crypto_provider();
+        let directory = tempfile::tempdir().expect("state directory");
+        let (state, token) = epoch_state(directory.path()).await;
+        let (_caller_dir, caller) = identity("caller");
+        let claimed = mismatched_epoch(&state);
+
+        let response = super::list_cluster_objects(
+            State(state.clone()),
+            signed_objects_headers(&state, &token, &caller, Some(&claimed)),
+            OriginalUri(axum::http::Uri::from_static(OBJECTS)),
+            Query(ObjectQuery::default()),
+        )
+        .await
+        .map_err(|error| error.0)
+        .expect("an epoch refusal is an answered request");
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let carried = response
+            .headers()
+            .get(crate::cluster::proof::EPOCH_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .expect("the refusal carries this node's epoch");
+        assert_eq!(
+            carried,
+            state.cluster_epoch().expect("compute the epoch"),
+            "the header names the view the refusal came from"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_object_request_with_a_matching_or_absent_epoch_is_served() {
+        crate::util::install_crypto_provider();
+        let directory = tempfile::tempdir().expect("state directory");
+        let (state, token) = epoch_state(directory.path()).await;
+        let (_caller_dir, caller) = identity("caller");
+
+        // A matching claim is served...
+        let matching = state.cluster_epoch().expect("compute the epoch");
+        let response = super::list_cluster_objects(
+            State(state.clone()),
+            signed_objects_headers(&state, &token, &caller, Some(&matching)),
+            OriginalUri(axum::http::Uri::from_static(OBJECTS)),
+            Query(ObjectQuery::default()),
+        )
+        .await
+        .map_err(|error| error.0)
+        .expect("a matching epoch is served");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // ...and so is no claim at all: pre-enforcement senders carry no
+        // epoch on these routes, and a cluster migrates one node at a time.
+        let response = super::list_cluster_objects(
+            State(state.clone()),
+            signed_objects_headers(&state, &token, &caller, None),
+            OriginalUri(axum::http::Uri::from_static(OBJECTS)),
+            Query(ObjectQuery::default()),
+        )
+        .await
+        .map_err(|error| error.0)
+        .expect("an absent epoch is served");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // The ordering the design pins: nothing is revealed before
+    // authentication and admission — a request that fails the proof layer
+    // with a mismatched epoch gets the auth refusal, not the epoch conflict,
+    // and never learns this node's epoch.
+    #[tokio::test]
+    async fn an_unproved_request_learns_nothing_from_the_epoch_check() {
+        crate::util::install_crypto_provider();
+        let directory = tempfile::tempdir().expect("state directory");
+        let (state, token) = epoch_state(directory.path()).await;
+        let (_caller_dir, caller) = identity("caller");
+        let claimed = mismatched_epoch(&state);
+
+        let recipient = state.identity().node_id();
+        let mut proof = sign_request(&caller, &recipient, "GET", OBJECTS, None, &[]);
+        proof.signature = "00".repeat(64); // invalid: signs nothing
+        let mut headers = headers_for(&proof, &recipient);
+        headers.insert(
+            TICKET_HEADER,
+            ticket(&token, &caller.node_id())
+                .parse()
+                .expect("ticket header value"),
+        );
+        headers.insert(
+            crate::cluster::proof::EPOCH_HEADER,
+            claimed.parse().expect("epoch header value"),
+        );
+
+        let error = super::list_cluster_objects(
+            State(state),
+            headers,
+            OriginalUri(axum::http::Uri::from_static(OBJECTS)),
+            Query(ObjectQuery::default()),
+        )
+        .await
+        .expect_err("an unproved request is refused before the epoch is read");
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(
+            response
+                .headers()
+                .get(crate::cluster::proof::EPOCH_HEADER)
+                .is_none(),
+            "a refused request must not learn this node's epoch"
+        );
+    }
+
+    // Joins are never refused on an epoch mismatch — the join *is* the
+    // convergence mechanism. A join carrying a mismatched epoch is admitted
+    // and recorded exactly as one without.
+    #[tokio::test]
+    async fn a_join_with_a_mismatched_epoch_is_still_admitted() {
+        crate::util::install_crypto_provider();
+        let directory = tempfile::tempdir().expect("state directory");
+        let (state, token) = epoch_state(directory.path()).await;
+        let (_caller_dir, caller) = identity("caller");
+        let claimed = mismatched_epoch(&state);
+
+        let recipient = state.identity().node_id();
+        let record = NodeRecord {
+            node_id: caller.node_id(),
+            version: "test".to_owned(),
+            operations: Vec::new(),
+            endpoint: "http://127.0.0.1:29999".to_owned(),
+            last_seen_millis: 0,
+        };
+        let body = serde_json::to_vec(&ClusterJoinRequest {
+            node: record.clone(),
+        })
+        .expect("encode the join");
+        let proof = sign_request(&caller, &recipient, "POST", crate::cluster::JOIN_PATH, None, &body);
+        let mut headers = headers_for(&proof, &recipient);
+        headers.insert(
+            TICKET_HEADER,
+            ticket(&token, &caller.node_id())
+                .parse()
+                .expect("ticket header value"),
+        );
+        headers.insert(
+            crate::cluster::proof::EPOCH_HEADER,
+            claimed.parse().expect("epoch header value"),
+        );
+
+        let response = super::join_cluster(State(state.clone()), headers, Bytes::from(body))
+            .await
+            .map_err(|error| error.0)
+            .expect("a join is never refused on an epoch mismatch");
+        assert_eq!(response.0.node.node_id, state.identity().node_id());
+        assert!(
+            state
+                .nodes()
+                .list()
+                .expect("list the directory")
+                .iter()
+                .any(|node| node.node_id == caller.node_id()),
+            "the joiner landed in the directory"
+        );
     }
 }

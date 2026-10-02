@@ -68,12 +68,40 @@ fn ends_replication_round(error: &LiveError) -> bool {
     )
 }
 
+/// How a replication round against one peer ended (#184).
+#[derive(Debug)]
+pub(super) enum RoundEnd {
+    /// The inventory was read and every missing object was attempted.
+    Completed,
+    /// The peer refused on a membership-epoch mismatch: its ownership
+    /// candidate set differs from ours right now. A deferral is neither a
+    /// per-object failure nor a peer failure — the peer answered fine, the
+    /// two views simply have not converged — so the round ends quietly and
+    /// the caller deliberately does *not* call `record_replication`: the
+    /// peer stays due and the next heartbeat round retries, which is the
+    /// bounded refresh-and-retry the #184 design specifies. A persistent
+    /// mismatch costs one refused inventory read per heartbeat per peer and
+    /// a state-transition log line, never a loop.
+    Deferred,
+}
+
+/// What one missing object did to the round.
+enum ObjectStep {
+    Stored,
+    Skipped,
+    /// The peer answered the object fetch with an epoch-mismatch `409`
+    /// mid-round — its candidate set changed between our inventory read and
+    /// this request. Treated exactly like an inventory-level refusal: the
+    /// round defers.
+    Deferred,
+}
+
 pub(super) async fn replicate_peer(
     state: &AppState,
     networks: &NetworkRegistry,
     endpoint: &str,
     token: &str,
-) -> Result<()> {
+) -> Result<RoundEnd> {
     // The recipient comes from the network that will dial this endpoint: an
     // HTTP origin for `https:` peers, the bare node id for key-addressed ones
     // (see `ClusterNetwork::recipient_for`).
@@ -82,6 +110,9 @@ pub(super) async fn replicate_peer(
         .ok_or_else(|| LiveError::Config(format!("no cluster network can reach {endpoint}")))?;
     let max_objects = state.config().cluster.replication_max_objects_per_round;
     let max_bytes = state.config().cluster.replication_max_object_bytes;
+    // The membership view this round claims, computed once: every request the
+    // round sends carries it, and the peer enforces it on these routes (#184).
+    let epoch = state.cluster_epoch()?;
     // The network that would dial this endpoint answers whether bulk bytes
     // move over its own protocol: an iroh peer's missing objects are fetched
     // as verified, resumable blobs; a network with no channel (`None`) keeps
@@ -122,8 +153,20 @@ pub(super) async fn replicate_peer(
             },
             token,
             Some(INVENTORY_MAX_RESPONSE_BYTES),
+            &epoch,
         )
         .await?;
+        // An epoch refusal, checked before any decoding: the 409 body is an
+        // error document, not an inventory.
+        if response.status == 409 {
+            tracing::debug!(
+                peer = %endpoint,
+                ours = %epoch,
+                theirs = response.header(proof::EPOCH_HEADER).unwrap_or("unspecified"),
+                "cluster replication deferred: membership views have not converged"
+            );
+            return Ok(RoundEnd::Deferred);
+        }
         let inventory: ObjectPage = serde_json::from_slice(&response.body).map_err(|error| {
             LiveError::Protocol(format!(
                 "decode cluster object inventory from {endpoint}: {error}"
@@ -151,7 +194,7 @@ pub(super) async fn replicate_peer(
             // `ends_replication_round` below: it means the peer itself is
             // unreachable or has revoked our access, not that this one
             // object is bad.
-            let result: Result<bool> = async {
+            let result: Result<ObjectStep> = async {
                 let id = metadata.id.clone();
                 let registry = state.registry().clone();
                 let present = tokio::task::spawn_blocking(move || registry.get_object(&id).is_ok())
@@ -160,7 +203,7 @@ pub(super) async fn replicate_peer(
                         LiveError::Conflict(format!("join cluster object lookup: {error}"))
                     })?;
                 if present {
-                    return Ok(false);
+                    return Ok(ObjectStep::Skipped);
                 }
                 // The blob channel does the whole transfer its own way:
                 // verified ranges into the store, streaming import into the
@@ -173,7 +216,7 @@ pub(super) async fn replicate_peer(
                         state, channel, endpoint, &metadata, max_bytes,
                     )
                     .await?;
-                    return Ok(true);
+                    return Ok(ObjectStep::Stored);
                 }
                 let path = format!("{OBJECTS_PATH}/{}", metadata.id);
                 // The transfer bound, enforced while the object is read.
@@ -188,8 +231,15 @@ pub(super) async fn replicate_peer(
                     },
                     token,
                     Some(max_bytes),
+                    &epoch,
                 )
                 .await?;
+                // The peer's view changed between the inventory read and this
+                // fetch: end the round as a deferral, exactly as an
+                // inventory-level refusal does.
+                if response.status == 409 {
+                    return Ok(ObjectStep::Deferred);
+                }
                 if !response.is_success() {
                     return Err(fetch_failure(
                         response.status,
@@ -235,12 +285,20 @@ pub(super) async fn replicate_peer(
                         stored.id
                     )));
                 }
-                Ok(true)
+                Ok(ObjectStep::Stored)
             }
             .await;
             match result {
-                Ok(true) => outcome.record_object_stored(),
-                Ok(false) => {}
+                Ok(ObjectStep::Stored) => outcome.record_object_stored(),
+                Ok(ObjectStep::Skipped) => {}
+                Ok(ObjectStep::Deferred) => {
+                    tracing::debug!(
+                        peer = %endpoint,
+                        object = %object_id,
+                        "cluster replication deferred mid-round on an epoch mismatch"
+                    );
+                    return Ok(RoundEnd::Deferred);
+                }
                 Err(error) if ends_replication_round(&error) => {
                     tracing::debug!(
                         peer = %endpoint,
@@ -265,7 +323,7 @@ pub(super) async fn replicate_peer(
         failed = outcome.failed,
         "cluster replication round complete"
     );
-    Ok(())
+    Ok(RoundEnd::Completed)
 }
 
 /// The status classification [`ends_replication_round`] depends on, kept on
@@ -291,6 +349,9 @@ fn fetch_failure(status: u16, message: String) -> LiveError {
 ///
 /// `max_response_bytes` is the caller's ceiling on the answer, enforced by the
 /// network while it reads (see [`super::network::ClusterNetwork::send`]).
+///
+/// `epoch` is the membership view the round is claiming (#184), attached to
+/// the request so the receiver can enforce it on these routes.
 pub(super) async fn signed_get(
     state: &AppState,
     networks: &NetworkRegistry,
@@ -298,6 +359,7 @@ pub(super) async fn signed_get(
     target: SignedTarget<'_>,
     token: &str,
     max_response_bytes: Option<u64>,
+    epoch: &str,
 ) -> Result<ClusterResponse> {
     proof::reject_separators("GET", target.path, target.query, target.recipient)?;
     let request_proof = proof::sign_request(
@@ -308,19 +370,16 @@ pub(super) async fn signed_get(
         target.query,
         &[],
     );
-    networks
-        .send(
-            endpoint,
-            signed_request(
-                "GET",
-                target,
-                Vec::new(),
-                &request_proof,
-                token,
-                max_response_bytes,
-            ),
-        )
-        .await
+    let mut request = signed_request(
+        "GET",
+        target,
+        Vec::new(),
+        &request_proof,
+        token,
+        max_response_bytes,
+    );
+    request.epoch = Some(epoch.to_owned());
+    networks.send(endpoint, request).await
 }
 
 #[cfg(test)]
@@ -815,5 +874,150 @@ mod tests {
         .await
         .expect_err("an inventory over the ceiling must fail the round");
         assert!(matches!(error, LiveError::Capability(_)), "got {error:?}");
+    }
+
+    // #184: a peer that refuses the inventory with an epoch-mismatch 409 ends
+    // the round as a *deferral* — `Ok(RoundEnd::Deferred)`, not an error, so
+    // the round loop leaves the peer due for the next heartbeat instead of
+    // consuming the replication interval. The stub's 409 carries its own
+    // epoch header, as an enforcing receiver's would.
+    #[tokio::test]
+    async fn an_epoch_mismatch_inventory_defers_the_round() {
+        use axum::response::IntoResponse;
+        use axum::routing::get;
+        use axum::Router;
+
+        crate::util::install_crypto_provider();
+        let router = Router::new().route(
+            OBJECTS_PATH,
+            get(|| async {
+                (
+                    axum::http::StatusCode::CONFLICT,
+                    [(super::proof::EPOCH_HEADER, "deadbeefdeadbeef")],
+                    b"membership epoch mismatch".to_vec(),
+                )
+                    .into_response()
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port for the refusing stub");
+        let address = listener.local_addr().expect("read the bound address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+
+        let temp = tempfile::tempdir().expect("temp dir for the calling node's state");
+        let mut config = crate::config::AppConfig::default();
+        config.paths.config_dir = temp.path().join("config");
+        config.paths.data_dir = temp.path().join("data");
+        config.paths.state_dir = temp.path().join("state");
+        config.paths.cache_dir = temp.path().join("cache");
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build a real AppState backed by a temp dir");
+        let networks = NetworkRegistry::new(vec![std::sync::Arc::new(
+            crate::cluster::network::HttpNetwork::new(reqwest::Client::new()),
+        )]);
+
+        let end = replicate_peer(
+            &state,
+            &networks,
+            &format!("http://{address}"),
+            "a token the stub never checks",
+        )
+        .await
+        .expect("a deferral is a successful return, not an error");
+        assert!(
+            matches!(end, RoundEnd::Deferred),
+            "an epoch-mismatch 409 must defer the round, got {end:?}"
+        );
+    }
+
+    // The mid-round variant: the inventory answers fine, and the object fetch
+    // 409s — the peer's view changed between the two. The round defers rather
+    // than classifying the refusal as a dead peer or a bad object.
+    #[tokio::test]
+    async fn an_epoch_mismatch_object_fetch_defers_the_round() {
+        use axum::extract::Path;
+        use axum::response::IntoResponse;
+        use axum::routing::get;
+        use axum::{Json, Router};
+
+        crate::util::install_crypto_provider();
+        let bytes = b"the object the peer advertises".to_vec();
+        let id = format!("blake3:{}", blake3::hash(&bytes).to_hex());
+        let page = ObjectPage {
+            objects: vec![crate::protocol::ObjectMetadata {
+                id: id.clone(),
+                kind: "file".to_owned(),
+                media_type: "text/plain".to_owned(),
+                filename: None,
+                size: bytes.len() as u64,
+                created_at_millis: 0,
+            }],
+            next_cursor: None,
+            truncated: false,
+        };
+        let router = Router::new()
+            .route(
+                OBJECTS_PATH,
+                get(move || {
+                    let page = page.clone();
+                    async move { Json(page) }
+                }),
+            )
+            .route(
+                crate::cluster::OBJECT_PATH,
+                get(|Path(_id): Path<String>| async {
+                    (
+                        axum::http::StatusCode::CONFLICT,
+                        [(super::proof::EPOCH_HEADER, "deadbeefdeadbeef")],
+                        b"membership epoch mismatch".to_vec(),
+                    )
+                        .into_response()
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an ephemeral port for the stub");
+        let address = listener.local_addr().expect("read the bound address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+
+        let temp = tempfile::tempdir().expect("temp dir for the calling node's state");
+        let mut config = crate::config::AppConfig::default();
+        config.paths.config_dir = temp.path().join("config");
+        config.paths.data_dir = temp.path().join("data");
+        config.paths.state_dir = temp.path().join("state");
+        config.paths.cache_dir = temp.path().join("cache");
+        let tracing = crate::observability::init_for_test(&config.tracing, &config.telemetry)
+            .expect("init the test tracing subscriber");
+        let state = AppState::build(config, tracing)
+            .await
+            .expect("build a real AppState backed by a temp dir");
+        let networks = NetworkRegistry::new(vec![std::sync::Arc::new(
+            crate::cluster::network::HttpNetwork::new(reqwest::Client::new()),
+        )]);
+
+        let end = replicate_peer(
+            &state,
+            &networks,
+            &format!("http://{address}"),
+            "a token the stub never checks",
+        )
+        .await
+        .expect("a mid-round deferral is a successful return");
+        assert!(
+            matches!(end, RoundEnd::Deferred),
+            "an object-fetch 409 must defer the round, got {end:?}"
+        );
+        assert!(
+            state.registry().get_object(&id).is_err(),
+            "a deferred round stores nothing"
+        );
     }
 }

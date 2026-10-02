@@ -386,12 +386,30 @@ async fn run(state: AppState) {
                             // and each learns the other from an authenticated
                             // inbound join.
                             if table.replication_due(&endpoint, now_millis(), replication_interval_millis) {
-                                if let Err(error) =
-                                    replicate_peer(&state, &networks, &endpoint, &token).await
-                                {
-                                    tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
+                                // #184: a deferral (the peer's ownership view
+                                // differs from ours) is the one outcome that
+                                // must *not* consume the replication interval
+                                // — the peer stays due, so the next heartbeat
+                                // round retries once the two views have had a
+                                // round to converge. Mismatch logging fires on
+                                // the transitions only, not per round.
+                                match replicate_peer(&state, &networks, &endpoint, &token).await {
+                                    Ok(replication::RoundEnd::Completed) => {
+                                        if table.record_epoch_agreement(&endpoint) {
+                                            tracing::info!(peer = %endpoint, "cluster membership views converged with this peer; replication resumed");
+                                        }
+                                        table.record_replication(&endpoint, now_millis());
+                                    }
+                                    Ok(replication::RoundEnd::Deferred) => {
+                                        if table.record_epoch_mismatch(&endpoint) {
+                                            tracing::info!(peer = %endpoint, "cluster peer's membership view differs from ours; deferring replication until it converges");
+                                        }
+                                    }
+                                    Err(error) => {
+                                        tracing::debug!(%error, peer = %endpoint, "cluster immutable-content replication failed");
+                                        table.record_replication(&endpoint, now_millis());
+                                    }
                                 }
-                                table.record_replication(&endpoint, now_millis());
                             }
                             for peer in response.peers {
                                 if table.len() >= config.max_peers {
@@ -486,18 +504,13 @@ async fn contact_peer(
     let request_proof =
         proof::sign_request(state.identity(), &recipient, "POST", JOIN_PATH, None, &body);
     // Reports this node's membership epoch on the wire (see
-    // `proof::EPOCH_HEADER`). The receiver does not currently refuse on a
-    // mismatch. `run` re-seeds the peer table from the node directory every
-    // round (not just once at startup), so a seed comes to dial the joiner
-    // back and both directions present a real, ticket-proven admission — the
-    // two sides' admitted sets do converge. But convergence is not atomic:
-    // it takes the seed's next round to notice a newly-directoried peer and
-    // one more round trip to be admitted by it, so two nodes queried in that
-    // window can legitimately disagree for a beat. Enforcing equality safely
-    // would need sender-side refresh-and-retry on a mismatch, which is more
-    // than this phase carries; the header stays observability-only until
-    // that lands.
-    let epoch = crate::ownership::epoch(&state.admitted_with_self());
+    // `proof::EPOCH_HEADER`) as a digest of the ownership candidate set — the
+    // input `cluster_owner` reads (#184). The join itself is never refused on
+    // a mismatch, by design: joins are the mechanism by which two epochs
+    // converge. The receiver enforces the header on the *object* routes,
+    // where refusal cannot deadlock convergence, and replication defers to
+    // the next heartbeat round on a 409 rather than consuming its interval.
+    let epoch = state.cluster_epoch()?;
     // The join bound, now enforced while the answer is read (see
     // `ClusterNetwork::send`) rather than after it is all in memory. The check
     // below still stands as the backstop for a network that does not honour it.

@@ -794,13 +794,44 @@ mod tests {
         assert_eq!(mirrored.imported, 1, "the server's object is mirrored");
         spawn_serve(&server, &server_state);
 
-        let client_state = cluster_state(&client_dir).await;
+        let client_state = cluster_state_admitting(&client_dir, &[server_identity.node_id()]).await;
         let (client, _lookup) = dialling_endpoint(
             &client_identity,
             &client_dir.path().join("cluster-blobs"),
             &[server.endpoint().clone()],
         )
         .await;
+
+        // #184: a replication round now carries the caller's membership epoch
+        // and the serving side enforces it, so the pair's two states must be
+        // *converged* — each directory holds the other's record and each
+        // admission trusts the other, exactly as mutual joins would have left
+        // them. (The unadmitted-dialler test passes `admit_client = false`
+        // and expects refusal before any of this matters; writing the
+        // records there is harmless — the gate never consults the
+        // directory.)
+        let client_record = crate::protocol::NodeRecord {
+            node_id: client_identity.node_id(),
+            version: "test".to_owned(),
+            operations: Vec::new(),
+            endpoint: client.local_node_address(),
+            last_seen_millis: 0,
+        };
+        server_state
+            .nodes()
+            .heartbeat(client_record)
+            .expect("the server learns the client's record, as an inbound join would write it");
+        let server_record = crate::protocol::NodeRecord {
+            node_id: server_identity.node_id(),
+            version: "test".to_owned(),
+            operations: Vec::new(),
+            endpoint: server_address.clone(),
+            last_seen_millis: 0,
+        };
+        client_state
+            .nodes()
+            .heartbeat(server_record)
+            .expect("the client learns the server's record, as an inbound join would write it");
 
         BlobPair {
             server,

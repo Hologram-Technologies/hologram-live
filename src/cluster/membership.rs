@@ -56,6 +56,13 @@ struct PeerState {
     /// replicates whenever *its own* interval has elapsed, independent of
     /// which round the rotation happens to contact it on.
     last_replicated_millis: u64,
+    /// Whether the last replication round against this peer ended on a
+    /// membership-epoch mismatch (#184). Tracked for its *transitions*:
+    /// `record_epoch_mismatch` and `record_epoch_agreement` report whether
+    /// the state flipped, so `run` can log "views differ" and "views
+    /// converged" once each instead of a line per heartbeat round for as
+    /// long as a partition lasts.
+    epoch_mismatch: bool,
 }
 
 pub struct PeerTable {
@@ -78,6 +85,7 @@ impl PeerTable {
                     next_attempt_millis: 0,
                     inserted_millis: 0,
                     last_replicated_millis: 0,
+                    epoch_mismatch: false,
                 },
             );
         }
@@ -190,6 +198,7 @@ impl PeerTable {
             next_attempt_millis: 0,
             inserted_millis: now_millis,
             last_replicated_millis: 0,
+            epoch_mismatch: false,
         });
     }
 
@@ -266,6 +275,26 @@ impl PeerTable {
     pub fn record_replication(&mut self, endpoint: &str, now_millis: u64) {
         if let Some(state) = self.peers.get_mut(endpoint) {
             state.last_replicated_millis = now_millis;
+        }
+    }
+
+    /// Marks the peer's last replication round as epoch-refused (#184).
+    /// Reports whether this is a *transition* into mismatch, so the caller
+    /// logs the divergence once rather than once per heartbeat round.
+    pub fn record_epoch_mismatch(&mut self, endpoint: &str) -> bool {
+        match self.peers.get_mut(endpoint) {
+            Some(state) => !std::mem::replace(&mut state.epoch_mismatch, true),
+            None => false,
+        }
+    }
+
+    /// Marks the peer's view as agreeing with ours again. Reports whether
+    /// this is a transition *out of* mismatch, so the caller logs the
+    /// convergence once.
+    pub fn record_epoch_agreement(&mut self, endpoint: &str) -> bool {
+        match self.peers.get_mut(endpoint) {
+            Some(state) => std::mem::replace(&mut state.epoch_mismatch, false),
+            None => false,
         }
     }
 
@@ -661,5 +690,27 @@ mod tests {
             table.due(u64::MAX, 8),
             vec!["https://seed.example".to_owned()]
         );
+    }
+
+    // #184: the mismatch flag reports *transitions*, so the round loop logs
+    // "views differ" and "views converged" once each, not once per heartbeat.
+    #[test]
+    fn epoch_mismatch_reports_only_transitions() {
+        let mut table = PeerTable::new(Vec::new());
+        table.insert("https://peer.example".to_owned(), 0);
+
+        assert!(table.record_epoch_mismatch("https://peer.example"));
+        assert!(
+            !table.record_epoch_mismatch("https://peer.example"),
+            "a steady mismatch is not a new transition"
+        );
+        assert!(table.record_epoch_agreement("https://peer.example"));
+        assert!(
+            !table.record_epoch_agreement("https://peer.example"),
+            "steady agreement is not a transition either"
+        );
+        // An unknown endpoint is nobody's transition.
+        assert!(!table.record_epoch_mismatch("https://gone.example"));
+        assert!(!table.record_epoch_agreement("https://gone.example"));
     }
 }

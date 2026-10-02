@@ -55,18 +55,21 @@ pub fn owner_for_operation<'a>(
         })
 }
 
-/// A digest of the admitted set. It carries no ordering: there is no way to
-/// tell which of two epochs is newer, only whether two nodes currently agree.
+/// A digest of the candidate set passed in — since #184, the ownership
+/// candidate set (directory ∩ admitted ∪ self), computed by
+/// `AppState::cluster_epoch`. It carries no ordering: there is no way to tell
+/// which of two epochs is newer, only whether two nodes currently agree.
 ///
-/// Sent on the wire as `x-hologram-cluster-epoch` (`cluster::contact_peer`,
-/// `proof::EPOCH_HEADER`) as observability only — **no receiver currently
-/// compares it against its own epoch or refuses a mismatch.** Wiring that up
-/// needs sender-side refresh-and-retry to be safe (a mismatch cannot be
-/// resolved by picking a side), which is more than this phase carries;
-/// enforcement is tracked separately as issue #184.
-pub fn epoch(admitted: &BTreeSet<String>) -> String {
+/// Sent on the wire as `x-hologram-cluster-epoch` (`proof::EPOCH_HEADER`) and
+/// enforced on the cluster object routes: a receiver answers a mismatch with
+/// `409` and its own epoch, and the sender defers replication to the next
+/// heartbeat round rather than aborting it. The join route is deliberately
+/// never enforced — joins are the mechanism by which two epochs converge, so
+/// refusing them on mismatch would refuse convergence itself (the Phase 1
+/// revert recorded in the #184 design).
+pub fn epoch(candidates: &BTreeSet<String>) -> String {
     let mut hasher = blake3::Hasher::new();
-    for node_id in admitted {
+    for node_id in candidates {
         hasher.update(node_id.as_bytes());
         hasher.update(&[0]);
     }

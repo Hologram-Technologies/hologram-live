@@ -305,6 +305,93 @@ fn placement_agrees_from_both_sides_of_the_cluster() {
     }
 }
 
+/// #184, requirement 3: convergence of the ownership view is *asserted in
+/// bounded time*, not assumed. Two daemons started simultaneously, each
+/// seeded with the other, must come to answer the same owner *and* the same
+/// membership epoch — the digest of the candidate set the answer was computed
+/// from, carried on the response header — read from both sides. Same owner
+/// alone would not be enough: two nodes can name the same winner from
+/// different candidate sets by coincidence; the epoch is what distinguishes
+/// "converged" from "coincides".
+///
+/// Then a third node joining the already-converged pair must converge to the
+/// pair's new three-node view: the epoch changes on every node when the
+/// candidate set grows, and all three must agree on what it changed to.
+#[test]
+fn converged_nodes_agree_on_the_owner_and_the_epoch_it_came_from() {
+    hologram_live::util::install_crypto_provider();
+    let token = "a sufficiently long shared cluster test token";
+    let resource = "conversation:epoch-e2e";
+
+    // Each seeded with the other, started at the same time: neither is "the
+    // seed" — membership must form symmetrically.
+    let first_port = port();
+    let second_port = port();
+    let first = start(first_port, Some(second_port), token);
+    let second = start(second_port, Some(first_port), token);
+
+    let client = reqwest::blocking::Client::new();
+    let agreed = await_ownership_agreement(&client, &[first.port, second.port], resource);
+    assert!(
+        !agreed.0.is_empty() && !agreed.1.is_empty(),
+        "a converged pair names an owner and the epoch it came from"
+    );
+
+    // A node joining the converged pair: its arrival grows every candidate
+    // set, so the pair's epoch *changes* — and the joiner must arrive at the
+    // same new value within the deadline.
+    let third = start(port(), Some(first.port), token);
+    await_ownership_agreement(&client, &[first.port, second.port, third.port], resource);
+}
+
+/// The (owner node id, membership epoch) `port` currently answers for
+/// `resource`, or `None` if it could not be asked or has no answer yet.
+fn owner_view(
+    client: &reqwest::blocking::Client,
+    port: u16,
+    resource: &str,
+) -> Option<(String, String)> {
+    let response = client
+        .get(format!("http://127.0.0.1:{port}/api/v1/nodes/owner"))
+        .query(&[("resource", resource)])
+        .send()
+        .ok()
+        .and_then(|response| response.error_for_status().ok())?;
+    let epoch = response
+        .headers()
+        .get("x-hologram-cluster-epoch")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)?;
+    let record = response.json::<serde_json::Value>().ok()?;
+    Some((record["node_id"].as_str()?.to_owned(), epoch))
+}
+
+/// Polls until every node in `ports` answers the same (owner, epoch) pair —
+/// ownership-view agreement, read from every side at once.
+fn await_ownership_agreement(
+    client: &reqwest::blocking::Client,
+    ports: &[u16],
+    resource: &str,
+) -> (String, String) {
+    let deadline = Instant::now() + CONVERGENCE_DEADLINE;
+    loop {
+        let views: Vec<Option<(String, String)>> = ports
+            .iter()
+            .map(|port| owner_view(client, *port, resource))
+            .collect();
+        if let Some(first_view) = views.first().cloned().flatten() {
+            if views.iter().all(|view| view.as_ref() == Some(&first_view)) {
+                return first_view;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the nodes never agreed on one ownership view for {resource:?}; last saw {views:?}"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 /// Pins the bidirectional-admission mechanism itself: the joiner must come to
 /// admit the *seed*, not just itself.
 ///

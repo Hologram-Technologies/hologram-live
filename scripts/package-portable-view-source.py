@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Package exact Git library/oracle source, excluding unrelated web payloads.
+
+This is a source delivery projection, never a binary or application release.
+Cargo manifests and lockfiles are not rewritten. All retained file bytes and
+modes are independently checked against the requested immutable Git tree.
+"""
+import argparse
+import hashlib
+import io
+import json
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+import tarfile
+
+EXCLUDED = 'apps/model-hub/'
+DOCUMENTATION_ALIASES = {'docs/specs', 'specs/2026-09-28-prismpm-performance-comparison.md'}
+MAXIMUM_ARCHIVE_BYTES = 16 * 1024 * 1024
+REQUIRED = {
+    'Cargo.toml', 'Cargo.lock', 'build.rs', 'rust-toolchain.toml',
+    'src/lib.rs', 'src/holo_provider.rs',
+    'crates/hologram-view-surface/src/lib.rs',
+    'proto/hologram/live/v1/live.proto',
+    'proto/hologram/live/plugin/v1/plugin.proto',
+    'specs/wit/hologram-application-v1.wit',
+}
+
+
+def git(root, *args):
+    return subprocess.check_output(['git', '-C', str(root), *args])
+
+
+def package(root, revision, output, manifest):
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
+        raise ValueError('an exact immutable forty-hex Git commit is required')
+    if git(root, 'cat-file', '-t', revision).strip() != b'commit':
+        raise ValueError('source revision must be a commit')
+    entries = {}
+    aliases = []
+    for row in git(root, 'ls-tree', '-rz', '--full-tree', revision).split(b'\0'):
+        if not row:
+            continue
+        header, name = row.split(b'\t', 1)
+        mode, kind, oid = header.decode('ascii').split()
+        name = name.decode('utf-8')
+        path = PurePosixPath(name)
+        if path.is_absolute() or '..' in path.parts or kind != 'blob' or mode not in {'100644', '100755', '120000'}:
+            raise ValueError('source tree contains an unsupported member')
+        if name in DOCUMENTATION_ALIASES:
+            if mode != '120000':
+                raise ValueError('documentation alias changed kind and requires review')
+            target = git(root, 'cat-file', 'blob', oid).decode('utf-8')
+            parts = list(PurePosixPath(name).parent.parts)
+            if PurePosixPath(target).is_absolute():
+                raise ValueError('documentation alias target is absolute')
+            for part in PurePosixPath(target).parts:
+                if part == '..':
+                    if not parts:
+                        raise ValueError('documentation alias escapes the package')
+                    parts.pop()
+                elif part != '.':
+                    parts.append(part)
+            aliases.append({'path':name,'mode':mode,'git_blob':oid,'link_target':target,'canonical_destination':'/'.join(parts)})
+            continue
+        if not name.startswith(EXCLUDED):
+            if mode == '120000':
+                raise ValueError('unexpected source alias requires review')
+            entries[name] = (mode, oid)
+    if not REQUIRED.issubset(entries):
+        raise ValueError('library, build, protocol, or lock source is missing')
+    archive = git(root, 'archive', '--format=tar', revision, '--', '.', ':(exclude)' + EXCLUDED.rstrip('/'), *[':(exclude)' + name for name in sorted(DOCUMENTATION_ALIASES)])
+    if len(archive) > MAXIMUM_ARCHIVE_BYTES:
+        raise ValueError('source archive exceeds the unchanged sixteen MiB consumer bound')
+    observed = {}
+    source = {}
+    with tarfile.open(fileobj=io.BytesIO(archive), mode='r:') as handle:
+        for member in handle:
+            if member.isdir():
+                continue
+            if member.name not in entries or member.name in observed:
+                raise ValueError('archive member inventory differs from the Git projection')
+            mode, oid = entries[member.name]
+            if mode == '120000' and member.issym():
+                data = member.linkname.encode('utf-8')
+            elif mode != '120000' and member.isfile():
+                data = handle.extractfile(member).read()
+                if bool(member.mode & 0o111) != (mode == '100755'):
+                    raise ValueError('archive executable mode differs from Git')
+            else:
+                raise ValueError('archive member kind differs from Git')
+            actual_oid = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+            if actual_oid != oid:
+                raise ValueError('archive bytes differ from the immutable Git blob')
+            observed[member.name] = {'path': member.name, 'mode': mode, 'git_blob': oid,
+                                     'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+            source[member.name] = data
+    if set(observed) != set(entries):
+        raise ValueError('archive omits a retained Git source member')
+    # Audit literal source/test compile-time includes in the Cargo library
+    # workspace. Generated OUT_DIR/protobuf includes retain their build inputs.
+    includes = []
+    for name, data in source.items():
+        if not name.endswith('.rs') or not (name.startswith(('src/', 'crates/', 'tests/')) or name == 'build.rs'):
+            continue
+        for match in re.finditer(rb'include(?:_(?:bytes|str))?!\(\s*"([^"\r\n]+)"\s*\)', data):
+            target = match[1].decode('utf-8')
+            parts = list(PurePosixPath(name).parent.parts)
+            for part in PurePosixPath(target).parts:
+                if part == '..':
+                    if not parts:
+                        raise ValueError('compile-time include escapes the source package')
+                    parts.pop()
+                elif part != '.':
+                    parts.append(part)
+            resolved = '/'.join(parts)
+            if resolved not in entries:
+                raise ValueError('compile-time include is absent from the source package: ' + resolved)
+            includes.append({'source': name, 'target': resolved})
+    for alias in aliases:
+        destination=alias['canonical_destination']
+        alias['destination_git_oid']=git(root,'rev-parse',revision+':'+destination).decode('ascii').strip()
+        if destination in observed:
+            alias['destination_kind']='file'
+            alias['retained_destination_sha256']=observed[destination]['sha256']
+        else:
+            rows=[observed[name] for name in sorted(observed) if name.startswith(destination+'/')]
+            if not rows:
+                raise ValueError('documentation alias canonical destination is not retained')
+            alias['destination_kind']='directory'
+            alias['retained_destination_sha256']=hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            alias['retained_destination_files']=len(rows)
+    record = {'schema': 'hologram-live/portable-view-source-package/1',
+              'qualification': False, 'source_revision': revision,
+              'repository': 'https://github.com/Hologram-Technologies/hologram-live',
+              'scope': 'Exact Cargo library/oracle source. The unrelated model-hub application and two documentation aliases are excluded; real documentation targets are retained. This does not package or qualify the model-hub application.',
+              'excluded_prefix': EXCLUDED, 'excluded_documentation_aliases': aliases,
+              'archive': {'bytes': len(archive), 'sha256': hashlib.sha256(archive).hexdigest()},
+              'entries': [observed[name] for name in sorted(observed)],
+              'literal_compile_time_includes': includes}
+    output.write_bytes(archive)
+    manifest.write_text(json.dumps(record, indent=2) + '\n')
+    return record
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--revision', required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--manifest', type=Path, required=True)
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parent.parent
+    record = package(root, args.revision, args.output, args.manifest)
+    print(json.dumps({'source_revision': args.revision, 'archive': record['archive'],
+                      'retained_files': len(record['entries'])}))
+
+
+if __name__ == '__main__':
+    main()

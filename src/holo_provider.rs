@@ -7,9 +7,11 @@ use crate::application_plan::{
 use crate::error::{LiveError, Result};
 use crate::holo_capability::{EffectiveGrant, RequestedCapabilities};
 use hologram::space::LayerKind;
+#[cfg(test)]
+use hologram_view_surface::VIEW_INTENT_VERSION;
 use hologram_view_surface::{
-    PortableViewIntentHandler, ViewAttachmentId, ViewIntentRequest, ViewIntentResponse,
-    MAX_INTENT_OUTPUTS, MAX_INTENT_OUTPUT_BYTES, VIEW_INTENT_VERSION,
+    intent_limits, PortableViewIntentHandler, ViewAttachmentId, ViewIntentRequest,
+    ViewIntentResponse, MAX_INTENT_OUTPUTS,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -309,6 +311,8 @@ impl PortableViewIntentHandler for ApplicationIntentBroker {
     ) -> hologram_view_surface::IntentFuture<'a> {
         Box::pin(async move {
             request.validate()?;
+            let version = request.version;
+            let limits = intent_limits(version)?;
             if id.application_kappa != self.application_kappa {
                 return Err("portable View intent does not belong to this application".to_owned());
             }
@@ -339,15 +343,13 @@ impl PortableViewIntentHandler for ApplicationIntentBroker {
                     })
                 })
                 .collect::<std::result::Result<Vec<_>, _>>()?;
-            if output_bytes > MAX_INTENT_OUTPUT_BYTES {
+            if output_bytes > limits.output_bytes {
                 return Err(format!(
-                    "portable View intent returned {output_bytes} bytes; maximum is {MAX_INTENT_OUTPUT_BYTES}"
+                    "portable View intent returned {output_bytes} bytes; maximum is {}",
+                    limits.output_bytes
                 ));
             }
-            Ok(ViewIntentResponse {
-                version: VIEW_INTENT_VERSION,
-                outputs,
-            })
+            Ok(ViewIntentResponse { version, outputs })
         })
     }
 }
@@ -1235,6 +1237,145 @@ mod tests {
                 "stop:root"
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn portable_intent_v2_real_broker_echoes_version_and_enforces_both_caps() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let broker =
+            ApplicationIntentBroker::new("application", Arc::new(tokio::sync::Mutex::new(())));
+        broker
+            .bind(Arc::new(NamedLayer {
+                position: 0,
+                entry: "primary".to_owned(),
+                events: events.clone(),
+                fail_start: false,
+            }))
+            .expect("bind genuine broker primary");
+        let id = ViewAttachmentId {
+            token: "session".to_owned(),
+            application_kappa: "application".to_owned(),
+            layer_position: 1,
+        };
+        let request = |version, payload| ViewIntentRequest {
+            version,
+            name: APPLICATION_INVOKE_INTENT.to_owned(),
+            payload,
+        };
+        let response = broker
+            .handle(&id, request(2, "x".repeat(2 * 1024 * 1024)))
+            .await
+            .expect("real intent2 payload and output exceed both legacy caps");
+        assert_eq!(response.version, 2);
+        assert_eq!(response.outputs, ["x".repeat(2 * 1024 * 1024)]);
+        let legacy = broker
+            .handle(&id, request(1, "x".repeat(64 * 1024)))
+            .await
+            .expect("unchanged exact legacy cap");
+        assert_eq!(legacy.version, 1);
+        let before = events.lock().expect("events").len();
+        for (version, length) in [(1, 64 * 1024 + 1), (2, 2 * 1024 * 1024 + 1), (3, 0)] {
+            assert!(broker
+                .handle(&id, request(version, "x".repeat(length)))
+                .await
+                .is_err());
+        }
+        assert_eq!(
+            events.lock().expect("events").len(),
+            before,
+            "invalid version/length never invokes the primary"
+        );
+    }
+
+    #[tokio::test]
+    async fn portable_intent_v2_output_bytes_counts_utf8_and_all_outputs() {
+        struct OutputLayer(Vec<Vec<u8>>);
+        #[tonic::async_trait]
+        impl PreparedLayer for OutputLayer {
+            fn position(&self) -> u32 {
+                0
+            }
+            async fn start(&self) -> Result<()> {
+                Ok(())
+            }
+            async fn invoke(&self, _: Vec<Vec<u8>>) -> Result<LayerInvocation> {
+                Ok(LayerInvocation {
+                    outputs: self.0.clone(),
+                    completion: LayerCompletion::Returned,
+                    elapsed_micros: 1,
+                })
+            }
+            async fn stop(&self) -> Result<()> {
+                Ok(())
+            }
+            fn status(&self) -> LayerRuntimeStatus {
+                LayerRuntimeStatus::default()
+            }
+        }
+        for (version, outputs, success) in [
+            (1, vec!["🌱".repeat(256 * 1024).into_bytes()], true),
+            (1, vec![("🌱".repeat(256 * 1024) + "x").into_bytes()], false),
+            (2, vec!["🌱".repeat(1024 * 1024).into_bytes()], true),
+            (
+                2,
+                vec![("🌱".repeat(1024 * 1024) + "x").into_bytes()],
+                false,
+            ),
+            (1, vec![vec![b'x'; 1024 * 1024]], true),
+            (1, vec![vec![b'x'; 1024 * 1024 + 1]], false),
+            (2, vec![vec![b'x'; 4 * 1024 * 1024]], true),
+            (2, vec![vec![b'x'; 4 * 1024 * 1024 + 1]], false),
+            (
+                2,
+                vec![vec![b'x'; 2 * 1024 * 1024], vec![b'y'; 2 * 1024 * 1024]],
+                true,
+            ),
+            (
+                2,
+                vec![vec![b'x'; 2 * 1024 * 1024], vec![b'y'; 2 * 1024 * 1024 + 1]],
+                false,
+            ),
+            (2, vec![Vec::new(); 17], false),
+            (2, vec![vec![255]], false),
+        ] {
+            let broker =
+                ApplicationIntentBroker::new("application", Arc::new(tokio::sync::Mutex::new(())));
+            broker
+                .bind(Arc::new(OutputLayer(outputs.clone())))
+                .expect("bind exact test primary");
+            let id = ViewAttachmentId {
+                token: "session".to_owned(),
+                application_kappa: "application".to_owned(),
+                layer_position: 1,
+            };
+            let response = broker
+                .handle(
+                    &id,
+                    ViewIntentRequest {
+                        version,
+                        name: APPLICATION_INVOKE_INTENT.to_owned(),
+                        payload: "input".to_owned(),
+                    },
+                )
+                .await;
+            assert_eq!(
+                response.is_ok(),
+                success,
+                "version {version}, output lengths {:?}",
+                outputs.iter().map(Vec::len).collect::<Vec<_>>()
+            );
+            if success {
+                let response = response.expect("bounded output");
+                assert_eq!(response.version, version);
+                assert_eq!(
+                    response.outputs,
+                    outputs
+                        .iter()
+                        .map(|v| String::from_utf8(v.clone()).expect("UTF-8"))
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
     }
 
     fn plan_with_child(

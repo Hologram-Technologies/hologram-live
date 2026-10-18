@@ -11,6 +11,34 @@ pub const APPLICATION_INVOKE_INTENT: &str = "application.invoke";
 pub const MAX_INTENT_PAYLOAD_BYTES: usize = 64 * 1024;
 pub const MAX_INTENT_OUTPUTS: usize = 16;
 pub const MAX_INTENT_OUTPUT_BYTES: usize = 1024 * 1024;
+/// Explicit larger bounded text transport; version 1 limits remain unchanged.
+pub const VIEW_INTENT_VERSION_2: u16 = 2;
+pub const MAX_INTENT_V2_PAYLOAD_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_INTENT_V2_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+
+/// Immutable decoded UTF-8 byte budgets selected by the explicit wire version.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ViewIntentLimits {
+    pub payload_bytes: usize,
+    pub output_bytes: usize,
+}
+
+/// Select a closed transport version without granting another intent or host capability.
+pub fn intent_limits(version: u16) -> Result<ViewIntentLimits, String> {
+    match version {
+        VIEW_INTENT_VERSION => Ok(ViewIntentLimits {
+            payload_bytes: MAX_INTENT_PAYLOAD_BYTES,
+            output_bytes: MAX_INTENT_OUTPUT_BYTES,
+        }),
+        VIEW_INTENT_VERSION_2 => Ok(ViewIntentLimits {
+            payload_bytes: MAX_INTENT_V2_PAYLOAD_BYTES,
+            output_bytes: MAX_INTENT_V2_OUTPUT_BYTES,
+        }),
+        _ => Err(format!(
+            "unsupported portable View intent version {version}; expected 1 or 2"
+        )),
+    }
+}
 
 pub type SurfaceFuture<'a> = Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
 pub type IntentFuture<'a> =
@@ -33,22 +61,18 @@ pub struct ViewIntentRequest {
 
 impl ViewIntentRequest {
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != VIEW_INTENT_VERSION {
-            return Err(format!(
-                "unsupported portable View intent version {}; expected {VIEW_INTENT_VERSION}",
-                self.version
-            ));
-        }
+        let limits = intent_limits(self.version)?;
         if self.name != APPLICATION_INVOKE_INTENT {
             return Err(format!(
                 "unsupported portable View intent {:?}; expected {APPLICATION_INVOKE_INTENT:?}",
                 self.name
             ));
         }
-        if self.payload.len() > MAX_INTENT_PAYLOAD_BYTES {
+        if self.payload.len() > limits.payload_bytes {
             return Err(format!(
-                "portable View intent payload is {} bytes; maximum is {MAX_INTENT_PAYLOAD_BYTES}",
-                self.payload.len()
+                "portable View intent payload is {} bytes; maximum is {}",
+                self.payload.len(),
+                limits.payload_bytes
             ));
         }
         Ok(())
@@ -174,6 +198,48 @@ mod tests {
     }
 
     #[test]
+    fn intent_v2_preserves_v1_and_admits_exact_larger_payloads() {
+        let mut request = ViewIntentRequest {
+            version: 2,
+            name: APPLICATION_INVOKE_INTENT.to_owned(),
+            payload: "x".repeat(2 * 1024 * 1024),
+        };
+        assert!(
+            request.validate().is_ok(),
+            "explicit intent2 must admit its exact two MiB boundary"
+        );
+        request.payload.push('x');
+        assert!(request
+            .validate()
+            .expect_err("intent2 overflow")
+            .contains("maximum"));
+        request.payload = "🌱".repeat(512 * 1024);
+        assert!(request.validate().is_ok(), "version2 counts UTF-8 bytes");
+        request.payload.push('x');
+        assert!(request.validate().is_err());
+        request.version = 1;
+        request.payload = "x".repeat(MAX_INTENT_PAYLOAD_BYTES);
+        assert!(request.validate().is_ok());
+        request.payload.push('x');
+        assert!(request
+            .validate()
+            .expect_err("legacy cap")
+            .contains("maximum"));
+        request.version = 3;
+        request.payload.clear();
+        assert!(request
+            .validate()
+            .expect_err("unknown version")
+            .contains("version"));
+        request.version = 2;
+        request.name = "host.exec".to_owned();
+        assert!(request
+            .validate()
+            .expect_err("same closed intent")
+            .contains("unsupported"));
+    }
+
+    #[test]
     fn intent_schema_is_versioned_named_and_bounded() {
         let valid = ViewIntentRequest {
             version: VIEW_INTENT_VERSION,
@@ -183,7 +249,7 @@ mod tests {
         assert!(valid.validate().is_ok());
 
         let mut invalid = valid.clone();
-        invalid.version += 1;
+        invalid.version = VIEW_INTENT_VERSION_2 + 1;
         assert!(invalid.validate().expect_err("version").contains("version"));
         invalid = valid.clone();
         invalid.name = "shell.execute".to_owned();

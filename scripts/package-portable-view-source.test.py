@@ -57,6 +57,24 @@ class SourcePackage(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'compile-time include is absent'):
                 owner.package(root, revision, Path(temporary) / 'source.tar', Path(temporary) / 'manifest.json')
 
+    def test_documentation_alias_projection_and_other_alias_refusal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'source'; root.mkdir()
+            revision = self.fixture(root)
+            (root / 'docs').mkdir()
+            (root / 'docs/specs').symlink_to('../specs')
+            subprocess.run(['git', '-C', str(root), 'add', 'docs/specs'], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Source Package Test', '-c', 'user.email=source-package@example.com', 'commit', '-qm', 'documentation alias'], check=True)
+            revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+            record = owner.package(root, revision, Path(temporary) / 'source.tar', Path(temporary) / 'manifest.json')
+            self.assertNotIn('docs/specs', {row['path'] for row in record['entries']})
+            (root / 'src/alias.rs').symlink_to('lib.rs')
+            subprocess.run(['git', '-C', str(root), 'add', 'src/alias.rs'], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Source Package Test', '-c', 'user.email=source-package@example.com', 'commit', '-qm', 'unexpected alias'], check=True)
+            revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+            with self.assertRaisesRegex(ValueError, 'unexpected source alias'):
+                owner.package(root, revision, Path(temporary) / 'source.tar', Path(temporary) / 'manifest.json')
+
     def test_missing_lock_and_floating_revision_are_refused(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'source'; root.mkdir()

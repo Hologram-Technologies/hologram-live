@@ -14,7 +14,9 @@ import re
 import subprocess
 import tarfile
 
-EXCLUDED = 'apps/model-hub/web/public/'
+EXCLUDED = 'apps/model-hub/'
+DOCUMENTATION_ALIASES = {'docs/specs', 'specs/2026-09-28-prismpm-performance-comparison.md'}
+MAXIMUM_ARCHIVE_BYTES = 16 * 1024 * 1024
 REQUIRED = {
     'Cargo.toml', 'Cargo.lock', 'build.rs', 'rust-toolchain.toml',
     'src/lib.rs', 'src/holo_provider.rs',
@@ -35,6 +37,7 @@ def package(root, revision, output, manifest):
     if git(root, 'cat-file', '-t', revision).strip() != b'commit':
         raise ValueError('source revision must be a commit')
     entries = {}
+    aliases = []
     for row in git(root, 'ls-tree', '-rz', '--full-tree', revision).split(b'\0'):
         if not row:
             continue
@@ -44,11 +47,31 @@ def package(root, revision, output, manifest):
         path = PurePosixPath(name)
         if path.is_absolute() or '..' in path.parts or kind != 'blob' or mode not in {'100644', '100755', '120000'}:
             raise ValueError('source tree contains an unsupported member')
+        if name in DOCUMENTATION_ALIASES:
+            if mode != '120000':
+                raise ValueError('documentation alias changed kind and requires review')
+            target = git(root, 'cat-file', 'blob', oid).decode('utf-8')
+            parts = list(PurePosixPath(name).parent.parts)
+            if PurePosixPath(target).is_absolute():
+                raise ValueError('documentation alias target is absolute')
+            for part in PurePosixPath(target).parts:
+                if part == '..':
+                    if not parts:
+                        raise ValueError('documentation alias escapes the package')
+                    parts.pop()
+                elif part != '.':
+                    parts.append(part)
+            aliases.append({'path':name,'mode':mode,'git_blob':oid,'link_target':target,'canonical_destination':'/'.join(parts)})
+            continue
         if not name.startswith(EXCLUDED):
+            if mode == '120000':
+                raise ValueError('unexpected source alias requires review')
             entries[name] = (mode, oid)
     if not REQUIRED.issubset(entries):
         raise ValueError('library, build, protocol, or lock source is missing')
-    archive = git(root, 'archive', '--format=tar', revision, '--', '.', ':(exclude)' + EXCLUDED.rstrip('/'))
+    archive = git(root, 'archive', '--format=tar', revision, '--', '.', ':(exclude)' + EXCLUDED.rstrip('/'), *[':(exclude)' + name for name in sorted(DOCUMENTATION_ALIASES)])
+    if len(archive) > MAXIMUM_ARCHIVE_BYTES:
+        raise ValueError('source archive exceeds the unchanged sixteen MiB consumer bound')
     observed = {}
     source = {}
     with tarfile.open(fileobj=io.BytesIO(archive), mode='r:') as handle:
@@ -94,11 +117,24 @@ def package(root, revision, output, manifest):
             if resolved not in entries:
                 raise ValueError('compile-time include is absent from the source package: ' + resolved)
             includes.append({'source': name, 'target': resolved})
+    for alias in aliases:
+        destination=alias['canonical_destination']
+        alias['destination_git_oid']=git(root,'rev-parse',revision+':'+destination).decode('ascii').strip()
+        if destination in observed:
+            alias['destination_kind']='file'
+            alias['retained_destination_sha256']=observed[destination]['sha256']
+        else:
+            rows=[observed[name] for name in sorted(observed) if name.startswith(destination+'/')]
+            if not rows:
+                raise ValueError('documentation alias canonical destination is not retained')
+            alias['destination_kind']='directory'
+            alias['retained_destination_sha256']=hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            alias['retained_destination_files']=len(rows)
     record = {'schema': 'hologram-live/portable-view-source-package/1',
               'qualification': False, 'source_revision': revision,
               'repository': 'https://github.com/Hologram-Technologies/hologram-live',
-              'scope': 'Exact Cargo library/oracle source. Static model-hub website payloads are excluded; this does not package or qualify the model-hub application.',
-              'excluded_prefix': EXCLUDED,
+              'scope': 'Exact Cargo library/oracle source. The unrelated model-hub application and two documentation aliases are excluded; real documentation targets are retained. This does not package or qualify the model-hub application.',
+              'excluded_prefix': EXCLUDED, 'excluded_documentation_aliases': aliases,
               'archive': {'bytes': len(archive), 'sha256': hashlib.sha256(archive).hexdigest()},
               'entries': [observed[name] for name in sorted(observed)],
               'literal_compile_time_includes': includes}

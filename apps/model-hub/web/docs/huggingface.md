@@ -88,7 +88,7 @@ It checks a large file by the SHA-256 in `lfs.oid` and a small one by the git bl
 
 ## Search from the command line
 
-The list route is Hugging Face's, with the same filters, plus a `hologram` block per row. It answers in a few hundred bytes, not a catalogue.
+The list route is Hugging Face's, with the same filters and the same rows. It answers in a few hundred bytes, not a catalogue.
 
 ```bash
 curl -s "https://gethologram.ai/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&sort=downloads&limit=5"

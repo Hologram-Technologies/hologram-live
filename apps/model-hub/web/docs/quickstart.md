@@ -18,21 +18,17 @@ curl -s "https://gethologram.ai/api/models?search=kokoro&limit=2"
 ```json
 [
   {
-    "modelId": "hexgrad/Kokoro-82M",
+    "id": "hexgrad/Kokoro-82M",
     "pipeline_tag": "text-to-speech",
-    "downloads": 11804278,
-    "hologram": {
-      "manifest": "blake3:2d184ec4d22e1ccab14342f3020c2838788e42186877669ccb1c7d56749c7a4a",
-      "files": 72,
-      "weight_bytes": 361048692,
-      "sources": ["Hugging Face", "ModelScope", "P2P", "IPFS"]
-    }
+    "downloads": 12859717,
+    "likes": 7433,
+    …
   },
   …
 ]
 ```
 
-Truncated to the fields that matter: each row is Hugging Face's list shape plus a `hologram` block that says how many files the model has, how big its weights are, and where the bytes live today.
+Truncated to the fields that matter. The rows are Hugging Face's, field for field, so a model that exists there is found here.
 
 ## 2. List its files
 

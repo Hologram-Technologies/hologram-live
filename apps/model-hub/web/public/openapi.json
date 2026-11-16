@@ -609,57 +609,9 @@
      }
     }
    },
-   "HologramFacts": {
-    "type": "object",
-    "description": "What Hugging Face's row has no field for: where this model sits in the hub's index.",
-    "required": [
-     "manifest",
-     "files"
-    ],
-    "properties": {
-     "manifest": {
-      "type": "string",
-      "pattern": "^blake3:[0-9a-f]{64}$",
-      "description": "The index object for this model at this revision."
-     },
-     "files": {
-      "type": "integer",
-      "description": "How many files the revision has."
-     },
-     "weight_bytes": {
-      "type": "integer",
-      "description": "Total bytes of weight files."
-     },
-     "parameters": {
-      "type": "integer",
-      "description": "Parameter count, when it is known."
-     },
-     "listed": {
-      "type": "boolean",
-      "description": "Absent or true on a model the current browse list carries, which is a row with the full facts. `false` on a model the browse list has forgotten: the hub still holds its bytes and serves every dialect for it, but the task, parameter count and download figures were never published with the object, so they are absent rather than zero."
-     },
-     "context": {
-      "type": "integer",
-      "description": "Context length, when it is known."
-     },
-     "sources": {
-      "type": "array",
-      "items": {
-       "type": "string",
-       "enum": [
-        "Hugging Face",
-        "ModelScope",
-        "IPFS",
-        "P2P"
-       ]
-      },
-      "description": "Which sources hold these bytes today, in display spelling. Three vocabularies describe the same sources and nothing else maps between them, so map here: `Hugging Face` is `huggingface.co` in `/api/hub/health` and `X-Hub-Source`, and `huggingface` in a `/via/` prefix; `ModelScope` is `modelscope.cn` and `modelscope`; `IPFS` is `ipfs` in both. `P2P` is a fourth source that appears on a few rows and has no health entry and no `/via/` token — `/via/p2p/` is not a route."
-     }
-    }
-   },
    "ModelRow": {
     "type": "object",
-    "description": "One search result, in Hugging Face's list shape. Rows under `/via/<source>/` also carry a `hologram` block. Hugging Face adds fields over time; they pass through unchanged.",
+    "description": "One search result, in Hugging Face's list shape. Hugging Face adds fields over time; they pass through unchanged.",
     "required": [
      "id"
     ],
@@ -680,7 +632,7 @@
      },
      "sha": {
       "type": "string",
-      "description": "The revision `main` points at, when asked for with `full=true`; on `/via/` rows, the indexed revision."
+      "description": "The revision `main` points at, when asked for with `full=true`."
      },
      "private": {
       "const": false
@@ -718,9 +670,6 @@
       "items": {
        "type": "string"
       }
-     },
-     "hologram": {
-      "$ref": "#/components/schemas/HologramFacts"
      }
     }
    },
@@ -2779,7 +2728,7 @@
     ],
     "operationId": "listModels",
     "summary": "Search the index",
-    "description": "Hugging Face's list, row for row and parameter for parameter, so `HfApi.list_models` works unchanged and a\nmodel that exists on Hugging Face is found here. A search costs a few hundred bytes.\n\nRows carry Hugging Face's default fields; `sha` appears when you ask for it with `full=true`. The next page is\nin the `Link` header (`rel=\"next\"`), as on Hugging Face. Parameters are Hugging Face's too: an unusable\n`limit` falls back to the default rather than refusing, and an unknown `sort` refuses with `400`.\n\nThe `hologram` block, with the index address and the sources that hold a model's bytes, is on the rows of\n`/via/<source>/api/models`, which this hub still answers from its own index.",
+    "description": "Hugging Face's list, row for row and parameter for parameter, so `HfApi.list_models` works unchanged and a\nmodel that exists on Hugging Face is found here. A search costs a few hundred bytes.\n\nRows carry Hugging Face's default fields; `sha` appears when you ask for it with `full=true`. The next page is\nin the `Link` header (`rel=\"next\"`), as on Hugging Face. Parameters are Hugging Face's too: an unusable\n`limit` falls back to the default rather than refusing, and an unknown `sort` refuses with `400`.",
     "parameters": [
      {
       "name": "search",

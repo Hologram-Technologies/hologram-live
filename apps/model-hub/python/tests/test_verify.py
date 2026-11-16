@@ -16,7 +16,10 @@ def cache(tmp_path, monkeypatch):
     snap.mkdir(parents=True)
     good = b'{"model_type": "llama"}'
     (snap / "config.json").write_bytes(good)
-    index = {("o/m", COMMIT): {"config.json": hashlib.sha256(good).hexdigest()}}
+    small = b'{"do_sample": true}'
+    (snap / "generation_config.json").write_bytes(small)
+    git = hashlib.sha1(f"blob {len(small)}\0".encode() + small).hexdigest()
+    index = {("o/m", COMMIT): {"config.json": hashlib.sha256(good).hexdigest(), "generation_config.json": git}}
     monkeypatch.setattr(hv, "_tree", lambda repo, commit: index.get((repo, commit)))
     hv._state.update(hub="https://example.invalid", strict=False, seen={}, trees={})
     fake = lambda repo_id, filename, *a, **k: str(snap / filename)
@@ -37,6 +40,29 @@ def test_a_changed_cached_file_is_refused_and_removed(cache):
     with pytest.raises(hv.HologramVerificationError, match="removed"):
         dl("o/m", "config.json")
     assert not (snap / "config.json").exists()
+
+
+def test_a_small_file_is_checked_by_its_git_blob_sha1(cache):
+    snap, dl = cache
+    assert dl("o/m", "generation_config.json") == str(snap / "generation_config.json")
+    with open(snap / "generation_config.json", "ab") as f:
+        f.write(b" ")
+    with pytest.raises(hv.HologramVerificationError, match="git blob sha1"):
+        dl("o/m", "generation_config.json")
+    assert not (snap / "generation_config.json").exists()
+
+
+def test_the_tree_is_read_as_hugging_face_writes_it(monkeypatch):
+    import io
+    import json as _json
+    entries = [
+        {"type": "file", "path": "config.json", "oid": "1" * 40, "size": 5},
+        {"type": "file", "path": "model.safetensors", "oid": "2" * 40, "size": 9, "lfs": {"oid": "3" * 64, "size": 9}},
+        {"type": "directory", "path": "sub", "oid": "4" * 40},
+    ]
+    monkeypatch.setattr(hv.urllib.request, "urlopen", lambda *a, **k: io.BytesIO(_json.dumps(entries).encode()))
+    hv._state.update(hub="https://example.invalid", trees={})
+    assert hv._tree("o/m", COMMIT) == {"config.json": "1" * 40, "model.safetensors": "3" * 64}
 
 
 def test_a_file_the_index_lacks_warns_or_refuses(cache):

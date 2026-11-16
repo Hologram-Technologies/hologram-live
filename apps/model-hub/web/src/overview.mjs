@@ -132,10 +132,10 @@ function run(o, m) {
   const providers = v(r.providers) || [];
   // The hub speaks Hugging Face's dialect: one variable and the same tools fetch every file from a source that is up.
   const endpoint = m.state === "addressed" ? `export HF_ENDPOINT=${ENDPOINT}
-cd "$(hf download ${m.id} --quiet)" && curl -s $HF_ENDPOINT/${m.id}/resolve/main/SHA256SUMS | sha256sum -c --quiet` : "";
+hf download ${m.id} --quiet && hf cache verify ${m.id}` : "";
   return `${v(r.auto_model) ? `<p class="ov-lede">Loads with Transformers <code>${R.esc(v(r.auto_model))}</code>${v(r.processor) ? ` and <code>${R.esc(v(r.processor))}</code>` : ""}, pinned to the indexed revision.</p>` : `<p class="ov-lede">Pinned to the indexed revision.</p>`}
   <div class="ov-code"><pre><code>${R.esc(code)}</code></pre><button type="button" class="copy" data-copy="${R.esc(code)}" aria-label="Copy code">${R.icon.copy}</button></div>
-  ${endpoint ? `<p class="ov-lede">Through the hub: the same tools, each file from a source that is up (Hugging Face, ModelScope, IPFS), at this revision. The second line checks every file against its address.</p>
+  ${endpoint ? `<p class="ov-lede">Through the hub: the same tools, each file from a source that is up (Hugging Face, ModelScope, IPFS), at this revision. The last line checks every file against the hash the tree names.</p>
   <div class="ov-code"><pre><code>${R.esc(endpoint)}</code></pre><button type="button" class="copy" data-copy="${R.esc(endpoint)}" aria-label="Copy commands">${R.icon.copy}</button></div>` : ""}
   ${providers.length ? `<p class="ov-lede">Hosted inference, live now</p><div class="ov-chips">${providers.map((p) => `<span class="ov-chip">${R.esc(p.provider)}</span>`).join("")}</div>` : ""}`;
 }

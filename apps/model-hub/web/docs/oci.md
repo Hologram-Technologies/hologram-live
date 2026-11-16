@@ -56,7 +56,7 @@ curl -s -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
 }
 ```
 
-Each layer is one raw file. Its digest is therefore the file's SHA-256, the same value `tree/main` reports as `oid`, so the artifact and the Hugging Face dialect can never disagree about a byte.
+Each layer is one raw file. Its digest is therefore the file's SHA-256, the same value `tree/main` reports as `lfs.oid` for a large file, so the artifact and the Hugging Face dialect can never disagree about a weight.
 
 The same route with the Docker manifest media type, or with no `Accept` header at all, answers the GGUF manifest Ollama expects; a model with no GGUF file answers `404` to that request, so send the OCI type for a ModelPack pull. See [Ollama](ollama).
 

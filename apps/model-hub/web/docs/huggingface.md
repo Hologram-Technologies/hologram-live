@@ -77,18 +77,18 @@ The GGUF lands in the shared Hugging Face cache layout and loads.
 
 ## Verify afterwards
 
-`huggingface_hub` checks the size of each file, not its hash. For the check that matters, run this inside the downloaded snapshot directory:
+`huggingface_hub` checks the size of each file, not its hash. For the check that matters, ask it to hash what it downloaded against the tree:
 
 ```bash
-cd "$(hf download hexgrad/Kokoro-82M)"
-curl -s https://gethologram.ai/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS | sha256sum -c
+hf download hexgrad/Kokoro-82M
+hf cache verify hexgrad/Kokoro-82M
 ```
 
-`hf download` prints the snapshot directory it filled, so the first line lands you in it.
+It checks a large file by the SHA-256 in `lfs.oid` and a small one by the git blob SHA-1 in `oid`, and exits non-zero on any mismatch.
 
 ## Search from the command line
 
-The list route is Hugging Face's, with the same filters, plus a `hologram` block per row. It answers in a few hundred bytes, not a catalogue.
+The list route is Hugging Face's, with the same filters and the same rows. It answers in a few hundred bytes, not a catalogue.
 
 ```bash
 curl -s "https://gethologram.ai/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&sort=downloads&limit=5"

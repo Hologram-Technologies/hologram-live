@@ -547,7 +547,7 @@ if (existsSync(join(SITE, "public"))) await cp(join(SITE, "public"), DIST, { rec
 // The download worker is a classic script (module workers are not everywhere yet): ZipWriter first, then the worker.
 await writeFile(join(DIST, "zip-sw.js"), `${(await readFile(join(SITE, "src", "zip.mjs"), "utf8")).replace(/^export /gm, "")}\n${await readFile(join(SITE, "src", "zip-sw.js"), "utf8")}`);
 await mkdir(join(DIST, "vendor", "hash-wasm"), { recursive: true });
-await cp(join(SITE, "vendor", "hash-wasm", "sha256.umd.min.js"), join(DIST, "vendor", "hash-wasm", "sha256.umd.min.js"));
+for (const f of ["sha256.umd.min.js", "sha1.umd.min.js"]) await cp(join(SITE, "vendor", "hash-wasm", f), join(DIST, "vendor", "hash-wasm", f));
 if (archive) {
   // Machine access: the ledger, and one tiny stub per day so a script resolves a date with one request.
   await cp(archivePath, join(DIST, "archive.json"));

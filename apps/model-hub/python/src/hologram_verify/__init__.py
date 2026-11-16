@@ -5,8 +5,9 @@
 
 huggingface_hub checks only a file's length, and never re-checks its cache. With this enabled, every path
 `hf_hub_download` returns (and `snapshot_download`, `from_pretrained` and friends go through it) is hashed and compared
-with the sha256 Hologram's index publishes for that exact commit, whichever host served the bytes: Hugging Face, a
-mirror, a proxy, an HF_ENDPOINT gateway. Cache hits are checked too (once per file per process, by size and mtime).
+with the digest Hologram's tree names for that exact commit, whichever host served the bytes: Hugging Face, a mirror, a
+proxy, an HF_ENDPOINT gateway. The tree is Hugging Face's: a large file by the sha256 in `lfs.oid`, a small one by the
+git blob sha1 in `oid`. Cache hits are checked too (once per file per process, by size and mtime).
 
 On a mismatch the file is deleted from the cache and HologramVerificationError is raised, so no library loads it.
 A file Hologram has not indexed at that commit is reported as unverifiable: a warning, or with strict=True
@@ -33,7 +34,7 @@ __version__ = "0.1.0"
 
 
 class HologramVerificationError(OSError):
-    """A downloaded or cached file does not hash to the sha256 Hologram's index names for it."""
+    """A downloaded or cached file does not hash to the digest Hologram's index names for it."""
 
 
 class UnverifiableWarning(UserWarning):
@@ -45,6 +46,20 @@ _lock = threading.Lock()
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
+def _git_blob_sha1(path: str) -> str:
+    """git's blob id, which Hugging Face's tree carries in `oid`: sha1 over b"blob <size>\\0" and then the bytes."""
+    h = hashlib.sha1(f"blob {os.path.getsize(path)}\0".encode())
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _digest(path: str, want: str) -> str:
+    """The file's digest in the form `want` names: 64 hex is a sha256, 40 hex a git blob sha1."""
+    return _sha256(path) if len(want) == 64 else _git_blob_sha1(path)
+
+
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -54,7 +69,8 @@ def _sha256(path: str) -> str:
 
 
 def _tree(repo_id: str, commit: str) -> dict | None:
-    """path -> sha256 for repo@commit from Hologram's index, or None when Hologram has not indexed that commit."""
+    """path -> expected digest for repo@commit from Hologram's tree (sha256 from `lfs.oid` when present, else the
+    `oid`, which Hugging Face's tree makes a git blob sha1), or None when Hologram has not indexed that commit."""
     key = (repo_id, commit)
     with _lock:
         if key in _state["trees"]:
@@ -64,7 +80,7 @@ def _tree(repo_id: str, commit: str) -> dict | None:
         with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": f"hologram-verify/{__version__}"}), timeout=30) as r:
             entries = json.load(r)
         tree = {e["path"]: (e.get("lfs") or {}).get("oid") or e["oid"] for e in entries if e.get("type") == "file"}
-        tree = {p: d for p, d in tree.items() if re.fullmatch(r"[0-9a-f]{64}", d or "")}
+        tree = {p: d for p, d in tree.items() if re.fullmatch(r"[0-9a-f]{64}|[0-9a-f]{40}", d or "")}
     except urllib.error.HTTPError as e:
         if e.code != 404:
             raise
@@ -107,7 +123,7 @@ def verify_file(path: str, repo_id: str, filename: str, commit: str) -> bool:
             raise HologramVerificationError(msg)
         warnings.warn(msg, UnverifiableWarning, stacklevel=3)
         return False
-    got = _sha256(path)
+    got = _digest(path, want)
     if got != want:
         real = os.path.realpath(path)
         for p in {path, real}:
@@ -115,7 +131,8 @@ def verify_file(path: str, repo_id: str, filename: str, commit: str) -> bool:
                 os.remove(p)
             except OSError:
                 pass
-        raise HologramVerificationError(f"{repo_id}@{commit[:12]}/{filename}: sha256 {got[:16]}… is not the {want[:16]}… Hologram's index names; the file was removed")
+        kind = "sha256" if len(want) == 64 else "git blob sha1"
+        raise HologramVerificationError(f"{repo_id}@{commit[:12]}/{filename}: {kind} {got[:16]}… is not the {want[:16]}… Hologram's index names; the file was removed")
     _state["seen"][key] = True
     return True
 

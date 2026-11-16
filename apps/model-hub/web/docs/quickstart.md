@@ -18,21 +18,17 @@ curl -s "https://gethologram.ai/api/models?search=kokoro&limit=2"
 ```json
 [
   {
-    "modelId": "hexgrad/Kokoro-82M",
+    "id": "hexgrad/Kokoro-82M",
     "pipeline_tag": "text-to-speech",
-    "downloads": 11804278,
-    "hologram": {
-      "manifest": "blake3:2d184ec4d22e1ccab14342f3020c2838788e42186877669ccb1c7d56749c7a4a",
-      "files": 72,
-      "weight_bytes": 361048692,
-      "sources": ["Hugging Face", "ModelScope", "P2P", "IPFS"]
-    }
+    "downloads": 12859717,
+    "likes": 7433,
+    …
   },
   …
 ]
 ```
 
-Truncated to the fields that matter: each row is Hugging Face's list shape plus a `hologram` block that says how many files the model has, how big its weights are, and where the bytes live today.
+Truncated to the fields that matter. The rows are Hugging Face's, field for field, so a model that exists there is found here.
 
 ## 2. List its files
 
@@ -42,13 +38,14 @@ curl -s https://gethologram.ai/api/models/hexgrad/Kokoro-82M/tree/main
 
 ```json
 [
-  { "type": "file", "oid": "9b4d7a54809bf22127d19d936d9e749249e1a655e2e0a1df8a6546f77a819658", "size": 534, "path": "EVAL.md" },
-  { "type": "file", "oid": "91dcabced89db6f109b8786642f50402d3ee87450e8189589b6f85520e7f4d78", "size": 6348, "path": "README.md" },
+  { "type": "file", "oid": "484ac8dcd971465258007528fb8bc4a99cf98633", "size": 534, "path": "EVAL.md" },
+  { "type": "file", "oid": "15769c415594dcb424579ba3dfae3085578aac4e", "size": 327212226, "path": "kokoro-v1_0.pth",
+    "lfs": { "oid": "496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4", "size": 327212226, "pointerSize": 134 } },
   …
 ]
 ```
 
-`oid` is the SHA-256 the file's bytes must have. Keep it: it is the only hash you will trust.
+This is Hugging Face's tree, unchanged. A large file's `lfs.oid` is the SHA-256 its bytes must have; a small file's `oid` is its git blob SHA-1. Keep them: they are the only hashes you will trust.
 
 ## 3. Fetch the file
 
@@ -62,17 +59,17 @@ Without `-L` you see what the hub actually does: a `302` to a source that was up
 HTTP/1.1 302 Found
 Location: https://huggingface.co/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/EVAL.md
 X-Hub-Source: huggingface.co
-Etag: "9b4d7a54809bf22127d19d936d9e749249e1a655e2e0a1df8a6546f77a819658"
+Etag: "484ac8dcd971465258007528fb8bc4a99cf98633"
 ```
 
 ## 4. Prove it
 
 ```bash
-echo "9b4d7a54809bf22127d19d936d9e749249e1a655e2e0a1df8a6546f77a819658  EVAL.md" | sha256sum -c
+git hash-object --no-filters EVAL.md
 ```
 
 ```
-EVAL.md: OK
+484ac8dcd971465258007528fb8bc4a99cf98633
 ```
 
 The hash on the left came from step 2, the index. The bytes came from step 3, a source. They agree, so the file is what the index says it is, and the source never had a chance to say otherwise. That is the whole product. The [Verification](verification) page has the rule in full.

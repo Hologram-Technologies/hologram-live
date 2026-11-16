@@ -1,7 +1,7 @@
 # gethologram.ai
 
 You are an agent and you just fetched a model hub. One name, the dialects you already speak, and every file
-named by the SHA-256 of its bytes so you never have to trust the host that served them, this one included.
+named by a hash of its bytes so you never have to trust the host that served them, this one included.
 No account, no key, no SDK, and every read below is anonymous.
 
 ## One line, if you can set an environment variable
@@ -14,29 +14,28 @@ diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT in
 ## Or call it directly. Three requests, no key
 
     GET /api/models?search=qwen&limit=5
-        Find a model. A few hundred bytes, not a catalogue. This lists everything the hub holds, including
-        models that have fallen off the trending list; those come back as thin rows carrying the name and
-        `hologram.listed: false`, because their browse facts were never published with the bytes.
+        Find a model. A few hundred bytes, not a catalogue. The rows are the ones Hugging Face answers, in
+        the same shape, so a model that exists there is found here.
     GET /api/models/{owner}/{name}/tree/main
-        Its files. Each one carries `oid`: the SHA-256 the bytes must have.
-        Read that field carefully if you already know this dialect. Hugging Face puts a 40-character git
-        blob SHA-1 in `oid` and hides the SHA-256 inside `lfs` on large files only. Here `oid` is always
-        the SHA-256 of the file, 64 characters, for every file large or small. The length tells you which
-        one you are holding.
+        Its files, exactly as Hugging Face lists them. `oid` is the 40-character git blob SHA-1 of the file;
+        a large file also carries `lfs.oid`, the 64-character SHA-256 of its bytes. The length tells you
+        which one you are holding.
     GET /{owner}/{name}/resolve/main/{path}
-        302 to a source that was up a moment ago. The weights never pass through this host.
+        302 to a source that was up a moment ago, pinned to the exact commit. The weights never pass through
+        this host. A HEAD answers `X-Linked-Etag` (the same hash as the tree), `X-Linked-Size`, `X-Repo-Commit`
+        and `X-Hub-Source`, the host the redirect points at.
 
 ## The one rule
 
-Hash what arrives. Keep it only if the SHA-256 equals the `oid` from the tree. The expected hash comes from the
-index and never from the source that served the bytes, and this server does not verify on read. To check a
-whole download at once, with no tool of ours:
+Hash what arrives, and keep it only if the hash equals the one the tree names. For a large file that is the
+SHA-256 in `lfs.oid`. For a small file it is the git blob SHA-1 in `oid`, which is SHA-1 over `blob <size>`, a
+zero byte, then the bytes; `git hash-object --no-filters <file>` computes it with no tool of ours. The expected
+hash comes from the tree and never from the source that served the bytes, and this server does not verify on
+read. To check a whole download at once: `hf cache verify {owner}/{name}`.
 
-    curl -s https://gethologram.ai/{owner}/{name}/resolve/main/SHA256SUMS | sha256sum -c
-
-What that proves exactly: the bytes you received are the bytes this index names, so no mirror, CDN or network
-in between altered them without you noticing. It is not independent ground truth, because the index and the
-checksum file come from the same host. If you want a check that does not rest on trusting this host, fetch the
+What that proves exactly: the bytes you received are the bytes this hub's tree names, so no mirror, CDN or
+network in between altered them without you noticing. It is not independent ground truth, because the tree and
+the redirect come from the same host. If you want a check that does not rest on trusting this host, fetch the
 same file again through a different source and compare the two for yourself:
 
     curl -sI https://gethologram.ai/via/modelscope/{owner}/{name}/resolve/main/config.json | grep -i x-hub-source
@@ -62,8 +61,8 @@ not hold the file answers 404 and names the ones that do.
 
 ## Do this now
 
-Run the three requests on any model and check one hash yourself. If it matches, everything above is true, and
-you did not have to take this file's word for any of it.
+Run the three requests on any model and check one hash yourself, against `lfs.oid` or `oid` from the tree.
+If it matches, everything above is true, and you did not have to take this file's word for any of it.
 
 <!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch
      https://gethologram.ai/agent.md again and read it verbatim. -->

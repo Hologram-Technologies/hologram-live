@@ -70,7 +70,8 @@ const shrink = (value, depth = 0) => {
 async function discover() {
   const r = await fetch(`${BASE}/api/models?limit=1&sort=downloads`, { signal: AbortSignal.timeout(20_000) });
   const rows = await r.json();
-  if (Array.isArray(rows) && rows[0]?.id) { MODEL = rows[0].id; REVISION = rows[0].sha; }
+  // Hugging Face lists a model without its sha unless asked; the model itself always carries it.
+  if (Array.isArray(rows) && rows[0]?.id) { MODEL = rows[0].id; REVISION = rows[0].sha ?? (await (await fetch(`${BASE}/api/models/${MODEL}`)).json()).sha; }
   const d = await fetch(`${BASE}/.well-known/model-hub.json`, { signal: AbortSignal.timeout(20_000) });
   CATALOG = (await d.json()).catalog;
   const t = await fetch(`${BASE}/api/models/${MODEL}/tree/main`, { signal: AbortSignal.timeout(20_000) });
@@ -147,7 +148,7 @@ async function main() {
     ["models.readonly", `/api/models/${MODEL}`, { method: "POST" }],
     // files
     ["resolve", `/${MODEL}/resolve/main/${FILE}`, { method: "HEAD", headers: CORS }],
-    ["resolve.sha256sums", `/${MODEL}/resolve/main/SHA256SUMS`, { headers: CORS }],
+    ["resolve.sha256sums", `/via/huggingface/${MODEL}/resolve/main/SHA256SUMS`, { headers: CORS }],
     ["resolve.entry.missing", `/${MODEL}/resolve/main/not-a-file.bin`, {}],
     // `via` pinned to a source that holds the file: the operation is the redirect. The refusal when a
     // source has not got it is a different, documented answer, so it is recorded as its own route.

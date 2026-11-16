@@ -6,7 +6,7 @@ set -uo pipefail
 HUB=${1:-https://gethologram.ai}; HOST=${HUB#https://}
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT; chmod 777 "$OUT"
 CAP="--rm --memory 3g --cpus 2"
-MODEL=hexgrad/kokoro-82m; SUMS="$HUB/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS"
+MODEL=hexgrad/kokoro-82m; SUMS="$HUB/via/huggingface/hexgrad/Kokoro-82M/resolve/main/SHA256SUMS"
 say() { printf '\n===== %s\n' "$*"; }
 verify() { ( cd "$1" && n=$(find . -type f | wc -l) && curl -s "$SUMS" | sha256sum -c --quiet 2>/dev/null; echo "  files: $n, sha256sum -c exit: $?" ); }
 

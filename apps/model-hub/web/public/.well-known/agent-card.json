@@ -102,7 +102,7 @@
    ],
    "examples": [
     "curl -sI https://gethologram.ai/Qwen/Qwen3-0.6B/resolve/main/config.json",
-    "curl -s https://gethologram.ai/Qwen/Qwen3-0.6B/resolve/main/SHA256SUMS | sha256sum -c"
+    "curl -s https://gethologram.ai/api/models/Qwen/Qwen3-0.6B/tree/main"
    ]
   },
   {

@@ -3,7 +3,7 @@
  "info": {
   "title": "Hologram Model Hub",
   "summary": "One endpoint for open models: find one, fetch it from a source that is up, and prove the bytes.",
-  "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by the SHA-256 of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `huggingface_hub` (transformers, diffusers,\nsentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,\n`ollama pull gethologram.ai/<owner>/<name>:<quant>`, `oras pull gethologram.ai/<owner>/<name>:latest`,\nor the MCP server at `/mcp`.\n\n**The rules that make it safe.**\nThe hub carries names, addresses and directions, never weight bytes: a file request is answered with a\nredirect to a source that passed the last probe, plus the SHA-256 the bytes must have.\nExpected hashes come from the index only, never from the source that serves the bytes.\nNothing here verifies on your behalf, so hash what arrives: `…/resolve/main/SHA256SUMS` piped to\n`sha256sum -c` checks a whole download with no tool of ours.\nReads are anonymous and permitted from any origin; only publishing needs a token.\nCredentials sent to whatever endpoint a client is pointed at are stripped at the edge and never logged.\n\n**Scope.** The hub is the file plane. Inference is deliberately out of scope and `/v1/*` is reserved and\nempty: the engines the hub feeds already speak the OpenAI API.",
+  "description": "`https://gethologram.ai` is the only thing you configure. It answers in the dialect you already speak,\nover one index in which every model file is named by a hash of its bytes and every hub object by the\nBLAKE3 of its bytes.\n\n**The short way.** Point the setting your tool already has at the hub and keep your commands:\n`HF_ENDPOINT=https://gethologram.ai` for anything built on `huggingface_hub` (transformers, diffusers,\nsentence-transformers, vLLM, SGLang), `MODEL_ENDPOINT` for llama.cpp `-hf`,\n`ollama pull gethologram.ai/<owner>/<name>:<quant>`, `oras pull gethologram.ai/<owner>/<name>:latest`,\nor the MCP server at `/mcp`.\n\n**The rules that make it safe.**\nThe hub carries names, addresses and directions, never weight bytes: a file request is answered with a\nredirect to a source that passed the last probe, plus the hash the bytes must have, exactly as Hugging\nFace names it: the SHA-256 for a large file, the git blob SHA-1 for a small one.\nExpected hashes come from the tree only, never from the source that serves the bytes.\nNothing here verifies on your behalf, so hash what arrives against `lfs.oid` or `oid` from the tree.\nReads are anonymous and permitted from any origin; only publishing needs a token.\nCredentials sent to whatever endpoint a client is pointed at are stripped at the edge and never logged.\n\n**Scope.** The hub is the file plane. Inference is deliberately out of scope and `/v1/*` is reserved and\nempty: the engines the hub feeds already speak the OpenAI API.",
   "version": "1.0.0",
   "license": {
    "name": "MIT OR Apache-2.0",
@@ -803,8 +803,8 @@
      },
      "oid": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "description": "The SHA-256 of the file's bytes, 64 hex characters, and the value a download must be checked against. **This differs from Hugging Face**, whose `oid` is a 40-character git blob SHA-1 and which carries the SHA-256 only inside `lfs`, only on large files. Here every file reports its SHA-256 in this field; the length is the tell. A client written against Hugging Face's meaning will read a perfectly good hash as an unusable one."
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The git blob SHA-1 of the file, as Hugging Face reports it: SHA-1 over `blob <size>`, a zero byte, then the bytes. Check a small file against it; a large file carries its SHA-256 in `lfs.oid`."
      },
      "size": {
       "type": "integer"
@@ -814,7 +814,7 @@
      },
      "lfs": {
       "type": "object",
-      "description": "Present on every file, small ones included, and its `oid` repeats the SHA-256 above. That is what makes Hugging Face's own `hf cache verify` check every file by SHA-256: it checks an entry without `lfs` by git's blob SHA-1, which the hub does not hold.",
+      "description": "Present on large files only, as on Hugging Face. Its `oid` is the SHA-256 of the file's bytes, the value a large download must be checked against.",
       "properties": {
        "oid": {
         "type": "string",
@@ -3314,8 +3314,8 @@
      "Models"
     ],
     "operationId": "listModelFiles",
-    "summary": "Every file, with its size and its SHA-256",
-    "description": "`oid` is the SHA-256 of the file's bytes, which is the value you check a download against. This is the only place the expected hashes come from: never take a hash from the source that serves the bytes.\n\nWithout `recursive`, every file and only files, in one page. With `recursive` (as `huggingface_hub` always sends it) the answer is Hugging Face's: `true` adds folder entries, `false` lists the direct children, folders included. Any `cursor` page is empty: the first page holds everything.",
+    "summary": "Every file, with its size and its hash",
+    "description": "Exactly Hugging Face's tree. `oid` is the git blob SHA-1 of the file; a large file also carries `lfs.oid`, the SHA-256 of its bytes. Check a download against `lfs.oid` when present, else `oid`. This is the only place the expected hashes come from: never take a hash from the source that serves the bytes.\n\nWithout `recursive`, every file and only files, in one page. With `recursive` (as `huggingface_hub` always sends it) the answer is Hugging Face's: `true` adds folder entries, `false` lists the direct children, folders included. Any `cursor` page is empty: the first page holds everything.",
     "parameters": [
      {
       "name": "owner",
@@ -3728,7 +3728,7 @@
     ],
     "operationId": "resolveFile",
     "summary": "A URL for one file, at a source that is up",
-    "description": "The route every download goes through. The hub answers `302` to the first source in its preference order\nthat passed the last probe, and puts the expected SHA-256 in `ETag` and `X-Linked-Etag` and the serving\nsource in `X-Hub-Source`. No weight byte passes through the hub.\n\nAsk for the path `SHA256SUMS` and the hub synthesises the checksum file for the whole model instead, so a\ndownload can be checked with `sha256sum -c` and no tool of ours.",
+    "description": "The route every download goes through. The hub answers `302` to the first source in its preference order\nthat passed the last probe, pinned to the exact commit, and puts the expected hash in `ETag` and\n`X-Linked-Etag` (the SHA-256 for a large file, the git blob SHA-1 for a small one, as Hugging Face does)\nand the serving source in `X-Hub-Source`. No weight byte passes through the hub.",
     "parameters": [
      {
       "name": "owner",
@@ -3764,7 +3764,7 @@
       "name": "path",
       "in": "path",
       "required": true,
-      "description": "The file path inside the repository. It may contain slashes; do not encode them. The literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.",
+      "description": "The file path inside the repository. It may contain slashes; do not encode them. Under `/via/<source>/` only, the literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.",
       "schema": {
        "type": "string"
       },
@@ -3773,17 +3773,6 @@
      }
     ],
     "responses": {
-     "200": {
-      "description": "Only for the synthesised `SHA256SUMS` path: the checksum file itself.",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string"
-        },
-        "example": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0  README.md\n"
-       }
-      }
-     },
      "302": {
       "description": "Follow `Location` for the bytes, then check them against `ETag`.",
       "headers": {
@@ -3795,13 +3784,13 @@
         }
        },
        "etag": {
-        "description": "The SHA-256 the bytes must have, quoted. Identical to `X-Linked-Etag`.",
+        "description": "The hash the bytes must have, quoted: SHA-256 for a large file, git blob SHA-1 for a small one. Identical to `X-Linked-Etag`.",
         "schema": {
          "type": "string"
         }
        },
        "x-linked-etag": {
-        "description": "The SHA-256 the bytes must have, quoted.",
+        "description": "The hash the bytes must have, quoted, as the tree names it.",
         "schema": {
          "type": "string"
         }
@@ -3925,7 +3914,7 @@
       "name": "path",
       "in": "path",
       "required": true,
-      "description": "The file path inside the repository. It may contain slashes; do not encode them. The literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.",
+      "description": "The file path inside the repository. It may contain slashes; do not encode them. Under `/via/<source>/` only, the literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.",
       "schema": {
        "type": "string"
       },

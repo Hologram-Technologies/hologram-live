@@ -72,7 +72,8 @@ async function discover() {
     const files = (await hit(`/api/models/${row.id}/tree/main`)).json;
     if (!Array.isArray(files)) continue;
     const s = files.filter((f) => f.size > 0 && f.size < 80_000).sort((a, b) => a.size - b.size)[0];
-    if (s && !small) small = { id: row.id, rev: row.sha, file: s };
+    // Hugging Face lists a model without its sha unless asked; the model itself always carries it.
+    if (s && !small) small = { id: row.id, rev: row.sha ?? (await hit(`/api/models/${row.id}`)).json?.sha, file: s };
     if (!gguf && files.some((f) => /\.gguf$/i.test(f.path))) gguf = { id: row.id };
     if (small && gguf) break;
   }
@@ -185,8 +186,8 @@ async function run() {
   await check("models.refs", "models", "happy", "listModelRefs", { path: `/api/models/${M}/refs` }, (r) => r.json?.branches?.[0]?.name === "main");
   await check("models.tree", "models", "happy", "listModelFiles", { path: `/api/models/${M}/tree/main` }, (r) => ({ ok: Array.isArray(r.json), note: `${r.json.length} files` }));
   await check("models.tree.prefix", "models", "happy", "listModelFilesUnder", { path: `/api/models/${M}/tree/main/1_Pooling` }, (r) => ({ ok: Array.isArray(r.json), note: `${r.json.length} under prefix` }));
-  await check("models.tree.oid", "models", "consistency", "oid is a 64-char SHA-256, not HF's 40-char SHA-1",
-    { path: `/api/models/${M}/tree/main` }, (r) => ({ ok: r.json.every((f) => /^[0-9a-f]{64}$/.test(f.oid)), note: "every entry 64 hex" }));
+  await check("models.tree.oid", "models", "consistency", "oid is HF's 40-char git blob SHA-1; lfs.oid a 64-char SHA-256",
+    { path: `/api/models/${M}/tree/main` }, (r) => ({ ok: r.json.filter((f) => f.type === "file").every((f) => /^[0-9a-f]{40}$/.test(f.oid) && (!f.lfs || /^[0-9a-f]{64}$/.test(f.lfs.oid))), note: "every entry 40 hex, every lfs.oid 64 hex" }));
   await check("models.404", "models", "errors", "RepoNotFound", { path: "/api/models/nobody/nothing-xyz" },
     (r) => ({ ok: r.status === 404 && r.headers["x-error-code"] === "RepoNotFound", note: r.headers["x-error-code"] }));
   await check("models.404.rev", "models", "errors", "RevisionNotFound", { path: `/api/models/${M}/tree/0000000` },
@@ -205,17 +206,19 @@ async function run() {
   // ---- files
   const rf = await check("files.resolve", "files", "happy", "resolveFile → 302", { path: `/${M}/resolve/main/${F}`, method: "HEAD" },
     (r) => ({ ok: r.status === 302 && !!r.headers.location, note: `${r.headers["x-hub-source"]} → ${new URL(r.headers.location).host}` }));
-  await check("files.resolve.hash", "files", "consistency", "the 302 carries the index's hash",
+  // Hugging Face's ETag: lfs.oid for a large file, oid for a small one.
+  const WANT = sample.file.lfs?.oid || OID;
+  await check("files.resolve.hash", "files", "consistency", "the 302 carries the tree's hash",
     { path: `/${M}/resolve/main/${F}`, method: "HEAD" },
-    (r) => ({ ok: (r.headers.etag || "").replaceAll('"', "") === OID, note: `ETag matches tree oid ${OID.slice(0, 12)}…` }));
+    (r) => ({ ok: (r.headers.etag || "").replaceAll('"', "") === WANT, note: `ETag matches tree ${WANT.slice(0, 12)}…` }));
   await check("files.resolve.headers", "files", "headers", "all six documented headers present",
     { path: `/${M}/resolve/main/${F}`, method: "HEAD" }, (r) => {
       const want = ["location", "etag", "x-linked-etag", "x-linked-size", "x-repo-commit", "x-hub-source"];
       const missing = want.filter((h) => !r.headers[h]);
       return { ok: !missing.length, note: missing.length ? `missing ${missing.join(",")}` : "all present" };
     });
-  await check("files.sums", "files", "happy", "the synthesised SHA256SUMS", { path: `/${M}/resolve/main/SHA256SUMS` },
-    (r) => ({ ok: r.text.includes(OID), note: `${r.text.trim().split("\n").length} lines, contains our file's hash` }));
+  await check("files.sums", "files", "happy", "the synthesised SHA256SUMS, under /via/", { path: `/via/huggingface/${M}/resolve/main/SHA256SUMS` },
+    (r) => ({ ok: r.status === 200 && r.text.split("\n").some((l) => l.endsWith(`  ${F}`)), note: `${r.text.trim().split("\n").length} lines, names our file` }));
   await check("files.404", "files", "errors", "EntryNotFound", { path: `/${M}/resolve/main/not-a-file.bin` },
     (r) => ({ ok: r.status === 404 && r.headers["x-error-code"] === "EntryNotFound", note: r.headers["x-error-code"] }));
   await check("files.traversal", "files", "security", "path traversal is not honoured", { path: `/${M}/resolve/main/../../../etc/passwd` },

@@ -152,7 +152,9 @@ async function act(tools) {
 
   const info = await (await call(tool("getModel"), { owner: chosen.owner, name: chosen.name })).json();
   ok(`getModel pinned ${info.id} at ${info.sha.slice(0, 12)} with ${info.siblings.length} files`);
-  ok(`listModelFiles gave ${chosen.file.path} its size and its expected SHA-256`);
+  // Hugging Face's tree: a large file's SHA-256 is lfs.oid; every file's oid is its git blob SHA-1.
+  const expected = chosen.file.lfs?.oid ? { alg: "sha256", hex: chosen.file.lfs.oid } : { alg: "git blob SHA-1", hex: chosen.file.oid };
+  ok(`listModelFiles gave ${chosen.file.path} its size and its expected ${expected.alg}`);
 
   const redirect = await call(tool("resolveFile"), { owner: chosen.owner, name: chosen.name, revision: "main", path: chosen.file.path }, { redirect: "manual" });
   if (redirect.status !== 302) throw new Error(`resolveFile answered ${redirect.status}, not a redirect`);
@@ -166,14 +168,17 @@ async function act(tools) {
   else ok("the redirect's ETag equals the hash the index gave, so nothing was substituted in between");
 
   const bytes = Buffer.from(await (await get(location)).arrayBuffer());
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  if (digest !== chosen.file.oid) bad(`the downloaded ${chosen.file.path} hashes to ${digest.slice(0, 12)}, the index says ${chosen.file.oid.slice(0, 12)}`);
-  else ok(`downloaded ${chosen.file.path} (${bytes.length} bytes) from ${source} and its SHA-256 matches the index`);
+  const digest = expected.alg === "sha256"
+    ? createHash("sha256").update(bytes).digest("hex")
+    : createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+  if (digest !== expected.hex) bad(`the downloaded ${chosen.file.path} hashes to ${digest.slice(0, 12)}, the tree says ${expected.hex.slice(0, 12)}`);
+  else ok(`downloaded ${chosen.file.path} (${bytes.length} bytes) from ${source} and its ${expected.alg} matches the tree`);
 
-  const sums = await (await call(tool("resolveFile"), { owner: chosen.owner, name: chosen.name, revision: "main", path: "SHA256SUMS" })).json().catch(() => null);
-  const sumsText = sums === null ? await (await call(tool("resolveFile"), { owner: chosen.owner, name: chosen.name, revision: "main", path: "SHA256SUMS" })).text() : "";
-  if (sumsText.includes(chosen.file.oid)) ok("the synthesised SHA256SUMS carries the same hash, so a whole download checks with sha256sum -c");
-  else bad("SHA256SUMS does not contain the hash the tree gave for this file");
+  // The /via/ routes still synthesise SHA256SUMS; it must name the same bytes the tree does.
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const sumsText = await (await call(tool("resolveFileVia"), { source: "huggingface", owner: chosen.owner, name: chosen.name, revision: "main", path: "SHA256SUMS" })).text();
+  if (sumsText.includes(sha256)) ok("the synthesised /via/ SHA256SUMS carries the same bytes' SHA-256, so a whole download checks with sha256sum -c");
+  else bad("the /via/ SHA256SUMS does not contain the SHA-256 of the bytes the tree named");
 
   return chosen;
 }

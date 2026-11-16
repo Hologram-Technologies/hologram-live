@@ -18,20 +18,15 @@ MODEL_ENDPOINT instead.
 ## Or four requests
 
     GET /api/models?search=qwen&filter=gguf&limit=5
-        Find one. A few hundred bytes. This lists everything the hub holds, including models that have
-        fallen off the trending list; those carry `hologram.listed: false` and only their name is certain.
+        Find one. A few hundred bytes. The rows are the ones Hugging Face answers, in the same shape.
 
     GET /api/models/{owner}/{name}/tree/main
-        Its files, each with `oid`: the SHA-256 the bytes must have. This is the only place an expected
-        hash may come from. Note it is a 64-character SHA-256, where Hugging Face puts a 40-character git
-        blob SHA-1 in the same field.
+        Its files, exactly as Hugging Face lists them. This is the only place an expected hash may come
+        from: `lfs.oid` is the SHA-256 of a large file, `oid` the git blob SHA-1 of every file.
 
     GET /{owner}/{name}/resolve/main/{path}
         302 to a source that was up a moment ago, carrying the expected hash in `ETag` and the server in
         `X-Hub-Source`. No weight byte passes through this host.
-
-    GET /{owner}/{name}/resolve/main/SHA256SUMS
-        The whole model's checksums, synthesised, so `sha256sum -c` checks a download with no tool of ours.
 
 ## Choosing the source yourself
 

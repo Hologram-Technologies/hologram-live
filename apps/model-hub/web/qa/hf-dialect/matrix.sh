@@ -2,6 +2,7 @@
 # Client matrix for the hub endpoint. Runs inside python:3.12-slim with HF_ENDPOINT set by the caller and an empty cache.
 #   matrix.sh <huggingface_hub version spec, e.g. ">=1.0" or "<1.0">
 # Every file that lands is checked with plain `sha256sum -c` against the endpoint's SHA256SUMS: no tool of ours.
+# SHA256SUMS is synthesised only under /via/<source>/; the unprefixed routes answer exactly as Hugging Face does.
 set -eu
 SPEC=${1:->=1.0}
 MODEL=${MODEL:-sentence-transformers/all-MiniLM-L6-v2}
@@ -16,7 +17,7 @@ check() { # <dir with the downloaded files>
   python - "$1" <<PY
 import hashlib, os, sys, urllib.request
 root = sys.argv[1]
-sums = urllib.request.urlopen(os.environ["HF_ENDPOINT"] + "/$MODEL/resolve/main/SHA256SUMS").read().decode().splitlines()
+sums = urllib.request.urlopen(os.environ["HF_ENDPOINT"] + "/via/huggingface/$MODEL/resolve/main/SHA256SUMS").read().decode().splitlines()
 want = dict(reversed(l.split("  ", 1)) for l in sums)
 got = bad = 0
 for path, digest in want.items():
@@ -54,7 +55,7 @@ import hashlib, os, subprocess, urllib.request
 base = os.environ["HF_ENDPOINT"] + "/$MODEL/resolve/main/"
 whole = urllib.request.urlopen(base + "tokenizer.json").read()
 part = urllib.request.urlopen(urllib.request.Request(base + "tokenizer.json", headers={"Range": "bytes=100-199"})).read()
-sums = dict(reversed(l.split("  ", 1)) for l in urllib.request.urlopen(base + "SHA256SUMS").read().decode().splitlines())
+sums = dict(reversed(l.split("  ", 1)) for l in urllib.request.urlopen(os.environ["HF_ENDPOINT"] + "/via/huggingface/$MODEL/resolve/main/SHA256SUMS").read().decode().splitlines())
 print("  GET follows to the source:", hashlib.sha256(whole).hexdigest() == sums["tokenizer.json"], "| Range 100-199 equals the slice:", part == whole[100:200])
 PY
 

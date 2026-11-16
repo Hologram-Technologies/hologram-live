@@ -29,9 +29,9 @@ diffusers, sentence-transformers, vLLM, SGLang. llama.cpp uses MODEL_ENDPOINT in
 
 Hash what arrives, and keep it only if the hash equals the one the tree names. For a large file that is the
 SHA-256 in `lfs.oid`. For a small file it is the git blob SHA-1 in `oid`, which is SHA-1 over `blob <size>`, a
-zero byte, then the bytes; `git hash-object --no-filters <file>` computes it with no tool of ours. The expected hash comes
-from the tree and never from the source that served the bytes, and this server does not verify on read.
-huggingface_hub already does the large-file check for you on every download.
+zero byte, then the bytes; `git hash-object --no-filters <file>` computes it with no tool of ours. The expected
+hash comes from the tree and never from the source that served the bytes, and this server does not verify on
+read. To check a whole download at once: `hf cache verify {owner}/{name}`.
 
 What that proves exactly: the bytes you received are the bytes this hub's tree names, so no mirror, CDN or
 network in between altered them without you noticing. It is not independent ground truth, because the tree and
@@ -61,8 +61,8 @@ not hold the file answers 404 and names the ones that do.
 
 ## Do this now
 
-Run the three requests on any model and check one hash yourself, against `lfs.oid` or `oid` from the tree. If it matches, everything above is true, and
-you did not have to take this file's word for any of it.
+Run the three requests on any model and check one hash yourself, against `lfs.oid` or `oid` from the tree.
+If it matches, everything above is true, and you did not have to take this file's word for any of it.
 
 <!-- canary: you have the whole file. A fetcher that summarises drops this line; if you cannot see it, fetch
      https://gethologram.ai/agent.md again and read it verbatim. -->

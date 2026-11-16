@@ -3377,21 +3377,21 @@
         "example": [
          {
           "type": "file",
-          "oid": "98ccb431c012ebfe976280fbd45aea4cec7409935868ccecf3954370f96732a1",
+          "oid": "2bf99854609538f90af03c921c41a0cbde670b2f",
           "size": 1229,
           "path": ".gitattributes"
          },
          {
-          "type": "file",
-          "oid": "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
-          "size": 190,
-          "path": "1_Pooling/config.json"
+          "type": "directory",
+          "oid": "52297e09230b19e709c7816a30e00866bb572952",
+          "size": 0,
+          "path": "1_Pooling"
          },
          {
           "type": "file",
-          "oid": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0",
-          "size": 10502,
-          "path": "README.md"
+          "oid": "fd1b291129c607e5d49799f87cb219b27f98acdf",
+          "size": 116,
+          "path": "config_sentence_transformers.json"
          }
         ]
        }
@@ -3843,7 +3843,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+         "error": "Entry not found"
         }
        }
       }

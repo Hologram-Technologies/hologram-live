@@ -11307,35 +11307,36 @@
    "id": "models.tree",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main",
-   "ms": 132,
+   "ms": 165,
    "status": 200,
    "headers": {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=60",
+    "content-type": "application/json",
+    "cache-control": "no-store",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration",
     "content-encoding": "gzip"
    },
    "body": [
     {
      "type": "file",
-     "oid": "98ccb431c012ebfe976280fbd45aea4cec7409935868ccecf3954370f96732a1",
+     "oid": "2bf99854609538f90af03c921c41a0cbde670b2f",
      "size": 1229,
      "path": ".gitattributes"
     },
     {
-     "type": "file",
-     "oid": "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
-     "size": 190,
-     "path": "1_Pooling/config.json"
+     "type": "directory",
+     "oid": "52297e09230b19e709c7816a30e00866bb572952",
+     "size": 0,
+     "path": "1_Pooling"
     },
     {
      "type": "file",
-     "oid": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0",
-     "size": 10502,
-     "path": "README.md"
+     "oid": "fd1b291129c607e5d49799f87cb219b27f98acdf",
+     "size": 116,
+     "path": "config_sentence_transformers.json"
     }
    ],
+   "sizes": 19,
    "error": null
   },
   {
@@ -11399,19 +11400,19 @@
    "id": "resolve",
    "method": "HEAD",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json",
-   "ms": 297,
+   "ms": 144,
    "status": 302,
    "headers": {
     "cache-control": "no-store",
-    "etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "etag": "\"59d594003bf59880a884c574bf88ef7555bb0202\"",
     "location": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/sentence_bert_config.json",
     "x-repo-commit": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-    "x-linked-etag": "\"fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7\"",
+    "x-linked-etag": "\"59d594003bf59880a884c574bf88ef7555bb0202\"",
     "x-linked-size": "53",
     "x-hub-source": "huggingface.co",
     "accept-ranges": "bytes",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration"
    },
    "error": null
   },
@@ -11436,18 +11437,18 @@
    "id": "resolve.entry.missing",
    "method": "GET",
    "path": "/sentence-transformers/all-MiniLM-L6-v2/resolve/main/not-a-file.bin",
-   "ms": 93,
+   "ms": 367,
    "status": 404,
    "headers": {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=60",
+    "content-type": "application/json",
+    "cache-control": "no-store",
     "x-error-code": "EntryNotFound",
-    "x-error-message": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41.",
+    "x-error-message": "Entry not found",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration"
    },
    "body": {
-    "error": "not-a-file.bin is not in sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41."
+    "error": "Entry not found"
    },
    "error": null
   },

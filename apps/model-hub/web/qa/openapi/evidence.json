@@ -11043,189 +11043,180 @@
    "id": "models.list",
    "method": "GET",
    "path": "/api/models?limit=2&sort=downloads",
-   "ms": 89,
+   "ms": 343,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=60",
-    "x-total-count": "641",
+    "cache-control": "no-store",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration",
     "content-encoding": "gzip"
    },
    "body": [
     {
-     "_id": "591cee3cd6fb2b90f96475fc",
+     "_id": "621ffdc136468d709f180294",
      "id": "sentence-transformers/all-MiniLM-L6-v2",
-     "modelId": "sentence-transformers/all-MiniLM-L6-v2",
-     "author": "sentence-transformers",
-     "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+     "likes": 6133,
      "private": false,
-     "gated": false,
-     "disabled": false,
-     "likes": 6119,
-     "downloads": 250598416,
-     "trendingScore": 395,
-     "createdAt": "2022-03-02T00:00:00.000Z",
+     "downloads": 170160953,
+     "tags": [
+      "sentence-transformers",
+      "pytorch",
+      "tf"
+     ],
      "pipeline_tag": "sentence-similarity",
      "library_name": "sentence-transformers",
-     "tags": [
-      "sentence-similarity",
-      "sentence-transformers",
-      "safetensors"
-     ],
-     "hologram": {
-      "manifest": "blake3:591cee3cd6fb2b90f96475fcb063c844ebbf86587ac22c73b3cc30b143c24cac",
-      "files": 30,
-      "weight_bytes": 975605706,
-      "parameters": 22713728,
-      "context": 512,
-      "sources": [
-       "Hugging Face",
-       "ModelScope",
-       "P2P"
-      ]
-     }
+     "createdAt": "2022-03-02T23:29:05.000Z",
+     "modelId": "sentence-transformers/all-MiniLM-L6-v2"
     },
     {
-     "_id": "3dba3c69368e47a8f7710954",
-     "id": "BAAI/bge-m3",
-     "modelId": "BAAI/bge-m3",
-     "author": "BAAI",
-     "sha": "5617a9f61b028005a4858fdac845db406aefb181",
+     "_id": "65dee9413aec0530562b4f09",
+     "id": "argmaxinc/whisperkit-coreml",
+     "likes": 268,
      "private": false,
-     "gated": false,
-     "disabled": false,
-     "likes": 3629,
-     "downloads": 37173706,
-     "trendingScore": 287,
-     "createdAt": "2024-01-27T00:00:00.000Z",
-     "pipeline_tag": "sentence-similarity",
-     "library_name": "sentence-transformers",
+     "downloads": 74682389,
      "tags": [
-      "sentence-similarity",
-      "sentence-transformers",
-      "onnx"
+      "whisperkit",
+      "coreml",
+      "whisper"
      ],
-     "hologram": {
-      "manifest": "blake3:3dba3c69368e47a8f7710954783515b46431dfe7495c98f5f3bb0f978c31a5cd",
-      "files": 30,
-      "weight_bytes": 4585114582,
-      "context": 8194,
-      "sources": [
-       "Hugging Face",
-       "ModelScope"
-      ]
-     }
+     "pipeline_tag": "automatic-speech-recognition",
+     "library_name": "whisperkit",
+     "createdAt": "2024-02-28T08:05:21.000Z",
+     "modelId": "argmaxinc/whisperkit-coreml"
     }
    ],
+   "sizes": 2,
    "error": null
   },
   {
    "id": "models.search",
    "method": "GET",
    "path": "/api/models?search=qwen&pipeline_tag=text-generation&filter=gguf&limit=2",
-   "ms": 94,
+   "ms": 197,
    "status": 200,
    "headers": {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=60",
-    "x-total-count": "11",
+    "cache-control": "no-store",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration",
     "content-encoding": "gzip"
    },
    "body": [
     {
-     "_id": "3ab39812037fa021592c5b23",
-     "id": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
-     "modelId": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
-     "author": "JonathanColetti",
-     "sha": "45d0fc0ad6cfcf9eeee6008ddaea925536409b18",
+     "_id": "6ae7bd6977871850526a09cb",
+     "id": "ccore/Qwen3.5-4B-GLB-3D-Coder",
+     "likes": 438,
+     "trendingScore": 126,
      "private": false,
-     "gated": false,
-     "disabled": false,
-     "likes": 1257,
-     "downloads": 2331396,
-     "trendingScore": 437,
-     "createdAt": "2026-08-14T00:00:00.000Z",
-     "pipeline_tag": "text-generation",
-     "library_name": "llama.cpp",
+     "downloads": 59137,
      "tags": [
-      "text-generation",
-      "llama.cpp",
-      "gguf"
+      "safetensors",
+      "gguf",
+      "qwen3_5"
      ],
-     "hologram": {
-      "manifest": "blake3:3ab39812037fa021592c5b23d56a3484634c4f2b4f4193bbdd1ba893938f1fbb",
-      "files": 20,
-      "weight_bytes": 231256590464,
-      "parameters": 27320697856,
-      "context": 262144,
-      "sources": [
-       "Hugging Face"
-      ]
-     }
+     "pipeline_tag": "text-generation",
+     "createdAt": "2026-11-01T22:30:01.000Z",
+     "modelId": "ccore/Qwen3.5-4B-GLB-3D-Coder"
     },
     {
-     "_id": "9760086f94a7cccd1145e61c",
-     "id": "empero-ai/Qwen3.8-35B-A3B-Distill-GGUF",
-     "modelId": "empero-ai/Qwen3.8-35B-A3B-Distill-GGUF",
-     "author": "empero-ai",
-     "sha": "b1f9d1dcc3de8aa867669b0ab919384aeeb9b8d5",
+     "_id": "6ae865ec913cb25bce6cc1e2",
+     "id": "xtools-at/DeepSeek-V4-Pro-Qwen3.5-4B-UNCENSORED-heretic",
+     "likes": 143,
+     "trendingScore": 58.8,
      "private": false,
-     "gated": false,
-     "disabled": false,
-     "likes": 144,
-     "downloads": 133496,
-     "trendingScore": 416,
-     "createdAt": "2026-09-16T00:00:00.000Z",
-     "pipeline_tag": "text-generation",
-     "library_name": "gguf",
+     "downloads": 19109,
      "tags": [
-      "text-generation",
-      "gguf",
-      "gguf"
+      "transformers",
+      "safetensors",
+      "qwen3_5"
      ],
-     "hologram": {
-      "manifest": "blake3:9760086f94a7cccd1145e61c6fecccf8e480e24e85d28c247d4a1207c8d8f6db",
-      "files": 14,
-      "weight_bytes": 266066096704,
-      "parameters": 35505251456,
-      "context": 262144,
-      "sources": [
-       "Hugging Face",
-       "ModelScope"
-      ]
-     }
+     "pipeline_tag": "text-generation",
+     "library_name": "transformers",
+     "createdAt": "2026-11-02T10:29:00.000Z",
+     "modelId": "xtools-at/DeepSeek-V4-Pro-Qwen3.5-4B-UNCENSORED-heretic"
     }
    ],
+   "sizes": 2,
    "error": null
   },
   {
    "id": "models.info",
    "method": "GET",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2",
-   "ms": 136,
+   "ms": 175,
    "status": 200,
    "headers": {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=60",
+    "content-type": "application/json",
+    "cache-control": "no-store",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location",
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration",
     "content-encoding": "gzip"
    },
    "body": {
-    "_id": "591cee3cd6fb2b90f96475fc",
+    "_id": "1110a243fdf4706b3f48f1d9",
     "id": "sentence-transformers/all-MiniLM-L6-v2",
     "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+    "author": "sentence-transformers",
     "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
     "private": false,
     "gated": false,
     "disabled": false,
-    "tags": [],
-    "downloads": 0,
-    "likes": 0,
+    "downloads": 172686714,
+    "likes": 6118,
+    "tags": [
+     "sentence-transformers",
+     "pytorch",
+     "tf"
+    ],
+    "pipeline_tag": "sentence-similarity",
+    "library_name": "sentence-transformers",
+    "createdAt": "2022-03-02T23:29:05.000Z",
+    "lastModified": "2026-06-01T06:29:13.000Z",
+    "config": {
+     "architectures": [
+      "BertModel"
+     ],
+     "model_type": "bert",
+     "tokenizer_config": {
+      "unk_token": "[UNK]",
+      "sep_token": "[SEP]",
+      "pad_token": "[PAD]",
+      "cls_token": "[CLS]",
+      "mask_token": "[MASK]"
+     }
+    },
+    "cardData": {
+     "base_model": [
+      "nreimers/MiniLM-L6-H384-uncased"
+     ],
+     "language": "en",
+     "license": "apache-2.0",
+     "library_name": "sentence-transformers",
+     "tags": [
+      "sentence-transformers",
+      "feature-extraction",
+      "sentence-similarity"
+     ],
+     "datasets": [
+      "s2orc",
+      "flax-sentence-embeddings/stackexchange_xml",
+      "ms_marco"
+     ],
+     "pipeline_tag": "sentence-similarity"
+    },
+    "safetensors": {
+     "parameters": {
+      "I64": 512,
+      "F32": 22713216
+     },
+     "total": 22713728
+    },
+    "transformersInfo": {
+     "auto_model": "AutoModel",
+     "pipeline_tag": "feature-extraction",
+     "processor": "AutoTokenizer"
+    },
     "siblings": [
      {
       "rfilename": ".gitattributes"
@@ -11237,6 +11228,18 @@
       "rfilename": "README.md"
      }
     ]
+   },
+   "sizes": {
+    "tags": 47,
+    "config": {
+     "architectures": 1
+    },
+    "cardData": {
+     "base_model": 1,
+     "tags": 4,
+     "datasets": 21
+    },
+    "siblings": 30
    },
    "error": null
   },
@@ -11343,18 +11346,17 @@
    "id": "models.missing",
    "method": "GET",
    "path": "/api/models/nobody/not-a-real-model-xyz",
-   "ms": 119,
-   "status": 404,
+   "ms": 196,
+   "status": 401,
    "headers": {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=60",
-    "x-error-code": "RepoNotFound",
-    "x-error-message": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile.",
+    "cache-control": "no-store",
+    "x-error-message": "Invalid username or password.",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration"
    },
    "body": {
-    "error": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile."
+    "error": "Invalid username or password."
    },
    "error": null
   },
@@ -11541,13 +11543,13 @@
    "id": "xet",
    "method": "HEAD",
    "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
-   "ms": 354,
-   "status": 307,
+   "ms": 194,
+   "status": 200,
    "headers": {
+    "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
-    "location": "https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, x-repo-commit, x-linked-etag, x-linked-size, x-hub-source, x-total-count, x-error-code, x-error-message, accept-ranges, content-range, docker-content-digest, location"
+    "access-control-expose-headers": "x-repo-commit, x-linked-etag, x-linked-size, etag, x-error-code, x-error-message, x-hub-source, x-hub-partial, link, accept-ranges, content-range, x-xet-cas-url, x-xet-access-token, x-xet-token-expiration"
    },
    "error": null
   },

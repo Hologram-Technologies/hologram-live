@@ -152,25 +152,28 @@ async function run() {
     { path: "/api/models?limit=500" }, (r) => ({ ok: true, note: `search sees ${r.json?.length}; catalog addresses more (known gap)` }));
   for (const [id, q, test] of [
     ["models.q.search", "search=qwen&limit=5", (r) => ({ ok: r.json.every((m) => /qwen/i.test(m.id)), note: `${r.json.length} rows all match` })],
-    ["models.q.author", "author=Qwen&limit=5", (r) => ({ ok: r.json.every((m) => m.author === "Qwen"), note: `${r.json.length} rows` })],
+    // Hugging Face's list rows carry no `author` field by default; the owner is the id's first segment.
+    ["models.q.author", "author=Qwen&limit=5", (r) => ({ ok: r.json.length > 0 && r.json.every((m) => m.id.startsWith("Qwen/")), note: `${r.json.length} rows` })],
     ["models.q.task", "pipeline_tag=text-generation&limit=5", (r) => ({ ok: r.json.every((m) => m.pipeline_tag === "text-generation"), note: `${r.json.length} rows` })],
     ["models.q.filter", "filter=gguf&limit=5", (r) => ({ ok: r.json.every((m) => m.tags.includes("gguf")), note: `${r.json.length} rows` })],
     ["models.q.filter.multi", "filter=gguf,text-generation&limit=5", (r) => ({ ok: Array.isArray(r.json), note: `${r.json.length} rows for two tags` })],
     ["models.q.sort.dl", "sort=downloads&limit=5", (r) => ({ ok: r.json.every((m, i, a) => !i || a[i - 1].downloads >= m.downloads), note: "descending" })],
-    ["models.q.direction", "sort=downloads&direction=1&limit=5", (r) => ({ ok: r.json.every((m, i, a) => !i || a[i - 1].downloads <= m.downloads), note: "ascending" })],
   ]) await check(id, "models", "happy", `/api/models?${q}`, { path: `/api/models?${q}` }, test);
+  // Hugging Face sorts downloads descending only, and says so with a 400 rather than ignoring the direction.
+  await check("models.q.direction", "models", "errors", "ascending downloads is refused, as on Hugging Face", { path: "/api/models?sort=downloads&direction=1&limit=5" },
+    (r) => ({ ok: r.status === 400 && /direction/i.test(r.json?.error || ""), note: `${r.status} ${r.json?.error || ""}` }));
 
-  // Two different contracts. limit and sort are documented with a range and an enum, so a bad value must refuse.
-  // Everything else is free-form input the route should absorb: an unknown parameter, an empty or hostile search
-  // term, unicode. Absorbing those is correct; coercing a documented constraint was not.
+  // The list's parameters are Hugging Face's, so they behave as Hugging Face's do: an unusable limit falls back to
+  // the default, and an unknown sort refuses. Everything else is free-form input the route should absorb.
   for (const [id, q, expectation] of [
-    ["models.b.limit0", "limit=0", "below the documented minimum of 1"],
-    ["models.b.limitneg", "limit=-5", "negative"],
-    ["models.b.limitbig", "limit=99999", "above the documented maximum of 500"],
-    ["models.b.limitabc", "limit=abc", "not a number"],
-    ["models.b.sortbogus", "sort=bogus", "outside the documented enum"],
+    ["models.b.limit0", "limit=0", "zero falls back to the default"],
+    ["models.b.limitneg", "limit=-5", "negative falls back to the default"],
+    ["models.b.limitbig", "limit=99999", "too large falls back to the default"],
+    ["models.b.limitabc", "limit=abc", "not a number falls back to the default"],
   ]) await check(id, "models", "boundary", `${q} — ${expectation}`, { path: `/api/models?${q}` },
-    (r) => ({ ok: r.status === 400 && r.headers["x-error-code"] === "BadParameter", note: `${r.status} ${r.headers["x-error-code"] || "silently defaulted"}` }));
+    (r) => ({ ok: r.status === 200 && Array.isArray(r.json) && r.json.length > 0, note: `${r.status}, ${Array.isArray(r.json) ? r.json.length + " rows" : "non-array"}` }));
+  await check("models.b.sortbogus", "models", "boundary", "sort=bogus — an unknown sort is refused", { path: "/api/models?sort=bogus" },
+    (r) => ({ ok: r.status === 400, note: `${r.status} ${r.json?.error || ""}` }));
 
   for (const [id, q, expectation] of [
     ["models.b.unknownparam", "nonsense=1", "an unknown parameter is ignored, not an error"],
@@ -188,17 +191,20 @@ async function run() {
   await check("models.tree.prefix", "models", "happy", "listModelFilesUnder", { path: `/api/models/${M}/tree/main/1_Pooling` }, (r) => ({ ok: Array.isArray(r.json), note: `${r.json.length} under prefix` }));
   await check("models.tree.oid", "models", "consistency", "oid is HF's 40-char git blob SHA-1; lfs.oid a 64-char SHA-256",
     { path: `/api/models/${M}/tree/main` }, (r) => ({ ok: r.json.filter((f) => f.type === "file").every((f) => /^[0-9a-f]{40}$/.test(f.oid) && (!f.lfs || /^[0-9a-f]{64}$/.test(f.lfs.oid))), note: "every entry 40 hex, every lfs.oid 64 hex" }));
-  await check("models.404", "models", "errors", "RepoNotFound", { path: "/api/models/nobody/nothing-xyz" },
-    (r) => ({ ok: r.status === 404 && r.headers["x-error-code"] === "RepoNotFound", note: r.headers["x-error-code"] }));
+  // As on Hugging Face, a missing and a private repository get the same anonymous answer: a 401, with no error code
+  // that would tell the two apart.
+  await check("models.404", "models", "errors", "a missing model is a 401, as on Hugging Face", { path: "/api/models/nobody/nothing-xyz" },
+    (r) => ({ ok: r.status === 401, note: `${r.status} ${r.headers["x-error-message"] || ""}` }));
   await check("models.404.rev", "models", "errors", "RevisionNotFound", { path: `/api/models/${M}/tree/0000000` },
     (r) => ({ ok: r.status === 404 && r.headers["x-error-code"] === "RevisionNotFound", note: r.headers["x-error-code"] }));
-  await check("models.404.revshort", "models", "boundary", "a six-character prefix is too short", { path: `/api/models/${M}/tree/${REV.slice(0, 6)}` },
-    (r) => ({ ok: r.status === 404, note: `${r.status} ${r.headers["x-error-code"] || ""}` }));
+  // Hugging Face resolves a six-character prefix too; only the hub's own /via/ routes hold to seven.
+  await check("models.404.revshort", "models", "boundary", "a six-character prefix resolves, as on Hugging Face", { path: `/api/models/${M}/tree/${REV.slice(0, 6)}` },
+    (r) => ({ ok: r.status === 200, note: `${r.status} ${r.headers["x-error-code"] || ""}` }));
   await check("models.revshort7", "models", "boundary", "a seven-character prefix is accepted", { path: `/api/models/${M}/tree/${REV.slice(0, 7)}` },
     (r) => ({ ok: r.status === 200, note: `${r.status}` }));
   for (const [id, method] of [["models.m.post", "POST"], ["models.m.put", "PUT"], ["models.m.delete", "DELETE"]])
     await check(id, "models", "methods", `${method} is refused`, { path: `/api/models/${M}`, method },
-      (r) => ({ ok: r.status === 405 && r.headers["x-error-code"] === "ReadOnly", note: `${r.status} ${r.headers["x-error-code"] || ""}` }));
+      (r) => ({ ok: r.status === 400 && r.headers["x-error-code"] === "BadRequest", note: `${r.status} ${r.headers["x-error-code"] || ""}` }));
   await check("models.m.head", "models", "methods", "HEAD works", { path: "/api/models?limit=1", method: "HEAD" }, (r) => r.status === 200);
   await check("models.m.options", "models", "methods", "preflight", { path: "/api/models", method: "OPTIONS", headers: { origin: "https://example.com", "access-control-request-method": "GET" } },
     (r) => ({ ok: r.status === 204, note: r.headers["access-control-allow-methods"] || "" }));

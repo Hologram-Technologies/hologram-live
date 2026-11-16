@@ -13,7 +13,7 @@
 
 const MiB = 1024 * 1024;
 const SCOPE = new URL(self.registration.scope);
-importScripts(new URL("vendor/hash-wasm/sha256.umd.min.js", SCOPE).href);
+importScripts(new URL("vendor/hash-wasm/sha256.umd.min.js", SCOPE).href, new URL("vendor/hash-wasm/sha1.umd.min.js", SCOPE).href);
 
 const channel = new BroadcastChannel("model-hub-zip");
 const running = new Map(); // id → AbortController
@@ -33,7 +33,9 @@ self.addEventListener("fetch", (event) => {
 // ---- κ: every same-origin fetch whose bytes have a name is checked against that name before the page gets it.
 //
 //   …/blobs/sha256:<hex>, …/objects/sha256:<hex>   the URL names its content
-//   /<org>/<name>/resolve/<rev>/<path>             the hub's own file list names it (/api/models/<id>/tree/<rev>)
+//   /<org>/<name>/resolve/<rev>/<path>             the hub's own file list names it (/api/models/<id>/tree/<rev>):
+//                                                  Hugging Face's tree, so a large file by the SHA-256 in lfs.oid and
+//                                                  a small one by the git blob SHA-1 in oid
 //
 // The bytes stream through, hashed as they pass; the last 64 KiB are held back until the whole equals the name, and a
 // mismatch errors the stream, so a page (and the browser's download manager) never completes a wrong file. Pages,
@@ -44,15 +46,21 @@ const NAMED = /\/(?:blobs|objects)\/sha256:([0-9a-f]{64})$/;
 const RESOLVE = /^\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+)$/;
 const trees = new Map();
 
+// What the bytes must hash to: { alg: "sha256" | "git-sha1", hex, size }, or null when nothing names them.
 async function expectedFor(url) {
   const named = NAMED.exec(url.pathname);
-  if (named) return named[1];
+  if (named) return { alg: "sha256", hex: named[1] };
   const r = RESOLVE.exec(url.pathname.slice(SCOPE.pathname.length - 1));
   if (!r || r[1] === "api/models") return null;
   const key = `${r[1]}@${r[2]}`;
-  if (!trees.has(key)) trees.set(key, fetch(`${SCOPE.origin}/api/models/${r[1]}/tree/${r[2]}`).then((t) => (t.ok ? t.json() : [])).then((list) => new Map(list.filter((e) => e.type === "file").map((e) => [e.path, e.oid]))).catch(() => new Map()));
-  const oid = (await trees.get(key)).get(decodeURIComponent(r[3]));
-  return /^[0-9a-f]{64}$/.test(oid || "") ? oid : null;
+  if (!trees.has(key)) trees.set(key, fetch(`${SCOPE.origin}/api/models/${r[1]}/tree/${r[2]}`).then((t) => (t.ok ? t.json() : [])).then((list) => new Map(list.filter((e) => e.type === "file").map((e) => [e.path, e]))).catch(() => new Map()));
+  const e = (await trees.get(key)).get(decodeURIComponent(r[3]));
+  if (!e) return null;
+  if (/^[0-9a-f]{64}$/.test(e.lfs?.oid || "")) return { alg: "sha256", hex: e.lfs.oid };
+  if (/^[0-9a-f]{64}$/.test(e.oid || "")) return { alg: "sha256", hex: e.oid };
+  // git's blob id is SHA-1 over "blob <size>\0" and then the bytes, so the size has to be known before the first byte.
+  if (/^[0-9a-f]{40}$/.test(e.oid || "") && Number.isSafeInteger(e.size)) return { alg: "git-sha1", hex: e.oid, size: e.size };
+  return null;
 }
 
 function kappaCheck(request, url) {
@@ -62,7 +70,8 @@ function kappaCheck(request, url) {
     const want = await expectedFor(url);
     const res = await fetch(request, { redirect: "follow" });
     if (!want || !res.ok || !res.body) return res;                              // nothing names these bytes: as they came
-    const hasher = await hashwasm.createSHA256();
+    const hasher = want.alg === "git-sha1" ? await hashwasm.createSHA1() : await hashwasm.createSHA256();
+    if (want.alg === "git-sha1") hasher.update(`blob ${want.size}\0`);
     let held = new Uint8Array(0);
     const body = res.body.pipeThrough(new TransformStream({
       transform(chunk, controller) {
@@ -72,12 +81,12 @@ function kappaCheck(request, url) {
       },
       flush(controller) {
         const got = hasher.digest("hex");
-        if (got !== want) { channel.postMessage({ kappa: "refused", url: url.href, want, got }); controller.error(new Error(`${url.pathname}: bytes hash to ${got.slice(0, 12)}…, not ${want.slice(0, 12)}…`)); return; }
+        if (got !== want.hex) { channel.postMessage({ kappa: "refused", url: url.href, want: want.hex, got }); controller.error(new Error(`${url.pathname}: bytes hash to ${got.slice(0, 12)}…, not ${want.hex.slice(0, 12)}…`)); return; }
         controller.enqueue(held);
       },
     }));
     const headers = new Headers(res.headers);
-    headers.set("x-hologram-verified", `sha256:${want}`);
+    headers.set("x-hologram-verified", `${want.alg}:${want.hex}`);
     return new Response(body, { status: res.status, statusText: res.statusText, headers });
   })().catch((error) => new Response(String(error.message || error), { status: 502 }));
 }

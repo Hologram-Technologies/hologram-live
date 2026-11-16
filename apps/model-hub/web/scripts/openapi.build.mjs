@@ -49,7 +49,7 @@ const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
 const hubError = (status, description, example) => ({
   description,
   headers: {
-    "x-error-code": { description: "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.", schema: { type: "string" } },
+    "x-error-code": { description: "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.", schema: { type: "string" } },
     "x-error-message": { description: "The same sentence as the body, readable in a browser's network panel.", schema: { type: "string" } },
   },
   content: json(ref("HubError"), example),
@@ -88,7 +88,7 @@ const ociErrorResponse = (status, description, example) => ({ description, conte
 const OWNER = { name: "owner", in: "path", required: true, description: "The owning organisation or user, exactly as on Hugging Face.", schema: { type: "string" }, example: "sentence-transformers" };
 const NAME = { name: "name", in: "path", required: true, description: "The model name.", schema: { type: "string" }, example: "all-MiniLM-L6-v2" };
 const RECURSIVE = { name: "recursive", in: "query", required: false, description: "Absent: every file, files only. `true`: every file and folder beneath. `false`: the direct children, folders included (Hugging Face's meanings).", schema: { type: "string", enum: ["true", "false", "True", "False"] } };
-const REVISION = { name: "revision", in: "path", required: true, description: "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.", schema: { type: "string" }, example: "main" };
+const REVISION = { name: "revision", in: "path", required: true, description: "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.", schema: { type: "string" }, example: "main" };
 const FILEPATH = { name: "path", in: "path", required: true, description: "The file path inside the repository. It may contain slashes; do not encode them. Under `/via/<source>/` only, the literal path `SHA256SUMS` is synthesised by the hub and is not a file of the repository.", schema: { type: "string" }, example: "config.json", "x-hologram-multi-segment": true };
 const SOURCE = { name: "source", in: "path", required: true, description: "Pin one byte source instead of letting the hub choose.", schema: { type: "string", enum: ["huggingface", "modelscope", "ipfs"] }, example: "ipfs" };
 
@@ -483,20 +483,15 @@ function document(server, evidence) {
       operationId: "listModels",
       summary: "Search the index",
       description: [
-        "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row",
-        "carrying the facts Hugging Face has no field for: the index address of the model, how many files it has,",
-        "how many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the",
-        "whole catalog object costs several hundred KB, so search here rather than there.",
+        "Hugging Face's list, row for row and parameter for parameter, so `HfApi.list_models` works unchanged and a",
+        "model that exists on Hugging Face is found here. A search costs a few hundred bytes.",
         "",
-        "**This route lists everything the hub holds**, not only what is trending today. Rows for models on the",
-        "current browse list carry the full facts — task, parameters, library, downloads, licence. Models the browse",
-        "list has forgotten, but whose bytes this hub has published and still serves, appear as thin rows: the name,",
-        "the index address, and `hologram.listed: false`. The facts a browse row carries were never published with",
-        "the object, so a thin row says so rather than reporting zeros as if they were measurements. Filter on",
-        "`hologram.listed` if you want one kind or the other.",
+        "Rows carry Hugging Face's default fields; `sha` appears when you ask for it with `full=true`. The next page is",
+        "in the `Link` header (`rel=\"next\"`), as on Hugging Face. Parameters are Hugging Face's too: an unusable",
+        "`limit` falls back to the default rather than refusing, and an unknown `sort` refuses with `400`.",
         "",
-        "Query parameters are checked rather than coerced: a `limit` outside 1–500 or one that is not a whole number,",
-        "and a `sort` outside the enum, each refuse with `400 BadParameter` and a sentence saying what is allowed.",
+        "The `hologram` block, with the index address and the sources that hold a model's bytes, is on the rows of",
+        "`/via/<source>/api/models`, which this hub still answers from its own index.",
       ].join("\n"),
       parameters: [
         { name: "search", in: "query", description: "Case-insensitive substring of the model id.", schema: { type: "string" }, example: "qwen" },
@@ -505,17 +500,16 @@ function document(server, evidence) {
         { name: "library", in: "query", description: "Exact library match.", schema: { type: "string" }, example: "transformers" },
         { name: "filter", in: "query", description: "Tag that must be present. Repeat the parameter, or comma-separate. Tags include the task, the library, the format, the architecture, `license:<id>` and languages.", schema: { type: "array", items: { type: "string" } }, style: "form", explode: true, example: ["gguf"] },
         { name: "sort", in: "query", description: "Sort key.", schema: { type: "string", enum: ["downloads", "likes", "trendingScore", "trending_score", "createdAt", "created_at"], default: "trendingScore" } },
-        { name: "direction", in: "query", description: "`1` sorts ascending. Anything else sorts descending.", schema: { type: "string" } },
-        { name: "limit", in: "query", description: "Rows to return, 1 to 500.", schema: { type: "integer", minimum: 1, maximum: 500, default: 50 }, example: 5 },
+        { name: "direction", in: "query", description: "Hugging Face's: `-1` sorts descending. Hugging Face sorts most keys, `downloads` among them, descending only, and refuses `1` with `400`.", schema: { type: "string" } },
+        { name: "limit", in: "query", description: "Rows to return. As on Hugging Face, a value it cannot use falls back to the default rather than refusing; more rows are a `Link` away.", schema: { type: "integer" }, example: 5 },
       ],
       responses: {
-        400: hubError(400, "A parameter is outside what this operation accepts.", { error: "limit must be between 1 and 500." }),
+        400: hubError(400, "An unknown `sort`, or a method other than GET or HEAD.", { error: "✖ Invalid sort parameter: bogus" }),
         200: {
           description: "Matching rows, most relevant first by the chosen sort.",
-          headers: { "x-total-count": { description: "How many rows matched before `limit` was applied.", schema: { type: "integer" } } },
+          headers: { link: { description: "The next page, `<url>; rel=\"next\"`, when there is one.", schema: { type: "string" } } },
           content: json({ type: "array", items: ref("ModelRow") }, body("models.list")),
         },
-        ...READ_ONLY,
       },
       ...probe("/api/models?limit=2&sort=downloads", { contentType: "application/json" }),
     },
@@ -525,12 +519,11 @@ function document(server, evidence) {
       tags: ["Models"],
       operationId: "getModel",
       summary: "One model at the indexed revision",
-      description: "Hugging Face's model-info shape. `sha` is the revision the hub pinned; `siblings` lists every file. For sizes and hashes ask for the tree instead.",
+      description: "Hugging Face's model info, field for field. `sha` is the revision `main` points at; `siblings` lists every file. For sizes and hashes ask for the tree instead.",
       parameters: [OWNER, NAME],
       responses: {
-        200: { description: "The model.", content: json(ref("ModelInfo"), body("models.info")) },
-        403: hubError(403, "The model is gated on Hugging Face. The hub serves public models only and will not proxy a gate.", { error: "meta-llama/Llama-3-8B is gated on Hugging Face. The hub serves public models only; use huggingface.co directly for this one." }),
-        404: hubError(404, "Not in the index. The request is recorded and considered for the next index run.", body("models.missing")),
+        200: { description: "The model. A gated model is described too (`gated` says how); its files refuse with `401 GatedRepo`.", content: json(ref("ModelInfo"), body("models.info")) },
+        401: hubError(401, "No such public model. As on Hugging Face, a missing and a private repository get the same anonymous answer.", body("models.missing")),
       },
       ...probe(`/api/models/${evidence.sample.model}`, { contentType: "application/json" }),
     },
@@ -540,11 +533,11 @@ function document(server, evidence) {
       tags: ["Models"],
       operationId: "getModelAtRevision",
       summary: "One model, asserting the revision",
-      description: "The same answer as `getModel`, refused unless the revision you name is the one the hub indexed. Use it to fail loudly rather than silently receive a different revision.",
+      description: "The same answer as `getModel`, at the revision you name. A revision Hugging Face does not know refuses with `404 RevisionNotFound`.",
       parameters: [OWNER, NAME, REVISION],
       responses: {
         200: { description: "The model.", content: json(ref("ModelInfo")) },
-        404: hubError(404, "Either the model is not indexed, or it is indexed at another revision.", { error: "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only." }),
+        404: hubError(404, "No such revision.", { error: "Invalid rev id: 0000000" }),
       },
       ...probe(`/api/models/${evidence.sample.model}/revision/${evidence.sample.revision}`, { contentType: "application/json" }),
     },
@@ -607,11 +600,14 @@ function document(server, evidence) {
     get: {
       tags: ["Models"],
       operationId: "getXetReadToken",
-      summary: "Hand a Xet client back to Hugging Face",
-      description: "`huggingface_hub` follows the hub's redirect, meets Hugging Face's Xet headers there, then asks this endpoint for a Xet read token. That token is Hugging Face's to give, so the hub sends the client there and issues nothing itself.",
+      summary: "Hugging Face's Xet read token, passed through",
+      description: "`huggingface_hub` follows the hub's redirect, meets Hugging Face's Xet headers there, then asks this endpoint for a Xet read token. The token is Hugging Face's: the hub passes Hugging Face's answer through unchanged and issues nothing itself. A client only asks after following the kernel's redirect to Hugging Face, so the bytes still come from the source the kernel chose.",
       parameters: [OWNER, NAME, REVISION],
-      responses: { 307: { description: "Redirect to the same path on huggingface.co.", headers: { location: { description: "The Hugging Face URL.", schema: { type: "string", format: "uri" } } } }, ...READ_ONLY },
-      ...probe(`/api/models/${evidence.sample.model}/xet-read-token/main`, { status: 307, method: "HEAD" }),
+      responses: {
+        200: { description: "Hugging Face's answer.", content: json({ type: "object", required: ["accessToken", "exp", "casUrl"], properties: { accessToken: { type: "string" }, exp: { type: "integer", description: "Expiry, Unix seconds." }, casUrl: { type: "string", format: "uri" } } }) },
+        400: hubError(400, "A method other than GET or HEAD.", { error: "The request is not one the hub understands" }),
+      },
+      ...probe(`/api/models/${evidence.sample.model}/xet-read-token/main`, { method: "HEAD" }),
     },
   };
 
@@ -1111,13 +1107,14 @@ function schemas() {
     },
     ModelRow: {
       type: "object",
-      description: "One search result, in Hugging Face's list shape plus a `hologram` block.",
-      required: ["id", "modelId", "sha", "hologram"],
+      description: "One search result, in Hugging Face's list shape. Rows under `/via/<source>/` also carry a `hologram` block. Hugging Face adds fields over time; they pass through unchanged.",
+      required: ["id"],
+      additionalProperties: true,
       properties: {
         _id: { type: "string" }, id: { type: "string", example: "Qwen/Qwen-Image-2.1" }, modelId: { type: "string" }, author: { type: "string" },
-        sha: { type: "string", description: "The indexed revision." },
-        private: { const: false }, gated: { const: false }, disabled: { const: false },
-        likes: { type: "integer" }, downloads: { type: "integer" }, trendingScore: { type: "integer" },
+        sha: { type: "string", description: "The revision `main` points at, when asked for with `full=true`; on `/via/` rows, the indexed revision." },
+        private: { const: false }, gated: { type: ["boolean", "string"] }, disabled: { const: false },
+        likes: { type: "integer" }, downloads: { type: "integer" }, trendingScore: { type: "number" },
         createdAt: { type: "string", format: "date-time" },
         pipeline_tag: { type: "string" }, library_name: { type: "string" },
         tags: { type: "array", items: { type: "string" } },
@@ -1126,12 +1123,13 @@ function schemas() {
     },
     ModelInfo: {
       type: "object",
-      description: "One model at the indexed revision, in Hugging Face's model-info shape.",
+      description: "One model, in Hugging Face's model-info shape. Hugging Face adds fields over time (`cardData`, `config`, `safetensors` …); they pass through unchanged.",
       required: ["id", "modelId", "sha", "siblings"],
+      additionalProperties: true,
       properties: {
         _id: { type: "string" }, id: { type: "string" }, modelId: { type: "string" },
-        sha: { type: "string", description: "The indexed revision, always a full commit hash." },
-        private: { const: false }, gated: { const: false }, disabled: { const: false },
+        sha: { type: "string", description: "The revision answered, always a full commit hash." },
+        private: { const: false }, gated: { type: ["boolean", "string"], description: "`false`, or how access is gated (`auto`, `manual`)." }, disabled: { const: false },
         tags: { type: "array", items: { type: "string" } }, downloads: { type: "integer" }, likes: { type: "integer" },
         siblings: { type: "array", description: "Every file of the revision, by name only.", items: { type: "object", required: ["rfilename"], properties: { rfilename: { type: "string" } } } },
       },

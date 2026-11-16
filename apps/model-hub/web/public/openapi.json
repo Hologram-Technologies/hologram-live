@@ -659,13 +659,11 @@
    },
    "ModelRow": {
     "type": "object",
-    "description": "One search result, in Hugging Face's list shape plus a `hologram` block.",
+    "description": "One search result, in Hugging Face's list shape. Rows under `/via/<source>/` also carry a `hologram` block. Hugging Face adds fields over time; they pass through unchanged.",
     "required": [
-     "id",
-     "modelId",
-     "sha",
-     "hologram"
+     "id"
     ],
+    "additionalProperties": true,
     "properties": {
      "_id": {
       "type": "string"
@@ -682,13 +680,16 @@
      },
      "sha": {
       "type": "string",
-      "description": "The indexed revision."
+      "description": "The revision `main` points at, when asked for with `full=true`; on `/via/` rows, the indexed revision."
      },
      "private": {
       "const": false
      },
      "gated": {
-      "const": false
+      "type": [
+       "boolean",
+       "string"
+      ]
      },
      "disabled": {
       "const": false
@@ -700,7 +701,7 @@
       "type": "integer"
      },
      "trendingScore": {
-      "type": "integer"
+      "type": "number"
      },
      "createdAt": {
       "type": "string",
@@ -725,13 +726,14 @@
    },
    "ModelInfo": {
     "type": "object",
-    "description": "One model at the indexed revision, in Hugging Face's model-info shape.",
+    "description": "One model, in Hugging Face's model-info shape. Hugging Face adds fields over time (`cardData`, `config`, `safetensors` …); they pass through unchanged.",
     "required": [
      "id",
      "modelId",
      "sha",
      "siblings"
     ],
+    "additionalProperties": true,
     "properties": {
      "_id": {
       "type": "string"
@@ -744,13 +746,17 @@
      },
      "sha": {
       "type": "string",
-      "description": "The indexed revision, always a full commit hash."
+      "description": "The revision answered, always a full commit hash."
      },
      "private": {
       "const": false
      },
      "gated": {
-      "const": false
+      "type": [
+       "boolean",
+       "string"
+      ],
+      "description": "`false`, or how access is gated (`auto`, `manual`)."
      },
      "disabled": {
       "const": false
@@ -2773,7 +2779,7 @@
     ],
     "operationId": "listModels",
     "summary": "Search the index",
-    "description": "Hugging Face's list shape, so `HfApi.list_models` works unchanged, plus a `hologram` block on every row\ncarrying the facts Hugging Face has no field for: the index address of the model, how many files it has,\nhow many bytes of weights, and which sources hold them. A search costs a few hundred bytes; reading the\nwhole catalog object costs several hundred KB, so search here rather than there.\n\n**This route lists everything the hub holds**, not only what is trending today. Rows for models on the\ncurrent browse list carry the full facts — task, parameters, library, downloads, licence. Models the browse\nlist has forgotten, but whose bytes this hub has published and still serves, appear as thin rows: the name,\nthe index address, and `hologram.listed: false`. The facts a browse row carries were never published with\nthe object, so a thin row says so rather than reporting zeros as if they were measurements. Filter on\n`hologram.listed` if you want one kind or the other.\n\nQuery parameters are checked rather than coerced: a `limit` outside 1–500 or one that is not a whole number,\nand a `sort` outside the enum, each refuse with `400 BadParameter` and a sentence saying what is allowed.",
+    "description": "Hugging Face's list, row for row and parameter for parameter, so `HfApi.list_models` works unchanged and a\nmodel that exists on Hugging Face is found here. A search costs a few hundred bytes.\n\nRows carry Hugging Face's default fields; `sha` appears when you ask for it with `full=true`. The next page is\nin the `Link` header (`rel=\"next\"`), as on Hugging Face. Parameters are Hugging Face's too: an unusable\n`limit` falls back to the default rather than refusing, and an unknown `sort` refuses with `400`.\n\nThe `hologram` block, with the index address and the sources that hold a model's bytes, is on the rows of\n`/via/<source>/api/models`, which this hub still answers from its own index.",
     "parameters": [
      {
       "name": "search",
@@ -2847,7 +2853,7 @@
      {
       "name": "direction",
       "in": "query",
-      "description": "`1` sorts ascending. Anything else sorts descending.",
+      "description": "Hugging Face's: `-1` sorts descending. Hugging Face sorts most keys, `downloads` among them, descending only, and refuses `1` with `400`.",
       "schema": {
        "type": "string"
       }
@@ -2855,12 +2861,9 @@
      {
       "name": "limit",
       "in": "query",
-      "description": "Rows to return, 1 to 500.",
+      "description": "Rows to return. As on Hugging Face, a value it cannot use falls back to the default rather than refusing; more rows are a `Link` away.",
       "schema": {
-       "type": "integer",
-       "minimum": 1,
-       "maximum": 500,
-       "default": 50
+       "type": "integer"
       },
       "example": 5
      }
@@ -2869,10 +2872,10 @@
      "200": {
       "description": "Matching rows, most relevant first by the chosen sort.",
       "headers": {
-       "x-total-count": {
-        "description": "How many rows matched before `limit` was applied.",
+       "link": {
+        "description": "The next page, `<url>; rel=\"next\"`, when there is one.",
         "schema": {
-         "type": "integer"
+         "type": "string"
         }
        }
       },
@@ -2886,78 +2889,46 @@
         },
         "example": [
          {
-          "_id": "591cee3cd6fb2b90f96475fc",
+          "_id": "621ffdc136468d709f180294",
           "id": "sentence-transformers/all-MiniLM-L6-v2",
-          "modelId": "sentence-transformers/all-MiniLM-L6-v2",
-          "author": "sentence-transformers",
-          "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+          "likes": 6133,
           "private": false,
-          "gated": false,
-          "disabled": false,
-          "likes": 6119,
-          "downloads": 250598416,
-          "trendingScore": 395,
-          "createdAt": "2022-03-02T00:00:00.000Z",
+          "downloads": 170160953,
+          "tags": [
+           "sentence-transformers",
+           "pytorch",
+           "tf"
+          ],
           "pipeline_tag": "sentence-similarity",
           "library_name": "sentence-transformers",
-          "tags": [
-           "sentence-similarity",
-           "sentence-transformers",
-           "safetensors"
-          ],
-          "hologram": {
-           "manifest": "blake3:591cee3cd6fb2b90f96475fcb063c844ebbf86587ac22c73b3cc30b143c24cac",
-           "files": 30,
-           "weight_bytes": 975605706,
-           "parameters": 22713728,
-           "context": 512,
-           "sources": [
-            "Hugging Face",
-            "ModelScope",
-            "P2P"
-           ]
-          }
+          "createdAt": "2022-03-02T23:29:05.000Z",
+          "modelId": "sentence-transformers/all-MiniLM-L6-v2"
          },
          {
-          "_id": "3dba3c69368e47a8f7710954",
-          "id": "BAAI/bge-m3",
-          "modelId": "BAAI/bge-m3",
-          "author": "BAAI",
-          "sha": "5617a9f61b028005a4858fdac845db406aefb181",
+          "_id": "65dee9413aec0530562b4f09",
+          "id": "argmaxinc/whisperkit-coreml",
+          "likes": 268,
           "private": false,
-          "gated": false,
-          "disabled": false,
-          "likes": 3629,
-          "downloads": 37173706,
-          "trendingScore": 287,
-          "createdAt": "2024-01-27T00:00:00.000Z",
-          "pipeline_tag": "sentence-similarity",
-          "library_name": "sentence-transformers",
+          "downloads": 74682389,
           "tags": [
-           "sentence-similarity",
-           "sentence-transformers",
-           "onnx"
+           "whisperkit",
+           "coreml",
+           "whisper"
           ],
-          "hologram": {
-           "manifest": "blake3:3dba3c69368e47a8f7710954783515b46431dfe7495c98f5f3bb0f978c31a5cd",
-           "files": 30,
-           "weight_bytes": 4585114582,
-           "context": 8194,
-           "sources": [
-            "Hugging Face",
-            "ModelScope"
-           ]
-          }
+          "pipeline_tag": "automatic-speech-recognition",
+          "library_name": "whisperkit",
+          "createdAt": "2024-02-28T08:05:21.000Z",
+          "modelId": "argmaxinc/whisperkit-coreml"
          }
         ]
        }
       }
      },
      "400": {
-      "description": "A parameter is outside what this operation accepts.",
+      "description": "An unknown `sort`, or a method other than GET or HEAD.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -2975,28 +2946,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "limit must be between 1 and 500."
-        }
-       }
-      }
-     },
-     "405": {
-      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
-      "headers": {
-       "x-error-code": {
-        "description": "`ReadOnly`.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      },
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HubError"
-        },
-        "example": {
-         "error": "The hub endpoint is read-only."
+         "error": "✖ Invalid sort parameter: bogus"
         }
        }
       }
@@ -3016,7 +2966,7 @@
     ],
     "operationId": "getModel",
     "summary": "One model at the indexed revision",
-    "description": "Hugging Face's model-info shape. `sha` is the revision the hub pinned; `siblings` lists every file. For sizes and hashes ask for the tree instead.",
+    "description": "Hugging Face's model info, field for field. `sha` is the revision `main` points at; `siblings` lists every file. For sizes and hashes ask for the tree instead.",
     "parameters": [
      {
       "name": "owner",
@@ -3041,23 +2991,76 @@
     ],
     "responses": {
      "200": {
-      "description": "The model.",
+      "description": "The model. A gated model is described too (`gated` says how); its files refuse with `401 GatedRepo`.",
       "content": {
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ModelInfo"
         },
         "example": {
-         "_id": "591cee3cd6fb2b90f96475fc",
+         "_id": "1110a243fdf4706b3f48f1d9",
          "id": "sentence-transformers/all-MiniLM-L6-v2",
          "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+         "author": "sentence-transformers",
          "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
          "private": false,
          "gated": false,
          "disabled": false,
-         "tags": [],
-         "downloads": 0,
-         "likes": 0,
+         "downloads": 172686714,
+         "likes": 6118,
+         "tags": [
+          "sentence-transformers",
+          "pytorch",
+          "tf"
+         ],
+         "pipeline_tag": "sentence-similarity",
+         "library_name": "sentence-transformers",
+         "createdAt": "2022-03-02T23:29:05.000Z",
+         "lastModified": "2026-06-01T06:29:13.000Z",
+         "config": {
+          "architectures": [
+           "BertModel"
+          ],
+          "model_type": "bert",
+          "tokenizer_config": {
+           "unk_token": "[UNK]",
+           "sep_token": "[SEP]",
+           "pad_token": "[PAD]",
+           "cls_token": "[CLS]",
+           "mask_token": "[MASK]"
+          }
+         },
+         "cardData": {
+          "base_model": [
+           "nreimers/MiniLM-L6-H384-uncased"
+          ],
+          "language": "en",
+          "license": "apache-2.0",
+          "library_name": "sentence-transformers",
+          "tags": [
+           "sentence-transformers",
+           "feature-extraction",
+           "sentence-similarity"
+          ],
+          "datasets": [
+           "s2orc",
+           "flax-sentence-embeddings/stackexchange_xml",
+           "ms_marco"
+          ],
+          "pipeline_tag": "sentence-similarity"
+         },
+         "safetensors": {
+          "parameters": {
+           "I64": 512,
+           "F32": 22713216
+          },
+          "total": 22713728
+         },
+         "transformersInfo": {
+          "auto_model": "AutoModel",
+          "pipeline_tag": "feature-extraction",
+          "processor": "AutoTokenizer"
+         },
          "siblings": [
           {
            "rfilename": ".gitattributes"
@@ -3073,11 +3076,11 @@
        }
       }
      },
-     "403": {
-      "description": "The model is gated on Hugging Face. The hub serves public models only and will not proxy a gate.",
+     "401": {
+      "description": "No such public model. As on Hugging Face, a missing and a private repository get the same anonymous answer.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -3095,34 +3098,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "meta-llama/Llama-3-8B is gated on Hugging Face. The hub serves public models only; use huggingface.co directly for this one."
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "Not in the index. The request is recorded and considered for the next index run.",
-      "headers": {
-       "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
-        "schema": {
-         "type": "string"
-        }
-       },
-       "x-error-message": {
-        "description": "The same sentence as the body, readable in a browser's network panel.",
-        "schema": {
-         "type": "string"
-        }
-       }
-      },
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HubError"
-        },
-        "example": {
-         "error": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile."
+         "error": "Invalid username or password."
         }
        }
       }
@@ -3142,7 +3118,7 @@
     ],
     "operationId": "getModelAtRevision",
     "summary": "One model, asserting the revision",
-    "description": "The same answer as `getModel`, refused unless the revision you name is the one the hub indexed. Use it to fail loudly rather than silently receive a different revision.",
+    "description": "The same answer as `getModel`, at the revision you name. A revision Hugging Face does not know refuses with `404 RevisionNotFound`.",
     "parameters": [
      {
       "name": "owner",
@@ -3168,7 +3144,7 @@
       "name": "revision",
       "in": "path",
       "required": true,
-      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "description": "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.",
       "schema": {
        "type": "string"
       },
@@ -3187,10 +3163,10 @@
       }
      },
      "404": {
-      "description": "Either the model is not indexed, or it is indexed at another revision.",
+      "description": "No such revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -3208,7 +3184,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "The hub has sentence-transformers/all-MiniLM-L6-v2 at 1110a243fdf4706b3f48f1d95db1a4f5529b4d41 only."
+         "error": "Invalid rev id: 0000000"
         }
        }
       }
@@ -3277,7 +3253,7 @@
       "description": "Not in the index.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -3295,7 +3271,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "nobody/not-a-real-model-xyz is not in the Hologram index yet. The request was recorded for the next index run; use huggingface.co directly meanwhile."
+         "error": "Invalid username or password."
         }
        }
       }
@@ -3341,7 +3317,7 @@
       "name": "revision",
       "in": "path",
       "required": true,
-      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "description": "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.",
       "schema": {
        "type": "string"
       },
@@ -3401,7 +3377,7 @@
       "description": "Not in the index, or indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -3465,7 +3441,7 @@
       "name": "revision",
       "in": "path",
       "required": true,
-      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "description": "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.",
       "schema": {
        "type": "string"
       },
@@ -3516,7 +3492,7 @@
       "description": "Not in the index, indexed at another revision, or nothing under the prefix (`X-Error-Code: EntryNotFound`, as Hugging Face).",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -3575,7 +3551,7 @@
       "name": "revision",
       "in": "path",
       "required": true,
-      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "description": "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.",
       "schema": {
        "type": "string"
       },
@@ -3613,7 +3589,7 @@
       "description": "Not in the index, or indexed at another revision.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -3645,8 +3621,8 @@
      "Models"
     ],
     "operationId": "getXetReadToken",
-    "summary": "Hand a Xet client back to Hugging Face",
-    "description": "`huggingface_hub` follows the hub's redirect, meets Hugging Face's Xet headers there, then asks this endpoint for a Xet read token. That token is Hugging Face's to give, so the hub sends the client there and issues nothing itself.",
+    "summary": "Hugging Face's Xet read token, passed through",
+    "description": "`huggingface_hub` follows the hub's redirect, meets Hugging Face's Xet headers there, then asks this endpoint for a Xet read token. The token is Hugging Face's: the hub passes Hugging Face's answer through unchanged and issues nothing itself. A client only asks after following the kernel's redirect to Hugging Face, so the bytes still come from the source the kernel chose.",
     "parameters": [
      {
       "name": "owner",
@@ -3672,7 +3648,7 @@
       "name": "revision",
       "in": "path",
       "required": true,
-      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "description": "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.",
       "schema": {
        "type": "string"
       },
@@ -3680,23 +3656,45 @@
      }
     ],
     "responses": {
-     "307": {
-      "description": "Redirect to the same path on huggingface.co.",
-      "headers": {
-       "location": {
-        "description": "The Hugging Face URL.",
+     "200": {
+      "description": "Hugging Face's answer.",
+      "content": {
+       "application/json": {
         "schema": {
-         "type": "string",
-         "format": "uri"
+         "type": "object",
+         "required": [
+          "accessToken",
+          "exp",
+          "casUrl"
+         ],
+         "properties": {
+          "accessToken": {
+           "type": "string"
+          },
+          "exp": {
+           "type": "integer",
+           "description": "Expiry, Unix seconds."
+          },
+          "casUrl": {
+           "type": "string",
+           "format": "uri"
+          }
+         }
         }
        }
       }
      },
-     "405": {
-      "description": "The hub endpoint is read-only: any method other than GET or HEAD on this path is refused.",
+     "400": {
+      "description": "A method other than GET or HEAD.",
       "headers": {
        "x-error-code": {
-        "description": "`ReadOnly`.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "schema": {
+         "type": "string"
+        }
+       },
+       "x-error-message": {
+        "description": "The same sentence as the body, readable in a browser's network panel.",
         "schema": {
          "type": "string"
         }
@@ -3708,7 +3706,7 @@
          "$ref": "#/components/schemas/HubError"
         },
         "example": {
-         "error": "The hub endpoint is read-only."
+         "error": "The request is not one the hub understands"
         }
        }
       }
@@ -3716,7 +3714,7 @@
     },
     "x-hologram-probe": {
      "path": "/api/models/sentence-transformers/all-MiniLM-L6-v2/xet-read-token/main",
-     "status": 307,
+     "status": 200,
      "method": "HEAD"
     }
    }
@@ -3754,7 +3752,7 @@
       "name": "revision",
       "in": "path",
       "required": true,
-      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "description": "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.",
       "schema": {
        "type": "string"
       },
@@ -3825,7 +3823,7 @@
       "description": "The model is not indexed, the revision is not the indexed one, or the file is not in it.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }
@@ -3904,7 +3902,7 @@
       "name": "revision",
       "in": "path",
       "required": true,
-      "description": "`main`, or a commit prefix of at least seven characters. The hub indexes one revision per model and refuses any other, so `main` is always the pinned revision.",
+      "description": "`main`, a branch, or a commit (a prefix of at least seven characters). The indexed revision is answered from the hub's signed index and any other from Hugging Face. Under `/via/<source>/` only the indexed revision is served.",
       "schema": {
        "type": "string"
       },
@@ -3984,7 +3982,7 @@
       "description": "Unknown model, revision or file; `SourceHasNotGotIt` when the named source does not hold this file, naming the ones that do; or `UnknownSource` when the source name is not one this hub knows. A malformed source segment, such as one with capitals, is refused by the edge as a bare 404 with an empty body rather than in this shape.",
       "headers": {
        "x-error-code": {
-        "description": "A closed vocabulary: ReadOnly, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
+        "description": "A closed vocabulary: ReadOnly, BadRequest, GatedRepo, RepoNotFound, RevisionNotFound, EntryNotFound, SourceHasNotGotIt, UnknownSource, BadParameter, NotFound, HubError.",
         "schema": {
          "type": "string"
         }

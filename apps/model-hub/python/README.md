@@ -14,7 +14,7 @@ Without code changes: `python -c "import hologram_verify.auto; …"`, or put `im
 
 **What it checks:**
 - Every path `hf_hub_download` returns. snapshot_download and every `from_pretrained` go through it.
-- The path's sha256 is compared with the sha256 Hologram's index publishes for that exact commit.
+- The path's digest is compared with the one Hologram's tree names for that exact commit: the sha256 in `lfs.oid` for a large file, the git blob sha1 in `oid` for a small one, as Hugging Face's tree carries them.
 - This holds whichever host sent the bytes: Hugging Face, a mirror, a proxy, or any `HF_ENDPOINT`.
 - Cache hits are checked too, which huggingface_hub never does: once per file per process, keyed by size and mtime.
 

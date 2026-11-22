@@ -31,6 +31,7 @@ pub mod holo_provider;
 pub mod holo_python;
 pub mod holo_python_component;
 mod holo_rootfs_archive;
+pub mod holo_session;
 pub mod holo_view;
 pub mod holo_view_provider;
 pub mod holo_wasm;

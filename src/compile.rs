@@ -5,11 +5,12 @@ use crate::holo_contract::{
     normalize_wasm_contract, COMPONENT_V1_ENTRY, WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1,
     WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1, WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1,
     WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1, WASM_CONTRACT_COMPONENT_STORE_READ_V1,
-    WASM_CONTRACT_COMPONENT_STORE_WRITE_V1, WASM_CONTRACT_COMPONENT_V1,
+    WASM_CONTRACT_COMPONENT_STORE_WRITE_V1, WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V2,
 };
 use crate::holo_directory::{self, DIRECTORY_EXTENSION_KEY};
 use crate::holo_python::{self, PythonRootfsSource};
 use crate::holo_python_component;
+use crate::holo_session::CORE_WASM_V2_ENTRY;
 use crate::holo_view;
 use crate::holo_wasm::validate_entry_name;
 use crate::util::hex;
@@ -523,6 +524,14 @@ fn build_layer(source: &CompileLayer, kappa: hologram::space::KappaLabel71) -> R
                             source,
                             &format!(
                                 "Component v1 entry must be {COMPONENT_V1_ENTRY:?}, got {entry:?}"
+                            ),
+                        ));
+                    }
+                    if contract == WASM_CONTRACT_CORE_V2 && entry != CORE_WASM_V2_ENTRY {
+                        return Err(layer_config_error(
+                            source,
+                            &format!(
+                                "core-wasm@2 entry must be {CORE_WASM_V2_ENTRY:?}, got {entry:?}"
                             ),
                         ));
                     }
@@ -1536,7 +1545,7 @@ mod tests {
                     "kind":"wasm",
                     "path":"app.wasm",
                     "entry":"holo_run",
-                    "contract":"hologram:guest/core-wasm@2"
+                    "contract":"hologram:guest/core-wasm@9"
                 }]
             }"#,
         )
@@ -1545,6 +1554,23 @@ mod tests {
         assert!(error
             .to_string()
             .contains("unsupported Wasm guest contract"));
+
+        let session_with_v1_entry: CompileManifest = serde_json::from_str(
+            r#"{
+                "schema_version": 4,
+                "primary": 0,
+                "layers": [{
+                    "kind":"wasm",
+                    "path":"app.wasm",
+                    "entry":"holo_run",
+                    "contract":"hologram:guest/core-wasm@2"
+                }]
+            }"#,
+        )
+        .expect("parse session contract");
+        let error = validate_compile_manifest(&session_with_v1_entry)
+            .expect_err("the session world is entered at holo_step");
+        assert!(error.to_string().contains("holo_step"), "{error}");
 
         let wrong_entry: CompileManifest = serde_json::from_str(
             r#"{

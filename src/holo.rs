@@ -723,7 +723,8 @@ fn direct_registry(
     ProviderRegistry::new(
         ProviderTarget::Direct,
         vec![
-            Arc::new(WasmProvider::direct(engine)),
+            Arc::new(WasmProvider::direct(engine.clone())),
+            Arc::new(crate::holo_session::SessionProvider::direct(engine)),
             Arc::new(ComponentProvider::direct()),
             Arc::new(ComponentProvider::store_read_direct(object_store.clone())),
             Arc::new(ComponentProvider::store_graph_read_direct(

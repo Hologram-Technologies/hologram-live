@@ -115,10 +115,20 @@ layer `aux`. Empty `aux` normalizes to `hologram:guest/core-wasm@1`; the explici
 `hologram:guest/component-store-write@1`,
 `hologram:guest/component-channel-publish@1`,
 `hologram:guest/component-channel-subscribe@1`, and
-`hologram:guest/component-network-fetch@1` tags are accepted. Inspection and
+`hologram:guest/component-network-fetch@1` tags are accepted, as is the core
+session world `hologram:guest/core-wasm@2`. Inspection and
 planning expose the normalized selector, and provider lookup is keyed by both
 layer kind and exact contract. Component archives therefore reach only the
 dedicated direct or resident Component provider and never the core provider.
+
+A `core-wasm@2` guest exports `memory`, `holo_alloc` and the entry `holo_step`,
+and only that entry. One instance is one session: the guest keeps its state
+between steps and never shows it to the host. Each step returns a responses
+frame of big-endian `u32`s (`count`, then `length` and bytes per response,
+nothing after), which the host checks before returning it. The direct session
+provider (`holo_session`) runs the inputs of one invocation as the ordered steps
+of one fresh session. A trap ends the session. There is no resident session
+provider yet.
 The Component v1 WIT world is an import-free, stateless
 `list<u8> -> result<list<u8>, guest-error>` boundary. ADR 011 maps each
 proposed host interface to admitted capability fields and keeps interfaces

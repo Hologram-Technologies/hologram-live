@@ -4,7 +4,7 @@ pub use hologram::space::{
     WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1, WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1,
     WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1, WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1,
     WASM_CONTRACT_COMPONENT_STORE_READ_V1, WASM_CONTRACT_COMPONENT_STORE_WRITE_V1,
-    WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V1,
+    WASM_CONTRACT_COMPONENT_V1, WASM_CONTRACT_CORE_V1, WASM_CONTRACT_CORE_V2,
 };
 
 pub const COMPONENT_V1_ENTRY: &str = "run";
@@ -13,6 +13,7 @@ pub const COMPONENT_V1_ENTRY: &str = "run";
 pub fn normalize_wasm_contract(value: &str) -> std::result::Result<&'static str, String> {
     match value {
         WASM_CONTRACT_CORE_V1 => Ok(WASM_CONTRACT_CORE_V1),
+        WASM_CONTRACT_CORE_V2 => Ok(WASM_CONTRACT_CORE_V2),
         WASM_CONTRACT_COMPONENT_V1 => Ok(WASM_CONTRACT_COMPONENT_V1),
         WASM_CONTRACT_COMPONENT_STORE_READ_V1 => Ok(WASM_CONTRACT_COMPONENT_STORE_READ_V1),
         WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1 => {
@@ -27,7 +28,7 @@ pub fn normalize_wasm_contract(value: &str) -> std::result::Result<&'static str,
         }
         WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1 => Ok(WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1),
         other => Err(format!(
-            "unsupported Wasm guest contract {other:?}; expected {WASM_CONTRACT_CORE_V1:?}, {WASM_CONTRACT_COMPONENT_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_READ_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_WRITE_V1:?}, {WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1:?}, {WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1:?}, or {WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1:?}"
+            "unsupported Wasm guest contract {other:?}; expected {WASM_CONTRACT_CORE_V1:?}, {WASM_CONTRACT_CORE_V2:?}, {WASM_CONTRACT_COMPONENT_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_READ_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_GRAPH_READ_V1:?}, {WASM_CONTRACT_COMPONENT_STORE_WRITE_V1:?}, {WASM_CONTRACT_COMPONENT_CHANNEL_PUBLISH_V1:?}, {WASM_CONTRACT_COMPONENT_CHANNEL_SUBSCRIBE_V1:?}, or {WASM_CONTRACT_COMPONENT_NETWORK_FETCH_V1:?}"
         )),
     }
 }
@@ -42,6 +43,11 @@ mod tests {
             normalize_wasm_contract(WASM_CONTRACT_CORE_V1),
             Ok(WASM_CONTRACT_CORE_V1)
         );
+        assert_eq!(
+            normalize_wasm_contract(WASM_CONTRACT_CORE_V2),
+            Ok(WASM_CONTRACT_CORE_V2)
+        );
+        assert!(normalize_wasm_contract("hologram:guest/core-wasm@3").is_err());
         assert!(normalize_wasm_contract("").is_err());
     }
 
